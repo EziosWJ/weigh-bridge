@@ -1,0 +1,30 @@
+# 生产环境配置模板，默认使用 PostgreSQL；也可按下方注释切换为 SQLite 单实例部署。
+# 实际 configs/config.prod.yaml 以只读文件或挂载方式由部署系统提供，不提交 Git。
+# 所有占位符值必须在部署时替换为真实值。
+swagger:
+  enabled: false
+
+database:
+  # PostgreSQL is the default for multi-instance or higher-write deployments.
+  driver: postgres
+  url: postgres://db.example.internal:5432/weighbridge?sslmode=require
+  username: change-me
+  password: change-me
+
+# SQLite 单实例生产配置（启用时替换上面的整个 database 节）：
+# database:
+#   driver: sqlite
+#   url: /var/lib/weighbridge/data/weighbridge.db
+#   # SQLite 不配置 username/password；请使用本地持久卷和单个 API 实例。
+
+jwt:
+  secret: change-me
+
+auth:
+  login_guard:
+    ip_max_attempts: 20
+    username_max_attempts: 5
+
+log:
+  level: info
+  format: json

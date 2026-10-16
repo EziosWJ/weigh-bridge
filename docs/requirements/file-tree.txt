@@ -1,0 +1,503 @@
+weighbridge/
+├── .github/
+│   └── workflows/
+│       └── database-compatibility.yml
+├── .vscode/
+│   └── launch.json
+├── agent/
+│   └── README.md
+├── docs/
+│   ├── adr/
+│   │   ├── 0001-backend-maven-multi-module-boundaries.md
+│   │   ├── 0002-go-api-replaces-java-with-compatible-contract.md
+│   │   ├── 0004-backend-architecture-and-database-strategy.md
+│   │   ├── 0005-yaml-based-runtime-configuration.md
+│   │   ├── 0006-atomic-operation-audit.md
+│   │   ├── 0007-atomic-site-notifications.md
+│   │   ├── 0008-file-upload-resource-bounds.md
+│   │   ├── 0009-login-brute-force-protection.md
+│   │   ├── 0010-sqlite-production-support.md
+│   │   ├── 0011-host-resource-collection-boundary.md
+│   │   └── 0012-notification-realtime-boundary.md
+│   ├── agents/
+│   │   ├── domain.md
+│   │   ├── issue-tracker.md
+│   │   └── triage-labels.md
+│   ├── architecture/
+│   │   └── README.md
+│   ├── requirements/
+│   │   ├── README.md
+│   │   ├── file-tree.txt
+│   │   ├── phase-1-changed-files.md
+│   │   └── phase-1-delivery.md
+│   ├── server-monitoring-tickets/
+│   │   ├── 01-host-overview.md
+│   │   ├── 02-history-and-warnings.md
+│   │   ├── 03-docker-host-collector.md
+│   │   ├── 04-disk-monitoring.md
+│   │   ├── 05-network-monitoring.md
+│   │   ├── 06-process-ranking.md
+│   │   └── 07-nvidia-monitoring.md
+│   ├── README.md
+│   ├── development-initialization-spec.md
+│   ├── development-initialization.md
+│   ├── file-upload-plan.md
+│   ├── menu-search-plan.md
+│   ├── next.md
+│   ├── notification-enhancement-design.md
+│   ├── notification-enhancement-spec.md
+│   ├── notification-implementation.md
+│   ├── notification-plan.md
+│   ├── server-monitoring-deployment.md
+│   ├── server-monitoring-extension-spec.md
+│   ├── server-monitoring-extension-validation.md
+│   ├── server-monitoring-implementation.md
+│   ├── server-monitoring-spec.md
+│   ├── server-monitoring-tickets.md
+│   └── server-monitoring.md
+├── protocol/
+│   └── README.md
+├── record/
+│   ├── notification-screenshots/
+│   │   ├── notification-management.png
+│   │   └── notifications.png
+│   ├── base-api-refactor.md
+│   └── react-admin-refactor.md
+├── scripts/
+│   ├── check-host-collector.py
+│   ├── check-monitoring-docker.py
+│   ├── dev-setup.mjs
+│   ├── dev-setup.test.mjs
+│   └── prepare-webui.mjs
+├── server/
+│   ├── cmd/
+│   │   ├── api/
+│   │   │   └── main.go
+│   │   ├── backup/
+│   │   │   └── main.go
+│   │   ├── dev-setup/
+│   │   │   ├── main.go
+│   │   │   └── main_test.go
+│   │   ├── host-collector/
+│   │   │   └── main.go
+│   │   └── migrate/
+│   │       ├── main.go
+│   │       └── main_test.go
+│   ├── configs/
+│   │   ├── config.dev.example.yaml
+│   │   ├── config.prod.example.yaml
+│   │   ├── config.sqlite.yaml
+│   │   └── config.yaml
+│   ├── docs/
+│   │   ├── docs.go
+│   │   ├── swagger.json
+│   │   └── swagger.yaml
+│   ├── integration/
+│   │   ├── doc.go
+│   │   ├── monitoring_integration_test.go
+│   │   ├── notification_business_test.go
+│   │   ├── notification_capacity_test.go
+│   │   ├── notification_enhancement_test.go
+│   │   ├── notification_migration_test.go
+│   │   ├── postgres_integration_test.go
+│   │   ├── sqlite_integration_test.go
+│   │   └── usermgmt_integration_test.go
+│   ├── internal/
+│   │   ├── app/
+│   │   │   ├── app.go
+│   │   │   ├── app_test.go
+│   │   │   ├── swagger.go
+│   │   │   └── webui_embed_test.go
+│   │   ├── audit/
+│   │   │   ├── event.go
+│   │   │   └── recorder.go
+│   │   ├── auth/
+│   │   │   ├── auth_test.go
+│   │   │   ├── context.go
+│   │   │   ├── handler.go
+│   │   │   ├── handler_test.go
+│   │   │   ├── login_guard.go
+│   │   │   ├── login_guard_test.go
+│   │   │   ├── middleware.go
+│   │   │   ├── model.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   └── token.go
+│   │   ├── config/
+│   │   │   ├── config.go
+│   │   │   ├── load.go
+│   │   │   ├── load_test.go
+│   │   │   └── monitoring_test.go
+│   │   ├── dept/
+│   │   │   ├── handler.go
+│   │   │   ├── model.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   └── service_test.go
+│   │   ├── dictionary/
+│   │   │   ├── handler.go
+│   │   │   ├── model.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   └── service_test.go
+│   │   ├── filemgmt/
+│   │   │   ├── handler.go
+│   │   │   ├── handler_test.go
+│   │   │   ├── model.go
+│   │   │   ├── multipart_upload.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   ├── service_test.go
+│   │   │   ├── storage.go
+│   │   │   └── storage_test.go
+│   │   ├── logmgmt/
+│   │   │   ├── handler.go
+│   │   │   ├── handler_test.go
+│   │   │   ├── model.go
+│   │   │   ├── repository.go
+│   │   │   └── service.go
+│   │   ├── monitoring/
+│   │   │   ├── collector.go
+│   │   │   ├── collector_linux.go
+│   │   │   ├── collector_linux_test.go
+│   │   │   ├── collector_other.go
+│   │   │   ├── collector_windows.go
+│   │   │   ├── collector_windows_test.go
+│   │   │   ├── extension_test.go
+│   │   │   ├── handler.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   ├── service_http_test.go
+│   │   │   ├── socket.go
+│   │   │   ├── socket_test.go
+│   │   │   ├── types.go
+│   │   │   └── windows_storage.go
+│   │   ├── notification/
+│   │   │   ├── announcement.go
+│   │   │   ├── announcement_handler.go
+│   │   │   ├── events.go
+│   │   │   ├── handler.go
+│   │   │   ├── model.go
+│   │   │   ├── notification_test.go
+│   │   │   ├── repository.go
+│   │   │   └── stream.go
+│   │   ├── platform/
+│   │   │   ├── database/
+│   │   │   │   ├── backup.go
+│   │   │   │   ├── check.go
+│   │   │   │   ├── database.go
+│   │   │   │   ├── database_test.go
+│   │   │   │   ├── sqlite_cgo.go
+│   │   │   │   └── sqlite_nocgo.go
+│   │   │   ├── errors/
+│   │   │   │   └── errors.go
+│   │   │   └── http/
+│   │   │       ├── middleware.go
+│   │   │       ├── multipart.go
+│   │   │       ├── platform_test.go
+│   │   │       ├── request.go
+│   │   │       ├── response.go
+│   │   │       └── routes.go
+│   │   ├── rbac/
+│   │   │   ├── handler.go
+│   │   │   ├── handler_test.go
+│   │   │   ├── model.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   └── service_test.go
+│   │   ├── sysconfig/
+│   │   │   ├── service_test.go
+│   │   │   └── sysconfig.go
+│   │   ├── usermgmt/
+│   │   │   ├── handler.go
+│   │   │   ├── model.go
+│   │   │   ├── repository.go
+│   │   │   ├── service.go
+│   │   │   └── service_test.go
+│   │   └── webui/
+│   │       ├── assets_dev.go
+│   │       ├── assets_embed.go
+│   │       ├── handler.go
+│   │       └── handler_test.go
+│   ├── migrations/
+│   │   ├── schema/
+│   │   │   ├── 00001_schema_baseline.sql
+│   │   │   ├── 00002_auth_schema.sql
+│   │   │   ├── 00003_oper_log_schema.sql
+│   │   │   ├── 00004_system_data_schema.sql
+│   │   │   ├── 00005_file_schema.sql
+│   │   │   ├── 00006_drop_file_md5_regex_constraint.sql
+│   │   │   ├── 00007_notification_schema.sql
+│   │   │   ├── 00008_announcement_schema.sql
+│   │   │   └── 00009_business_notification_source.sql
+│   │   ├── seed/
+│   │   │   ├── 00001_auth_seed.sql
+│   │   │   ├── 00002_system_data_seed.sql
+│   │   │   ├── 00003_log_clear_enabled_default.sql
+│   │   │   ├── 00004_server_monitoring_menu.sql
+│   │   │   ├── 00005_examples_browse_picker_menu.sql
+│   │   │   └── README.md
+│   │   ├── sqlite/
+│   │   │   ├── schema/
+│   │   │   │   ├── 00001_schema_baseline.sql
+│   │   │   │   ├── 00002_auth_schema.sql
+│   │   │   │   ├── 00003_oper_log_schema.sql
+│   │   │   │   ├── 00004_system_data_schema.sql
+│   │   │   │   ├── 00005_file_schema.sql
+│   │   │   │   ├── 00006_drop_file_md5_regex_constraint.sql
+│   │   │   │   ├── 00007_notification_schema.sql
+│   │   │   │   ├── 00008_announcement_schema.sql
+│   │   │   │   └── 00009_business_notification_source.sql
+│   │   │   ├── seed/
+│   │   │   │   ├── 00001_auth_seed.sql
+│   │   │   │   ├── 00002_system_data_seed.sql
+│   │   │   │   ├── 00003_log_clear_enabled_default.sql
+│   │   │   │   ├── 00004_server_monitoring_menu.sql
+│   │   │   │   └── 00005_examples_browse_picker_menu.sql
+│   │   │   └── README.md
+│   │   ├── README.md
+│   │   └── layout_test.go
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── Dockerfile
+│   ├── Dockerfile.dockerignore
+│   ├── README.md
+│   ├── docker-compose.dev.yml
+│   ├── go.mod
+│   └── go.sum
+├── web/
+│   ├── design-system/
+│   │   ├── pages/
+│   │   │   ├── README.md
+│   │   │   └── server-monitoring.md
+│   │   ├── patterns/
+│   │   │   ├── README.md
+│   │   │   ├── detail-page.md
+│   │   │   ├── form-page.md
+│   │   │   ├── standard-list.md
+│   │   │   ├── tree-list.md
+│   │   │   ├── tree-table.md
+│   │   │   └── upload.md
+│   │   └── MASTER.md
+│   ├── experience/
+│   │   └── LESSONS.md
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── account.ts
+│   │   │   ├── announcement.ts
+│   │   │   ├── auth.ts
+│   │   │   ├── dept.ts
+│   │   │   ├── file.ts
+│   │   │   ├── log.ts
+│   │   │   ├── monitoring.ts
+│   │   │   ├── notification.ts
+│   │   │   ├── rbac.ts
+│   │   │   ├── system.ts
+│   │   │   └── user.ts
+│   │   ├── components/
+│   │   │   ├── auth/
+│   │   │   │   ├── permission-guard.tsx
+│   │   │   │   ├── require-auth.tsx
+│   │   │   │   └── require-message-admin.tsx
+│   │   │   ├── common/
+│   │   │   │   ├── api-status-tag.tsx
+│   │   │   │   ├── confirm-dialog.tsx
+│   │   │   │   ├── content-card.tsx
+│   │   │   │   ├── data-table-card.tsx
+│   │   │   │   ├── data-table.tsx
+│   │   │   │   ├── detail-dialog.tsx
+│   │   │   │   ├── detail-item.tsx
+│   │   │   │   ├── empty-state.tsx
+│   │   │   │   ├── field.tsx
+│   │   │   │   ├── file-upload.tsx
+│   │   │   │   ├── form-dialog.tsx
+│   │   │   │   ├── form-section.tsx
+│   │   │   │   ├── page-header.tsx
+│   │   │   │   ├── pagination.tsx
+│   │   │   │   ├── record-picker.tsx
+│   │   │   │   ├── search-filter-bar.tsx
+│   │   │   │   ├── source-segment-panel.tsx
+│   │   │   │   ├── status-tag.tsx
+│   │   │   │   ├── table-actions.tsx
+│   │   │   │   ├── table-toolbar.tsx
+│   │   │   │   ├── toast-store.ts
+│   │   │   │   ├── toast.tsx
+│   │   │   │   ├── tree-check-list.tsx
+│   │   │   │   ├── tree-select.tsx
+│   │   │   │   └── use-toast.ts
+│   │   │   ├── layout/
+│   │   │   │   ├── announcement-panel.tsx
+│   │   │   │   ├── app-header.tsx
+│   │   │   │   ├── app-shell.tsx
+│   │   │   │   ├── app-sidebar.tsx
+│   │   │   │   ├── breadcrumbs.tsx
+│   │   │   │   ├── menu-search-dialog.tsx
+│   │   │   │   ├── message-connections.tsx
+│   │   │   │   ├── notification-bell.tsx
+│   │   │   │   ├── route-loading-indicator.tsx
+│   │   │   │   ├── use-route-navigation-loading.ts
+│   │   │   │   └── user-menu.tsx
+│   │   │   └── ui/
+│   │   │       ├── button.tsx
+│   │   │       ├── checkbox.tsx
+│   │   │       ├── dialog.tsx
+│   │   │       ├── drawer.tsx
+│   │   │       ├── input.tsx
+│   │   │       ├── select.tsx
+│   │   │       ├── switch.tsx
+│   │   │       └── textarea.tsx
+│   │   ├── config/
+│   │   │   └── navigation.ts
+│   │   ├── constants/
+│   │   │   └── dicts.ts
+│   │   ├── hooks/
+│   │   │   ├── use-authenticated-file-url.ts
+│   │   │   ├── use-dict-options.ts
+│   │   │   └── use-list-page.ts
+│   │   ├── lib/
+│   │   │   ├── api-error.ts
+│   │   │   ├── datetime.ts
+│   │   │   ├── error.ts
+│   │   │   ├── http.ts
+│   │   │   ├── menu-icons.ts
+│   │   │   ├── menu-search.ts
+│   │   │   ├── message-events.ts
+│   │   │   ├── permission.ts
+│   │   │   └── utils.ts
+│   │   ├── mocks/
+│   │   │   ├── account.ts
+│   │   │   ├── auth.ts
+│   │   │   ├── rbac.ts
+│   │   │   ├── system.ts
+│   │   │   └── users.ts
+│   │   ├── pages/
+│   │   │   ├── examples/
+│   │   │   │   ├── browse-picker-demo.tsx
+│   │   │   │   ├── detail-demo.tsx
+│   │   │   │   ├── file-upload-demo.tsx
+│   │   │   │   ├── list-demo.tsx
+│   │   │   │   ├── tree-demo.tsx
+│   │   │   │   └── tree-table-demo.tsx
+│   │   │   ├── monitor/
+│   │   │   │   ├── resource-status.tsx
+│   │   │   │   ├── server.tsx
+│   │   │   │   └── trend-chart.tsx
+│   │   │   ├── system/
+│   │   │   │   ├── configs/
+│   │   │   │   │   └── index.tsx
+│   │   │   │   ├── depts/
+│   │   │   │   │   ├── columns.tsx
+│   │   │   │   │   ├── dept-form-dialog.tsx
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   └── schema.ts
+│   │   │   │   ├── dicts/
+│   │   │   │   │   ├── columns.tsx
+│   │   │   │   │   ├── dict-data-form-dialog.tsx
+│   │   │   │   │   ├── dict-type-form-dialog.tsx
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   └── schema.ts
+│   │   │   │   ├── files/
+│   │   │   │   │   ├── columns.tsx
+│   │   │   │   │   ├── file-detail-dialog.tsx
+│   │   │   │   │   ├── file-edit-dialog.tsx
+│   │   │   │   │   ├── file-preview-dialog.tsx
+│   │   │   │   │   ├── file-upload-dialog.tsx
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   └── utils.ts
+│   │   │   │   ├── logs/
+│   │   │   │   │   ├── login-log-detail-dialog.tsx
+│   │   │   │   │   ├── login-logs.tsx
+│   │   │   │   │   ├── oper-log-detail-dialog.tsx
+│   │   │   │   │   ├── oper-logs.tsx
+│   │   │   │   │   └── utils.ts
+│   │   │   │   ├── menus/
+│   │   │   │   │   ├── columns.tsx
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   ├── menu-form-dialog.tsx
+│   │   │   │   │   └── schema.ts
+│   │   │   │   ├── notifications/
+│   │   │   │   │   └── index.tsx
+│   │   │   │   ├── roles/
+│   │   │   │   │   ├── columns.tsx
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   ├── role-form-dialog.tsx
+│   │   │   │   │   ├── role-menu-dialog.tsx
+│   │   │   │   │   └── schema.ts
+│   │   │   │   ├── users/
+│   │   │   │   │   ├── columns.tsx
+│   │   │   │   │   ├── index.tsx
+│   │   │   │   │   ├── password-result-dialog.tsx
+│   │   │   │   │   ├── role-assign-dialog.tsx
+│   │   │   │   │   ├── schema.ts
+│   │   │   │   │   ├── user-form-dialog.tsx
+│   │   │   │   │   └── utils.ts
+│   │   │   │   └── announcements.tsx
+│   │   │   ├── account-profile.tsx
+│   │   │   ├── announcements.tsx
+│   │   │   ├── change-password.tsx
+│   │   │   ├── dashboard.tsx
+│   │   │   ├── form-example.tsx
+│   │   │   ├── login.tsx
+│   │   │   ├── not-found.tsx
+│   │   │   ├── notifications.tsx
+│   │   │   ├── settings.tsx
+│   │   │   └── system-permissions.tsx
+│   │   ├── store/
+│   │   │   └── auth-store.ts
+│   │   ├── styles/
+│   │   │   └── globals.css
+│   │   ├── types/
+│   │   │   ├── account.ts
+│   │   │   ├── api.ts
+│   │   │   ├── auth.ts
+│   │   │   ├── dept.ts
+│   │   │   ├── file.ts
+│   │   │   ├── index.ts
+│   │   │   ├── log.ts
+│   │   │   ├── material.ts
+│   │   │   ├── monitoring.ts
+│   │   │   ├── notification.ts
+│   │   │   ├── rbac.ts
+│   │   │   ├── system.ts
+│   │   │   ├── table.ts
+│   │   │   └── user.ts
+│   │   ├── main.tsx
+│   │   └── router.tsx
+│   ├── tests/
+│   │   ├── menu-order.html
+│   │   ├── menu-order.mjs
+│   │   ├── menu-order.tsx
+│   │   ├── notification-capacity.mjs
+│   │   ├── notifications.mjs
+│   │   ├── operation-column-layout.html
+│   │   ├── operation-column-layout.mjs
+│   │   ├── operation-column-layout.tsx
+│   │   ├── route-loading.html
+│   │   ├── route-loading.mjs
+│   │   ├── route-loading.tsx
+│   │   ├── server-monitoring.mjs
+│   │   ├── sidebar-scroll.html
+│   │   ├── sidebar-scroll.mjs
+│   │   └── sidebar-scroll.tsx
+│   ├── .env.development
+│   ├── .env.production
+│   ├── .gitignore
+│   ├── AGENTS.md
+│   ├── CLAUDE.md -> AGENTS.md
+│   ├── eslint.config.js
+│   ├── index.html
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── postcss.config.js
+│   ├── tailwind.config.ts
+│   ├── tsconfig.app.json
+│   ├── tsconfig.json
+│   ├── tsconfig.node.json
+│   └── vite.config.ts
+├── .gitignore
+├── AGENTS.md -> CLAUDE.md
+├── CLAUDE.md
+├── CONTEXT.md
+├── README.md
+├── SOURCE.md
+└── Taskfile.yml

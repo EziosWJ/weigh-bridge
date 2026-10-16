@@ -1,0 +1,258 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+
+version: '3'
+
+env:
+  APP_ENV: dev
+  GOCACHE: '{{.ROOT_DIR}}/.task/go-build'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  init:
+    desc: Generate local development configuration (optional --database sqlite)
+    preconditions:
+      - sh: node --version
+        msg: '需要 Node.js；安装后重新运行 task init。'
+    cmds:
+      - node scripts/dev-setup.mjs init {{.CLI_ARGS}}
+
+  doctor:
+    desc: Check local tools, configuration and database readiness
+    preconditions:
+      - sh: node --version
+        msg: '需要 Node.js；安装后重新运行 task doctor。'
+    cmds:
+      - node scripts/dev-setup.mjs doctor {{.CLI_ARGS}}
+
+  dev:setup:test:
+    desc: Run development setup bootstrap command tests
+    cmds:
+      - node --test scripts/dev-setup.test.mjs
+
+  db:migrate:
+    desc: Apply schema and seed migrations
+    dir: server
+    cmds:
+      - go run ./cmd/migrate up --kind all
+
+  db:migrate:sqlite:
+    desc: Apply SQLite schema and seed migrations using the SQLite profile
+    dir: server
+    env:
+      APP_CONFIG_PROFILE: sqlite
+    cmds:
+      - go run ./cmd/migrate up --kind all
+
+  db:migrate:schema:
+    desc: Apply schema migrations only
+    dir: server
+    cmds:
+      - go run ./cmd/migrate up --kind schema
+
+  db:migrate:seed:
+    desc: Apply seed migrations only
+    dir: server
+    cmds:
+      - go run ./cmd/migrate up --kind seed
+
+  db:backup:
+    desc: Create an online SQLite backup; pass CLI flags through CLI_ARGS
+    dir: server
+    cmds:
+      - go run ./cmd/backup {{.CLI_ARGS}}
+
+  api:
+    desc: Start the Go API
+    dir: server
+    cmds:
+      - go run ./cmd/api
+
+  api:sqlite:
+    desc: Start the Go API with the SQLite profile
+    dir: server
+    env:
+      APP_CONFIG_PROFILE: sqlite
+    cmds:
+      - go run ./cmd/api
+
+  web:
+    desc: Start the React development server
+    dir: web
+    cmds:
+      - npm run dev
+
+  host:collector:
+    desc: Start the Linux host resource collector; pass flags through CLI_ARGS
+    dir: server
+    cmds:
+      - go run ./cmd/host-collector {{.CLI_ARGS}}
+
+  host:build:
+    desc: Build the Linux host resource collector
+    dir: server
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-host-collector ./cmd/host-collector
+
+  host:smoke:
+    desc: Verify real Linux host samples, Unix socket and collector restart
+    deps:
+      - host:build
+    cmds:
+      - python3 scripts/check-host-collector.py {{.CLI_ARGS}}
+
+  monitoring:smoke:docker:
+    desc: Verify native and isolated Docker APIs using temporary data (requires task build)
+    cmds:
+      - python3 scripts/check-monitoring-docker.py {{.CLI_ARGS}}
+
+  dev:
+    desc: Migrate the database and start API and web together
+    deps:
+      - db:migrate
+    cmds:
+      - task --parallel api web
+
+  dev:sqlite:
+    desc: Migrate SQLite and start the SQLite API and web together
+    env:
+      APP_CONFIG_PROFILE: sqlite
+    deps:
+      - db:migrate:sqlite
+    cmds:
+      - task --parallel api:sqlite web
+
+  backend:test:
+    desc: Run backend unit tests
+    dir: server
+    cmds:
+      - go test ./...
+
+  backend:swagger:
+    desc: Regenerate API documentation from handler contracts
+    dir: server
+    cmds:
+      - go run github.com/swaggo/swag/cmd/swag@v1.8.12 init -g cmd/api/main.go --parseInternal --output docs
+
+  backend:windows:
+    desc: Cross-build Windows amd64 API, migrations and monitoring tests (PostgreSQL, no CGO)
+    dir: server
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: '0'
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-server-windows-amd64.exe ./cmd/api
+      - go build -trimpath -o ../bin/weighbridge-migrate-windows-amd64.exe ./cmd/migrate
+      - go test -c -o ../.task/windows-monitoring.test.exe ./internal/monitoring
+      - go vet ./cmd/api ./internal/monitoring
+
+  monitoring:smoke:windows:
+    desc: Run read-only native monitoring verification on Windows (or WSL with Windows interop)
+    deps:
+      - backend:windows
+    cmds:
+      - '"{{.ROOT_DIR}}/.task/windows-monitoring.test.exe" -test.timeout 30s -test.v -test.run "TestWindows|TestInterfaceAddressesKeepHostIPAndPrefix|TestNetworkAddressesThroughHTTP|TestDisabledMonitoringHTTPAndSampling" -windows-smoke'
+
+  backend:notifications:
+    desc: Run announcement, notification, SSE and capacity integration contracts
+    dir: server
+    cmds:
+      - go test -tags=integration ./integration -run 'Notification|Announcement' -count=1
+
+  backend:integration:
+    desc: Run backend PostgreSQL integration tests
+    dir: server
+    cmds:
+      - go test -tags=integration ./integration -run 'Postgres|Auth|RBAC|SysConfig|Department|Dictionary|Login|File|Notification|UserPage|Monitor' -count=1
+
+  db:integration:postgres:
+    desc: Run the PostgreSQL database integration contract
+    dir: server
+    cmds:
+      - go test -tags=integration ./integration -run 'Postgres|Auth|RBAC|SysConfig|Department|Dictionary|Login|File|Notification|UserPage|Monitor' -count=1
+
+  db:integration:sqlite:
+    desc: Run the file-backed SQLite database integration contract
+    dir: server
+    cmds:
+      - go test -tags=integration ./integration -run 'SQLite' -count=1
+
+  db:check:
+    desc: Run backend checks and both supported database integration contracts
+    deps:
+      - backend:check
+      - db:integration:postgres
+      - db:integration:sqlite
+
+  backend:check:
+    desc: Run backend tests and static checks
+    dir: server
+    cmds:
+      - go test ./...
+      - go vet ./...
+
+  frontend:lint:
+    desc: Run frontend lint
+    dir: web
+    cmds:
+      - npm run lint
+
+  frontend:build:
+    desc: Build the frontend
+    dir: web
+    cmds:
+      - npm run build
+
+  frontend:notifications:
+    desc: Run announcement and notification browser verification
+    dir: web
+    cmds:
+      - npm run test:notifications
+
+  frontend:monitoring:
+    desc: Run server monitoring browser verification
+    dir: web
+    cmds:
+      - npm run test:monitoring
+
+  check:
+    desc: Run backend and frontend checks
+    deps:
+      - dev:setup:test
+      - backend:check
+      - frontend:lint
+      - frontend:build
+
+  build:
+    desc: Build release binaries with the production frontend embedded in the API
+    deps:
+      - frontend:build
+    dir: server
+    vars:
+      GOEXE:
+        sh: go env GOEXE
+    cmds:
+      - node ../scripts/prepare-webui.mjs
+      - go build -tags=embedweb -trimpath -o ../bin/weighbridge-server{{.GOEXE}} ./cmd/api
+      - go build -trimpath -o ../bin/weighbridge-migrate{{.GOEXE}} ./cmd/migrate
+      - go build -trimpath -o ../bin/weighbridge-backup{{.GOEXE}} ./cmd/backup
+      - go build -trimpath -o ../bin/weighbridge-host-collector{{.GOEXE}} ./cmd/host-collector
+
+  build:check:
+    desc: Build the release and verify tests and vet with embedded frontend assets
+    deps:
+      - build
+    dir: server
+    cmds:
+      - go test -tags=embedweb ./...
+      - go vet -tags=embedweb ./...
+
+  test:
+    desc: Run the default test suite
+    deps:
+      - backend:test

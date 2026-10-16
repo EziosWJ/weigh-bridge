@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-weighbridge}
+      POSTGRES_USER: ${POSTGRES_USER:-weighbridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-54329}:5432"
+    volumes:
+      - weighbridge_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+      target: migrate
+    environment:
+      APP_ENV: dev
+      APP_DATABASE__URL: postgres://postgres:5432/${POSTGRES_DB:-weighbridge}?sslmode=disable
+      APP_DATABASE__USERNAME: ${POSTGRES_USER:-weighbridge}
+      APP_DATABASE__PASSWORD: ${POSTGRES_PASSWORD}
+      APP_JWT__SECRET: ${APP_JWT__SECRET:?set APP_JWT__SECRET in .env}
+      APP_LOG__LEVEL: debug
+      APP_LOG__FORMAT: text
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["up", "--kind", "all"]
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+      target: api
+    environment:
+      APP_ENV: dev
+      APP_DATABASE__URL: postgres://postgres:5432/${POSTGRES_DB:-weighbridge}?sslmode=disable
+      APP_DATABASE__USERNAME: ${POSTGRES_USER:-weighbridge}
+      APP_DATABASE__PASSWORD: ${POSTGRES_PASSWORD}
+      APP_JWT__SECRET: ${APP_JWT__SECRET:?set APP_JWT__SECRET in .env}
+      APP_SWAGGER__ENABLED: "true"
+      APP_HTTP__ADDRESS: ":8080"
+      APP_MONITORING__ENABLED: ${APP_MONITORING__ENABLED:-false}
+      APP_MONITORING__SOURCE: unix
+      APP_MONITORING__SOCKET_PATH: /run/weighbridge/host-monitor.sock
+      APP_LOG__LEVEL: debug
+      APP_LOG__FORMAT: text
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    volumes:
+      - weighbridge_uploads:/var/lib/weighbridge/uploads
+      - ${HOST_MONITOR_SOCKET_DIR:-/run/weighbridge}:/run/weighbridge:ro
+    group_add:
+      - "${HOST_MONITOR_GID:-1000}"
+    restart: unless-stopped
+
+volumes:
+  weighbridge_postgres_data:
+    name: weighbridge_postgres_data
+  weighbridge_uploads:
+    name: weighbridge_uploads

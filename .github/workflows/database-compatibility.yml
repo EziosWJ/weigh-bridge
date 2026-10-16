@@ -1,0 +1,110 @@
+name: Database compatibility gate
+
+on:
+  push:
+    paths:
+      - "server/**"
+      - "web/**"
+      - "Taskfile.yml"
+      - "scripts/prepare-webui.mjs"
+      - ".github/workflows/database-compatibility.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "web/**"
+      - "Taskfile.yml"
+      - "scripts/prepare-webui.mjs"
+      - ".github/workflows/database-compatibility.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  embedded-release:
+    name: Embedded frontend release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+      - name: Prepare embedded frontend
+        run: node scripts/prepare-webui.mjs
+      - name: Verify embedded release
+        working-directory: server
+        run: |
+          go test -tags=embedweb ./...
+          go vet -tags=embedweb ./...
+          go build -tags=embedweb -trimpath -o ../bin/weighbridge-server ./cmd/api
+
+  backend-check:
+    name: Backend unit tests and vet
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Run backend check
+        run: |
+          go test ./...
+          go vet ./...
+
+  sqlite-contract:
+    name: SQLite migration, API and backup contract
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Check migration streams
+        run: go test ./migrations
+      - name: Run SQLite integration contract
+        run: go test -tags=integration ./integration -run SQLite -count=1
+
+  postgres-contract:
+    name: PostgreSQL integration contract
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Run PostgreSQL integration contract
+        run: >-
+          go test -tags=integration ./integration
+          -run 'Postgres|Auth|RBAC|SysConfig|Department|Dictionary|Login|File|Notification|UserPage'
+          -count=1
