@@ -28,11 +28,10 @@ const router = createMemoryRouter([
       { path: "instant", element: <p>即时页</p> },
       {
         path: "reports",
-        loader: async () => {
+        lazy: async () => {
           await wait(300);
-          return null;
+          return { element: <p>报表页</p> };
         },
-        element: <p>报表页</p>,
       },
     ],
   },

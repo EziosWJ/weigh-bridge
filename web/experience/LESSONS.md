@@ -53,3 +53,9 @@
 - 后端不校验 `configValue` 是否符合 `valueType`，前端需自行校验
 - `BOOLEAN` 类型只接受 `"true"/"false"` 字符串，不接受 `"1"/"0"`
 - 修改时 `configKey` 必须提交（即使置灰不可改）
+
+## 构建维护
+
+- 浏览器兼容性数据过期时，在 `web/` 执行 `npx update-browserslist-db@latest`，保留锁文件中的数据更新。
+- 业务页面使用 React Router 的 `lazy` 动态导入，沿用页面切换进度条；首次直接访问的加载状态由根路由 `hydrateFallbackElement` 展示。
+- 包大小警告优先检查页面是否被静态导入，再按实际依赖分析拆分；不要仅调高 Vite 警告阈值。
