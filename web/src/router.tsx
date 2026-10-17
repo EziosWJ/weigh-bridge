@@ -1,3 +1,4 @@
+import { WeighingOriginalsPage } from "@/pages/weighing/originals";
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AppShell } from "@/components/layout/app-shell";
@@ -30,6 +31,13 @@ import { AnnouncementsPage } from "@/pages/announcements";
 import { AnnouncementManagePage } from "@/pages/system/announcements";
 import { RequireMessageAdmin } from "@/components/auth/require-message-admin";
 
+import { WeighingWorkbenchPage } from "@/pages/weighing/workbench";
+import { WeighingTasksPage, WeighingTaskDetailPage } from "@/pages/weighing/tasks";
+import { WeighingTicketsPage, WeighingTicketDetailPage, WeighingTicketPreviewPage } from "@/pages/weighing/tickets";
+import { WeighingMaterialsPage, WeighingMaterialEditPage, WeighingPartyEditPage, WeighingCategoriesPage } from "@/pages/weighing/materials";
+
+import { DemoSettingsPage } from "@/pages/weighing/demo-panel";
+
 export const router = createBrowserRouter([
   {
     path: "/login",
@@ -43,9 +51,25 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
+      { path: "weighing", element: <Navigate to="/weighing/workbench" replace /> },
+      { path: "weighing/workbench", element: <WeighingWorkbenchPage /> },
+      { path: "weighing/tasks", element: <WeighingTasksPage /> },
+      { path: "weighing/tasks/:id", element: <WeighingTaskDetailPage /> },
+      { path: "weighing/originals", element: <WeighingOriginalsPage /> },
+      { path: "weighing/tickets", element: <WeighingTicketsPage /> },
+      { path: "weighing/tickets/:id", element: <WeighingTicketDetailPage /> },
+      { path: "weighing/tickets/:id/preview", element: <WeighingTicketPreviewPage /> },
+      { path: "weighing/materials", element: <WeighingMaterialsPage key="materials" /> },
+      { path: "weighing/materials/new", element: <WeighingMaterialEditPage /> },
+      { path: "weighing/materials/:id/edit", element: <WeighingMaterialEditPage /> },
+      { path: "weighing/parties", element: <WeighingMaterialsPage key="parties" parties /> },
+      { path: "weighing/parties/new", element: <WeighingPartyEditPage /> },
+      { path: "weighing/parties/:id/edit", element: <WeighingPartyEditPage /> },
+      { path: "weighing/categories", element: <WeighingCategoriesPage /> },
+      { path: "weighing/settings", element: <DemoSettingsPage /> },
       {
         index: true,
-        element: <Navigate to="/dashboard" replace />,
+        element: <Navigate to="/weighing/workbench" replace />,
       },
       {
         path: "dashboard",

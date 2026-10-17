@@ -1,15 +1,11 @@
-# Triage Labels
+# Triage 标签
 
-The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
+| 标准角色 | 本仓库标签 | 含义 |
+| --- | --- | --- |
+| needs-triage | needs-triage | 等待维护者评估 |
+| needs-info | needs-info | 等待补充信息 |
+| ready-for-agent | ready-for-agent | 规格明确，可交给 Agent 执行 |
+| ready-for-human | ready-for-human | 需要人工实施 |
+| wontfix | wontfix | 不予处理 |
 
-| Label in mattpocock/skills | Label in our tracker | Meaning                                  |
-| -------------------------- | -------------------- | ---------------------------------------- |
-| `needs-triage`             | `needs-triage`       | Maintainer needs to evaluate this issue  |
-| `needs-info`               | `needs-info`         | Waiting on reporter for more information |
-| `ready-for-agent`          | `ready-for-agent`    | Fully specified, ready for an AFK agent  |
-| `ready-for-human`          | `ready-for-human`    | Requires human implementation            |
-| `wontfix`                  | `wontfix`            | Will not be actioned                     |
-
-When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
-
-Edit the right-hand column to match whatever vocabulary you actually use.
+技能提到标准角色时，使用本表对应的标签。

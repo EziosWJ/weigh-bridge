@@ -7,7 +7,7 @@
 ## 核心原则
 - 先理解现有结构，再修改代码
 - 优先复用已有组件，不过度封装
-- 修改后执行 `npm run build` 验证
+- 验证遵循根指导与 [AI 开发执行约定](../docs/agents/development.md)；交付前运行规定的前端 lint 和 build，已通过的等价检查不重复执行
 
 ## UI/UX
 - 遵循 `design-system/MASTER.md` 规范

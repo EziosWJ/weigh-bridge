@@ -45,10 +45,10 @@ export function LoginPage() {
     (location.state as { from?: { pathname?: string } } | null)?.from
       ?.pathname;
   const queryRedirect = new URLSearchParams(location.search).get("redirect");
-  let from = stateFrom ?? queryRedirect ?? "/dashboard";
+  let from = stateFrom ?? queryRedirect ?? "/weighing/workbench";
 
   if (from.includes("://") || from.startsWith("//")) {
-    from = "/dashboard";
+    from = "/weighing/workbench";
   }
 
   useEffect(() => {

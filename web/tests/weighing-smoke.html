@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Phase 2A 称重页面冒烟</title>
+    <style>
+      /* tests 不在 Tailwind content 范围，明确模拟真实桌面侧栏占位。 */
+      @media (min-width: 768px) {
+        [data-fixture-sidebar] { position: fixed; top: 64px; bottom: 0; left: 0; z-index: 10; width: 240px; display: flex; flex-direction: column; align-content: flex-start; align-items: flex-start; gap: 16px; }
+        [data-fixture-main] { margin-left: 240px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/tests/weighing-smoke.tsx"></script>
+  </body>
+</html>

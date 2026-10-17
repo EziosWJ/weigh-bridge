@@ -13,7 +13,9 @@
     "test:route-loading": "node tests/route-loading.mjs",
     "test:sidebar-scroll": "node tests/sidebar-scroll.mjs",
     "test:monitoring": "node tests/server-monitoring.mjs",
-    "test:notifications": "node tests/notifications.mjs"
+    "test:notifications": "node tests/notifications.mjs",
+    "test:weighing": "node tests/weighing-core.mjs",
+    "test:weighing:smoke": "node tests/weighing-smoke.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

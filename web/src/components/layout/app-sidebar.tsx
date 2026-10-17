@@ -63,9 +63,10 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
 
   const sidebarNavItems = useMemo(
     () => {
-      const base = user?.roles?.some((role) => role.roleCode === "ADMIN")
-        ? [...defaultNavItems, notificationManageNavItem, announcementManageNavItem]
-        : defaultNavItems;
+      const messageAdmin = user?.roles?.some((role) => role.roleCode === "ADMIN");
+      const base = defaultNavItems.map((item) => item.path === "/messages" && messageAdmin
+        ? { ...item, children: [...(item.children ?? []), notificationManageNavItem, announcementManageNavItem] }
+        : item);
       return mergeNavItems(base, convertUserMenusToNavItems(menus));
     },
     [menus, user],

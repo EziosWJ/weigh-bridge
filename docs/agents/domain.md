@@ -1,51 +1,26 @@
-# Domain Docs
+# 领域文档
 
-How the engineering skills should consume this repo's domain documentation when exploring the codebase.
+本仓库采用 single-context 布局：
+根目录 CONTEXT.md 保存领域术语与项目约束，docs/adr/ 保存决策记录。
+server、web、agent、protocol 不分别建立领域上下文。
 
-## Before exploring, read these
+## 阅读顺序
 
-- **`CONTEXT.md`** at the repo root, or
-- **`CONTEXT-MAP.md`** at the repo root if it exists — it points at one `CONTEXT.md` per context. Read each one relevant to the topic.
-- **`docs/adr/`** — read ADRs that touch the area you're about to work in. In multi-context repos, also check `src/<context>/docs/adr/` for context-scoped decisions.
+1. 探索代码前先读取根 CONTEXT.md。
+2. 涉及既有决策时，读取 docs/adr/ 中与当前主题相关的记录。
+3. 确认业务范围和阶段验收时，按需读取 docs/requirements/ 对应文档。
+4. 修改前端前，读取 web/AGENTS.md 及涉及页面的 Pattern。
 
-If any of these files don't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The producer skill (`/grill-with-docs`) creates them lazily when terms or decisions actually get resolved.
+文档尚不存在时继续当前工作；由 domain-modeling 在术语或决策明确后按需创建。
 
-## File structure
+## 领域语言
 
-Single-context repo (most repos):
+Issue、需求、测试和设计使用 CONTEXT.md 已定义的领域术语。
+发现术语冲突或缺口时明确指出，通过 domain-modeling 澄清并记录。
+需求与实现细节写入对应需求或设计文档，不作为术语定义堆入词汇表。
 
-```
-/
-├── CONTEXT.md
-├── docs/adr/
-│   ├── 0001-event-sourced-orders.md
-│   └── 0002-postgres-for-write-model.md
-└── src/
-```
+## 决策与阶段边界
 
-Multi-context repo (presence of `CONTEXT-MAP.md` at the root):
-
-```
-/
-├── CONTEXT-MAP.md
-├── docs/adr/                          ← system-wide decisions
-└── src/
-    ├── ordering/
-    │   ├── CONTEXT.md
-    │   └── docs/adr/                  ← context-specific decisions
-    └── billing/
-        ├── CONTEXT.md
-        └── docs/adr/
-```
-
-## Use the glossary's vocabulary
-
-When your output names a domain concept (in an issue title, a refactor proposal, a hypothesis, a test name), use the term as defined in `CONTEXT.md`. Don't drift to synonyms the glossary explicitly avoids.
-
-If the concept you need isn't in the glossary yet, that's a signal — either you're inventing language the project doesn't use (reconsider) or there's a real gap (note it for `/grill-with-docs`).
-
-## Flag ADR conflicts
-
-If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
-
-> _Contradicts ADR-0007 (event-sourced orders) — but worth reopening because…_
+方案与既有 ADR 冲突时，说明冲突及重新决策的理由。
+历史脚手架 ADR 保留来源与适用背景，不能直接作为酒厂业务已实现的证据。
+区分计划能力、当前界面模拟能力与实际完成能力。

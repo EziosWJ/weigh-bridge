@@ -1,0 +1,77 @@
+import { useMemo } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { Field } from '@/components/common/field';
+import { SearchFilterBar } from '@/components/common/search-filter-bar';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { useWeighingStore } from '@/store/weighing-store';
+import { beijingTime } from '@/lib/weighing/query';
+import type { HistoryEntry, TaskInput, WeighingFilter } from '@/types/weighing';
+import { roleLabels, partyRoleLabels, partyNatureLabels } from '@/types/weighing';
+import { WeighingLookup } from './lookup-field';
+
+export function DemoBanner() {
+  const { data, storageError } = useWeighingStore();
+  const location = useLocation();
+  const settingsUrl = `/weighing/settings?returnTo=${encodeURIComponent(location.pathname + location.search)}`;
+  return <aside className="mb-4 rounded-control border border-border bg-neutral-background px-4 py-2 text-sm text-text-secondary" aria-label="测试环境提示">
+    <div className="flex flex-wrap items-center justify-between gap-2"><span><strong className="text-text-primary">测试环境</strong> · 模拟重量与证据 · 摄像头未接入 · 仅浏览器保存</span><Link className="text-primary hover:underline" to={settingsUrl}>演示岗位：{roleLabels[data.config.role]} · 设置</Link></div>
+    {data.pending && <p className="mt-2 text-warning">上次称重提交结果待核实。<Link className="ml-1 text-primary underline" to={`/weighing/workbench?task=${encodeURIComponent(data.pending.taskId)}`}>前往工作台查询原结果</Link></p>}
+    {storageError && <p role="alert" className="mt-2 text-error">{storageError}</p>}
+  </aside>;
+}
+
+export function BusinessFields({ value, onChange, lockDirection = false, hidePlate = false, compact = false }: { value: TaskInput; onChange: (value: TaskInput) => void; lockDirection?: boolean; hidePlate?: boolean; compact?: boolean }) {
+  const { materials, parties } = useWeighingStore(s => s.data);
+  const update = (patch: Partial<TaskInput>) => onChange({ ...value, ...patch });
+  const materialOptions = useMemo(() => materials.filter(m => m.enabled || m.id === value.materialId).map(m => ({ id: m.id, name: m.name, code: m.code, details: [m.spec || '未填写规格', m.code], tags: ['吨'], disabled: !m.enabled })), [materials, value.materialId]);
+  const partyOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r])], disabled: !p.enabled })), [parties, value.partyId, value.direction]);
+  const carrierOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.carrierId) && p.roles.includes('carrier')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], '承运商'], disabled: !p.enabled })), [parties, value.carrierId]);
+  const party = parties.find(p => p.id === value.partyId);
+  const carrier = parties.find(p => p.id === value.carrierId);
+  const supplementSummary = [carrier && `承运：${carrier.name}`, value.contactName && `联系人：${value.contactName}`, value.driver && `司机：${value.driver}`, value.driverPhone && `司机电话：${value.driverPhone}`, value.remark && `备注：${value.remark}`].filter(Boolean).join(' · ') || '按需填写承运方、联系人、司机或备注';
+  const supplementary = <>
+    <Field label="承运方（选填）" help="可与供收方相同，须具有承运商身份"><WeighingLookup label="承运方" value={value.carrierId ?? ''} options={carrierOptions} onChange={carrierId => update({ carrierId })} /></Field>
+    {!!party?.contacts.length && <Field label="选择主体联系人" htmlFor="business-contact"><Select id="business-contact" value={party.contacts.find(c => c.name === value.contactName && c.phone === value.contactPhone)?.id ?? ''} onChange={e => { const contact = party.contacts.find(c => c.id === e.target.value); if (contact) update({ contactName: contact.name, contactPhone: contact.phone }); }}><option value="">手工填写本趟联系信息</option>{party.contacts.map(c => <option key={c.id} value={c.id}>{c.name} · {c.phone || '无电话'}{c.isDefault ? '（默认）' : ''}</option>)}</Select></Field>}
+    <Field label="本趟联系人（选填）" htmlFor="business-contact-name"><Input id="business-contact-name" value={value.contactName ?? ''} onChange={e => update({ contactName: e.target.value })} /></Field>
+    <Field label="联系手机／电话（选填）" htmlFor="business-contact-phone"><Input id="business-contact-phone" type="tel" value={value.contactPhone ?? ''} onChange={e => update({ contactPhone: e.target.value })} /></Field>
+    <Field label="司机姓名（选填）" htmlFor="business-driver"><Input id="business-driver" value={value.driver} onChange={e => update({ driver: e.target.value })} /></Field>
+    <Field label="司机电话（选填）" htmlFor="business-driver-phone"><Input id="business-driver-phone" type="tel" value={value.driverPhone ?? ''} onChange={e => update({ driverPhone: e.target.value })} /></Field>
+    <Field label="备注（选填）" htmlFor="business-remark"><Textarea id="business-remark" value={value.remark} onChange={e => update({ remark: e.target.value })} rows={2} /></Field>
+  </>;
+  return <div className="grid gap-x-4 md:grid-cols-2">
+    {!hidePlate && <Field label="车牌（手填）" htmlFor="business-plate" required><Input id="business-plate" value={value.plate} onChange={e => update({ plate: e.target.value })} placeholder="如：川A12345" /></Field>}
+    <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定' : '入厂先毛后皮，出厂先皮后毛'}><Select id="business-direction" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select></Field>
+    <Field label="物料" required><WeighingLookup label="物料" value={value.materialId} options={materialOptions} onChange={materialId => update({ materialId })} /></Field>
+    <div className={compact ? "md:col-span-2" : undefined}>
+    <Field label={value.direction === 'inbound' ? '供货方' : '收货方'} required><WeighingLookup label={value.direction === 'inbound' ? '供货方' : '收货方'} value={value.partyId} options={partyOptions} onChange={partyId => { const p = parties.find(p => p.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} /></Field>
+    </div>
+    {compact ? <details className="min-w-0 border-t border-border pt-3 md:col-span-2">
+      <summary className="cursor-pointer rounded-control text-sm text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        <span className="font-medium text-text-primary">补充运输信息（选填）</span>
+        <span className="mt-1 block truncate text-xs" title={supplementSummary}>{supplementSummary}</span>
+      </summary>
+      <div className="mt-4 grid gap-x-4 md:grid-cols-2">{supplementary}</div>
+    </details> : supplementary}
+  </div>;
+}
+
+export function WeighingFilters({ value, onChange, ticket = false, dateLabel, hideStatus = false }: { value: WeighingFilter; onChange: (value: WeighingFilter) => void; ticket?: boolean; dateLabel?: string; hideStatus?: boolean }) {
+  const { materials, parties } = useWeighingStore(s => s.data);
+  const change = (patch: Partial<WeighingFilter>) => onChange({ ...value, ...patch });
+  return <SearchFilterBar actions={<Button variant="secondary" onClick={() => onChange({})}>清空筛选</Button>}>
+    <Input aria-label="车牌或编号" placeholder={ticket ? '车牌 / 测试单号 / 任务号' : '车牌 / 任务号'} value={value.keyword ?? ''} onChange={e => change({ keyword: e.target.value })} />
+    <Select aria-label="筛选方向" value={value.direction ?? ''} onChange={e => change({ direction: e.target.value })}><option value="">全部方向</option><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
+    <Select aria-label="筛选物料" value={value.materialId ?? ''} onChange={e => change({ materialId: e.target.value })}><option value="">全部物料</option>{materials.map(m => <option key={m.id} value={m.id}>{m.name} {m.spec}</option>)}</Select>
+    <Select aria-label="筛选供收方" value={value.partyId ?? ''} onChange={e => change({ partyId: e.target.value })}><option value="">全部供收方</option>{parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
+    {!hideStatus && <Select aria-label="筛选状态" value={value.status ?? ''} onChange={e => change({ status: e.target.value })}><option value="">全部状态</option>{(ticket ? [['valid', '有效'], ['void', '作废']] : [['first', '待首次称重'], ['second', '待二次称重'], ['completed', '已完成'], ['terminated', '已终止']]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>}
+    <Field label={`${dateLabel ?? (ticket ? '出单' : '创建')}起始日期（北京时间）`} htmlFor="filter-date-from"><Input id="filter-date-from" type="date" value={value.from ?? ''} onChange={e => change({ from: e.target.value })} /></Field>
+    <Field label={`${dateLabel ?? (ticket ? '出单' : '创建')}结束日期（北京时间）`} htmlFor="filter-date-to"><Input id="filter-date-to" type="date" value={value.to ?? ''} onChange={e => change({ to: e.target.value })} /></Field>
+  </SearchFilterBar>;
+}
+
+export function HistoryList({ entries }: { entries: HistoryEntry[] }) {
+  return <ol className="space-y-2 text-sm">{entries.map((entry, i) => <li key={i} className="border-b border-border pb-2 last:border-0"><span className="tabular-nums text-text-tertiary">{beijingTime(entry.at)}（北京时间）</span><span className="mx-2">{roleLabels[entry.role]} · {entry.action}</span>{entry.reason && <p className="mt-1 break-words text-text-secondary">{entry.reason}</p>}</li>)}{!entries.length && <li className="text-text-tertiary">暂无操作记录</li>}</ol>;
+}

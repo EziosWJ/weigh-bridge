@@ -1,4 +1,5 @@
 import {
+  Scale,
   FileSearch,
   FileText,
   ListOrdered,
@@ -25,60 +26,43 @@ export type NavItem = {
 
 export const defaultNavItems: NavItem[] = [
   {
-    label: "工作台",
-    path: "/dashboard",
-    icon: LayoutDashboard,
-    sortOrder: 0,
-  },
-  {
-    label: "我的通知",
-    path: "/notifications",
-    icon: Bell,
-    sortOrder: 0,
-  },
-  { label: "公告", path: "/announcements", icon: FileText, sortOrder: 0 },
-
-  {
-    label: "页面示例",
-    path: "/examples",
-    icon: FileText,
-    sortOrder: 0,
+    label: "称重作业", path: "/weighing/operations", icon: Scale, sortOrder: -40,
     children: [
-      {
-        label: "标准表单 Demo",
-        path: "/forms/basic",
-        icon: FileText,
-      },
-      {
-        label: "标准列表页 Demo",
-        path: "/examples/list",
-        icon: Table2,
-      },
-      {
-        label: "树形列表 Demo",
-        path: "/examples/tree",
-        icon: Network,
-      },
-      {
-        label: "左树右表 Demo",
-        path: "/examples/tree-table",
-        icon: PanelLeft,
-      },
-      {
-        label: "详情页 Demo",
-        path: "/examples/detail",
-        icon: FileSearch,
-      },
-      {
-        label: "文件上传 Demo",
-        path: "/examples/file-upload",
-        icon: Upload,
-      },
-      {
-        label: "浏览选择 Demo",
-        path: "/examples/browse-picker",
-        icon: ListOrdered,
-      },
+      { label: "称重工作台", path: "/weighing/workbench", icon: Scale },
+      { label: "运输任务", path: "/weighing/tasks", icon: Table2 },
+    ],
+  },
+  {
+    label: "单据查询", path: "/weighing/documents", icon: FileSearch, sortOrder: -30,
+    children: [{ label: "原始称重", path: "/weighing/originals", icon: FileSearch }, { label: "最终单据", path: "/weighing/tickets", icon: FileText }],
+  },
+  {
+    label: "基础资料", path: "/weighing/references", icon: Table2, sortOrder: -20,
+    children: [
+      { label: "物料资料", path: "/weighing/materials", icon: Table2 },
+      { label: "往来主体", path: "/weighing/parties", icon: Network },
+      { label: "物料分类", path: "/weighing/categories", icon: ListOrdered },
+    ],
+  },
+  { label: "演示设置", path: "/weighing/settings", icon: PanelLeft, sortOrder: -10 },
+  { label: "系统概览", path: "/dashboard", icon: LayoutDashboard, sortOrder: 10 },
+  {
+    label: "消息中心", path: "/messages", icon: Bell, sortOrder: 20,
+    children: [
+      { label: "我的通知", path: "/notifications", icon: Bell },
+      { label: "公告", path: "/announcements", icon: FileText },
+    ],
+  },
+  {
+    label: "开发示例", path: "/examples", icon: FileText, sortOrder: 100,
+    children: [
+      { label: "标准表单 Demo", path: "/forms/basic", icon: FileText },
+      { label: "标准列表页 Demo", path: "/examples/list", icon: Table2 },
+      { label: "树形列表 Demo", path: "/examples/tree", icon: Network },
+      { label: "左树右表 Demo", path: "/examples/tree-table", icon: PanelLeft },
+      { label: "详情页 Demo", path: "/examples/detail", icon: FileSearch },
+      { label: "文件上传 Demo", path: "/examples/file-upload", icon: Upload },
+      { label: "浏览选择 Demo", path: "/examples/browse-picker", icon: ListOrdered },
     ],
   },
 ];
@@ -206,12 +190,21 @@ export function createUserMenuTitleMap(
 }
 
 export const staticRouteTitleMap: Record<string, string> = {
-  "/dashboard": "工作台",
+  "/weighing": "称重演示",
+  "/weighing/workbench": "称重工作台",
+  "/weighing/tasks": "运输任务",
+  "/weighing/tickets": "最终单据",
+  "/weighing/originals": "原始称重",
+  "/weighing/materials": "物料资料",
+  "/weighing/parties": "往来主体",
+  "/weighing/settings": "演示设置",
+  "/weighing/categories": "物料分类",
+  "/dashboard": "系统概览",
   "/notifications": "我的通知",
   "/announcements": "公告",
   "/system/announcement": "公告管理",
   "/forms/basic": "标准表单 Demo",
-  "/examples": "页面示例",
+  "/examples": "开发示例",
   "/examples/list": "标准列表页 Demo",
   "/examples/tree": "树形列表 Demo",
   "/examples/tree-table": "左树右表 Demo",
