@@ -19,7 +19,7 @@ const compile = async (relative) => {
   await writeFile(output, compiled);
 };
 await writeFile(path.join(temporary, 'package.json'), '{"type":"module"}');
-await Promise.all(['types/weighing.ts', 'lib/weighing/camera.ts', 'lib/weighing/weights.ts', 'lib/weighing/seed.ts', 'lib/weighing/engine.ts', 'lib/weighing/migration.ts', 'lib/weighing/query.ts'].map(compile));
+await Promise.all(['types/weighing.ts', 'lib/weighing/plate.ts', 'lib/weighing/camera.ts', 'lib/weighing/weights.ts', 'lib/weighing/seed.ts', 'lib/weighing/engine.ts', 'lib/weighing/migration.ts', 'lib/weighing/query.ts'].map(compile));
 const { createInitialState } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/seed.js')));
 const { formatWeightInputValue, formatWeightValue, formatWeight, needsLegacyWeightReview, weightValues } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/weights.js')));
 const { applyCommand } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/engine.js')));
@@ -110,11 +110,11 @@ test('结果不明两种分支先查询，成功回到原单，失败重采，�
   }
 });
 
-test('主管重称与纠错保留原记录，装载变化、方向变化拒绝；终止释放车牌且不可恢复', () => {
+test('操作员重称与纠错保留原记录，装载变化、方向变化拒绝；终止释放车牌且不可恢复', () => {
   const first = confirm(start(), 'first', 32);
   const taskId = first.tasks[0].id;
-  assert.throws(() => run(first, { type: 'terminate', taskId, reason: '取消' }), /主管/);
-  let supervisor = run(config(first, { role: 'supervisor', weight: 31 }), { type: 'capture' });
+  assert.equal(run(first, { type: 'terminate', taskId, reason: '取消' }).tasks[0].status, 'terminated');
+  let supervisor = run(config(first, { weight: 31 }), { type: 'capture' });
   assert.throws(() => run(supervisor, { type: 'reweigh', taskId, reason: '复核', sameLoad: false, checked: true }), /装载/);
   supervisor = run(supervisor, { type: 'reweigh', taskId, reason: '复核', sameLoad: true, checked: true });
   assert.equal(supervisor.tasks[0].records.length, 2);
@@ -144,25 +144,27 @@ test('作废关联重开保留重量与原快照，同任务唯一有效单，�
   assert.deepEqual([next.gross, next.tare, next.net], [old.gross, old.tare, old.net]);
   assert.equal(reopened.tickets.find((ticket) => ticket.id === old.id).plate, old.plate);
   assert.equal(reopened.tickets.filter((ticket) => ticket.taskId === old.taskId && ticket.status === 'valid').length, 1);
-  assert.throws(() => run(reopened, command), /有效测试单/);
+  assert.deepEqual(run(reopened, command), reopened);
   const nextVoided = run(reopened, { type: 'voidTicket', ticketId: next.id, reason: '再核对' });
   assert.throws(() => run(nextVoided, command), /已有更正重开/);
 });
 
-test('北京时间跨天需要说明，疑点交主管核查，无法确认可终止', () => {
-  const evening = '2026-10-15T15:59:00.000Z'; // 北京时间 23:59
-  const morning = '2026-10-15T16:01:00.000Z'; // 北京时间次日 00:01
-  const first = confirm(start('inbound', evening), 'first', 32, evening);
+test('隔夜卸货回磅直接续称，无必填说明；既有运输疑点由操作员核实', () => {
+  const evening = '2026-10-15T15:59:00.000Z';
+  const morning = '2026-10-15T16:01:00.000Z';
+  const first = confirm(start('inbound', evening), 'first', 30, evening);
   const taskId = first.tasks[0].id;
-  assert.throws(() => confirm(first, 'second', 12, morning), /跨天/);
-  assert.throws(() => run(first, { type: 'verifyDay', taskId, reason: '', doubtful: false, confirmed: true }, morning), /说明/);
-  const ordinary = run(first, { type: 'verifyDay', taskId, reason: '仍为昨日原车原运输，已核对首次记录', doubtful: false, confirmed: true }, morning);
-  assert.equal(confirm(ordinary, 'second', 12, morning).tasks[0].status, 'completed');
+  const finished = confirm(first, 'second', 10, morning);
+  assert.equal(finished.tasks[0].id, taskId);
+  assert.deepEqual(finished.tasks[0].records.map(r => r.at), [evening, morning]);
+  assert.equal(finished.tickets[0].net, 20);
+  assert.match(finished.tasks[0].history.map(h => h.action).join(' '), /隔日续称/);
+  const ordinary = run(first, { type: 'verifyDay', taskId, reason: '', doubtful: false, confirmed: true }, morning);
+  assert.equal(confirm(ordinary, 'second', 10, morning).tasks[0].status, 'completed');
   const doubt = run(first, { type: 'verifyDay', taskId, reason: '装载情况不明', doubtful: true, confirmed: false }, morning);
-  assert.throws(() => confirm(doubt, 'second', 12, morning), /疑点/);
-  assert.throws(() => run(doubt, { type: 'verifyDay', taskId, reason: '确认', doubtful: false, confirmed: true }, morning), /主管/);
-  const resolved = run(config(doubt, { role: 'supervisor' }), { type: 'verifyDay', taskId, reason: '核实仍属原运输', doubtful: false, confirmed: true }, morning);
-  assert.equal(confirm(resolved, 'second', 12, morning).tasks[0].status, 'completed');
+  assert.throws(() => confirm(doubt, 'second', 10, morning), /疑点/);
+  const resolved = run(doubt, { type: 'verifyDay', taskId, reason: '', doubtful: false, confirmed: true }, morning);
+  assert.equal(confirm(resolved, 'second', 10, morning).tasks[0].status, 'completed');
 });
 
 test('岗位、占用和接管入口检查，管理员只维护资料且引用和快照受保护', () => {
@@ -170,7 +172,7 @@ test('岗位、占用和接管入口检查，管理员只维护资料且引用�
   const occupied = run(state, { type: 'occupy', owner: 'other' });
   assert.throws(() => run(occupied, { type: 'capture' }), /占用/);
   assert.throws(() => run(occupied, { type: 'occupy', owner: null }), /接管/);
-  assert.throws(() => run(occupied, { type: 'takeover', reason: '交班' }), /主管/);
+  assert.equal(run(occupied, { type: 'takeover', reason: '交班' }).owner, 'self');
   const takeover = run(config(occupied, { role: 'supervisor' }), { type: 'takeover', reason: '交班' });
   assert.equal(takeover.owner, 'self');
   const admin = config(takeover, { role: 'admin' });
@@ -184,18 +186,18 @@ test('岗位、占用和接管入口检查，管理员只维护资料且引用�
   assert.throws(() => run(config(renamed, { role: 'operator' }), { type: 'createTask', input: input('inbound', '川C00001') }), /启用/);
 });
 
-test('打印未知先核实、明确失败可重试、已出纸补打须主管原因授权且沿原号', () => {
+test('打印未知先核实、明确失败可重试、已出纸补打由操作员说明原因且沿原号', () => {
   let state = completed();
   const ticketId = state.tickets[0].id;
   state = run(config(state, { printOutcome: 'unknown' }), { type: 'previewPrint', ticketId });
   assert.equal(state.tickets[0].printStatus, 'unknown');
-  assert.throws(() => run(state, { type: 'previewPrint', ticketId }), /先由主管核实/);
+  assert.throws(() => run(state, { type: 'previewPrint', ticketId }), /先由操作员核实/);
   assert.throws(() => run(config(state, { role: 'supervisor' }), { type: 'authorizeReprint', ticketId, reason: '重打' }), /先核实/);
-  state = run(config(state, { role: 'supervisor' }), { type: 'resolvePrint', ticketId, printed: false, reason: '确认未出纸' });
+  state = run(state, { type: 'resolvePrint', ticketId, printed: false, reason: '确认未出纸' });
   state = run(config(state, { printOutcome: 'failed' }), { type: 'previewPrint', ticketId });
   assert.equal(state.tickets[0].reprintCount, 0);
   state = run(config(state, { printOutcome: 'printed' }), { type: 'previewPrint', ticketId });
-  assert.throws(() => run(state, { type: 'previewPrint', ticketId }), /授权补打/);
+  assert.throws(() => run(state, { type: 'previewPrint', ticketId }), /填写原因后补打/);
   assert.throws(() => run(state, { type: 'authorizeReprint', ticketId, reason: '' }), /原因/);
   state = run(state, { type: 'authorizeReprint', ticketId, reason: '原联污损' });
   state = run(config(state, { role: 'operator' }), { type: 'previewPrint', ticketId });
@@ -207,13 +209,13 @@ test('打印未知先核实、明确失败可重试、已出纸补打须主管�
 test('重置恢复示例状态，仅返回本模块新数据', () => {
   assert.throws(() => run(completed(), { type: 'reset' }), /管理员/);
   const reset = run(config(completed(), { role: 'admin' }), { type: 'reset' });
-  assert.deepEqual(reset, createInitialState(now));
+  assert.deepEqual(reset, { ...createInitialState(now), resetAt: now });
   assert.ok(reset.tasks.every((task) => task.example));
   assert.ok(reset.tickets.some((ticket) => ticket.status === 'void'));
   const crossDay = reset.tasks.find((task) => task.id === 'TEST-T-007');
   assert.equal(crossDay.status, 'second');
   assert.ok(beijingDate(crossDay.records[0].at) < beijingDate(now));
-  assert.match(crossDay.remark, /跨天待核实/);
+  assert.match(crossDay.remark, /过夜车/);
 });
 
 test('查询按北京时间分别使用创建与出单日期，CSV 保留测试单位并正确转义', () => {
@@ -411,11 +413,11 @@ test('模拟抓拍绑定采集时间、重量、视角和当前车牌，不能�
   assert.throws(() => run({ ...collected, capture: undefined }, command), /抓拍缺失/);
   assert.throws(() => run({ ...collected, capture: { ...collected.capture, weight: 123 } }, command), /重量不一致/);
   const selected = run(createInitialState(now), { type: 'capture', taskId: 'TEST-T-001', plate: '川B54321' });
-  assert.equal(selected.capture.plate, '川A·示例01');
+  assert.equal(selected.capture.plate, '晋A10001');
   const unbound = run(createInitialState(now), { type: 'capture' });
   assert.equal(unbound.capture.plate, undefined);
   const legacy = run(unbound, { type: 'confirm', taskId: 'TEST-T-006', stage: 'first', checked: true });
-  assert.equal(legacy.tasks.find((task) => task.id === 'TEST-T-006').records[0].capture.plate, '川A·示例06');
+  assert.equal(legacy.tasks.find((task) => task.id === 'TEST-T-006').records[0].capture.plate, '晋A10006');
 });
 
 test('换图、重新采集和重称不覆盖旧图，作废重开保留原记录图片', () => {
@@ -441,10 +443,11 @@ test('换图、重新采集和重称不覆盖旧图，作废重开保留原记�
   assert.equal(state.tickets[0].records[0].capture.plate, '川A12345');
 });
 
-test('配置、草稿、接管与未知失败清当前采集；缓存恢复保历史图且无图历史不反填', () => {
+test('配置、换车、接管与未知失败清当前采集；同车补资料保留依据，缓存恢复保历史图', () => {
   const captured = run(createInitialState(now), { type: 'capture' });
   assert.equal(run(captured, { type: 'config', patch: { cameraPreset: 'rear' } }).capture, undefined);
-  assert.equal(run(captured, { type: 'draft', patch: { driver: '新司机' } }).capture, undefined);
+  assert.deepEqual(run(captured, { type: 'draft', patch: { driver: '新司机' } }).capture, captured.capture);
+  assert.equal(run(captured, { type: 'draft', patch: { plate: '川A换车01' } }).capture, undefined);
   assert.equal(run(captured, { type: 'occupy', owner: 'other' }).capture, undefined);
   const supervisor = run(config(captured, { role: 'supervisor' }), { type: 'capture' });
   assert.equal(run(supervisor, { type: 'takeover', reason: '交接班' }).capture, undefined);
@@ -479,7 +482,7 @@ test('两方向毛皮独立扣减保留测量与证据，原因选填且记录�
     assert.deepEqual(ticket.adjustment.before, ticket.adjustment.original);
     assert.deepEqual(ticket.adjustment.after, { gross: 29.8, tare: 9.9, net: 19.9 });
     assert.equal(ticket.adjustment.actor, '测试操作员甲'); assert.equal(ticket.adjustment.at, now);
-    assert.equal(ticket.adjustment.role, 'operator'); assert.equal(ticket.adjustment.reason, undefined);
+    assert.equal(ticket.adjustment.role, 'operator'); assert.equal(ticket.adjustment.reason, '磅精度调整');
     assert.deepEqual(ticket.records, state.tasks[0].records);
     assert.deepEqual(ticket.records.map(r => r.weight), direction === 'inbound' ? [30, 10] : [10, 30]);
     assert.ok(ticket.records.every(r => r.capture.weight === r.weight));
@@ -496,7 +499,7 @@ test('非法扣减与原始异常不能出单，失败不修改状态；保留�
   for (const finalWeights of [
     { gross: -0.001, tare: 10 }, { gross: NaN, tare: 10 },
     { gross: Infinity, tare: 10 }, { gross: 30, tare: 0 },
-    { gross: 30.001, tare: 10 }, { gross: 10, tare: 10 }, { gross: 20, tare: 10.001 }, { gross: 29.9999, tare: 10 },
+    { gross: 10, tare: 10 }, { gross: 29.9999, tare: 10 },
   ]) assert.throws(() => run(ready, { type: 'confirm', taskId: ready.tasks[0].id, stage: 'second', checked: true, finalWeights }));
   assert.deepEqual(ready, before);
   const bad = run(config(first, { weight: 31 }), { type: 'capture' });
@@ -519,10 +522,10 @@ test('未知提交恢复保持原扣减，失败结果仍须重采', () => {
   }
 });
 
-test('主管重开保留旧扣减与证据，原始列表不增行，独立日期与双汇总不重复计重', () => {
+test('操作员重开保留旧调整与证据，原始列表不增行，独立日期与双汇总不重复计重', () => {
   let state = completeWithFinalWeights('inbound', { gross: 29.8, tare: 9.9 });
   const source = structuredClone(state.tickets[0]); const oldId = source.id;
-  assert.throws(() => run(state, { type: 'reopenTicket', ticketId: oldId, input: input(), reason: '修正', evidenceValid: true }), /主管/);
+  assert.throws(() => run(state, { type: 'reopenTicket', ticketId: oldId, input: input(), reason: '修正', evidenceValid: true }), /先作废/);
   state = config(state, { role: 'supervisor' });
   state = run(state, { type: 'voidTicket', ticketId: oldId, reason: '扣减填错' });
   assert.equal(exportOriginalSummaryCsv(filterOriginalWeighings(state.tasks, state.tickets, { keyword: source.taskId })).split('\r\n').length, 1);
@@ -581,4 +584,134 @@ test('零扣减旧缓存继续可查且不伪造审计，新扣减快照序列�
   const normalizedUnits = migrateWeighingState(oldUnitV3, now);
   assert.ok(normalizedUnits.materials.every(item => item.unit === '吨'));
   assert.ok(normalizedUnits.tickets.every(item => item.unit === '吨'));
+});
+
+
+test('两方向均可先定位车牌采集，再补资料并一次确认首磅；改车牌或失稳不能沿用采集', () => {
+  for (const direction of ['inbound', 'outbound']) {
+    const initial = createInitialState(now);
+    const draft = run(config(initial, { weight: direction === 'inbound' ? 32 : 12 }), { type: 'draft', patch: { plate: input(direction).plate } });
+    const collected = run(draft, { type: 'capture', plate: draft.draft.plate });
+    const filled = run(collected, { type: 'draft', patch: input(direction) });
+    assert.deepEqual(filled.capture, collected.capture);
+    assert.equal(filled.sampleReady, true);
+    assert.equal(filled.tasks.length, initial.tasks.length);
+    const command = { type: 'firstWeigh', input: filled.draft, checked: true, requestId: filled.draftRequestId };
+    const confirmed = run(filled, command);
+    assert.equal(confirmed.tasks[0].records[0].capture.id, collected.capture.id);
+    assert.equal(confirmed.tasks[0].records[0].kind, direction === 'inbound' ? 'gross' : 'tare');
+    assert.equal(confirmed.tasks.length, initial.tasks.length + 1);
+    const switched = run(filled, { type: 'draft', patch: { plate: '川A另一车' } });
+    assert.equal(switched.sampleReady, false);
+    assert.throws(() => run(switched, { ...command, input: switched.draft }), /重新采集/);
+    const unstable = run(filled, { type: 'config', patch: { stable: false } });
+    assert.equal(unstable.capture, undefined);
+    assert.throws(() => run(unstable, command), /失稳/);
+  }
+});
+
+test('双向调整支持超原始值、默认备注与人工来源，原始依据不动', () => {
+  for (const direction of ['inbound', 'outbound']) {
+    for (const reason of [undefined, '', '   ', '核对磅精度']) {
+      const state = completeWithFinalWeights(direction, { gross: 31, tare: 11, reason });
+      const ticket = state.tickets[0];
+      assert.equal(ticket.net, 20);
+      assert.equal(ticket.adjustment.grossDeduction, -1);
+      assert.equal(ticket.adjustment.tareDeduction, -1);
+      assert.equal(ticket.adjustment.reason, reason?.trim() || '磅精度调整');
+      assert.equal(ticket.adjustment.source, 'manual');
+      assert.deepEqual(ticket.records.map(r => r.weight), direction === 'inbound' ? [30, 10] : [10, 30]);
+      assert.match(exportTicketsCsv([ticket]), /"-1","-1"/);
+      assert.match(exportTicketsCsv([ticket]), /人工调整最终重量/);
+    }
+  }
+  assert.equal(completeWithFinalWeights('inbound', { gross: 30, tare: 10 }).tickets[0].adjustment.reason, undefined);
+});
+
+test('作废后只重称皮重并沿用毛重，旧单快照不变，重开只汇总一次且持久化', () => {
+  let state = completeWithFinalWeights('inbound', { gross: 30, tare: 9.9 });
+  const old = structuredClone(state.tickets[0]);
+  const taskId = old.taskId;
+  assert.throws(() => run(state, { type: 'reweigh', taskId, stage: 'second', reason: '皮重偏差', sameLoad: true, otherValid: true, checked: true }), /先作废/);
+  state = run(state, { type: 'voidTicket', ticketId: old.id, reason: '皮重偏差' });
+  state = run(config(state, { weight: 11 }), { type: 'capture', taskId });
+  const command = { type: 'reweigh', taskId, stage: 'second', reason: '空载重新核对', sameLoad: true, otherValid: true, checked: true, captureId: state.capture.id, actor: '操作员乙' };
+  assert.throws(() => run(state, { ...command, sameLoad: false }), /装载/);
+  assert.throws(() => run(state, { ...command, otherValid: false }), /另一磅/);
+  const nextDay = '2026-10-17T03:00:00.000Z';
+  state = run(state, command, nextDay);
+  const records = state.tasks[0].records;
+  assert.equal(records.length, 3);
+  assert.deepEqual(records[0], old.records[0]);
+  assert.equal(records[2].replaces, old.records[1].id);
+  assert.equal(records[2].retainedRecordId, old.records[0].id);
+  assert.equal(records[2].actor, '操作员乙');
+  assert.deepEqual(run(state, command, nextDay).tasks[0].records, records);
+  let oldNow = state.tickets.find(t => t.id === old.id);
+  assert.deepEqual(oldNow.records, old.records); assert.deepEqual(oldNow.adjustment, old.adjustment);
+  const reopen = { type: 'reopenTicket', ticketId: old.id, input: input(), reason: '按新皮重重开', evidenceValid: true, finalWeights: { gross: 30, tare: 11 } };
+  state = run(state, reopen, nextDay);
+  const current = state.tickets[0];
+  assert.equal(current.previousId, old.id); assert.equal(current.net, 19);
+  assert.deepEqual(current.records, records);
+  assert.deepEqual(current.adjustment.before, old.adjustment.after);
+  assert.equal(state.tasks[0].status, 'completed');
+  assert.equal(state.tickets.filter(t => t.taskId === taskId && t.status === 'valid').length, 1);
+  assert.deepEqual(run(state, reopen, nextDay), state);
+  const rows = filterOriginalWeighings(state.tasks, state.tickets, { keyword: taskId, from: '2026-10-17' });
+  assert.equal(rows.length, 1); assert.equal(rows[0].original.tare, 11);
+  assert.match(exportOriginalSummaryCsv(rows), /"1","19","吨"/);
+  assert.match(exportSummaryCsv(state.tickets.filter(t => t.taskId === taskId)), /"1","19","吨"/);
+  state = migrateWeighingState(JSON.parse(JSON.stringify(state)), nextDay);
+  oldNow = state.tickets.find(t => t.id === old.id);
+  assert.deepEqual(oldNow.records, old.records); assert.deepEqual(oldNow.adjustment, old.adjustment);
+  assert.deepEqual(state.tasks[0].records, records);
+});
+
+test('单磅重称和重开结果不明先查询，失败不伪造成功，重试不重复', () => {
+  for (const submission of ['unknown-success', 'unknown-failure']) {
+    let state = completed(); const old = state.tickets[0]; const taskId = old.taskId;
+    state = run(state, { type: 'voidTicket', ticketId: old.id, reason: '复核' });
+    state = run(config(state, { weight: 11, submission }), { type: 'capture', taskId });
+    const command = { type: 'reweigh', taskId, stage: 'second', reason: '重称皮重', sameLoad: true, otherValid: true, checked: true, captureId: state.capture.id };
+    state = run(state, command);
+    assert.equal(state.pending.operation, 'reweigh');
+    assert.equal(state.tasks[0].records.length, submission === 'unknown-success' ? 3 : 2);
+    assert.throws(() => run(state, command), /先查询/);
+    state = run(state, { type: 'resolveSubmission' });
+    if (submission === 'unknown-failure') {
+      assert.throws(() => run(state, command), /重新采集/);
+      state = run(state, { type: 'capture', taskId });
+      state = run(state, { ...command, captureId: state.capture.id });
+    } else state = run(state, command);
+    assert.equal(state.tasks[0].records.length, 3);
+    state = config(state, { submission });
+    const reopen = { type: 'reopenTicket', ticketId: old.id, input: input(), reason: '重开', evidenceValid: true, finalWeights: { gross: 32, tare: 11 } };
+    state = run(state, reopen);
+    assert.equal(state.pending.operation, 'reopen');
+    assert.equal(state.tickets.filter(t => t.taskId === taskId && t.status === 'valid').length, submission === 'unknown-success' ? 1 : 0);
+    assert.throws(() => run(state, reopen), /先查询/);
+    state = run(state, { type: 'resolveSubmission' });
+    state = run(state, reopen);
+    assert.equal(state.tickets.filter(t => t.taskId === taskId && t.status === 'valid').length, 1);
+    assert.equal(state.tickets.find(t => t.id === old.id).status, 'void');
+  }
+});
+
+test('车辆离场后人工上调重开无需采集，不增加原始记录或改写旧单', () => {
+  let state = completeWithFinalWeights('inbound', { gross: 30, tare: 10 });
+  const old = structuredClone(state.tickets[0]);
+  const originalRows = filterOriginalWeighings(state.tasks, state.tickets, { keyword: old.taskId });
+  state = run(state, { type: 'voidTicket', ticketId: old.id, reason: '核对最终皮重' });
+  state = run(state, { type: 'reopenTicket', ticketId: old.id, input: input(), reason: '车辆离场，按保留依据人工更正', evidenceValid: true, finalWeights: { gross: 31, tare: 11, reason: ' ' } });
+  assert.equal(state.sampleReady, false);
+  assert.equal(state.tickets[0].adjustment.source, 'manual');
+  assert.equal(state.tickets[0].adjustment.reason, '磅精度调整');
+  assert.equal(state.tickets[0].adjustment.tareDeduction, -1);
+  assert.deepEqual(state.tasks[0].records, old.records);
+  assert.deepEqual(state.tickets[0].records, old.records);
+  assert.deepEqual(state.tickets.find(t => t.id === old.id).adjustment, old.adjustment);
+  const rows = filterOriginalWeighings(state.tasks, state.tickets, { keyword: old.taskId });
+  assert.equal(rows.length, 1); assert.equal(rows[0].confirmedAt, originalRows[0].confirmedAt);
+  assert.deepEqual(rows[0].original, originalRows[0].original);
 });

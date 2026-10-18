@@ -1,4 +1,4 @@
-import type { TestTicket, TransportTask, WeighingFilter, WeightValues } from '../../types/weighing';
+import type { TestTicket, TransportTask, WeighingFilter, WeightValues, WeighRecord } from '../../types/weighing';
 import { directionLabels, taskStatusLabels } from '../../types/weighing';
 import { originalWeights } from './weights';
 import { formatWeightValue } from './weights';
@@ -37,19 +37,25 @@ export function filterTasks(tasks: TransportTask[], filter: WeighingFilter): Tra
 export function filterTickets(tickets: TestTicket[], filter: WeighingFilter): TestTicket[] {
   return tickets.filter(row => matches(row, filter, beijingDate(row.issuedAt)));
 }
+function recordTrace(records: WeighRecord[]): string {
+  return JSON.stringify(records.map(record => ({ id: record.id, stage: record.stage, kind: record.kind, weight: record.weight, at: record.at, actor: record.actor, role: record.role, captureAt: record.capture?.at, replaces: record.replaces, retainedRecordId: record.retainedRecordId, reason: record.reason })));
+}
 function csv(rows: (string | number)[][]): string {
   return '\uFEFF' + rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
 }
 export function exportTasksCsv(tasks: TransportTask[]): string {
   return csv([
-    ['性质', '任务号', '车牌', '方向', '物料', '供收方', '状态', '创建时间（北京时间）', '首次重量', '二次重量', '单位', '物料编码', '规格／等级', '供收方编码', '承运方', '承运方编码', '本趟联系人', '联系电话', '司机', '司机电话', '备注'],
-    ...tasks.map(t => ['测试', t.id, t.plate, directionLabels[t.direction], t.materialName, t.partyName, taskStatusLabels[t.status], beijingTime(t.createdAt), formatWeightValueOrBlank([...t.records].reverse().find(r => r.stage === 'first')?.weight), formatWeightValueOrBlank([...t.records].reverse().find(r => r.stage === 'second')?.weight), '吨', t.materialCode ?? '', t.materialSpec ?? '', t.partyCode ?? '', t.carrierName ?? '', t.carrierCode ?? '', t.contactName ?? '', t.contactPhone ?? '', t.driver, t.driverPhone ?? '', t.remark]),
+    ['性质', '任务号', '车牌', '方向', '物料', '供收方', '状态', '创建时间（北京时间）', '首次重量', '二次重量', '单位', '物料编码', '规格／等级', '供收方编码', '承运方', '承运方编码', '本趟联系人', '联系电话', '司机', '司机电话', '备注', '称重依据与替代关系', '任务操作记录'],
+    ...tasks.map(t => ['测试', t.id, t.plate, directionLabels[t.direction], t.materialName, t.partyName, taskStatusLabels[t.status], beijingTime(t.createdAt), formatWeightValueOrBlank([...t.records].reverse().find(r => r.stage === 'first')?.weight), formatWeightValueOrBlank([...t.records].reverse().find(r => r.stage === 'second')?.weight), '吨', t.materialCode ?? '', t.materialSpec ?? '', t.partyCode ?? '', t.carrierName ?? '', t.carrierCode ?? '', t.contactName ?? '', t.contactPhone ?? '', t.driver, t.driverPhone ?? '', t.remark, recordTrace(t.records), JSON.stringify(t.history)]),
   ]);
 }
 export function exportTicketsCsv(tickets: TestTicket[]): string {
   return csv([
-    ['性质', '测试单号', '任务号', '关联原单', '车牌', '方向', '物料', '供收方', '状态', '最终毛重', '最终皮重', '最终净重', '单位', '出单时间（北京时间）', '补打次数', '物料编码', '规格／等级', '供收方编码', '承运方', '承运方编码', '本趟联系人', '联系电话', '司机', '司机电话', '备注'],
-    ...tickets.map(t => ['测试', t.id, t.taskId, t.previousId ?? '', t.plate, directionLabels[t.direction], t.materialName, t.partyName, t.status === 'valid' ? '有效' : '作废', formatWeightValue(t.gross), formatWeightValue(t.tare), formatWeightValue(t.net), '吨', beijingTime(t.issuedAt), t.reprintCount, t.materialCode ?? '', t.materialSpec ?? '', t.partyCode ?? '', t.carrierName ?? '', t.carrierCode ?? '', t.contactName ?? '', t.contactPhone ?? '', t.driver, t.driverPhone ?? '', t.remark]),
+    ['性质', '测试单号', '任务号', '关联原单', '车牌', '方向', '物料', '供收方', '状态', '最终毛重', '最终皮重', '最终净重', '单位', '出单时间（北京时间）', '补打次数', '物料编码', '规格／等级', '供收方编码', '承运方', '承运方编码', '本趟联系人', '联系电话', '司机', '司机电话', '备注', '原始毛重', '原始皮重', '原始净重', '毛重调整差额（原始－最终；负数上调）', '皮重调整差额（原始－最终；负数上调）', '调整备注', '重量来源', '调整操作人', '调整时间', '上版最终毛重', '上版最终皮重', '上版最终净重', '称重依据与替代关系', '单据操作记录'],
+    ...tickets.map(t => ['测试', t.id, t.taskId, t.previousId ?? '', t.plate, directionLabels[t.direction], t.materialName, t.partyName, t.status === 'valid' ? '有效' : '作废', formatWeightValue(t.gross), formatWeightValue(t.tare), formatWeightValue(t.net), '吨', beijingTime(t.issuedAt), t.reprintCount, t.materialCode ?? '', t.materialSpec ?? '', t.partyCode ?? '', t.carrierName ?? '', t.carrierCode ?? '', t.contactName ?? '', t.contactPhone ?? '', t.driver, t.driverPhone ?? '', t.remark,
+      formatWeightValueOrBlank((t.adjustment?.original ?? originalWeights(t.records))?.gross), formatWeightValueOrBlank((t.adjustment?.original ?? originalWeights(t.records))?.tare), formatWeightValueOrBlank((t.adjustment?.original ?? originalWeights(t.records))?.net),
+      formatWeightValue(t.adjustment?.grossDeduction ?? 0), formatWeightValue(t.adjustment?.tareDeduction ?? 0), t.adjustment?.reason ?? '', t.adjustment && (t.adjustment.grossDeduction !== 0 || t.adjustment.tareDeduction !== 0) ? '人工调整最终重量' : '沿用采集依据', t.adjustment?.actor ?? '', t.adjustment ? beijingTime(t.adjustment.at) : '',
+      formatWeightValueOrBlank(t.adjustment?.before.gross), formatWeightValueOrBlank(t.adjustment?.before.tare), formatWeightValueOrBlank(t.adjustment?.before.net), recordTrace(t.records), JSON.stringify(t.history)]),
   ]);
 }
 type SummaryRow = Pick<TestTicket, 'direction' | 'materialId' | 'partyId' | 'materialName' | 'partyName' | 'materialSpec' | 'materialCode' | 'net'>;
@@ -71,8 +77,8 @@ export function exportOriginalSummaryCsv(rows: OriginalWeighingRow[]): string {
 }
 export function exportOriginalWeighingsCsv(rows: OriginalWeighingRow[]): string {
   return csv([
-    ['性质', '任务号', '车牌', '方向', '物料', '物料编码', '规格／等级', '供收方', '原始毛重', '原始皮重', '原始净重', '单位', '二次称重确认时间（北京时间）', '当前有效测试单'],
-    ...rows.map(row => ['测试', row.id, row.plate, directionLabels[row.direction], row.materialName, row.materialCode ?? '', row.materialSpec ?? '', row.partyName, formatWeightValue(row.original.gross), formatWeightValue(row.original.tare), formatWeightValue(row.original.net), '吨', beijingTime(row.confirmedAt), row.validTicketId ?? '无有效单据']),
+    ['性质', '任务号', '车牌', '方向', '物料', '物料编码', '规格／等级', '供收方', '原始毛重', '原始皮重', '原始净重', '单位', '二次称重确认时间（北京时间）', '当前有效测试单', '称重依据与替代关系', '任务操作记录'],
+    ...rows.map(row => ['测试', row.id, row.plate, directionLabels[row.direction], row.materialName, row.materialCode ?? '', row.materialSpec ?? '', row.partyName, formatWeightValue(row.original.gross), formatWeightValue(row.original.tare), formatWeightValue(row.original.net), '吨', beijingTime(row.confirmedAt), row.validTicketId ?? '无有效单据', recordTrace(row.records), JSON.stringify(row.history)]),
   ]);
 }
 function formatWeightValueOrBlank(value: number | undefined): string { return value === undefined ? '' : formatWeightValue(value); }

@@ -1,7 +1,9 @@
-import { useMemo } from 'react';
+import { WorkbenchLink } from "@/components/common/workbench-link";
+import { useMemo, useRef, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Field } from '@/components/common/field';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
+import { SectionTabs } from '@/components/common/section-tabs';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -10,6 +12,7 @@ import { useWeighingStore } from '@/store/weighing-store';
 import { beijingTime } from '@/lib/weighing/query';
 import type { HistoryEntry, TaskInput, WeighingFilter } from '@/types/weighing';
 import { roleLabels, partyRoleLabels, partyNatureLabels } from '@/types/weighing';
+import { PlateInput } from './plate-input';
 import { WeighingLookup } from './lookup-field';
 
 export function DemoBanner() {
@@ -18,14 +21,15 @@ export function DemoBanner() {
   const settingsUrl = `/weighing/settings?returnTo=${encodeURIComponent(location.pathname + location.search)}`;
   return <aside className="mb-4 rounded-control border border-border bg-neutral-background px-4 py-2 text-sm text-text-secondary" aria-label="测试环境提示">
     <div className="flex flex-wrap items-center justify-between gap-2"><span><strong className="text-text-primary">测试环境</strong> · 模拟重量与证据 · 摄像头未接入 · 仅浏览器保存</span><Link className="text-primary hover:underline" to={settingsUrl}>演示岗位：{roleLabels[data.config.role]} · 设置</Link></div>
-    {data.pending && <p className="mt-2 text-warning">上次称重提交结果待核实。<Link className="ml-1 text-primary underline" to={`/weighing/workbench?task=${encodeURIComponent(data.pending.taskId)}`}>前往工作台查询原结果</Link></p>}
+    {data.pending && <p className="mt-2 text-warning">上次称重提交结果待核实。<WorkbenchLink className="ml-1 text-primary underline" to={`/weighing/workbench?task=${encodeURIComponent(data.pending.taskId)}`}>前往工作台查询原结果</WorkbenchLink></p>}
     {storageError && <p role="alert" className="mt-2 text-error">{storageError}</p>}
   </aside>;
 }
 
-export function BusinessFields({ value, onChange, lockDirection = false, hidePlate = false, compact = false }: { value: TaskInput; onChange: (value: TaskInput) => void; lockDirection?: boolean; hidePlate?: boolean; compact?: boolean }) {
+export function BusinessFields({ value, onChange, lockDirection = false, hidePlate = false, compact = false, onPatch, help, tab, onTabChange }: { onPatch?: (patch: Partial<TaskInput>) => void; value: TaskInput; onChange: (value: TaskInput) => void; lockDirection?: boolean; hidePlate?: boolean; compact?: boolean; help?: ReactNode; tab?: string; onTabChange?: (value: string) => void }) {
+  const legacyPlate = useRef(value.plate);
   const { materials, parties } = useWeighingStore(s => s.data);
-  const update = (patch: Partial<TaskInput>) => onChange({ ...value, ...patch });
+  const update = (patch: Partial<TaskInput>) => onPatch ? onPatch(patch) : onChange({ ...value, ...patch });
   const materialOptions = useMemo(() => materials.filter(m => m.enabled || m.id === value.materialId).map(m => ({ id: m.id, name: m.name, code: m.code, details: [m.spec || '未填写规格', m.code], tags: ['吨'], disabled: !m.enabled })), [materials, value.materialId]);
   const partyOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r])], disabled: !p.enabled })), [parties, value.partyId, value.direction]);
   const carrierOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.carrierId) && p.roles.includes('carrier')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], '承运商'], disabled: !p.enabled })), [parties, value.carrierId]);
@@ -41,21 +45,27 @@ export function BusinessFields({ value, onChange, lockDirection = false, hidePla
     <Field label="司机电话（选填）" htmlFor="business-driver-phone"><Input id="business-driver-phone" type="tel" value={value.driverPhone ?? ''} onChange={e => update({ driverPhone: e.target.value })} /></Field>
     <Field label="备注（选填）" htmlFor="business-remark"><Textarea id="business-remark" value={value.remark} onChange={e => update({ remark: e.target.value })} rows={2} /></Field>
   </>;
-  return <div className="grid gap-x-4 md:grid-cols-2">
-    {!hidePlate && <Field label="车牌（手填）" htmlFor="business-plate" required><Input id="business-plate" value={value.plate} onChange={e => update({ plate: e.target.value })} placeholder="如：川A12345" /></Field>}
-    <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定' : '入厂先毛后皮，出厂先皮后毛'}><Select id="business-direction" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select></Field>
+  const basic = <>
+    {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></Field>}
+    {compact ? <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-border pb-3 md:col-span-2">
+      <label htmlFor="business-direction" className="shrink-0 text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
+      <Select id="business-direction" className="w-auto min-w-[140px]" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
+      <span className="text-xs text-text-tertiary">{value.direction === 'inbound' ? '先毛后皮' : '先皮后毛'}</span>
+    </div> : <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定' : '入厂先毛后皮，出厂先皮后毛'}><Select id="business-direction" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select></Field>}
     <Field label="物料" required><WeighingLookup label="物料" value={value.materialId} options={materialOptions} onChange={materialId => update({ materialId })} /></Field>
-    <div className={compact ? "md:col-span-2" : undefined}>
+    <div className="min-w-0">
     <Field label={value.direction === 'inbound' ? '供货方' : '收货方'} required><WeighingLookup label={value.direction === 'inbound' ? '供货方' : '收货方'} value={value.partyId} options={partyOptions} onChange={partyId => { const p = parties.find(p => p.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} /></Field>
     </div>
-    {compact ? <details className="min-w-0 border-t border-border pt-3 md:col-span-2">
-      <summary className="cursor-pointer rounded-control text-sm text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
-        <span className="font-medium text-text-primary">补充运输信息（选填）</span>
-        <span className="mt-1 block truncate text-xs" title={supplementSummary}>{supplementSummary}</span>
-      </summary>
-      <div className="mt-4 grid gap-x-4 md:grid-cols-2">{supplementary}</div>
-    </details> : supplementary}
-  </div>;
+  </>;
+  if (!compact) return <div className="grid gap-x-4 md:grid-cols-2">{basic}{supplementary}</div>;
+  return <SectionTabs label="本趟运输资料" value={tab} onValueChange={onTabChange} items={[
+    { value: 'basic', label: '基本信息', content: <div className="grid gap-x-4 md:grid-cols-2">{basic}</div> },
+    { value: 'supplementary', label: '补充运输信息（选填）', content: <>
+      <p aria-label="补充运输信息摘要" className="mb-4 break-words text-xs text-text-secondary">{supplementSummary}</p>
+      <div className="grid gap-x-4 md:grid-cols-2">{supplementary}</div>
+    </> },
+    ...(help ? [{ value: 'help', label: '找不到资料？', content: help }] : []),
+  ]} />;
 }
 
 export function WeighingFilters({ value, onChange, ticket = false, dateLabel, hideStatus = false }: { value: WeighingFilter; onChange: (value: WeighingFilter) => void; ticket?: boolean; dateLabel?: string; hideStatus?: boolean }) {
@@ -73,5 +83,5 @@ export function WeighingFilters({ value, onChange, ticket = false, dateLabel, hi
 }
 
 export function HistoryList({ entries }: { entries: HistoryEntry[] }) {
-  return <ol className="space-y-2 text-sm">{entries.map((entry, i) => <li key={i} className="border-b border-border pb-2 last:border-0"><span className="tabular-nums text-text-tertiary">{beijingTime(entry.at)}（北京时间）</span><span className="mx-2">{roleLabels[entry.role]} · {entry.action}</span>{entry.reason && <p className="mt-1 break-words text-text-secondary">{entry.reason}</p>}</li>)}{!entries.length && <li className="text-text-tertiary">暂无操作记录</li>}</ol>;
+  return <ol className="space-y-2 text-sm">{entries.map((entry, i) => <li key={i} className="border-b border-border pb-2 last:border-0"><span className="tabular-nums text-text-tertiary">{beijingTime(entry.at)}（北京时间）</span><span className="mx-2">{entry.actor || '历史未记录操作人'} · {roleLabels[entry.role]} · {entry.action}</span>{entry.reason && <p className="mt-1 break-words text-text-secondary">{entry.reason}</p>}</li>)}{!entries.length && <li className="text-text-tertiary">暂无操作记录</li>}</ol>;
 }

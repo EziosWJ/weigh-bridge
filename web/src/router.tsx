@@ -1,11 +1,18 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { RequireAuth } from "@/components/auth/require-auth";
+import { WorkbenchShell } from "@/pages/weighing/workbench-shell";
 import { AppShell } from "@/components/layout/app-shell";
 import { LoginPage } from "@/pages/login";
 import { NotFoundPage } from "@/pages/not-found";
 import { RequireMessageAdmin } from "@/components/auth/require-message-admin";
 
 export const router = createBrowserRouter([
+  { path: "/weighing/design-demo", hydrateFallbackElement: <main role="status" className="p-4 text-sm">正在加载设计预览…</main>,
+    lazy: () => import("@/pages/weighing/design-demo").then(module => ({ Component: module.WorkbenchDesignDemoPage })),
+  },
+  { path: "/weighing/workbench", hydrateFallbackElement: <main role="status" className="p-4 text-sm text-text-tertiary">正在加载工作台…</main>, element: <RequireAuth><WorkbenchShell /></RequireAuth>,
+    children: [{ index: true, lazy: () => import("@/pages/weighing/workbench").then(module => ({ Component: module.WeighingWorkbenchPage })) }],
+  },
   {
     path: "/login",
     element: <LoginPage />,
@@ -24,7 +31,6 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "weighing", element: <Navigate to="/weighing/workbench" replace /> },
-      { path: "weighing/workbench", lazy: () => import("@/pages/weighing/workbench").then((module) => ({ Component: module.WeighingWorkbenchPage })) },
       { path: "weighing/tasks", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTasksPage })) },
       { path: "weighing/tasks/:id", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTaskDetailPage })) },
       { path: "weighing/originals", lazy: () => import("@/pages/weighing/originals").then((module) => ({ Component: module.WeighingOriginalsPage })) },
@@ -47,7 +53,7 @@ export const router = createBrowserRouter([
       { path: "weighing/settings", lazy: () => import("@/pages/weighing/demo-panel").then((module) => ({ Component: module.DemoSettingsPage })) },
       {
         index: true,
-        element: <Navigate to="/weighing/workbench" replace />,
+        element: <Navigate to="/weighing/tasks" replace />,
       },
       {
         path: "dashboard",

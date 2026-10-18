@@ -1,0 +1,26 @@
+.plate-control { position: relative; min-width: 0; max-width: 100%; }
+.plate-entry { display: flex; align-items: center; gap: 8px; }
+.plate-entry > button { height: 40px; flex: 0 0 56px; font-size: 18px; }
+.plate-number {
+  --plate-cell-width: 31px;
+  --plate-character-inset: calc((var(--plate-cell-width) - 1ch) / 2);
+  /* 单个字符的字宽和字间距合计为一个格宽；首字居中，尾部预留相同偏移，避免输入末位时滚动。 */
+  width: calc(7 * var(--plate-cell-width) + 18px + var(--plate-character-inset));
+  max-width: calc(100vw - 144px);
+  height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 0 8px;
+  color: var(--color-text-primary);
+  background: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--plate-cell-width) - 1px), var(--color-border) calc(var(--plate-cell-width) - 1px), var(--color-border) var(--plate-cell-width)) 8px center / calc(7 * var(--plate-cell-width)) 28px no-repeat var(--color-surface);
+  font: 600 20px/1 Consolas, monospace;
+  letter-spacing: calc(var(--plate-cell-width) - 1ch);
+  text-indent: var(--plate-character-inset);
+}
+.plate-number::placeholder { color: var(--color-text-tertiary); }
+.plate-number:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.plate-number:disabled { opacity: .6; }
+@media (max-width: 389px) {
+  .plate-number { --plate-cell-width: clamp(21px, calc((100vw - 162px) / 7.5), 31px); }
+}
+.plate-provinces { position: absolute; top: 44px; left: 0; z-index: 30; width: 280px; max-width: calc(100vw - 48px); display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 8px; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); box-shadow: 0 4px 12px #00000014; }

@@ -9,6 +9,12 @@ import { WeighingCategoriesPage, WeighingMaterialEditPage, WeighingMaterialsPage
 import { DemoSettingsPage } from '@/pages/weighing/demo-panel';
 import '@/styles/globals.css';
 
+// 旧流程回归保持单标签；独立窗口、菜单和真实外壳由 standalone-workbench.mjs 验证。
+window.open = (() => window) as typeof window.open;
+document.addEventListener('click', event => {
+  const anchor = event.target instanceof Element ? event.target.closest('a') : null;
+  if (anchor) anchor.target = '_self';
+}, true);
 // 真实业务页面、路由和浏览器存储；小导航只替代需真实账号的 AppShell。
 createRoot(document.getElementById('root')!).render(
   <ToastProvider>

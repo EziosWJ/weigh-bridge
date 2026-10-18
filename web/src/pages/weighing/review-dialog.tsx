@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import type { FinalWeightInput, SimulatedCapture, WeightValues } from '@/types/weighing';
 import { adjustedWeights, formatWeight, weightDeduction } from '@/lib/weighing/weights';
-import { WeightDeductionFields } from './deduction-fields';
-import { CapturePhoto } from './camera-panel';
-import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DetailItem } from '@/components/common/detail-item';
+import { SectionTabs } from '@/components/common/section-tabs';
 import { StatusTag } from '@/components/common/status-tag';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
+import { WeightDeductionFields } from './deduction-fields';
+import { CapturePhoto } from './camera-panel';
 
 export interface WeighingReviewValue {
   plate: string;
@@ -22,47 +23,75 @@ export interface WeighingReviewValue {
   capture?: SimulatedCapture;
   supplementary: { label: string; value: string }[];
 }
-const steps = ['核对车牌', '核对业务信息', '核对重量', '核对模拟证据'];
 
-/** 一次采集的一次核对会话。父页面在数据变化时卸载，进度不进入业务缓存。 */
+/** 集中核对绑定本次数据快照；父页面在资料或现场条件变化时卸载。 */
 export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onConfirm }: {
   value: WeighingReviewValue;
   title: string;
   onCancel: () => void;
-  onMismatch: (step: number) => void;
+  onMismatch: () => void;
   onConfirm: (finalWeights: FinalWeightInput) => void;
 }) {
-  const [step, setStep] = useState(0);
   const [imageReady, setImageReady] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [finalInput, setFinalInput] = useState<FinalWeightInput>(() => ({ gross: value.original?.gross ?? Number.NaN, tare: value.original?.tare ?? Number.NaN }));
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { heading.current?.focus(); }, [step]);
-  const summary = step === steps.length;
-  let validDeduction = true;
+  useEffect(() => { heading.current?.focus(); }, []);
+  let deductionError = '';
   let calculatedWeights: WeightValues | undefined;
-  if (value.original) { try { calculatedWeights = adjustedWeights(value.original, finalInput); } catch { validDeduction = false; } }
+  if (value.original) { try { calculatedWeights = adjustedWeights(value.original, finalInput); } catch (error) { deductionError = error instanceof Error ? error.message : '请核对最终重量'; } }
   const calculatedDeduction = value.original && calculatedWeights ? weightDeduction(value.original, calculatedWeights) : undefined;
-  const weight = formatWeight(value.weight);
+  const ready = !!value.capture && imageReady && !deductionError;
+
   return <Dialog open onOpenChange={open => { if (!open) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay />
-    <DialogContent className="flex max-h-[calc(100dvh-32px)] max-w-[640px] flex-col">
-      <DialogHeader className="shrink-0"><div><DialogTitle>逐项核对{title}</DialogTitle><DialogDescription>请与本次车辆及称重情况逐项比对，核对过程中不会保存称重结果。</DialogDescription></div><DialogClose aria-label="关闭核对"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
-      <DialogBody className="space-y-4" aria-live="polite" aria-atomic="false">
-        <div className="flex items-center justify-between gap-3 text-sm"><span className="font-medium text-text-secondary">{summary ? '4 项已核对' : `第 ${step + 1} / 4 项`}</span><StatusTag tone="warning">测试数据</StatusTag></div>
-        <h3 ref={heading} className="rounded-control text-lg font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" tabIndex={-1}>{summary ? '确认本次称重' : steps[step]}</h3>
-        {!summary && <div className="flex gap-2" aria-label="核对进度">{steps.map((label, index) => <span key={label} title={label} aria-current={index === step ? 'step' : undefined} className={`h-1 flex-1 rounded ${index <= step ? 'bg-primary' : 'bg-border'}`} />)}</div>}
-        {step === 0 && <><p className="text-sm text-text-secondary">请看当前车辆实际车牌，确认与下方完全一致。</p><p className="rounded-control border border-border bg-neutral-background p-5 text-center text-2xl font-semibold tracking-wide">{value.plate}</p><p className="text-sm text-text-tertiary">车牌为手工填写，未接入自动识别。</p></>}
-        {step === 1 && <><p className="text-sm text-text-secondary">确认这是同一趟运输，方向、物料和供收方均正确。</p><div className="grid gap-4 rounded-control border border-border p-4 sm:grid-cols-2"><DetailItem label="运输方向" value={value.direction} /><DetailItem label="物料及规格／编码" value={value.material} /><DetailItem label={value.partyLabel} value={value.party} /></div>{value.supplementary.length > 0 && <details><summary className="cursor-pointer rounded-control text-sm text-text-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">查看补充运输信息</summary><div className="mt-3 grid gap-3 sm:grid-cols-2">{value.supplementary.map(item => <DetailItem key={item.label} label={item.label} value={item.value} />)}</div></details>}</>}
-        {step === 2 && <><p className="text-sm text-text-secondary">请核对本次重量及毛重／皮重含义，确保车辆处于本次应称的装载状态。</p><div className="rounded-control border border-border bg-neutral-background p-5 text-center"><p className="text-sm text-text-secondary">本次{value.kind} · 模拟稳定重量</p><p className="mt-2 font-mono text-3xl font-semibold tabular-nums">{weight}</p></div>{value.firstWeight && <p className="text-sm text-text-secondary">首次依据：{value.firstWeight}</p>}</>}
-        {step === 3 && <><StatusTag tone="info">本次模拟抓拍</StatusTag><p className="text-sm text-text-secondary">请查看图片及关联信息：车牌 <strong>{value.plate}</strong>，本次{value.kind} <strong>{weight}</strong>。</p>{value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次模拟图片，请返回重新采集。</p>}<p className="text-xs text-text-tertiary">内置示例图片，非当前车辆现场拍摄；关联车牌为手填，摄像头未接入。</p></>}
-        {summary && <><p className="text-sm text-text-secondary">以下四项均已逐项核对。确认后将保存本次测试称重。</p><div className="grid gap-4 rounded-control border border-border p-4 sm:grid-cols-2"><DetailItem label="车牌" value={value.plate} /><DetailItem label="运输方向" value={value.direction} /><DetailItem label="物料及规格／编码" value={value.material} /><DetailItem label={value.partyLabel} value={value.party} /><DetailItem label={`本次${value.kind}`} value={<strong>{weight}</strong>} /><DetailItem label="证据状态" value="模拟抓拍已核对，摄像头未接入" /></div><p className="text-sm text-text-tertiary">仍有疑问请返回核对或关闭，关闭不会提交。</p></>}
-        {summary && value.original && <WeightDeductionFields original={value.original} value={finalInput} onChange={setFinalInput} />}
+    <DialogContent className="weighing-review flex max-h-[calc(100dvh-32px)] max-w-[1080px] flex-col">
+      <DialogHeader className="shrink-0">
+        <div className="min-w-0"><DialogTitle>核对{title}</DialogTitle><DialogDescription>请对照现场车辆核对以下信息，确认后保存本次测试称重。</DialogDescription></div>
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap"><StatusTag tone="warning">测试数据</StatusTag><DialogClose aria-label="关闭核对"><X className="h-4 w-4" aria-hidden /></DialogClose></div>
+      </DialogHeader>
+      <DialogBody className="grid items-start gap-6 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.4fr)]">
+        <section aria-label="本趟运输核对依据" className="min-w-0 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <h3 ref={heading} tabIndex={-1} className="rounded-control text-2xl font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{value.plate}</h3>
+            <span className="text-sm text-text-secondary">{value.direction}</span>
+          </div>
+          <SectionTabs label="运输核对信息" items={[
+            { value: 'basic', label: '基本信息', content: <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">
+            <DetailItem label="物料及规格／编码" value={value.material} />
+            <DetailItem label={value.partyLabel} value={value.party} />
+            {value.firstWeight && <DetailItem label="首次称重依据" value={value.firstWeight} />}
+          </div> },
+            ...(value.supplementary.length ? [{ value: 'supplementary', label: '补充运输信息', content: <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">{value.supplementary.map(item => <DetailItem key={item.label} label={item.label} value={item.value} />)}</div> }] : []),
+          ]} />
+          <div className="space-y-2 border-t border-border pt-3">
+            <h4 className="text-sm font-medium">本次模拟抓拍</h4>
+            {value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次模拟图片，请返回重新采集。</p>}
+            <p className="text-xs text-text-tertiary">静态示例，非现场抓拍；摄像头未接入。</p>
+          </div>
+
+        </section>
+        <section aria-label={value.original ? '最终重量与调整' : '本次称重依据'} className="min-w-0 space-y-5 md:border-l md:border-border md:pl-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-control bg-neutral-background p-4">
+            <div><p className="text-sm text-text-secondary">本次采集{value.kind}</p><p className="mt-1 text-xs text-text-tertiary">请核对车辆完全上磅及装载状态</p></div>
+            <strong className="shrink-0 text-3xl tabular-nums">{formatWeight(value.weight)}</strong>
+          </div>
+          {value.original ? <WeightDeductionFields original={value.original} value={finalInput} onChange={setFinalInput} showError={false} /> : <div className="space-y-3 text-sm leading-relaxed text-text-secondary"><h4 className="font-medium text-text-primary">确认本次称重</h4><p>请核对车牌、运输方向、物料、供收方及本次重量，并对照图片检查车辆位置。</p><p>确认后保存首次称重，装卸完成后按车牌办理回磅。</p></div>}
+        </section>
       </DialogBody>
       <DialogFooter className="shrink-0 flex-wrap items-center justify-between">
-        {summary && calculatedWeights && calculatedDeduction && <p className="w-full text-xs tabular-nums text-text-secondary" aria-live="polite">系统计算扣减：毛重 {formatWeight(calculatedDeduction.grossDeduction)} · 皮重 {formatWeight(calculatedDeduction.tareDeduction)} · 最终净重 <strong className="text-text-primary">{formatWeight(calculatedWeights.net)}</strong></p>}
-        <div className="flex gap-2">{step > 0 && <Button size="lg" onClick={() => setStep(step - 1)}>上一项</Button>}<Button size="lg" variant="ghost" onClick={() => onMismatch(step)}>不一致，返回修改</Button></div>
-        {summary ? <Button key="submit-weighing" size="lg" variant="primary" disabled={!validDeduction} onClick={() => onConfirm(finalInput)}>{value.original ? '确认称重并出单' : `确认${title}`}</Button> : <Button key={`review-step-${step}`} size="lg" variant="primary" disabled={step === 3 && !imageReady} onClick={() => setStep(step + 1)}>{step === 3 ? '已核对，查看汇总' : '一致，下一项'}</Button>}
+        {deductionError && <p role="alert" className="w-full text-xs text-error">无法出单：{deductionError}</p>}
+        {!imageReady && <p className="w-full text-xs text-warning">请等待本次抓拍图片加载；加载失败时返回重新采集。</p>}
+        {calculatedWeights && calculatedDeduction && <div className="w-full space-y-2" aria-live="polite">
+          <div className="grid grid-cols-3 gap-3 rounded-control bg-neutral-background px-3 py-2 text-xs text-text-secondary">
+            <div>最终毛重<strong className="mt-1 block text-base font-semibold text-text-primary">{formatWeight(calculatedWeights.gross)}</strong></div>
+            <div>最终皮重<strong className="mt-1 block text-base font-semibold text-text-primary">{formatWeight(calculatedWeights.tare)}</strong></div>
+            <div>最终净重<strong className="mt-1 block text-base font-semibold text-primary">{formatWeight(calculatedWeights.net)}</strong></div>
+          </div>
+          <p className="text-xs tabular-nums text-text-secondary">系统计算调整差额：毛重 {formatWeight(calculatedDeduction.grossDeduction)} · 皮重 {formatWeight(calculatedDeduction.tareDeduction)}</p>
+        </div>}
+        <Button size="lg" onClick={onMismatch}>不一致，返回修改</Button>
+        <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!ready} onClick={() => onConfirm(finalInput)}>{value.original ? '确认称重并出单' : `确认${title}`}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

@@ -67,14 +67,13 @@ export function weightValues(gross: number, tare: number): WeightValues {
 
 export function adjustedWeights(original: WeightValues, input: FinalWeightInput): WeightValues {
   if (![original.gross, original.tare, original.net].every(Number.isFinite) || original.tare <= 0 || original.net <= 0) {
-    throw new Error('原始净重必须大于零，请核对运输方向和两次称重，不能交换毛皮重');
+    throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，在演示设置调整本次模拟重量后重新采集；首次重量有误时须重称，不能通过修改最终重量或交换毛皮重出单。');
   }
-  const originalGross = weightInMilliTonnes(original.gross);
-  const originalTare = weightInMilliTonnes(original.tare);
+  weightInMilliTonnes(original.gross);
+  weightInMilliTonnes(original.tare);
   const gross = weightInMilliTonnes(input.gross);
   const tare = weightInMilliTonnes(input.tare);
   if (gross <= 0 || tare <= 0) throw new Error('最终毛重和皮重必须大于零');
-  if (gross > originalGross || tare > originalTare) throw new Error('最终重量不能大于对应原始重量');
   const net = gross - tare;
   if (gross <= tare || tare <= 0 || net <= 0) throw new Error('最终毛重必须大于最终皮重，最终皮重和净重必须大于零');
   return { gross: tonnes(gross), tare: tonnes(tare), net: tonnes(net) };
@@ -84,4 +83,8 @@ export function weightDeduction(original: WeightValues, final: WeightValues, rea
   const grossDeduction = tonnes(weightInMilliTonnes(original.gross) - weightInMilliTonnes(final.gross));
   const tareDeduction = tonnes(weightInMilliTonnes(original.tare) - weightInMilliTonnes(final.tare));
   return { grossDeduction, tareDeduction, ...(reason?.trim() ? { reason: reason.trim() } : {}) };
+}
+
+export function formatAdjustment(value: number): string {
+  return `${formatWeight(value)}（${value < 0 ? '上调' : value > 0 ? '下调' : '未调整'}）`;
 }

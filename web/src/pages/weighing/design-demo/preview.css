@@ -1,0 +1,16 @@
+.workbench-design-preview { min-height: 100vh; background: #e9eef0; }
+.workbench-design-preview .wdp-switcher { display: flex; align-items: center; gap: 24px; min-height: 58px; padding: 8px 24px; background: #fff; border-bottom: 1px solid #ccd4d8; font-family: 'Microsoft YaHei', 'Noto Sans SC', sans-serif; color: #29343b; }
+.workbench-design-preview .wdp-label { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.workbench-design-preview .wdp-options { display: flex; gap: 6px; }
+.workbench-design-preview .wdp-option { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 5px; font-size: 13px; color: #52616a; white-space: nowrap; }
+.workbench-design-preview .wdp-option > span { font-weight: 700; }
+.workbench-design-preview .wdp-option:hover { background: #f0f2f3; }
+.workbench-design-preview .wdp-option-selected { background: #e8eef2; color: #243740; }
+.workbench-design-preview .wdp-option:focus-visible { outline: 2px solid #086f78; outline-offset: 2px; }
+.workbench-design-preview .wdp-note { margin-left: auto; color: #62717b; font-size: 12px; }
+@media (max-width: 760px) {
+  .workbench-design-preview .wdp-switcher { flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  .workbench-design-preview .wdp-options { order: 3; width: 100%; }
+  .workbench-design-preview .wdp-option { flex: 1; justify-content: center; padding: 8px 4px; font-size: 12px; }
+  .workbench-design-preview .wdp-note { font-size: 11px; }
+}

@@ -39,7 +39,7 @@ export function WeighingOriginalsPage() {
     <DemoBanner />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} dateLabel="二次称重确认" hideStatus />
     <DataTableCard>
-      <TableToolbar title="原始称重记录" description={`筛选 ${rows.length} 趟，关联有效单 ${valid.length} 趟，原始净重合计 ${formatWeight(valid.reduce((sum, row) => sum + row.original.net, 0))}（仅供测试核对）。`} actions={data.config.role === 'supervisor' && <><Button size="sm" onClick={() => downloadCsv('测试原始称重明细.csv', exportOriginalWeighingsCsv(rows))}>导出明细 CSV</Button><Button size="sm" onClick={() => downloadCsv('测试原始净重汇总.csv', exportOriginalSummaryCsv(rows))}>导出净重汇总 CSV</Button></>} />
+      <TableToolbar title="原始称重记录" description={`筛选 ${rows.length} 趟，关联有效单 ${valid.length} 趟，原始净重合计 ${formatWeight(valid.reduce((sum, row) => sum + row.original.net, 0))}（仅供测试核对）。`} actions={data.config.role !== 'admin' && <><Button size="sm" onClick={() => downloadCsv('测试原始称重明细.csv', exportOriginalWeighingsCsv(rows))}>导出明细 CSV</Button><Button size="sm" onClick={() => downloadCsv('测试原始净重汇总.csv', exportOriginalSummaryCsv(rows))}>导出净重汇总 CSV</Button></>} />
       <DataTable columns={columns} dataSource={rows.slice((currentPage - 1) * pageSize, currentPage * pageSize)} rowKey="id" minWidth={1440} />
       <Pagination page={currentPage} pageSize={pageSize} total={rows.length} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>

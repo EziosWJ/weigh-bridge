@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Boxes, ChevronDown } from "lucide-react";
+import { WorkbenchLink } from "@/components/common/workbench-link";
 import { toast } from "@/components/common/toast-store";
 import {
   convertUserMenusToNavItems,
@@ -155,6 +156,8 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
               />
             )}
           </button>
+        ) : item.path === "/weighing/workbench" ? (
+          <WorkbenchLink to={item.path} title={collapsed ? item.label : undefined} className={itemClassName}><Icon className="h-4 w-4 shrink-0" aria-hidden />{!collapsed && <span className="truncate">{item.label}</span>}</WorkbenchLink>
         ) : item.externalUrl ? (
           <a
             href={item.externalUrl}

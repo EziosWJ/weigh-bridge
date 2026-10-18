@@ -1,4 +1,6 @@
-import { useDeferredValue, useState } from "react";
+import { WorkbenchLink } from "@/components/common/workbench-link";
+import { plateError } from '@/lib/weighing/plate';
+import { useDeferredValue, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ContentCard } from "@/components/common/content-card";
 import { DataTable } from "@/components/common/data-table";
@@ -28,7 +30,7 @@ import { formatWeight, needsAdjustmentReview } from "@/lib/weighing/weights";
 
 const linkClass = "text-primary hover:underline";
 type TicketOperation = "void" | "reopen" | "authorize" | "resolve";
-const operationTitles: Record<TicketOperation, string> = { void: "作废测试单", reopen: "关联更正重开", authorize: "主管授权补打", resolve: "主管核实打印结果" };
+const operationTitles: Record<TicketOperation, string> = { void: "作废测试单", reopen: "关联更正重开", authorize: "办理补打", resolve: "核实打印结果" };
 
 function TicketWeights({ ticket }: { ticket: TestTicket }) {
   const original = ticket.adjustment?.original ?? originalWeights(ticket.records);
@@ -63,7 +65,7 @@ export function WeighingTicketsPage() {
     <DemoBanner />
     <WeighingFilters value={filter} onChange={(value) => { setFilter(value); setPage(1); }} ticket />
     <DataTableCard>
-      <TableToolbar title="测试单据" description={`筛选 ${tickets.length} 张，有效 ${validTickets.length} 张，最终净重合计 ${formatWeight(validTickets.reduce((sum, ticket) => sum + ticket.net, 0))}（仅供测试核对）。`} actions={data.config.role === "supervisor" && <><Button size="sm" onClick={() => downloadCsv("测试过磅单明细.csv", exportTicketsCsv(tickets))}>导出明细 CSV</Button><Button size="sm" onClick={() => downloadCsv("测试有效单净重汇总.csv", exportSummaryCsv(tickets))}>导出净重汇总 CSV</Button></>} />
+      <TableToolbar title="测试单据" description={`筛选 ${tickets.length} 张，有效 ${validTickets.length} 张，最终净重合计 ${formatWeight(validTickets.reduce((sum, ticket) => sum + ticket.net, 0))}（仅供测试核对）。`} actions={data.config.role !== "admin" && <><Button size="sm" onClick={() => downloadCsv("测试过磅单明细.csv", exportTicketsCsv(tickets))}>导出明细 CSV</Button><Button size="sm" onClick={() => downloadCsv("测试有效单净重汇总.csv", exportSummaryCsv(tickets))}>导出净重汇总 CSV</Button></>} />
       <DataTable columns={columns} dataSource={tickets.slice((currentPage - 1) * pageSize, currentPage * pageSize)} rowKey="id" minWidth={1320} />
       <Pagination page={currentPage} pageSize={pageSize} total={tickets.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
@@ -83,26 +85,35 @@ export function WeighingTicketDetailPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const ticket = data.tickets.find((item) => item.id === id);
-  const supervisor = data.config.role === "supervisor";
+  const canOperate = data.config.role !== "admin";
   const canPrint = data.config.role !== "admin";
+  const task = data.tasks.find(item => item.id === ticket?.taskId);
+  const currentOriginal = task && originalWeights(task.records);
+
+  const operationBasis = useRef(data);
 
   function startOperation(next: TicketOperation) {
     if (!ticket) return;
+    operationBasis.current = data;
     setInput({ plate: ticket.plate, direction: ticket.direction, materialId: ticket.materialId, partyId: ticket.partyId, carrierId: ticket.carrierId ?? "", contactName: ticket.contactName ?? "", contactPhone: ticket.contactPhone ?? "", driver: ticket.driver, driverPhone: ticket.driverPhone ?? "", remark: ticket.remark });
-    setFinalWeights({ gross: ticket.gross, tare: ticket.tare, reason: ticket.adjustment?.reason ?? "" });
+    const changed = task && JSON.stringify(task.records) !== JSON.stringify(ticket.records);
+    setFinalWeights({ gross: changed && currentOriginal ? currentOriginal.gross : ticket.gross, tare: changed && currentOriginal ? currentOriginal.tare : ticket.tare, reason: "" });
     setReason(""); setEvidenceValid(false); setPrinted(false); setError(""); setOperation(next);
   }
 
-  function submitOperation() {
+  async function submitOperation() {
     if (!ticket || !operation) return;
     try {
-      if (operation === "void") dispatch({ type: "voidTicket", ticketId: ticket.id, reason });
-      if (operation === "reopen") dispatch({ type: "reopenTicket", ticketId: ticket.id, input, reason, evidenceValid, finalWeights });
-      if (operation === "authorize") dispatch({ type: "authorizeReprint", ticketId: ticket.id, reason });
-      if (operation === "resolve") dispatch({ type: "resolvePrint", ticketId: ticket.id, reason, printed });
+      if (operation === 'reopen' && input.plate !== ticket.plate && plateError(input.plate)) throw new Error(plateError(input.plate));
+      if (operation === "void") await dispatch({ type: "voidTicket", ticketId: ticket.id, reason });
+      if (operation === "reopen") await dispatch({ type: "reopenTicket", ticketId: ticket.id, input, reason, evidenceValid, finalWeights }, operationBasis.current);
+      if (operation === "authorize") await dispatch({ type: "authorizeReprint", ticketId: ticket.id, reason });
+      if (operation === "resolve") await dispatch({ type: "resolvePrint", ticketId: ticket.id, reason, printed });
       setOperation(null); setNotice("操作已保存；原测试单及其历史记录保留。");
       if (operation === "reopen") {
-        const reopened = useWeighingStore.getState().data.tickets.find((item) => item.previousId === ticket.id);
+        const latest = useWeighingStore.getState().data;
+        if (latest.pending) { navigate(`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`); return; }
+        const reopened = latest.tickets.find((item) => item.previousId === ticket.id);
         if (reopened) navigate(`/weighing/tickets/${encodeURIComponent(reopened.id)}`);
       }
     } catch (failure) { setError(failure instanceof Error ? failure.message : "操作失败"); }
@@ -118,13 +129,13 @@ export function WeighingTicketDetailPage() {
     <div className="space-y-space-6">
       {notice && <p role="status" className="text-success">{notice}</p>}
       <ContentCard title="单据状态与重量" extra={<StatusTag tone={pending ? "warning" : ticket.status === "valid" ? "success" : "neutral"}>{pending ? "提交结果待核实" : ticket.status === "valid" ? "有效测试单" : "已作废测试单"}</StatusTag>}>
-        {pending && <p className="mb-space-4 text-warning">提交结果尚未核实，请<Link className={linkClass} to={`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`}>前往工作台查询结果</Link>。</p>}
+        {pending && <p className="mb-space-4 text-warning">提交结果尚未核实，请<WorkbenchLink className={linkClass} to={`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`}>前往工作台查询结果</WorkbenchLink>。</p>}
         <TicketWeights ticket={ticket} />
         <div className="mt-space-4 grid gap-space-4 border-t border-border pt-space-4 sm:grid-cols-3"><DetailItem label="出单时间（北京）" value={beijingTime(ticket.issuedAt)} /><DetailItem label="打印状态" value={printStatusLabels[ticket.printStatus]} /><DetailItem label="补打次数" value={ticket.reprintCount} /></div>
-        {supervisor && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废测试单</Button> : canReopen ? <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.status === "valid" && ticket.printStatus === "unknown" && <Button size="sm" onClick={() => startOperation("resolve")}>核实打印结果</Button>}{ticket.status === "valid" && ticket.printStatus === "printed" && !ticket.reprintAuthorized && <Button size="sm" onClick={() => startOperation("authorize")}>授权补打</Button>}{ticket.reprintAuthorized && <StatusTag tone="warning">已授权一次补打</StatusTag>}</div>}
-        {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">打印结果待核实，不能自动重打。请由主管先核实是否已出纸。</p>}
+        {canOperate && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废测试单</Button> : canReopen ? <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.status === "valid" && ticket.printStatus === "unknown" && <Button size="sm" onClick={() => startOperation("resolve")}>核实打印结果</Button>}{ticket.status === "valid" && ticket.printStatus === "printed" && !ticket.reprintAuthorized && <Button size="sm" onClick={() => startOperation("authorize")}>办理补打</Button>}{ticket.reprintAuthorized && <StatusTag tone="warning">已登记一次补打</StatusTag>}</div>}
+        {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">打印结果待核实，不能自动重打。请由操作员先核实是否已出纸。</p>}
       </ContentCard>
-      <ContentCard title="人工扣减与操作记录"><WeightAdjustmentDetails ticket={ticket} /></ContentCard>
+      <ContentCard title="人工调整与操作记录"><WeightAdjustmentDetails ticket={ticket} /></ContentCard>
       <ContentCard title="本趟业务信息" description="保留出单时的业务快照；旧记录未保存的字段显示“-”。"><BusinessSnapshot value={ticket} /></ContentCard>
       <ContentCard title="关联记录"><div className="grid gap-space-4 sm:grid-cols-3"><DetailItem label="运输任务" value={<Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(ticket.taskId)}`}>{ticket.taskId}</Link>} /><DetailItem label="关联原测试单" value={ticket.previousId ? <Link className={linkClass} to={`/weighing/tickets/${encodeURIComponent(ticket.previousId)}`}>{ticket.previousId}</Link> : "无"} /><DetailItem label="关联重开单" value={successors.length ? successors.map((item) => <Link key={item.id} className={`${linkClass} mr-space-2`} to={`/weighing/tickets/${encodeURIComponent(item.id)}`}>{item.id}</Link>) : "无"} /></div></ContentCard>
       <ContentCard title="原始称重记录与替代关系"><WeighRecords records={ticket.records} /></ContentCard>
@@ -132,10 +143,10 @@ export function WeighingTicketDetailPage() {
     </div>
     <FormDialog open={!!operation} title={operation ? operationTitles[operation] : ""} onCancel={() => setOperation(null)} onSubmit={submitOperation} submitText="确认保存">
       <div className="space-y-space-4">
-        {operation === "void" && <p className="text-error">作废保留原单及称重依据，不恢复任务待称重状态。更正业务信息或人工扣减应在作废后关联重开。</p>}
-        {operation === "reopen" && <><p>对照原始称重录入更正后的最终毛皮重，系统计算扣减量；原单及模拟证据保留，并关联原单，同任务最多一张有效测试单。</p><BusinessFields value={input} onChange={setInput} lockDirection />{originalWeights(ticket.records) && <WeightDeductionFields original={originalWeights(ticket.records)!} value={finalWeights} onChange={setFinalWeights} />}<label className="flex items-center gap-space-2"><input type="checkbox" checked={evidenceValid} onChange={(event) => setEvidenceValid(event.target.checked)} />已核验原称重依据仍有效</label></>}
-        {operation === "authorize" && <p>补打沿用原测试单号，本次授权仅供一次模拟补打，保留补打次数和原因。</p>}
-        {operation === "resolve" && <Field label="核实结果" htmlFor="print-resolution"><Select id="print-resolution" value={printed ? "printed" : "failed"} onChange={(event) => setPrinted(event.target.value === "printed")}><option value="failed">明确失败且确认未出纸，允许重试</option><option value="printed">已出纸或无法排除已出纸，须授权补打</option></Select></Field>}
+        {operation === "void" && <p className="text-error">作废保留原单及称重依据，不恢复任务待称重状态。更正业务信息或人工调整应在作废后关联重开。</p>}
+        {operation === "reopen" && <><p>对照原始称重录入更正后的最终毛皮重，系统计算调整差额；原单及模拟证据保留，并关联原单，同任务最多一张有效测试单。</p><BusinessFields value={input} onChange={setInput} lockDirection /><p className="text-sm">上版最终毛／皮／净重：{formatWeight(ticket.gross)} / {formatWeight(ticket.tare)} / {formatWeight(ticket.net)}</p><Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(ticket.taskId)}`}>需要实际单磅重称：前往原任务采集，完成后返回本单重开</Link>{currentOriginal && <WeightDeductionFields original={currentOriginal} value={finalWeights} onChange={setFinalWeights} />}<label className="flex items-center gap-space-2"><input type="checkbox" checked={evidenceValid} onChange={(event) => setEvidenceValid(event.target.checked)} />已核验本次采用的两磅依据仍有效（包含单磅重称时沿用的另一磅）</label></>}
+        {operation === "authorize" && <p>补打沿用原测试单号，本次登记仅供一次模拟补打，保留补打次数和原因。</p>}
+        {operation === "resolve" && <Field label="核实结果" htmlFor="print-resolution"><Select id="print-resolution" value={printed ? "printed" : "failed"} onChange={(event) => setPrinted(event.target.value === "printed")}><option value="failed">明确失败且确认未出纸，允许重试</option><option value="printed">已出纸或无法排除已出纸，须办理补打</option></Select></Field>}
         <Field label="操作原因 / 核实说明" htmlFor="ticket-operation-reason" required><Input id="ticket-operation-reason" required value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
         {error && <p role="alert" className="text-error">{error}</p>}
       </div>
@@ -151,10 +162,10 @@ export function WeighingTicketPreviewPage() {
   const ticket = data.tickets.find((item) => item.id === id);
   const canPrint = data.config.role !== "admin";
 
-  function simulatePrint() {
+  async function simulatePrint() {
     if (!ticket) return;
     try {
-      dispatch({ type: "previewPrint", ticketId: ticket.id });
+      await dispatch({ type: "previewPrint", ticketId: ticket.id });
       setError(""); setNotice("已记录模拟打印尝试，未向物理打印机发送任务。");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "模拟打印失败"); }
   }
@@ -170,7 +181,7 @@ export function WeighingTicketPreviewPage() {
         {ticket.status === "void" && <p className="mb-space-4 font-semibold text-error">此测试单已作废</p>}
         {data.pending?.taskId === ticket.taskId && <p className="mb-space-4 text-warning">提交结果待核实，请返回工作台查询结果后再办理。</p>}
         <TicketWeights ticket={ticket} />
-        <div className="my-space-5 grid gap-space-4 border-y border-border py-space-4 sm:grid-cols-3"><DetailItem label="出单时间（北京）" value={beijingTime(ticket.issuedAt)} /><DetailItem label="补打标记" value={`补打 ${ticket.reprintCount} 次${ticket.reprintAuthorized ? "（下一次补打已授权）" : ""}`} /><DetailItem label="模拟打印状态" value={printStatusLabels[ticket.printStatus]} /></div>
+        <div className="my-space-5 grid gap-space-4 border-y border-border py-space-4 sm:grid-cols-3"><DetailItem label="出单时间（北京）" value={beijingTime(ticket.issuedAt)} /><DetailItem label="补打标记" value={`补打 ${ticket.reprintCount} 次${ticket.reprintAuthorized ? "（下一次补打已登记）" : ""}`} /><DetailItem label="模拟打印状态" value={printStatusLabels[ticket.printStatus]} /></div>
         <BusinessSnapshot value={ticket} />
         <div className="mt-space-5 border-t border-border pt-space-4">
           <h3 className="mb-space-3 text-sm font-medium">本单称重模拟抓拍</h3>
@@ -182,9 +193,9 @@ export function WeighingTicketPreviewPage() {
         <p className="mt-space-6 text-text-tertiary">模拟重量与模拟证据；摄像头、仪表及物理打印机均未真实接入。</p>
       </ContentCard>
       <ContentCard title="模拟打印操作" description="仅验证结果与补打流程，不进行真实打印。">
-        <div className="flex flex-wrap items-center gap-space-3"><Button variant="primary" disabled={!canAttempt} onClick={simulatePrint}>{ticket.reprintAuthorized ? "演示授权补打" : ticket.printStatus === "failed" ? "演示失败后重试" : "演示首次打印结果"}</Button><span className="text-text-secondary">演示设置配置结果：{printStatusLabels[data.config.printOutcome]}</span></div>
-        {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">结果待核实，请返回详情由主管核实；当前不能再次发送模拟打印。</p>}
-        {ticket.printStatus === "printed" && !ticket.reprintAuthorized && <p className="mt-space-4 text-text-secondary">如需再次模拟打印，请返回详情由主管填写原因并授权补打。</p>}
+        <div className="flex flex-wrap items-center gap-space-3"><Button variant="primary" disabled={!canAttempt} onClick={simulatePrint}>{ticket.reprintAuthorized ? "演示办理补打" : ticket.printStatus === "failed" ? "演示失败后重试" : "演示首次打印结果"}</Button><span className="text-text-secondary">演示设置配置结果：{printStatusLabels[data.config.printOutcome]}</span></div>
+        {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">结果待核实，请返回详情由操作员核实；当前不能再次发送模拟打印。</p>}
+        {ticket.printStatus === "printed" && !ticket.reprintAuthorized && <p className="mt-space-4 text-text-secondary">如需再次模拟打印，请返回详情由操作员填写原因并办理补打。</p>}
         {notice && <p role="status" className="mt-space-4 text-success">{notice}</p>}
         {error && <p role="alert" className="mt-space-4 text-error">{error}</p>}
       </ContentCard>

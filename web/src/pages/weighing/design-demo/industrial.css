@@ -1,0 +1,142 @@
+.industrial-demo {
+  --ida-fog: #e9eef0;
+  --ida-white: #fff;
+  --ida-ink: #243740;
+  --ida-muted: #6c7d83;
+  --ida-line: #dce4e6;
+  --ida-navy: #17323d;
+  --ida-teal: #086f78;
+  --ida-green: #23734b;
+  min-height: calc(100vh - 58px);
+  box-sizing: border-box;
+  padding: 22px clamp(20px, 3vw, 42px) 28px;
+  color: var(--ida-ink);
+  background: var(--ida-fog);
+  font-family: "Microsoft YaHei", "Noto Sans SC", "PingFang SC", sans-serif;
+}
+
+.industrial-demo *, .industrial-demo *::before, .industrial-demo *::after { box-sizing: border-box; }
+.industrial-demo button { font: inherit; }
+.ida-header, .ida-brand, .ida-header-right, .ida-platebar, .ida-section-heading, .ida-section-heading > div,
+.ida-camera-footer, .ida-camera-state, .ida-view-switch, .ida-gauge-head, .ida-reading, .ida-gauge-bottom,
+.ida-gauge-meta, .ida-business-head, .ida-field, .ida-field-value, .ida-action-area, .ida-confirm {
+  display: flex;
+  align-items: center;
+}
+.ida-header { justify-content: space-between; max-width: 1480px; margin: 0 auto 17px; min-height: 44px; }
+.ida-brand { gap: 12px; }
+.ida-mark { width: 34px; height: 34px; border: 1px solid #bdcccf; border-radius: 9px; display: flex; align-items: end; justify-content: center; gap: 3px; padding: 8px 7px; background: #f7f9f9; }
+.ida-mark span { display: block; width: 4px; border-radius: 1px; background: var(--ida-teal); }
+.ida-mark span:nth-child(1) { height: 9px; opacity: .55; }.ida-mark span:nth-child(2) { height: 15px; }.ida-mark span:nth-child(3) { height: 12px; opacity: .76; }
+.ida-title { font-size: 17px; font-weight: 700; line-height: 22px; letter-spacing: .2px; }
+.ida-subtitle { margin-top: 2px; color: var(--ida-muted); font-size: 12px; }
+.ida-dot { display: inline-block; width: 3px; height: 3px; margin: 0 5px 2px; border-radius: 50%; background: #97a8ad; }
+.ida-header-right { gap: 23px; color: var(--ida-muted); font-size: 12px; }
+.ida-demo-tag { padding: 5px 9px; border: 1px solid #d3dedf; border-radius: 4px; color: #576d73; background: #f5f8f8; }
+.ida-demo-tag i { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #79999b; }
+.ida-clock { display: grid; gap: 2px; text-align: right; font-variant-numeric: tabular-nums; }
+.ida-clock strong { color: var(--ida-ink); font-size: 12px; font-weight: 600; }
+.ida-clock span { font-size: 12px; }
+.ida-operator { display: flex; align-items: center; gap: 7px; color: var(--ida-ink); }
+.ida-avatar { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; color: #476168; background: #dce6e6; font-size: 12px; }
+
+.ida-platebar { max-width: 1480px; min-height: 68px; margin: 0 auto 18px; padding: 11px 18px; border: 1px solid #d6e0e2; border-radius: 7px; background: var(--ida-white); gap: 15px; }
+.ida-plate-label { color: #6a7c82; font-size: 12px; white-space: nowrap; }
+.ida-live-dot { display: inline-block; width: 7px; height: 7px; margin-right: 8px; border-radius: 50%; background: #3d8c64; box-shadow: 0 0 0 3px #e7f1eb; }
+.ida-plate { height: 42px; min-width: 172px; display: flex; align-items: center; justify-content: center; border: 2px solid #24577b; border-radius: 5px; background: #fdfefe; color: #1e5071; box-shadow: inset 0 0 0 2px #eaf0f4; }
+.ida-province { font-size: 21px; font-weight: 700; }
+.ida-plate-divider { height: 22px; width: 1px; margin: 0 10px; background: #c6d4dc; }
+.ida-plate-number { font-family: Bahnschrift, "Arial Narrow", sans-serif; font-size: 23px; font-weight: 700; letter-spacing: 2px; }
+.ida-plate-note { color: #698078; font-size: 12px; white-space: nowrap; }
+.ida-vehicle-type { padding: 4px 8px; border-radius: 3px; color: #60747a; background: #edf2f3; font-size: 12px; white-space: nowrap; }
+.ida-plate-spacer { flex: 1; }
+.ida-direction { display: flex; align-items: center; gap: 7px; padding: 7px 11px; border-left: 1px solid #e7ecee; color: #456267; font-size: 12px; white-space: nowrap; }
+.ida-direction-icon { display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; color: #176f65; background: #e6f1ed; font-size: 15px; font-weight: 700; }
+.ida-ticket { padding-left: 14px; border-left: 1px solid #e7ecee; color: #809096; font-size: 12px; white-space: nowrap; }
+.ida-ticket strong { margin-left: 4px; color: #526970; font-family: Bahnschrift, Arial, sans-serif; font-size: 12px; font-weight: 600; }
+
+.ida-workarea { display: grid; grid-template-columns: minmax(0, 1.38fr) minmax(390px, 1fr); gap: 21px; max-width: 1480px; margin: 0 auto; align-items: start; }
+.ida-scene, .ida-operation { min-width: 0; }
+.ida-section-heading { height: 31px; justify-content: space-between; margin-bottom: 9px; }
+.ida-section-heading > div { gap: 9px; }
+.ida-section-bar { width: 3px; height: 15px; border-radius: 2px; background: var(--ida-teal); }
+.ida-section-heading h2, .ida-business-head h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.ida-muted { color: #7b8b90; font-size: 12px; }
+.ida-view-tag { color: #72858a; font-size: 12px; }
+.ida-view-tag i { display: inline-block; width: 5px; height: 5px; margin-right: 5px; border-radius: 50%; background: #83999d; }
+.ida-camera { position: relative; overflow: hidden; margin: 0; aspect-ratio: 16 / 9; border: 1px solid #bdcacc; border-radius: 5px; background: #c7d0d0; box-shadow: 0 2px 5px rgba(31, 55, 62, .08); }
+.ida-camera img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ida-camera::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgba(16, 37, 43, .34), transparent 22%, transparent 72%, rgba(16, 37, 43, .36)); }
+.ida-camera-top, .ida-camera-bottom { position: absolute; z-index: 1; right: 14px; left: 14px; display: flex; justify-content: space-between; color: #f3f7f6; text-shadow: 0 1px 3px rgba(0,0,0,.65); font-size: 12px; }
+.ida-camera-top { top: 12px; }.ida-camera-bottom { bottom: 11px; opacity: .9; }
+.ida-camera-top i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #8bd1ac; box-shadow: 0 0 0 2px rgba(139,209,172,.25); }
+.ida-camera-corner { position: absolute; z-index: 1; width: 17px; height: 17px; border-color: rgba(255,255,255,.8); border-style: solid; }
+.ida-corner-tl { top: 33px; left: 14px; border-width: 1px 0 0 1px; }.ida-corner-tr { top: 33px; right: 14px; border-width: 1px 1px 0 0; }
+.ida-corner-bl { bottom: 32px; left: 14px; border-width: 0 0 1px 1px; }.ida-corner-br { right: 14px; bottom: 32px; border-width: 0 1px 1px 0; }
+.ida-camera-footer { justify-content: space-between; min-height: 56px; padding: 8px 2px; border-bottom: 1px solid #d6e0e1; }
+.ida-camera-state { gap: 9px; }
+.ida-state-mark { display: grid; width: 25px; height: 25px; place-items: center; border: 1px solid #c5d9cd; border-radius: 50%; color: var(--ida-green); background: #f3f8f4; font-size: 12px; }
+.ida-camera-state strong, .ida-camera-state small { display: block; }.ida-camera-state strong { font-size: 14px; font-weight: 600; }.ida-camera-state small { margin-top: 3px; color: #7b898e; font-size: 12px; }
+.ida-view-switch { gap: 3px; padding: 3px; border-radius: 4px; background: #dde6e7; color: #6c7e83; font-size: 12px; }
+.ida-view-switch span { padding: 6px 9px; white-space: nowrap; }.ida-view-switch .ida-view-active { border-radius: 3px; color: #314d54; background: #fff; box-shadow: 0 1px 2px rgba(24,47,55,.1); }
+.ida-observation-note { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: #7d8d92; font-size: 12px; line-height: 16px; }
+.ida-note-icon { display: grid; width: 14px; height: 14px; place-items: center; flex: none; border: 1px solid #9caaad; border-radius: 50%; font-family: Georgia, serif; font-size: 12px; }
+
+.ida-gauge { overflow: hidden; padding: 18px 20px 13px; border-radius: 6px; color: #e7eff0; background: var(--ida-navy); box-shadow: 0 3px 7px rgba(25,49,58,.13); }
+.ida-gauge-head { justify-content: space-between; }
+.ida-gauge-kicker { color: #9fb4b9; font-size: 12px; }
+.ida-reading-state { display: inline-flex; align-items: center; gap: 5px; margin-left: 10px; color: #94d0ad; font-size: 12px; }
+.ida-reading-state i { width: 5px; height: 5px; border-radius: 50%; background: #65b785; box-shadow: 0 0 0 3px rgba(101,183,133,.13); }
+.ida-device { color: #8fa7ad; font-size: 12px; }.ida-device b { margin-left: 6px; color: #78bc93; font-weight: 500; }
+.ida-reading { align-items: baseline; min-height: 94px; padding: 3px 0 0; font-variant-numeric: tabular-nums lining-nums; }
+.ida-reading-value { color: #f4f7f5; font-family: Bahnschrift, "Arial Narrow", Arial, sans-serif; font-size: clamp(62px, 5.3vw, 72px); font-weight: 600; line-height: 1; letter-spacing: -1.8px; }
+.ida-reading-unit { margin-left: 11px; color: #a9bec2; font-size: 15px; }
+.ida-gauge-bottom { gap: 9px; color: #9cb2b7; font-size: 12px; }
+.ida-gauge-bottom > span:first-child { color: #e2ebeb; font-size: 12px; font-weight: 600; }
+.ida-gauge-rule { height: 1px; flex: 1; background: rgba(183,205,207,.2); }
+.ida-gauge-signal { display: flex; height: 11px; align-items: end; gap: 2px; }
+.ida-gauge-signal i { display: block; width: 3px; height: 4px; border-radius: 1px; background: #62ad85; }.ida-gauge-signal i:nth-child(2), .ida-gauge-signal i:nth-child(5) { height: 7px; }.ida-gauge-signal i:nth-child(3), .ida-gauge-signal i:nth-child(6) { height: 9px; }.ida-gauge-signal i:nth-child(4) { height: 11px; }
+.ida-gauge-meta { gap: 7px; margin-top: 14px; padding-top: 11px; border-top: 1px solid rgba(201,220,221,.14); color: #8fa7ad; font-size: 12px; white-space: nowrap; }
+.ida-gauge-meta strong { color: #c3d3d5; font-family: Bahnschrift, Arial, sans-serif; font-size: 12px; font-weight: 500; }
+.ida-gauge-meta-divider { width: 1px; height: 11px; margin: 0 3px 0 auto; background: rgba(201,220,221,.2); }
+.ida-business-head { justify-content: space-between; margin: 18px 0 8px; }
+.ida-business-head h2 { font-size: 14px; }.ida-business-head > span { color: #75878c; font-size: 12px; }
+.ida-fields { overflow: hidden; border: 1px solid #d8e1e3; border-radius: 5px; background: #fff; }
+.ida-field { min-height: 48px; gap: 12px; padding: 7px 13px; border-bottom: 1px solid #edf1f2; }
+.ida-field:last-child { border-bottom: 0; }
+.ida-field-label { width: 57px; flex: none; color: #78898e; font-size: 12px; }
+.ida-field-value { min-width: 0; flex: 1; justify-content: space-between; gap: 8px; }
+.ida-field-value strong { overflow: hidden; color: #2f464d; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.ida-field-value small { flex: none; color: #89979b; font-size: 12px; }
+.ida-driver-field { min-height: 42px; }
+.ida-driver-field .ida-field-value strong { font-family: Bahnschrift, "Microsoft YaHei", sans-serif; }
+.ida-action-area { justify-content: space-between; gap: 14px; margin-top: 13px; }
+.ida-action-copy strong, .ida-action-copy span { display: block; }.ida-action-copy strong { color: #345158; font-size: 14px; font-weight: 600; }.ida-action-copy span { margin-top: 4px; color: #869499; font-size: 12px; }
+.ida-confirm { justify-content: center; gap: 8px; min-width: 158px; min-height: 43px; border: 0; border-radius: 4px; color: #fff; background: var(--ida-teal); font-size: 14px; font-weight: 600; }
+.ida-confirm-check { display: grid; width: 17px; height: 17px; place-items: center; border: 1px solid rgba(255,255,255,.58); border-radius: 50%; font-size: 12px; }
+.ida-footnote { display: flex; align-items: center; gap: 6px; margin-top: 11px; color: #8a989c; font-size: 12px; }.ida-footnote span { display: grid; width: 12px; height: 12px; place-items: center; border: 1px solid #abb7ba; border-radius: 50%; font-family: Georgia, serif; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .industrial-demo { padding: 17px 18px 24px; }
+  .ida-workarea { grid-template-columns: minmax(0, 1fr) minmax(330px, .9fr); gap: 15px; }
+  .ida-platebar { gap: 10px; padding-inline: 12px; }
+  .ida-ticket { display: none; }
+  .ida-gauge { padding-inline: 15px; }
+  .ida-field { gap: 8px; padding-inline: 10px; }
+  .ida-field-label { width: 48px; }
+}
+@media (max-width: 680px) {
+  .industrial-demo { padding: 14px 13px 24px; }
+  .ida-header { align-items: flex-start; margin-bottom: 13px; }
+  .ida-header-right { gap: 10px; }.ida-clock { display: none; }.ida-demo-tag { align-self: center; }
+  .ida-operator > span:last-child { display: none; }
+  .ida-platebar { flex-wrap: wrap; gap: 9px; margin-bottom: 14px; padding: 11px; }
+  .ida-plate-label { width: calc(100% - 100px); }.ida-plate { min-width: 154px; height: 39px; order: 2; }.ida-plate-note { order: 3; }.ida-vehicle-type { order: 4; }
+  .ida-plate-spacer { display: none; }.ida-direction { margin-left: auto; padding: 0; border: 0; order: 1; }.ida-ticket { display: block; width: 100%; padding: 7px 0 0; border: 0; border-top: 1px solid #edf1f2; order: 5; }
+  .ida-workarea { display: flex; flex-direction: column; gap: 19px; }.ida-scene, .ida-operation { width: 100%; }
+  .ida-reading-value { font-size: 64px; }
+}
+@media (max-width: 390px) {
+  .ida-plate-note { width: 100%; }.ida-vehicle-type { display: none; }.ida-view-switch span { padding-inline: 6px; }
+  .ida-gauge-meta { gap: 5px; font-size: 12px; }.ida-gauge-meta strong { font-size: 12px; }.ida-confirm { min-width: 138px; }
+}

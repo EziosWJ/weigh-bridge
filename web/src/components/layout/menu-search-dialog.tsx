@@ -12,6 +12,7 @@ import {
   DialogOverlay,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { openWorkbench } from "@/lib/workbench-window";
 import { Input } from "@/components/ui/input";
 import { convertUserMenusToNavItems, defaultNavItems, mergeNavItems } from "@/config/navigation";
 import { buildMenuSearchIndex, searchMenus, type MenuSearchItem } from "@/lib/menu-search";
@@ -41,9 +42,12 @@ export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
     document.getElementById(`${id}-option-${activeIndex}`)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, results, id]);
 
+  const [blockedWorkbench, setBlockedWorkbench] = useState(false);
   const openItem = (item: MenuSearchItem) => {
     if (pending || composingRef.current) return;
-    if (item.externalUrl) {
+    if (item.path === "/weighing/workbench") {
+      if (!openWorkbench(item.path)) { setBlockedWorkbench(true); return; }
+    } else if (item.externalUrl) {
       window.open(item.externalUrl, "_blank", "noopener,noreferrer");
     } else if (item.path !== `${location.pathname}${location.search}${location.hash}`) {
       navigate(item.path);
@@ -73,6 +77,7 @@ export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
               <X className="h-4 w-4" aria-hidden />
             </DialogClose>
           </div>
+          {blockedWorkbench && <p role="alert" className="text-sm text-warning">浏览器阻止了新窗口。<a href="/weighing/workbench" target="weighbridge-workbench" className="text-primary underline">直接打开工作台</a></p>}
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-text-tertiary" aria-hidden />
             <Input

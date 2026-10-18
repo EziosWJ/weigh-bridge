@@ -15,14 +15,14 @@ export function createInitialState(now = new Date().toISOString()): WeighingStat
     carrierId: 'party-3', carrierName: '示例运输合作社', carrierCode: 'B0003', contactName: '示例联系人', contactPhone: '13800000001', driverPhone: '13800000009',
     createdAt: at(minutes), status, records: [], history: [{ at: at(minutes), role: 'operator', action: '创建示例测试任务' }], example: true,
   });
-  const waitingIn = task('TEST-T-001', '川A·示例01', 'inbound', 'second', 50);
-  const waitingOut = task('TEST-T-002', '川A·示例02', 'outbound', 'second', 40);
-  const completed = task('TEST-T-003', '川A·示例03', 'inbound', 'completed', 120);
-  const terminated = task('TEST-T-004', '川A·示例04', 'outbound', 'terminated', 90);
-  const voided = task('TEST-T-005', '川A·示例05', 'outbound', 'completed', 150);
-  const first = task('TEST-T-006', '川A·示例06', 'inbound', 'first', 5);
-  const crossDay = task('TEST-T-007', '川A·示例07', 'inbound', 'second', 26 * 60);
-  crossDay.remark = '示例：跨天待核实，请核对昨日首次称重依据后填写核实说明';
+  const waitingIn = task('TEST-T-001', '晋A10001', 'inbound', 'second', 50);
+  const waitingOut = task('TEST-T-002', '晋A10002', 'outbound', 'second', 40);
+  const completed = task('TEST-T-003', '晋A10003', 'inbound', 'completed', 120);
+  const terminated = task('TEST-T-004', '晋A10004', 'outbound', 'terminated', 90);
+  const voided = task('TEST-T-005', '晋A10005', 'outbound', 'completed', 150);
+  const first = task('TEST-T-006', '晋A10006', 'inbound', 'first', 5);
+  const crossDay = task('TEST-T-007', '晋A10007', 'inbound', 'second', 26 * 60);
+  crossDay.remark = '示例：过夜车，核对昨日首次依据后直接回磅，无需额外说明';
   const snapshot = (task: TransportTask, stage: 'first' | 'second', weight: number, time: string) => {
     const preset = getCameraPreset(stage === 'first' ? 'front' : 'rear');
     return { id: `${task.id}-${stage}-C`, preset: preset.id, imageSrc: preset.src, cameraLabel: preset.title, at: time, weight, plate: task.plate };
@@ -50,7 +50,7 @@ export function createInitialState(now = new Date().toISOString()): WeighingStat
       { id: 'party-3', code: 'B0003', name: '示例运输合作社', shortName: '示例承运', nature: 'enterprise', roles: ['carrier'], phone: '13800000003', address: '', creditCode: '', enabled: true, remark: '', contacts: [] },
     ],
     tasks: [first, waitingIn, waitingOut, crossDay, completed, terminated, voided], tickets: [validTicket, voidTicket],
-    config: { cameraPreset: 'front', role: 'operator', weight: 30, stable: true, timedOut: false, deviceError: false, online: true, evidence: true, submission: 'normal', printOutcome: 'printed' },
+    config: { scenePlate: '晋A12345', recognitionCandidate: '晋A12346', recognitionScenario: 'correct', cameraPreset: 'front', role: 'operator', weight: 30, stable: true, timedOut: false, deviceError: false, online: true, evidence: true, submission: 'normal', printOutcome: 'printed' },
     sampleReady: false, owner: null, history: [], sequence: 100,
   };
 }

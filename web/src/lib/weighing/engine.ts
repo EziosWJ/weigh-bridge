@@ -1,6 +1,7 @@
 import type { BusinessInfo, FinalWeightInput, HistoryEntry, TaskInput, TestTicket, TransportTask, WeighRecord, WeighingCommand, WeighingState, WeightValues } from '../../types/weighing';
 import { emptyTaskInput, roleLabels } from '../../types/weighing';
 import { createInitialState } from './seed';
+import { siteConfigKeys } from './plate';
 import { getCameraPreset } from './camera';
 import { adjustedWeights, originalWeights, weightDeduction, weightInMilliTonnes } from './weights';
 
@@ -19,15 +20,14 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
   function fail(message: string): never { throw new Error(message); }
   const requireReason = (reason: string) => reason.trim() || fail('请填写操作原因或核实说明');
   const requireDaily = () => { if (role === 'admin') fail('请切换操作员或主管演示岗位办理日常业务'); };
-  const requireSupervisor = () => { if (role !== 'supervisor') fail('此操作需要主管演示岗位'); };
   const requireAdmin = () => { if (role !== 'admin') fail('维护测试资料需要管理员演示岗位'); };
   const requireSettled = () => { if (state.pending) fail('上次提交结果不明，请先查询提交结果'); };
   const requireSite = () => {
     requireDaily(); requireSettled();
-    if (state.owner === 'other') fail('现场正由其他演示会话占用，请主管接管后操作');
+    if (state.owner === 'other') fail('现场正由其他演示会话占用，请操作员接管后操作');
     state.owner = 'self';
   };
-  const log = (action: string, reason?: string): HistoryEntry => ({ at: now, role, action, ...(reason ? { reason } : {}) });
+  const log = (action: string, reason?: string): HistoryEntry => ({ at: now, role, actor: command.actor?.trim() || `演示${roleLabels[role]}`, action, ...(reason ? { reason } : {}) });
   const id = (prefix: string) => `TEST-${prefix}-${++state.sequence}`;
   const findTask = (taskId: string) => state.tasks.find((task) => task.id === taskId) ?? fail('测试任务不存在');
   const findTicket = (ticketId: string) => state.tickets.find((ticket) => ticket.id === ticketId) ?? fail('测试单据不存在');
@@ -81,22 +81,21 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
     if (!checked) fail('请先人工核对车牌、业务信息及模拟称重依据');
   };
   const checkDay = (task: TransportTask) => {
-    const first = latest(task, 'first');
-    if (task.crossDayDoubt) fail('跨天续称存在疑点，需主管核查；无法确认原运输应终止');
-    if (first && beijingDay(first.at) !== beijingDay(now) && task.verifiedDate !== beijingDay(now)) fail('跨天续称请先核对首次称重并填写核实说明');
+    if (task.crossDayDoubt) fail('原运输存在疑点，请操作员核实车辆与任务，无法确认时终止');
   };
   const makeRecord = (task: TransportTask, stage: WeighRecord['stage'], reason?: string): WeighRecord => {
     const capture = state.capture;
     if (!capture) fail('本次模拟抓拍缺失，请重新采集');
     if (capture.plate && capture.plate !== task.plate) fail('本次模拟抓拍关联的是其他车牌，请为当前车辆重新采集');
     return { id: id('W'), stage, kind: (task.direction === 'inbound') === (stage === 'first') ? 'gross' : 'tare',
-      weight: state.config.weight, at: now, evidence: 'simulated', capture: { ...structuredClone(capture), plate: task.plate }, ...(reason ? { reason } : {}),
+      weight: state.config.weight, at: now, actor: command.actor?.trim() || `演示${roleLabels[role]}`, role, evidence: 'simulated', capture: { ...structuredClone(capture), plate: task.plate }, ...(reason ? { reason } : {}),
     };
   };
   const adjustment = (original: WeightValues, input: FinalWeightInput, actor?: string, before = original) => {
     const after = adjustedWeights(original, input);
     return {
-    ...weightDeduction(original, after, input.reason),
+    ...weightDeduction(original, after, input.reason?.trim() || (after.gross !== original.gross || after.tare !== original.tare ? '磅精度调整' : undefined)),
+    source: after.gross !== original.gross || after.tare !== original.tare ? 'manual' as const : 'collected' as const,
     actor: actor?.trim() || `演示${roleLabels[role]}`, role, at: now,
     original: { ...original }, before: { ...before }, after,
   }; };
@@ -111,10 +110,10 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
   };
 
   switch (command.type) {
-    case 'reset': requireAdmin(); return createInitialState(now);
+    case 'reset': requireAdmin(); return { ...createInitialState(now), resetAt: now };
     case 'config': {
       // 配置面板是所有演示使用者的场景控制，不修改真实账号权限。
-      invalidateSample();
+      if (siteConfigKeys.some(key => key in command.patch && !Object.is(state.config[key], command.patch[key]))) invalidateSample();
       state.config = { ...state.config, ...command.patch };
       return state;
     }
@@ -122,15 +121,22 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       requireSite(); requireConditions(); state.sampleReady = true;
       const preset = getCameraPreset(state.config.cameraPreset);
       const plate = (command.taskId ? findTask(command.taskId).plate : command.plate ?? state.draft.plate).trim().toUpperCase();
-      state.capture = { id: id('C'), preset: preset.id, imageSrc: preset.src, cameraLabel: preset.title, at: now, weight: state.config.weight, ...(plate ? { plate } : {}) };
+      state.capture = { id: id('C'), preset: preset.id, imageSrc: preset.src, cameraLabel: preset.title, at: now, weight: state.config.weight, ...(plate ? { plate } : {}), ...((command.plateEvidence ?? (state.draftPlateEvidence?.confirmedPlate === plate ? state.draftPlateEvidence : undefined)) ? { plateEvidence: structuredClone(command.plateEvidence ?? state.draftPlateEvidence) } : {}) };
       state.history.push(log('采集模拟重量与抓拍图片', preset.title)); return state;
     }
-    case 'draft':
+    case 'draft': {
       requireSettled();
-      if (command.patch.plate !== undefined && command.patch.plate.trim().toUpperCase() !== state.draft.plate.trim().toUpperCase() && state.firstRequests[state.draftRequestId]) state.draftRequestId = id('FIRST');
-      state.draft = { ...state.draft, ...command.patch }; invalidateSample(); return state;
+      const plateChanged = command.patch.plate !== undefined && command.patch.plate.trim().toUpperCase() !== state.draft.plate.trim().toUpperCase();
+      if (plateChanged && state.firstRequests[state.draftRequestId]) state.draftRequestId = id('FIRST');
+      state.draft = { ...state.draft, ...command.patch };
+      // 同车允许先采集再补业务资料；改车牌必须重新采集现场依据。
+      if (plateChanged) { invalidateSample(); delete state.draftPlateEvidence; }
+      return state;
+    }
+    case 'verifyPlate':
+      requireSettled(); state.draftPlateEvidence = structuredClone(command.evidence); return state;
     case 'clearDraft':
-      requireSettled(); state.draft = emptyTaskInput(); state.draftRequestId = id('FIRST'); invalidateSample(); return state;
+      requireSettled(); state.draft = emptyTaskInput(); delete state.draftPlateEvidence; state.draftRequestId = id('FIRST'); invalidateSample(); return state;
     case 'firstWeigh': {
       requireSite();
       if (!command.requestId.trim()) fail('首次称重请求编号不能为空');
@@ -145,6 +151,7 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
         state.tasks.unshift(task); state.firstRequests[command.requestId] = taskId;
       }
       state.draft = { ...command.input }; invalidateSample();
+      if (committed) delete state.draftPlateEvidence;
       if (state.config.submission !== 'normal') {
         state.pending = { taskId, stage: 'first', committed, requestId: command.requestId, plate: info.plate };
         state.history.push(log('模拟首次称重提交结果不明，等待查询'));
@@ -178,11 +185,14 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
         task.records.push(record);
         if (command.stage === 'second') {
           const original = originalWeights(task.records) ?? fail('缺少原始称重依据');
+          const first = latest(task, 'first');
+          if (first && beijingDay(first.at) !== beijingDay(now)) task.history.push(log(`隔日续称，沿用首次记录 ${first.id}（${first.at}），本次记录 ${record.id}（${now}）`));
           state.tickets.unshift(issueTicket(task, command.finalWeights ?? { gross: original.gross, tare: original.tare }, command.actor)); task.status = 'completed';
         } else task.status = 'second';
         task.history.push(log(`确认测试${command.stage === 'first' ? '首次' : '二次'}称重`));
       }
       invalidateSample();
+      if (committed) delete state.draftPlateEvidence;
       if (state.config.submission !== 'normal') {
         state.pending = { taskId: task.id, stage: command.stage, committed };
         state.history.push(log('模拟提交结果不明，等待查询'));
@@ -201,7 +211,7 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       return state;
     }
     case 'correctTask': {
-      requireSupervisor(); requireSite();
+      requireDaily(); requireSite();
       const reason = requireReason(command.reason); const task = findTask(command.taskId); requireActive(task);
       if (task.records.length && command.input.direction !== task.direction) fail('首次称重后运输方向已锁定');
       const info = businessInfo(command.input, task); checkPlate(info.plate, task.id);
@@ -210,18 +220,31 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       Object.assign(task, info); invalidateSample(); return state;
     }
     case 'reweigh': {
-      requireSupervisor(); requireSite();
-      const reason = requireReason(command.reason); const task = findTask(command.taskId); requireActive(task);
-      const original = latest(task, 'first');
-      if (!original || task.status !== 'second') fail('仅可对未出单任务的已有称重办理重称');
+      requireDaily(); requireSite();
+      const task = findTask(command.taskId);
+      const stage = command.stage ?? 'first';
+      if (command.captureId && task.records.some(record => record.capture?.id === command.captureId)) return state;
+      if (task.status === 'terminated') fail('已终止任务不可重称');
+      if (state.tickets.some(ticket => ticket.taskId === task.id && ticket.status === 'valid')) fail('请先作废有效单再办理单磅重称');
+      const reason = requireReason(command.reason);
+      const original = latest(task, stage) ?? fail('目标称重尚未确认，请在工作台采集确认');
+      const other = latest(task, stage === 'first' ? 'second' : 'first');
       if (!command.sameLoad) fail('装载状态已改变，不能替代原称重结果');
+      if (other && !command.otherValid) fail('请确认沿用的另一磅仍有效');
       checkDay(task); requireSample(command.checked, task.plate);
-      const record = makeRecord(task, 'first', reason); record.replaces = original.id;
-      task.records.push(record); task.history.push(log('重称替代首次结果，原记录保留', reason));
+      if (command.captureId && command.captureId !== state.capture?.id) fail('采集依据已变化，请重新核对');
+      const record = makeRecord(task, stage, reason); record.replaces = original.id;
+      if (other) record.retainedRecordId = other.id;
+      const committed = state.config.submission !== 'unknown-failure';
+      if (committed) {
+        task.records.push(record);
+        task.history.push(log(`单磅重称 ${record.id} 替代 ${original.id}：${original.weight} → ${record.weight} 吨${other ? `，沿用另一磅 ${other.id}` : ''}`, reason));
+      }
+      if (state.config.submission !== 'normal') state.pending = { taskId: task.id, stage, committed, operation: 'reweigh' };
       invalidateSample(); return state;
     }
     case 'terminate': {
-      requireSupervisor(); requireSite();
+      requireDaily(); requireSite();
       const task = findTask(command.taskId); requireActive(task);
       task.history.push(log('终止测试任务，不可恢复', requireReason(command.reason))); task.status = 'terminated';
       invalidateSample(); return state;
@@ -229,20 +252,20 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
     case 'verifyDay': {
       requireSite();
       const task = findTask(command.taskId); requireActive(task);
-      const reason = requireReason(command.reason);
+      const reason = command.reason.trim();
       if (task.status !== 'second') fail('请先完成首次称重再办理续称核实');
       if (task.crossDayDoubt || command.doubtful) {
-        if (command.confirmed) requireSupervisor();
+        if (command.confirmed) requireDaily();
         task.crossDayDoubt = !command.confirmed;
       }
       if (command.confirmed) {
         task.crossDayDoubt = false; task.verifiedDate = beijingDay(now);
       } else delete task.verifiedDate;
-      task.history.push(log(command.confirmed ? '核实仍属原运输，可继续测试称重' : '跨天续称有疑点，待主管核查或终止', reason));
+      task.history.push(log(command.confirmed ? '核实仍属原运输，可继续测试称重' : '原运输有疑点，待操作员核实或终止', reason));
       invalidateSample(); return state;
     }
     case 'voidTicket': {
-      requireSupervisor(); requireSettled();
+      requireDaily(); requireSettled();
       const ticket = findTicket(command.ticketId);
       if (ticket.status !== 'valid') fail('此测试单已经作废');
       const entry = log('作废测试单据，任务保持完成', requireReason(command.reason));
@@ -250,28 +273,39 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       return state;
     }
     case 'reopenTicket': {
-      requireSupervisor(); requireSettled();
+      requireDaily(); requireSettled();
       const old = findTicket(command.ticketId); const reason = requireReason(command.reason);
+      const successor = state.tickets.find(ticket => ticket.previousId === old.id);
+      if (successor?.status === 'valid') return state;
       if (old.status !== 'void') fail('请先作废原测试单，再关联更正重开');
       if (!command.evidenceValid) fail('需核验原称重依据仍有效；无效依据不能更正重开');
       if (state.tickets.some((ticket) => ticket.taskId === old.taskId && ticket.status === 'valid')) fail('该任务已有有效测试单，不能重复重开');
       if (state.tickets.some((ticket) => ticket.previousId === old.id)) fail('该测试单已有更正重开记录，请沿最新单据处理');
       if (command.input.direction !== old.direction) fail('更正重开不能改变原称重方向和重量语义');
       const info = businessInfo(command.input, old);
-      const original = originalWeights(old.records) ?? fail('缺少原始称重依据，不能更正重开');
+      const task = findTask(old.taskId);
+      if (task.status !== 'completed') fail('仅可重开已完成任务');
+      const original = originalWeights(task.records) ?? fail('缺少原始称重依据，不能更正重开');
       const snapshot = adjustment(original, command.finalWeights ?? { gross: old.gross, tare: old.tare }, command.actor, { gross: old.gross, tare: old.tare, net: old.net });
       const newTicket: TestTicket = { ...structuredClone(old), ...info, id: id('P'), issuedAt: now, status: 'valid', previousId: old.id,
-        ...snapshot.after, adjustment: snapshot,
+        ...snapshot.after, adjustment: snapshot, records: structuredClone(task.records),
         history: [log(`关联原测试单 ${old.id} 更正重开`, reason)], printStatus: 'unprinted', reprintCount: 0, reprintAuthorized: false, example: false };
+      if (state.config.submission === 'unknown-failure') {
+        state.pending = { taskId: task.id, stage: 'second', committed: false, operation: 'reopen' };
+        return state;
+      }
       old.history.push(log(`关联更正重开为 ${newTicket.id}`, reason));
       findTask(old.taskId).history.push(log(`更正重开测试单 ${newTicket.id}`, reason));
-      state.tickets.unshift(newTicket); return state;
+      Object.assign(task, info);
+      state.tickets.unshift(newTicket);
+      if (state.config.submission === 'unknown-success') state.pending = { taskId: task.id, stage: 'second', committed: true, operation: 'reopen' };
+      return state;
     }
     case 'previewPrint': {
       requireDaily(); requireSettled(); const ticket = findTicket(command.ticketId);
       if (ticket.status !== 'valid') fail('作废测试单只能查看历史，不能办理打印');
-      if (ticket.printStatus === 'unknown') fail('上次打印结果未知，请先由主管核实，不得自动重打');
-      if (ticket.printStatus === 'printed' && !ticket.reprintAuthorized) fail('已打印测试单需要主管填写原因并授权补打');
+      if (ticket.printStatus === 'unknown') fail('上次打印结果未知，请先由操作员核实，不得自动重打');
+      if (ticket.printStatus === 'printed' && !ticket.reprintAuthorized) fail('已打印测试单需要操作员填写原因后补打');
       const reprint = ticket.reprintAuthorized;
       if (reprint) ticket.reprintCount += 1;
       ticket.reprintAuthorized = false; ticket.printStatus = state.config.printOutcome;
@@ -279,7 +313,7 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       return state;
     }
     case 'resolvePrint': {
-      requireSupervisor(); const ticket = findTicket(command.ticketId);
+      requireDaily(); const ticket = findTicket(command.ticketId);
       if (ticket.printStatus !== 'unknown') fail('此测试单没有待核实的打印结果');
       const reason = requireReason(command.reason);
       ticket.printStatus = command.printed ? 'printed' : 'failed';
@@ -287,7 +321,7 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       return state;
     }
     case 'authorizeReprint': {
-      requireSupervisor(); const ticket = findTicket(command.ticketId);
+      requireDaily(); const ticket = findTicket(command.ticketId);
       if (ticket.status !== 'valid') fail('作废测试单不能授权补打');
       if (ticket.printStatus === 'unknown') fail('请先核实未知打印结果，再办理补打授权');
       if (ticket.printStatus !== 'printed') fail('首次打印或明确未出纸的失败重试无需补打授权');
@@ -295,11 +329,11 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
     }
     case 'occupy':
       requireDaily(); requireSettled();
-      if (state.owner === 'other' && command.owner !== 'other') fail('其他会话已占用现场，请主管接管');
+      if (state.owner === 'other' && command.owner !== 'other') fail('其他会话已占用现场，请操作员接管');
       state.owner = command.owner; invalidateSample(); state.history.push(log(`演示操作占用：${command.owner ?? '空闲'}`)); return state;
     case 'takeover':
-      requireSupervisor(); requireSettled();
-      state.history.push(log('主管接管现场演示会话', requireReason(command.reason))); state.owner = 'self'; invalidateSample(); return state;
+      requireDaily(); requireSettled();
+      state.history.push(log('操作员接管现场演示会话', requireReason(command.reason))); state.owner = 'self'; invalidateSample(); return state;
     case 'saveCategory': {
       requireAdmin(); const name = command.name.trim(); if (!name) fail('请填写分类名称');
       if (state.categories.some((item) => item.id !== command.id && item.name === name)) fail('分类名称已经存在');

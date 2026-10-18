@@ -1,0 +1,152 @@
+/* Form / Detail 的称重作业变体；沿用全站色彩、间距与控件。 */
+.weighing-workbench > :first-child { margin-bottom: 16px; }
+.weighing-settings-link { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: 13px; }
+.weighing-settings-link:hover { color: var(--color-primary); }
+.weighing-station { display: grid; align-items: start; gap: 16px; }
+.weighing-camera { min-width: 0; overflow: hidden; }
+.weighing-camera > div { padding: 0; }
+.weighing-scale > div { padding: 16px; }
+.weighing-instrument { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; min-height: 96px; padding: 12px 16px; border-radius: var(--radius-control); background: var(--color-neutral-background); }
+.weighing-readout { display: flex; justify-content: flex-end; align-items: baseline; gap: 12px; margin: 0; font-family: Bahnschrift, 'DIN Alternate', Arial, sans-serif; font-size: 48px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.weighing-readout > span { font-family: inherit; font-size: 16px; font-weight: 400; color: var(--color-text-secondary); }
+.workbench-weighing-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
+.workbench-weighing-title { display: flex; align-items: center; gap: 14px; margin: 0; line-height: 1.2; }
+.workbench-stage-label { display: inline-flex; align-items: center; min-height: 42px; padding: 6px 12px; border-radius: 4px; background: var(--color-primary); color: white; font-size: 24px; font-weight: 700; }
+.workbench-weight-kind { color: var(--color-text-primary); font-size: 28px; font-weight: 700; }
+.workbench-weighing-context { margin: 0; color: var(--color-text-secondary); font-size: 14px; line-height: 22px; }
+.workbench-context-empty { color: var(--color-text-secondary); font-size: 20px; font-weight: 600; }
+.weighing-action-link { display: flex; min-height: 40px; align-items: center; justify-content: center; padding: 8px 16px; border-radius: var(--radius-control); background: var(--color-primary); color: var(--color-surface); font-weight: 500; }
+.weighing-action-link:hover { background: var(--color-primary-hover); }
+.weighing-business > section { box-shadow: none; }
+.weighing-business > section > header { padding: 12px 16px; }
+.weighing-business > section > div { padding: 16px; }
+@media (min-width: 1024px) {
+  .weighing-station { grid-template-columns: minmax(0, 1.1fr) minmax(420px, 1fr); }
+  .weighing-camera-small { grid-template-columns: minmax(0, 0.65fr) minmax(420px, 1fr); }
+  .weighing-camera-large { grid-template-columns: minmax(0, 1.65fr) minmax(400px, 1fr); }
+  .weighing-scale { position: sticky; top: 80px; z-index: 10; }
+}
+@media (max-width: 1023px) {
+  .weighing-camera-small .weighing-camera { width: 75%; justify-self: start; }
+  .weighing-camera-standard .weighing-camera { width: 90%; justify-self: start; }
+  .weighing-camera-large .weighing-camera { width: 100%; }
+}
+@media (max-width: 639px) {
+  .weighing-workbench > :first-child { gap: 8px; }
+  .weighing-workbench > :first-child > :last-child { flex-wrap: wrap; }
+  .weighing-settings-link { font-size: 12px; }
+  .weighing-camera-small .weighing-camera { width: 90%; }
+  .weighing-camera-standard .weighing-camera { width: 100%; }
+}
+/* B：现场观察优先；局部 token 不影响后台主题。 */
+.standalone-workbench {
+  --color-primary: #245ba8;
+  --color-primary-hover: #1d4c90;
+  --color-text-primary: #26343d;
+  --color-text-secondary: #52616a;
+  --color-text-tertiary: #65747e;
+  --color-border: #cbd5dc;
+  --color-background: #e2e7eb;
+  --color-surface: #fff;
+  --color-neutral-background: #eff3f5;
+  --color-success: #28724f;
+  --radius-control: 4px;
+  --radius-admin: 4px;
+  --shadow-admin: none;
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+}
+.standalone-workbench .workbench-page-heading { display: none; }
+.standalone-workbench .workbench-content { padding: 16px 22px; }
+.standalone-workbench .workbench-topbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 64px;
+  margin: 0 22px; padding: 8px 0; border-bottom: 1px solid var(--color-border);
+  background: var(--color-background); font-size: 14px;
+}
+.standalone-workbench .workbench-brand { display: flex; align-items: center; gap: 10px; }
+.standalone-workbench .workbench-brand-mark { display: grid; place-items: center; width: 34px; height: 34px; background: #243746; color: white; }
+.standalone-workbench .weighing-workbench > * { margin-top: 0; margin-bottom: 0; }
+.standalone-workbench .workbench-notice { margin-bottom: 12px; }
+.standalone-workbench .weighing-station { display: grid; align-items: start; gap: 16px; }
+.standalone-workbench .weighing-console {
+  display: grid; grid-template-rows: auto auto auto 1fr; gap: 16px;
+  min-width: 0; padding: 16px; background: var(--color-surface);
+}
+.standalone-workbench .weighing-console > * { min-width: 0; margin: 0; }
+.standalone-workbench .weighing-console > section,
+.standalone-workbench .weighing-business > section { border: 0; border-radius: 0; box-shadow: none; }
+.standalone-workbench .weighing-vehicle-bar > div,
+.standalone-workbench .workbench-current-action > div { padding: 0; }
+.standalone-workbench .workbench-current-vehicle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.standalone-workbench .workbench-current-vehicle h2 { font-size: 18px; font-weight: 600; }
+.standalone-workbench .weighing-vehicle-bar form { display: grid; grid-template-columns: 1.15fr 1fr; align-items: start; gap: 8px; }
+.standalone-workbench .weighing-vehicle-bar form > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.standalone-workbench .weighing-vehicle-bar .plate-control,
+.standalone-workbench .workbench-phase { grid-column: 1 / -1; }
+.standalone-workbench .weighing-vehicle-bar form > button { padding-left: 8px; padding-right: 8px; font-size: 13px; }
+.standalone-workbench .plate-entry { gap: 0; }
+.standalone-workbench .plate-entry > button { background: var(--color-primary); color: white; border-color: var(--color-primary); border-radius: 0; }
+.standalone-workbench .plate-number { flex: 1; min-width: 0; max-width: none; border-radius: 0; }
+.standalone-workbench .workbench-phase { justify-content: space-between; font-size: 13px; }
+.standalone-workbench .weighing-scale { position: static; min-height: 0; padding: 12px 14px; background: var(--color-background); }
+.standalone-workbench .weighing-scale > div { padding: 0; }
+.standalone-workbench .weighing-scale h2 { font-size: 14px; }
+.standalone-workbench .weighing-instrument { min-height: 0; padding: 0; gap: 8px; border-radius: 0; background: transparent; }
+.standalone-workbench .weighing-readout { justify-content: flex-start; gap: 8px; font-size: 56px; }
+.standalone-workbench .weighing-business { min-height: 0; }
+.standalone-workbench .weighing-business [role="tabpanel"] > .grid { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
+.standalone-workbench .weighing-business [role="tabpanel"] > .grid > .md\:col-span-2 { grid-column: auto; }
+.standalone-workbench .weighing-business input,
+.standalone-workbench .weighing-business textarea,
+.standalone-workbench .weighing-business select { scroll-margin-block: 100px 200px; }
+.standalone-workbench .weighing-business > section > header { padding: 0 0 8px; }
+.standalone-workbench .weighing-business > section > header p { display: none; }
+.standalone-workbench .weighing-business > section > div { padding: 8px 0 0; }
+.standalone-workbench .weighing-business [role="tab"] { padding: 6px 8px; font-size: 13px; }
+.standalone-workbench .weighing-business [role="tabpanel"] { padding-top: 10px; }
+.standalone-workbench .workbench-current-action { padding-top: 12px; border-top: 1px solid var(--color-border); }
+.standalone-workbench .workbench-current-action button { padding-left: 10px; padding-right: 10px; font-size: 13px; }
+.standalone-workbench .workbench-current-action [aria-label="当前称重操作"] { display: flex; flex-direction: column; gap: 8px; }
+.standalone-workbench .workbench-current-action [aria-label="当前称重操作"] > * { margin-top: 0; }
+.standalone-workbench .weighing-camera { width: 100%; border: 0; border-radius: 0; background: transparent; }
+.standalone-workbench .workbench-camera-toolbar { padding: 8px 12px; color: white; background: #243746; }
+.standalone-workbench .workbench-camera-toolbar h2 { font-size: 14px; }
+.standalone-workbench .workbench-camera-toolbar button,
+.standalone-workbench .workbench-camera-toolbar svg { color: white; }
+.standalone-workbench .workbench-camera-toolbar button:hover,
+.standalone-workbench .workbench-camera-toolbar button[aria-pressed="true"] { background: #435a6b; }
+.standalone-workbench .workbench-camera-feed { background: #243746; }
+.standalone-workbench .workbench-camera-feed > img { width: 100%; height: 420px; object-fit: contain; }
+.standalone-workbench .workbench-camera-evidence { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 12px; margin-top: 12px; }
+.standalone-workbench .workbench-camera-evidence > * { min-width: 0; margin: 0; }
+.standalone-workbench .workbench-camera-plate,
+.standalone-workbench .workbench-camera-capture { padding: 12px; border: 0; background: var(--color-surface); }
+.standalone-workbench .workbench-camera-capture h3 { margin-bottom: 8px; }
+.standalone-workbench .workbench-camera-plate > [aria-label] { padding: 0; border: 0; background: transparent; }
+.standalone-workbench .workbench-camera-evidence img { max-height: 100px; object-fit: contain; }
+.standalone-workbench .workbench-camera-evidence .grid { grid-template-columns: 96px minmax(0, 1fr); }
+@media (min-width: 1100px) {
+  .standalone-workbench .weighing-station { grid-template-columns: minmax(0, 1.78fr) minmax(440px, 1fr); }
+  .standalone-workbench .weighing-console { min-height: calc(100dvh - 96px); }
+  .standalone-workbench .weighing-camera { position: sticky; top: 16px; }
+  .standalone-workbench .weighing-camera-small .workbench-camera-feed > img { height: 300px; }
+  .standalone-workbench .weighing-camera-large .workbench-camera-feed > img { height: 520px; }
+}
+@media (max-width: 1099px) {
+  .standalone-workbench .weighing-station { grid-template-columns: minmax(0, 1fr); }
+  .standalone-workbench .weighing-console { height: auto; min-height: 0; }
+  .standalone-workbench .weighing-business { overflow: visible; }
+  .standalone-workbench .workbench-camera-feed > img { height: auto; max-height: 520px; aspect-ratio: 16 / 9; }
+  .standalone-workbench .weighing-camera-small .workbench-camera-feed { width: 75%; margin: auto; }
+  .standalone-workbench .weighing-camera-standard .workbench-camera-feed { width: 90%; margin: auto; }
+}
+@media (max-width: 639px) {
+  .standalone-workbench .workbench-content { padding: 12px; }
+  .standalone-workbench .workbench-topbar { margin: 0 12px; gap: 8px 12px; }
+  .standalone-workbench .workbench-topbar nav { width: 100%; margin-left: 0; }
+  .standalone-workbench .weighing-console { padding: 12px; }
+  .standalone-workbench .workbench-current-vehicle { flex-wrap: wrap; gap: 4px; }
+  .standalone-workbench .workbench-camera-evidence { grid-template-columns: minmax(0, 1fr); }
+  .standalone-workbench .workbench-camera-feed > img { max-height: 300px; }
+}

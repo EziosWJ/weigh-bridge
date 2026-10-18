@@ -76,8 +76,8 @@ export function migrateWeighingState(value: unknown, now = new Date().toISOStrin
 
 function weightDeductionValues(original: WeightValues, after: WeightValues, reason?: string) {
   return {
-    grossDeduction: Math.max(0, Math.round((original.gross - after.gross) * 1000) / 1000),
-    tareDeduction: Math.max(0, Math.round((original.tare - after.tare) * 1000) / 1000),
+    grossDeduction: Math.round((original.gross - after.gross) * 1000) / 1000,
+    tareDeduction: Math.round((original.tare - after.tare) * 1000) / 1000,
     ...(reason ? { reason } : {}),
   };
 }

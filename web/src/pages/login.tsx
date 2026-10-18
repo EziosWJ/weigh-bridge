@@ -41,9 +41,8 @@ export function LoginPage() {
   const [errors, setErrors] = useState<LoginErrors>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const stateFrom =
-    (location.state as { from?: { pathname?: string } } | null)?.from
-      ?.pathname;
+  const requested = (location.state as { from?: { pathname: string; search?: string } } | null)?.from;
+  const stateFrom = requested ? requested.pathname + (requested.search || "") : undefined;
   const queryRedirect = new URLSearchParams(location.search).get("redirect");
   let from = stateFrom ?? queryRedirect ?? "/weighing/workbench";
 
