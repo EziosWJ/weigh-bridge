@@ -231,3 +231,7 @@ journalctl -u cups -n 50     # 服务日志
 CUPS 管理界面可从本机转发：`ssh -L 631:localhost:631 weighbridge-hp`，浏览器访问 `http://localhost:631`。
 
 设备主机本地留有一份日常使用说明：`~/Documents/weighbridge-printer/README.md`（队列选择、票据/中文/二维码用法、常用命令与排障表），与本记录同步维护。
+
+## 8. 后续 Agent 联调
+
+2026-10-19 已实现并在本机部署最小打印 Agent，完成业务下发至 CUPS 的一次补打，初版出纸后按现场反馈补齐实线表格并收窄至约 175 mm，用户已确认 A4 单张版面可用；五联纸及连续走纸仍未验收。历史记录中的未实现边界以当时验证范围为准，最新状态见[现场联调记录](aisino-sk820-agent-test.md)。

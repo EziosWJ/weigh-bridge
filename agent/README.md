@@ -1,6 +1,6 @@
 # 现场 Agent 与开发 mock
 
-现场 Linux Agent 的 D12 仪表、RTSP/HyperLPR3 识别和物理打印驱动尚未实现。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
+现场 Linux Agent 的 D12 仪表、RTSP/HyperLPR3 识别尚未实现。SK-820 最小打印 Agent 已实现并部署，A4 单张纸版面已获现场确认，五联效果及连续走纸仍待验收，见[部署记录](../docs/device/aisino-sk820-agent-test.md)。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
 
 ## 本机启动
 

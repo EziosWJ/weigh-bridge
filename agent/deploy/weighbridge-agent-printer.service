@@ -1,0 +1,15 @@
+[Unit]
+Description=Weighbridge SK-820 printer Agent
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/weighbridge-agent
+EnvironmentFile=%h/weighbridge-agent/agent.env
+ExecStart=/usr/bin/flock -n %h/weighbridge-agent/agent.lock %h/weighbridge-agent/bin/weighbridge-agent-printer --server http://127.0.0.1:18900 --state-dir %h/weighbridge-agent/state
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=default.target

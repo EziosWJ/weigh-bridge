@@ -98,6 +98,16 @@ tasks:
     cmds:
       - go build -trimpath -o ../bin/weighbridge-agent-mock ./cmd/agent-mock
 
+  agent:printer:build:
+    desc: Build the Linux amd64 SK-820 printer Agent
+    dir: server
+    env:
+      CGO_ENABLED: '0'
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-agent-printer ./cmd/agent-printer
+
   host:collector:
     desc: Start the Linux host resource collector; pass flags through CLI_ARGS
     dir: server
