@@ -78,6 +78,9 @@ func TestInitializeBothDatabasesAndPreserveConfiguration(t *testing.T) {
 			if len(cfg.JWT.Secret) != 64 || strings.Contains(output, cfg.JWT.Secret) {
 				t.Fatal("JWT must be randomly generated and excluded from output")
 			}
+			if len(cfg.Weighing.AgentKey) != 64 || cfg.Weighing.AgentKey == cfg.JWT.Secret || strings.Contains(output, cfg.Weighing.AgentKey) {
+				t.Fatal("initialization must generate a separate Agent key without printing it")
+			}
 			if driver == "sqlite" && (cfg.Database.Username != "" || cfg.Database.Password != "") {
 				t.Fatal("SQLite configuration must omit credentials")
 			}
@@ -282,5 +285,57 @@ func TestInvalidArgumentsDoNotCreateConfiguration(t *testing.T) {
 	}
 	if _, err := os.Stat("configs/config.dev.yaml"); !os.IsNotExist(err) {
 		t.Fatal("invalid arguments created configuration")
+	}
+}
+
+func TestInitializeBackfillsAgentKeyAndPreservesExistingSettings(t *testing.T) {
+	checkout(t)
+	if _, err := invoke(t, "init", "--database", "sqlite"); err != nil {
+		t.Fatal(err)
+	}
+	original, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("configs", "config.dev.yaml")
+	contents, _ := os.ReadFile(path)
+	lines := strings.Split(string(contents), "\n")
+	kept := []string{}
+	for _, line := range lines {
+		if !strings.HasPrefix(strings.TrimSpace(line), "agent_key:") {
+			kept = append(kept, line)
+		}
+	}
+	legacy := strings.Join(kept, "\n") + "\n# Keep my local settings verbatim.\n"
+	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := invoke(t, "init")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Weighing.AgentKey) != 64 {
+		t.Fatal("existing local config still has no Agent key")
+	}
+	if updated.JWT.Secret != original.JWT.Secret || updated.Database != original.Database || updated.File != original.File {
+		t.Fatal("backfill changed existing settings")
+	}
+	if strings.Contains(output, updated.Weighing.AgentKey) {
+		t.Fatal("Agent key leaked into output")
+	}
+	before, _ := os.ReadFile(path)
+	if !bytes.Contains(before, []byte("# Keep my local settings verbatim.")) {
+		t.Fatal("backfill removed comments")
+	}
+	if _, err := invoke(t, "init"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("repeated init rotated a configured Agent key")
 	}
 }

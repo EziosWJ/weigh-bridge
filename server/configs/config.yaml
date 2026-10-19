@@ -1,8 +1,17 @@
 service:
   name: weighbridge-server
 
+# Explicit opt-in for the server-backed testing workflow; never creates formal tickets.
+weighing:
+  agent_id: scale-agent-1
+  scale_id: 1
+  agent_key: "" # Set locally or with APP_WEIGHING__AGENT_KEY
+  image_dir: data/agent-images
+  session_ttl: 60s
+  sample_ttl: 30s
+
 http:
-  address: ":8099"
+  address: ":8900"
   trusted_proxies: []
   read_header_timeout: 10s
   read_timeout: 5m

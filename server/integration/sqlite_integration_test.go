@@ -30,6 +30,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/usermgmt"
+	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 func TestSQLiteMigrationLifecycleAndBackup(t *testing.T) {
@@ -50,8 +51,8 @@ func TestSQLiteMigrationLifecycleAndBackup(t *testing.T) {
 	if err := database.GORM.Table("sys_config").Count(&configs).Error; err != nil {
 		t.Fatalf("count SQLite configs: %v", err)
 	}
-	if users != 1 || menus != 20 || configs != 1 {
-		t.Fatalf("seed counts = users %d, menus %d, configs %d; want 1, 20, 1", users, menus, configs)
+	if users != 1 || menus != 42 || configs != 1 {
+		t.Fatalf("seed counts = users %d, menus %d, configs %d; want 1, 42, 1", users, menus, configs)
 	}
 	if err := database.Close(); err != nil {
 		t.Fatalf("close SQLite database: %v", err)
@@ -470,7 +471,8 @@ func sqliteDependencies(t *testing.T, database *platformdatabase.Database, stora
 		t.Fatalf("create SQLite notification service: %v", err)
 	}
 	return app.Dependencies{
-		Auth: authService, RBAC: rbacService, Department: deptService, User: userService,
+		Weighing: weighing.NewService(weighing.NewRepository(database.GORM), nil),
+		Auth:     authService, RBAC: rbacService, Department: deptService, User: userService,
 		Dictionary: dictionaryService, SysConfig: configService, File: fileService,
 		Log: logService, Notification: notificationService,
 	}

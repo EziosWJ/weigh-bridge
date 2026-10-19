@@ -33,6 +33,16 @@ type Config struct {
 	Auth        AuthConfig       `koanf:"auth"`
 	Log         LogConfig        `koanf:"log"`
 	Monitoring  MonitoringConfig `koanf:"monitoring"`
+	Weighing    WeighingConfig   `koanf:"weighing"`
+}
+
+type WeighingConfig struct {
+	AgentID    string        `koanf:"agent_id"`
+	AgentKey   string        `koanf:"agent_key"`
+	ScaleID    int64         `koanf:"scale_id"`
+	ImageDir   string        `koanf:"image_dir"`
+	SessionTTL time.Duration `koanf:"session_ttl"`
+	SampleTTL  time.Duration `koanf:"sample_ttl"`
 }
 
 type MonitoringConfig struct {
@@ -115,6 +125,21 @@ type LogConfig struct {
 // created. This keeps configuration errors deterministic and close to startup.
 func (c Config) Validate() error {
 	var errs []error
+	if c.Weighing.ScaleID < 1 {
+		errs = append(errs, errors.New("weighing.scale_id must be positive"))
+	}
+	if strings.TrimSpace(c.Weighing.AgentID) == "" {
+		errs = append(errs, errors.New("weighing.agent_id is required"))
+	}
+	if c.Weighing.AgentKey != "" && strings.TrimSpace(c.Weighing.ImageDir) == "" {
+		errs = append(errs, errors.New("weighing.image_dir is required when Agent is enabled"))
+	}
+	if c.Weighing.SessionTTL < time.Second {
+		errs = append(errs, errors.New("weighing.session_ttl must be at least 1s"))
+	}
+	if c.Weighing.SampleTTL <= 0 {
+		errs = append(errs, errors.New("weighing.sample_ttl must be greater than zero"))
+	}
 
 	if c.Monitoring.Enabled && !oneOf(c.Monitoring.Source, "native", "unix") {
 		errs = append(errs, errors.New("monitoring.source must be one of native or unix"))

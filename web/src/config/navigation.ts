@@ -44,7 +44,6 @@ export const defaultNavItems: NavItem[] = [
       { label: "物料分类", path: "/weighing/categories", icon: ListOrdered },
     ],
   },
-  { label: "演示设置", path: "/weighing/settings", icon: PanelLeft, sortOrder: -10 },
   { label: "系统概览", path: "/dashboard", icon: LayoutDashboard, sortOrder: 10 },
   {
     label: "消息中心", path: "/messages", icon: Bell, sortOrder: 20,
@@ -197,7 +196,6 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/weighing/originals": "原始称重",
   "/weighing/materials": "物料资料",
   "/weighing/parties": "往来主体",
-  "/weighing/settings": "演示设置",
   "/weighing/categories": "物料分类",
   "/dashboard": "系统概览",
   "/notifications": "我的通知",

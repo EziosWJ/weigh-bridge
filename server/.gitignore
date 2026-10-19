@@ -11,3 +11,6 @@ coverage.out
 internal/webui/dist/
 
 configs/config.test.yaml
+
+# Agent evidence files (back up with the business database).
+data/agent-images/

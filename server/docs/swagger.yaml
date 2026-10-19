@@ -854,9 +854,738 @@ definitions:
       status:
         type: integer
     type: object
+  weighing.BusinessEvent:
+    properties:
+      action:
+        type: string
+      actorId:
+        type: integer
+      actorName:
+        type: string
+      after:
+        type: object
+      before:
+        type: object
+      id:
+        type: integer
+      occurredAt:
+        type: string
+      operationId:
+        type: integer
+      reason:
+        type: string
+      resourceId:
+        type: integer
+      resourceType:
+        type: string
+      sampleId:
+        type: integer
+      taskId:
+        type: integer
+      ticketId:
+        type: integer
+    type: object
+  weighing.BusinessInfo:
+    properties:
+      carrierCode:
+        type: string
+      carrierId:
+        type: integer
+      carrierName:
+        type: string
+      carrierVersion:
+        type: integer
+      contactName:
+        type: string
+      contactPhone:
+        type: string
+      direction:
+        type: string
+      driver:
+        type: string
+      driverPhone:
+        type: string
+      materialCategoryId:
+        type: integer
+      materialCategoryName:
+        type: string
+      materialCode:
+        type: string
+      materialId:
+        type: integer
+      materialName:
+        type: string
+      materialSpec:
+        type: string
+      materialVersion:
+        type: integer
+      partyAddress:
+        type: string
+      partyCode:
+        type: string
+      partyId:
+        type: integer
+      partyName:
+        type: string
+      partyNature:
+        type: string
+      partyPhone:
+        type: string
+      partyVersion:
+        type: integer
+      plate:
+        type: string
+      remark:
+        type: string
+    type: object
+  weighing.BusinessInput:
+    properties:
+      carrierId:
+        type: integer
+      contactName:
+        type: string
+      contactPhone:
+        type: string
+      direction:
+        type: string
+      driver:
+        type: string
+      driverPhone:
+        type: string
+      materialId:
+        type: integer
+      partyId:
+        type: integer
+      plate:
+        type: string
+      remark:
+        type: string
+    type: object
+  weighing.CaptureInput:
+    properties:
+      business:
+        $ref: '#/definitions/weighing.BusinessInput'
+      clientId:
+        type: string
+      plateEvidence:
+        $ref: '#/definitions/weighing.RecognitionInput'
+      reason:
+        type: string
+      scaleId:
+        type: integer
+      sessionToken:
+        type: string
+      targetRecordId:
+        type: integer
+      taskId:
+        type: integer
+    type: object
+  weighing.Checks:
+    properties:
+      business:
+        type: boolean
+      evidence:
+        type: boolean
+      fullyOnScale:
+        type: boolean
+      plate:
+        type: boolean
+      weight:
+        type: boolean
+    type: object
+  weighing.CommandResult:
+    properties:
+      printAttemptId:
+        type: integer
+      recordId:
+        type: integer
+      status:
+        type: string
+      taskId:
+        type: integer
+      taskVersion:
+        type: integer
+      ticketId:
+        type: integer
+    type: object
+  weighing.ConfirmationInput:
+    properties:
+      business:
+        $ref: '#/definitions/weighing.BusinessInput'
+      checks:
+        $ref: '#/definitions/weighing.Checks'
+      clientId:
+        type: string
+      finalWeights:
+        $ref: '#/definitions/weighing.FinalWeights'
+      plateEvidence:
+        $ref: '#/definitions/weighing.RecognitionInput'
+      reason:
+        type: string
+      requestId:
+        type: string
+      reviewedVersions:
+        $ref: '#/definitions/weighing.ReviewedVersions'
+      sampleId:
+        type: integer
+      scaleId:
+        type: integer
+      sessionToken:
+        type: string
+      targetRecordId:
+        type: integer
+      taskId:
+        type: integer
+      version:
+        type: integer
+    type: object
+  weighing.CorrectionInput:
+    properties:
+      business:
+        $ref: '#/definitions/weighing.BusinessInput'
+      reason:
+        type: string
+      requestId:
+        type: string
+      version:
+        type: integer
+    type: object
+  weighing.FinalWeights:
+    properties:
+      gross:
+        type: string
+      remark:
+        type: string
+      tare:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_CommandResult:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.CommandResult'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_Operation:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Operation'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_Page-weighing_BusinessEvent:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Page-weighing_BusinessEvent'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_Sample:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Sample'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_ScaleSession:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.ScaleSession'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_SessionResult:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.SessionResult'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_Summary:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Summary'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_TaskDetail:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.TaskDetail'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_TicketView:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.TicketView'
+      message:
+        type: string
+    type: object
+  weighing.Operation:
+    properties:
+      command:
+        type: string
+      committedAt:
+        type: string
+      error:
+        type: string
+      id:
+        type: integer
+      requestId:
+        type: string
+      result:
+        type: object
+      status:
+        type: string
+      taskId:
+        type: integer
+      ticketId:
+        type: integer
+    type: object
+  weighing.Page-weighing_BusinessEvent:
+    properties:
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      records:
+        items:
+          $ref: '#/definitions/weighing.BusinessEvent'
+        type: array
+      total:
+        type: integer
+    type: object
+  weighing.PrintInput:
+    properties:
+      intent:
+        type: string
+      reason:
+        type: string
+      requestId:
+        type: string
+    type: object
+  weighing.PrintResultInput:
+    properties:
+      reason:
+        type: string
+      requestId:
+        type: string
+      status:
+        type: string
+    type: object
+  weighing.PriorFinalWeights:
+    properties:
+      gross:
+        type: string
+      net:
+        type: string
+      tare:
+        type: string
+    type: object
+  weighing.RecognitionInput:
+    properties:
+      at:
+        type: string
+      candidate:
+        type: string
+      scenePlate:
+        type: string
+      source:
+        type: string
+    type: object
+  weighing.ReopenInput:
+    properties:
+      basisValid:
+        type: boolean
+      business:
+        $ref: '#/definitions/weighing.BusinessInput'
+      finalWeights:
+        $ref: '#/definitions/weighing.FinalWeights'
+      reason:
+        type: string
+      requestId:
+        type: string
+      taskVersion:
+        type: integer
+    type: object
+  weighing.ReviewedVersions:
+    properties:
+      carrier:
+        type: integer
+      material:
+        type: integer
+      party:
+        type: integer
+    type: object
+  weighing.ReweighInput:
+    properties:
+      business:
+        $ref: '#/definitions/weighing.BusinessInput'
+      checks:
+        $ref: '#/definitions/weighing.Checks'
+      clientId:
+        type: string
+      finalWeights:
+        $ref: '#/definitions/weighing.FinalWeights'
+      otherBasisValid:
+        type: boolean
+      plateEvidence:
+        $ref: '#/definitions/weighing.RecognitionInput'
+      reason:
+        type: string
+      requestId:
+        type: string
+      reviewedVersions:
+        $ref: '#/definitions/weighing.ReviewedVersions'
+      sameLoadConfirmed:
+        type: boolean
+      sampleId:
+        type: integer
+      scaleId:
+        type: integer
+      sessionToken:
+        type: string
+      targetRecordId:
+        type: integer
+      taskId:
+        type: integer
+      version:
+        type: integer
+    type: object
+  weighing.Sample:
+    properties:
+      business:
+        $ref: '#/definitions/weighing.BusinessInfo'
+      businessHash:
+        type: string
+      capturedAt:
+        type: string
+      deviceOk:
+        type: integer
+      evidence:
+        type: object
+      expiresAt:
+        type: string
+      id:
+        type: integer
+      invalidatedAt:
+        type: string
+      kind:
+        type: string
+      plate:
+        type: string
+      plateEvidence:
+        type: object
+      scaleId:
+        type: integer
+      source:
+        type: string
+      stable:
+        type: integer
+      stage:
+        type: string
+      targetRecordId:
+        type: integer
+      taskId:
+        type: integer
+      taskVersion:
+        type: integer
+      weight:
+        type: string
+    type: object
+  weighing.ScaleSession:
+    properties:
+      clientId:
+        type: string
+      expiresAt:
+        type: string
+      generation:
+        type: integer
+      holderName:
+        type: string
+      holderUserId:
+        type: integer
+      scaleId:
+        type: integer
+      version:
+        type: integer
+    type: object
+  weighing.SessionInput:
+    properties:
+      clientId:
+        type: string
+      reason:
+        type: string
+      sessionToken:
+        type: string
+    type: object
+  weighing.SessionResult:
+    properties:
+      clientId:
+        type: string
+      expiresAt:
+        type: string
+      generation:
+        type: integer
+      holderName:
+        type: string
+      holderUserId:
+        type: integer
+      scaleId:
+        type: integer
+      sessionToken:
+        type: string
+      version:
+        type: integer
+    type: object
+  weighing.Summary:
+    properties:
+      gross:
+        type: string
+      net:
+        type: string
+      rows:
+        items:
+          $ref: '#/definitions/weighing.SummaryLine'
+        type: array
+      tare:
+        type: string
+      taskCount:
+        type: integer
+    type: object
+  weighing.SummaryLine:
+    properties:
+      direction:
+        type: string
+      gross:
+        type: string
+      materialId:
+        type: string
+      materialName:
+        type: string
+      materialSpec:
+        type: string
+      net:
+        type: string
+      partyId:
+        type: string
+      partyName:
+        type: string
+      tare:
+        type: string
+      taskCount:
+        type: integer
+    type: object
+  weighing.TaskActionInput:
+    properties:
+      reason:
+        type: string
+      requestId:
+        type: string
+      version:
+        type: integer
+    type: object
+  weighing.TaskDetail:
+    properties:
+      actorId:
+        type: integer
+      actorName:
+        type: string
+      business:
+        $ref: '#/definitions/weighing.BusinessInfo'
+      carrierId:
+        type: integer
+      completedAt:
+        type: string
+      createTime:
+        type: string
+      currentFirstRecordId:
+        type: integer
+      currentSecondRecordId:
+        type: integer
+      direction:
+        type: string
+      events:
+        items:
+          $ref: '#/definitions/weighing.BusinessEvent'
+        type: array
+      firstWeight:
+        type: string
+      id:
+        type: integer
+      materialId:
+        type: integer
+      mode:
+        type: string
+      partyId:
+        type: integer
+      plate:
+        type: string
+      records:
+        items:
+          $ref: '#/definitions/weighing.WeighRecord'
+        type: array
+      scaleId:
+        type: integer
+      secondWeight:
+        type: string
+      status:
+        type: string
+      taskNo:
+        type: string
+      terminateReason:
+        type: string
+      terminatedAt:
+        type: string
+      updateTime:
+        type: string
+      version:
+        type: integer
+    type: object
+  weighing.TicketView:
+    properties:
+      adjustedAt:
+        type: string
+      adjustedBy:
+        type: integer
+      adjustmentRemark:
+        type: string
+      basis:
+        items:
+          $ref: '#/definitions/weighing.WeighRecord'
+        type: array
+      business:
+        $ref: '#/definitions/weighing.BusinessInfo'
+      finalGross:
+        type: string
+      finalNet:
+        type: string
+      finalTare:
+        type: string
+      firstRecordId:
+        type: integer
+      grossDifference:
+        type: string
+      grossSource:
+        type: string
+      id:
+        type: integer
+      issuedAt:
+        type: string
+      issuedBy:
+        type: integer
+      issuerName:
+        type: string
+      lastPrintAttemptId:
+        type: integer
+      mode:
+        type: string
+      originalGross:
+        type: string
+      originalNet:
+        type: string
+      originalTare:
+        type: string
+      previousFinal:
+        $ref: '#/definitions/weighing.PriorFinalWeights'
+      previousTicketId:
+        type: integer
+      printStatus:
+        type: string
+      reprintCount:
+        type: integer
+      revision:
+        type: integer
+      secondRecordId:
+        type: integer
+      snapshotSchemaVersion:
+        type: integer
+      status:
+        type: string
+      tareDifference:
+        type: string
+      tareSource:
+        type: string
+      taskId:
+        type: integer
+      ticketNo:
+        type: string
+      voidReason:
+        type: string
+      voidedAt:
+        type: string
+      voidedBy:
+        type: integer
+    type: object
+  weighing.VoidInput:
+    properties:
+      reason:
+        type: string
+      requestId:
+        type: string
+    type: object
+  weighing.WeighRecord:
+    properties:
+      actorId:
+        type: integer
+      actorName:
+        type: string
+      capturedAt:
+        type: string
+      confirmedAt:
+        type: string
+      evidence:
+        type: object
+      id:
+        type: integer
+      kind:
+        type: string
+      otherBasisConfirmed:
+        type: integer
+      plateEvidence:
+        type: object
+      reason:
+        type: string
+      replacesRecordId:
+        type: integer
+      retainedRecordId:
+        type: integer
+      sameLoadConfirmed:
+        type: integer
+      sampleId:
+        type: integer
+      scaleId:
+        type: integer
+      stage:
+        type: string
+      taskId:
+        type: integer
+      weight:
+        type: string
+    type: object
 info:
   contact: {}
-  description: Winery weighbridge management server; Phase 1 scaffold APIs.
+  description: System APIs and server-backed testing weighbridge workflows; formal
+    device integration is not implemented.
   title: Weighbridge Server API
   version: 0.1.0
 paths:
@@ -3413,6 +4142,1194 @@ paths:
       summary: Linux / Windows 宿主机资源概览（仅 ADMIN；需启用监控）
       tags:
       - 服务器监控
+  /api/weighing/capabilities:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 当前称重业务权限及地磅
+      tags:
+      - 称重业务
+  /api/weighing/material-categories:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料分页查询
+      tags:
+      - 称重资料
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存资料
+      tags:
+      - 称重资料
+  /api/weighing/material-categories/{id}:
+    delete:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除未引用资料
+      tags:
+      - 称重资料
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料详情
+      tags:
+      - 称重资料
+    put:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存资料
+      tags:
+      - 称重资料
+  /api/weighing/material-categories/{id}/status:
+    patch:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料启停
+      tags:
+      - 称重资料
+  /api/weighing/materials:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料分页查询
+      tags:
+      - 称重资料
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存资料
+      tags:
+      - 称重资料
+  /api/weighing/materials/{id}:
+    delete:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除未引用资料
+      tags:
+      - 称重资料
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料详情
+      tags:
+      - 称重资料
+    put:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存资料
+      tags:
+      - 称重资料
+  /api/weighing/materials/{id}/status:
+    patch:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料启停
+      tags:
+      - 称重资料
+  /api/weighing/operations/{requestId}:
+    get:
+      parameters:
+      - description: 原请求编号（仅当前账号）
+        in: path
+        name: requestId
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Operation'
+      security:
+      - BearerAuth: []
+      summary: 查询当前账号原请求的提交结果
+      tags:
+      - 称重业务
+  /api/weighing/originals:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      - description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数 1-500，默认 10
+        in: query
+        name: pageSize
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 每任务一行的当前原始称重组合
+      tags:
+      - 称重业务
+  /api/weighing/originals/export:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
+  /api/weighing/originals/summary:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Summary'
+      security:
+      - BearerAuth: []
+      summary: 仅计当前有效单的原始或最终净重汇总
+      tags:
+      - 称重业务
+  /api/weighing/originals/summary/export:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
+  /api/weighing/parties:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料分页查询
+      tags:
+      - 称重资料
+    post:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存资料
+      tags:
+      - 称重资料
+  /api/weighing/parties/{id}:
+    delete:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 删除未引用资料
+      tags:
+      - 称重资料
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料详情
+      tags:
+      - 称重资料
+    put:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 保存资料
+      tags:
+      - 称重资料
+  /api/weighing/parties/{id}/status:
+    patch:
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 资料启停
+      tags:
+      - 称重资料
+  /api/weighing/print-attempts/{id}/result:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.PrintResultInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 操作员反馈真实打印核实结果
+      tags:
+      - 称重业务
+  /api/weighing/samples:
+    post:
+      parameters:
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.CaptureInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Sample'
+      security:
+      - BearerAuth: []
+      summary: 从 Agent 采集重量与对应抓拍
+      tags:
+      - 称重业务
+  /api/weighing/samples/{id}/invalidate:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.SessionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 废弃未确认采样
+      tags:
+      - 称重业务
+  /api/weighing/scales/{id}/session:
+    get:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_ScaleSession'
+      security:
+      - BearerAuth: []
+      summary: 地磅操作会话
+      tags:
+      - 称重业务
+  /api/weighing/scales/{id}/session/acquire:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.SessionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_SessionResult'
+      security:
+      - BearerAuth: []
+      summary: 取得、续租、释放或接管地磅操作权
+      tags:
+      - 称重业务
+  /api/weighing/scales/{id}/session/release:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.SessionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_SessionResult'
+      security:
+      - BearerAuth: []
+      summary: 取得、续租、释放或接管地磅操作权
+      tags:
+      - 称重业务
+  /api/weighing/scales/{id}/session/renew:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.SessionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_SessionResult'
+      security:
+      - BearerAuth: []
+      summary: 取得、续租、释放或接管地磅操作权
+      tags:
+      - 称重业务
+  /api/weighing/scales/{id}/session/takeover:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.SessionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_SessionResult'
+      security:
+      - BearerAuth: []
+      summary: 取得、续租、释放或接管地磅操作权
+      tags:
+      - 称重业务
+  /api/weighing/tasks:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      - description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数 1-500，默认 10
+        in: query
+        name: pageSize
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 运输任务分页筛选
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}:
+    get:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_TaskDetail'
+      security:
+      - BearerAuth: []
+      summary: 运输任务、称重依据与历史详情
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}/corrections:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.CorrectionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 未完成任务业务资料纠错
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}/events:
+    get:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数 1-500，默认 10
+        in: query
+        name: pageSize
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Page-weighing_BusinessEvent'
+      security:
+      - BearerAuth: []
+      summary: 任务业务历史和异常尝试（分页）
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}/reweighs:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.ReweighInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 指定一磅重称并保留替代链
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}/second-confirmation:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.ConfirmationInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 确认二磅并原子生成过磅单
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}/termination:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.TaskActionInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 终止任务且不可恢复
+      tags:
+      - 称重业务
+  /api/weighing/tasks/active:
+    get:
+      parameters:
+      - description: 人工核对车牌
+        in: query
+        name: plate
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_TaskDetail'
+      security:
+      - BearerAuth: []
+      summary: 按车牌查询未结束运输任务
+      tags:
+      - 称重业务
+  /api/weighing/tasks/export:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
+  /api/weighing/tasks/first-confirmation:
+    post:
+      parameters:
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.ConfirmationInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 确认首磅并原子创建运输任务
+      tags:
+      - 称重业务
+  /api/weighing/tickets:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      - description: 页码，默认 1
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数 1-500，默认 10
+        in: query
+        name: pageSize
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 各版测试单据分页筛选
+      tags:
+      - 称重业务
+  /api/weighing/tickets/{id}:
+    get:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_TicketView'
+      security:
+      - BearerAuth: []
+      summary: 当版测试单据不可变快照
+      tags:
+      - 称重业务
+  /api/weighing/tickets/{id}/preview:
+    get:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_TicketView'
+      security:
+      - BearerAuth: []
+      summary: 当版测试单据不可变快照
+      tags:
+      - 称重业务
+  /api/weighing/tickets/{id}/print-attempts:
+    get:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 单据打印发起和人工反馈历史
+      tags:
+      - 称重业务
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.PrintInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 登记打印发起或补打，不推断出纸成功
+      tags:
+      - 称重业务
+  /api/weighing/tickets/{id}/reopen:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.ReopenInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 从末版作废单关联更正重开
+      tags:
+      - 称重业务
+  /api/weighing/tickets/{id}/void:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 动作输入，业务重量为吨制字符串
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.VoidInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 作废测试单并保留原内容
+      tags:
+      - 称重业务
+  /api/weighing/tickets/export:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
+  /api/weighing/tickets/summary:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Summary'
+      security:
+      - BearerAuth: []
+      summary: 仅计当前有效单的原始或最终净重汇总
+      tags:
+      - 称重业务
+  /api/weighing/tickets/summary/export:
+    get:
+      parameters:
+      - description: 车牌、任务号或单号
+        in: query
+        name: keyword
+        type: string
+      - description: 北京时间起始日期 YYYY-MM-DD
+        in: query
+        name: from
+        type: string
+      - description: 北京时间结束日期 YYYY-MM-DD（包含该日）
+        in: query
+        name: to
+        type: string
+      - description: inbound/outbound
+        in: query
+        name: direction
+        type: string
+      - description: 物料 ID
+        in: query
+        name: materialId
+        type: integer
+      - description: 供收方 ID
+        in: query
+        name: partyId
+        type: integer
+      - description: 对应列表状态
+        in: query
+        name: status
+        type: string
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - BearerAuth: []
+      summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
 securityDefinitions:
   BearerAuth:
     in: header

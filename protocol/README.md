@@ -1,5 +1,5 @@
-# 通信协议（预留）
+# Agent 通信协议
 
-此目录计划维护现场 Agent 与 Server 的 WSS 通信契约。Phase 1 未定义消息格式、实现 WebSocket、注册设备或提供 SDK。
+[协议 v1](v1.md) 定义 Agent 与 Server 的 WSS 消息、HTTP 图片上传、身份配置、采集和打印交互。独立 agent-mock 与未来真实 Agent 使用同一契约。
 
-后续需明确设备身份、鉴权、重量与车牌事件、确认指令、幂等与重连、错误和版本兼容。正式数据以 Server 校验结果为准，断网不得擅自生成正式电子过磅单。当前仅记录边界，不提前承诺协议实现。
+契约及接入已实现并通过协议／SQLite／浏览器验证；真实设备驱动和现场验收尚未完成。需求与决策见 [Spec](../docs/requirements/agent-mock-issue-spec.md)、[ADR 0015](../docs/adr/0015-agent-owned-simulation.md)。

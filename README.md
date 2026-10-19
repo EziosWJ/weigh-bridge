@@ -2,11 +2,11 @@
 
 面向酒厂原粮、辅料及成品车辆进出厂的地磅管理项目，建设目标是让现场采集、人工确认、云端记录与后续查询形成可追溯的称重流程。
 
-**Phase 1 工程初始化已验收；Phase 2A 前端界面与流程模拟已实现并完成约定验证。** 本仓库保留原脚手架的用户管理、JWT 认证、RBAC、菜单、部门、数据字典、系统配置、文件管理、操作/登录日志、公告通知与服务器监控模块。新增称重演示采用手填车牌、模拟重量、浏览器测试数据和打印预览。正式称重、车牌识别、设备接入、物理打印和现场 Agent 通信仍未实现。
+**工程初始化、前端流程验证和服务端业务闭环已完成，当前增加了 Agent 通信与独立 Web mock，已完成协议／SQLite／浏览器验证。** 本仓库保留原脚手架的用户管理、JWT 认证、RBAC、菜单、部门、数据字典、系统配置、文件管理、操作/登录日志、公告通知与服务器监控模块。系统统一接收 Agent 数据，由操作员采集、核对并确认；设备模拟仅在独立 mock 中。真实仪表、摄像头识别及物理打印驱动仍未实现。
 
 ## 业务背景与 V1.0 范围（计划）
 
-酒厂车辆需要关联入厂、出厂与两次称重结果。V1.0 从单地磅起步，保留多地磅扩展能力；支持首次、二次称重，结合运输方向计算毛重、皮重和净重。当前已交付 Phase 2A 前端界面模拟：车牌手填、重量模拟、测试单据与打印预览，不生成正式业务记录。自动识别、真实抓拍及设备采集属于后续现场阶段；正式称重仍由操作员确认，识别结果不能直接形成正式称重记录。
+酒厂车辆需要关联入厂、出厂与两次称重结果。V1.0 从单地磅起步，保留多地磅扩展能力；支持首次、二次称重，结合运输方向计算毛重、皮重和净重。当前业务闭环包含资料、运输任务、两次称重、纠错重称、不可变单据版本、查询汇总／CSV 和打印反馈。Agent 接入统一处理采集来源，历史测试单据仍保留其原标识；真实设备尚未验收。识别候选必须人工核对，稳定状态不能直接形成已确认称重记录。
 
 已确认的部署与设备约束：
 
@@ -50,8 +50,8 @@ weighbridge/
 │   ├── go.mod
 │   └── Dockerfile
 ├── web/                 # React 管理后台、tests、design-system
-├── agent/               # 现场设备代理预留，仅 README
-├── protocol/            # 通信协议预留，仅 README
+├── agent/               # 独立 mock 运行说明；真实现场驱动待实现
+├── protocol/            # Agent 通信契约 v1
 ├── docs/
 │   ├── architecture/    # 当前与规划架构说明
 │   ├── requirements/    # 阶段范围、验收记录
@@ -83,7 +83,7 @@ task doctor
 task dev
 ```
 
-`task init` 生成随机 JWT 和本机上传路径，保留已有配置，不创建数据库。`task dev` 显式执行 Goose migration 后启动 API（8099）和 Web（5173）。开发前端通过 `web/.env.development` 的 `VITE_API_BASE_URL=http://localhost:8099` 直连 API，无需新增代理；生产构建使用同源 API。不要把开发数据库凭据提交到仓库。
+`task init` 生成随机 JWT 和本机上传路径，保留已有配置，不创建数据库。`task dev` 显式执行 Goose migration 后启动 API（8900）和 Web（5173）。开发前端通过 `web/.env.development` 的 `VITE_API_BASE_URL=http://localhost:8900` 直连 API，无需新增代理；生产构建使用同源 API。不要把开发数据库凭据提交到仓库。
 
 无 PostgreSQL 的本地验证可使用保留的 SQLite profile：
 
@@ -92,6 +92,25 @@ task init -- --database sqlite
 task doctor -- --database sqlite
 task dev:sqlite
 ```
+
+### 接入独立 Agent mock
+
+系统通过 Agent 接收重量、稳定状态、车牌候选和抓拍，不再提供设备模拟设置，也不需要 `test_mode` 开关。API 与 mock 使用同一个本地连接密钥：
+
+```bash
+# 初始化或补齐本地共享密钥（已有配置保留）
+task init -- --database sqlite
+# 终端一：API 和系统 Web
+task dev:sqlite
+# 终端二：独立 mock 控制台
+task agent:mock
+```
+
+mock 页面为 http://127.0.0.1:8090，API 连接地址自动跟随本地 `http.address`；初始化自动生成本地密钥，补齐旧配置后需重启 API；也可在两端使用同一环境变量覆盖。详细操作见 [Agent mock](agent/README.md)，接口见 [协议 v1](protocol/v1.md)。真实设备驱动和物理打印尚未验收。
+
+管理员维护资料并分配真实角色；操作员核对 Agent 候选、采集重量及抓拍后确认首磅／回磅。业务记录由 Server 保存，旧浏览器演示库不导入；历史测试单据及其依据保留。Agent 执行打印，结果未知时沿用人工核实和补打规则。
+
+浏览器回归入口：`npm --prefix web run test:weighing:backend`，使用临时 SQLite、API／Web／mock 端口 18085／4185／18090，需已有 Playwright Chromium；结束后清理服务与数据。
 
 首次 schema/seed migration 保留脚手架开发账号 `admin / admin123`；部署环境应修改账号密码。
 
@@ -111,15 +130,11 @@ task dev:sqlite
 
 Go 原生命令从 `server/` 运行：`go test ./...`、`go vet ./...`；npm 原生命令从 `web/` 运行：`npm ci`、`npm run build`、`npm run lint`。
 
-## 称重模拟入口
+## 称重业务入口
 
-沿用现有登录后，默认进入称重工作台 `/weighing/workbench`，也可从「称重作业」进入。按车牌查找运输，无任务时填写资料、采集并人工核对，一次确认建立任务与首次称重；回磅再次按车牌匹配。独立「演示设置」调整重量、模拟岗位及异常；「基础资料」维护物料与企业／个人多身份往来主体。主管在独立详情中办理纠错、重称、作废重开及导出。
+登录后从“称重工作台”打开独立操作窗口，后台保留运输任务、原始称重、最终单据及基础资料。设备控制仅位于独立 Agent mock 页面。工作台实时展示 Agent 上报状态，稳定后由操作员采集并确认；异常处置、隔日回磅、人工调整、单磅重称及作废重开沿用现有业务规则。
 
-2026-10-17 最新确认：操作员对照原始重量直接录入最终毛皮重，系统计算扣减量；全部业务重量统一使用吨，精确至 0.001 吨，显示时省略末尾无效零。前端模拟已按新规则更新，旧浏览器缓存升级为吨并保留来源重量，见 [需求与交付记录](docs/requirements/weight-entry-tonne-plan.md)。
-
-数据只保存在当前浏览器，演示设置中的管理员重置仅恢复称重模块示例，不影响登录及其他模块。所有过磅单均为测试单，预览不会向物理打印机发送任务。初版试用反馈后的页面拆分与资料补全已完成，操作与验证见 [可用性改版记录](docs/requirements/phase-2a-usability-delivery.md)。
-
-相关轻量验证：`npm --prefix web run test:weighing`、`npm --prefix web run test:weighing:smoke`（需要本机允许短时 loopback 服务与 Playwright 浏览器）。
+历史界面模拟交付仍见 [Phase 2A 记录](docs/requirements/phase-2a-delivery.md)；其浏览器模拟库和演示设置不再用于当前业务。历史行为测试保留为测试夹具。当前需求见 [Issue #3 Spec](docs/requirements/agent-mock-issue-spec.md)。
 
 ## 部署方式
 

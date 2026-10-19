@@ -17,6 +17,7 @@ import (
 
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/platform/database"
+	"github.com/knadh/koanf/parsers/yaml"
 )
 
 const (
@@ -70,7 +71,34 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 
 func initialize(driver string, out io.Writer) error {
 	path := filepath.Join(config.DefaultDir, devConfigName)
-	if _, err := os.Lstat(path); err == nil {
+	if info, err := os.Lstat(path); err == nil {
+		if info.Mode().IsRegular() {
+			contents, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return errors.New("无法读取已有开发配置")
+			}
+			updated, changed, keyErr := withAgentKey(string(contents))
+			if keyErr != nil {
+				return keyErr
+			}
+			if changed {
+				// Replace atomically; do not risk truncating existing credentials.
+				temporary, createErr := os.CreateTemp(filepath.Dir(path), ".config.dev.agent-*")
+				if createErr != nil {
+					return errors.New("无法补充本地 Agent 密钥")
+				}
+				defer os.Remove(temporary.Name())
+				_, writeErr := io.WriteString(temporary, updated)
+				closeErr := temporary.Close()
+				if writeErr != nil || closeErr != nil {
+					return errors.New("无法写入本地 Agent 密钥")
+				}
+				if err := os.Rename(temporary.Name(), path); err != nil {
+					return errors.New("无法保存本地 Agent 密钥")
+				}
+				fmt.Fprintln(out, "[已补充] 本地 Agent 连接密钥；已有 JWT 与其他配置保留。请重启 API 读取配置。")
+			}
+		}
 		fmt.Fprintln(out, "[保留] config.dev.yaml 已存在；原配置与 JWT 未修改。")
 		fmt.Fprintln(out, "下一步：task doctor（使用 SQLite profile 时加 -- --database sqlite）")
 		return nil
@@ -114,7 +142,7 @@ func initialize(driver string, out io.Writer) error {
 		_ = os.Remove(path)
 		return errors.New("开发配置写入失败；检查磁盘空间和目录权限后重试")
 	}
-	fmt.Fprintln(out, "[已生成] config.dev.yaml，包含新的随机 JWT 和本机上传目录。")
+	fmt.Fprintln(out, "[已生成] config.dev.yaml，包含独立的随机 JWT、Agent 连接密钥和本机上传目录。")
 	if driver == database.DriverPostgres {
 		fmt.Fprintln(out, "先填写 database.url、database.username、database.password，并准备对应 PostgreSQL 数据库；不会自动创建数据库或启动 Docker。")
 	}
@@ -186,7 +214,8 @@ func render(template, driver, uploads, secret string) (string, error) {
 			return "", errors.New("开发配置模板缺少 " + field + "；检查 configs/config.dev.example.yaml")
 		}
 	}
-	return strings.Join(out, "\n") + "\n", nil
+	contents, _, err := withAgentKey(strings.Join(out, "\n") + "\n")
+	return contents, err
 }
 
 func diagnose(ctx context.Context, selectedDriver string, out io.Writer) error {
@@ -238,4 +267,82 @@ func startupTask(driver string) string {
 		return "task dev:sqlite"
 	}
 	return "task dev"
+}
+
+// withAgentKey fills only a missing local key. Invalid existing YAML is preserved
+// for doctor to diagnose, and configured keys are never rotated by initialization.
+func withAgentKey(contents string) (string, bool, error) {
+	document, err := yaml.Parser().Unmarshal([]byte(contents))
+	if err != nil {
+		return contents, false, nil
+	}
+	section, ok := document["weighing"].(map[string]any)
+	if document["weighing"] != nil && !ok {
+		return contents, false, nil
+	}
+	if existing, found := section["agent_key"]; found && existing != nil {
+		value, stringValue := existing.(string)
+		if !stringValue || strings.TrimSpace(value) != "" {
+			return contents, false, nil
+		}
+	}
+	data := make([]byte, 32)
+	if _, err := rand.Read(data); err != nil {
+		return "", false, errors.New("无法生成 Agent 随机密钥")
+	}
+	key := hex.EncodeToString(data)
+	lines := strings.Split(contents, "\n")
+	header := -1
+	for i, line := range lines {
+		if regexp.MustCompile(`^weighing\s*:`).MatchString(line) {
+			header = i
+			break
+		}
+	}
+	if header < 0 {
+		return strings.TrimRight(contents, "\n") + "\n\nweighing:\n  agent_key: " + key + "\n", true, nil
+	}
+	remainder := strings.TrimSpace(strings.SplitN(lines[header], ":", 2)[1])
+	if remainder != "" && !strings.HasPrefix(remainder, "#") {
+		// Retain all fields in a one-line flow mapping while expanding this section.
+		if !strings.Contains(remainder, "}") {
+			return contents, false, nil
+		}
+		section["agent_key"] = key
+		encoded, err := yaml.Parser().Marshal(map[string]any{"weighing": section})
+		if err != nil {
+			return "", false, errors.New("无法补充 Agent 本地配置")
+		}
+		lines[header] = strings.TrimSuffix(string(encoded), "\n")
+		return strings.Join(lines, "\n"), true, nil
+	}
+	indent := "  "
+	end := len(lines)
+	for i := header + 1; i < len(lines); i++ {
+		text := strings.TrimSpace(lines[i])
+		if text == "" || strings.HasPrefix(text, "#") {
+			continue
+		}
+		prefix := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
+		if prefix == "" {
+			end = i
+			break
+		}
+		indent = prefix
+		break
+	}
+	if _, found := section["agent_key"]; found {
+		for i := header + 1; i < end; i++ {
+			if strings.HasPrefix(lines[i], indent) && regexp.MustCompile(`^agent_key\s*:`).MatchString(strings.TrimPrefix(lines[i], indent)) {
+				comment := ""
+				if position := strings.Index(lines[i], "#"); position >= 0 {
+					comment = " " + lines[i][position:]
+				}
+				lines[i] = indent + "agent_key: " + key + comment
+				return strings.Join(lines, "\n"), true, nil
+			}
+		}
+	}
+	lines = append(lines[:header+1], append([]string{indent + "agent_key: " + key}, lines[header+1:]...)...)
+	return strings.Join(lines, "\n"), true, nil
 }

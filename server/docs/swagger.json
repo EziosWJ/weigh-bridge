@@ -1,7 +1,7 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Winery weighbridge management server; Phase 1 scaffold APIs.",
+        "description": "System APIs and server-backed testing weighbridge workflows; formal device integration is not implemented.",
         "title": "Weighbridge Server API",
         "contact": {},
         "version": "0.1.0"
@@ -4128,6 +4128,1933 @@
                     }
                 }
             }
+        },
+        "/api/weighing/capabilities": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "当前称重业务权限及地磅",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/material-categories": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料分页查询",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "保存资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/material-categories/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料详情",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "保存资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "删除未引用资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/material-categories/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料启停",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/materials": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料分页查询",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "保存资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/materials/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料详情",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "保存资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "删除未引用资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/materials/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料启停",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/operations/{requestId}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "查询当前账号原请求的提交结果",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "原请求编号（仅当前账号）",
+                        "name": "requestId",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Operation"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/originals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "每任务一行的当前原始称重组合",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数 1-500，默认 10",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/originals/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "导出全部筛选结果的测试 CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/originals/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "仅计当前有效单的原始或最终净重汇总",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Summary"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/originals/summary/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "导出全部筛选结果的测试 CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/parties": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料分页查询",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "保存资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/parties/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料详情",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "保存资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "删除未引用资料",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/parties/{id}/status": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重资料"
+                ],
+                "summary": "资料启停",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/print-attempts/{id}/result": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "操作员反馈真实打印核实结果",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.PrintResultInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/samples": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "从 Agent 采集重量与对应抓拍",
+                "parameters": [
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.CaptureInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Sample"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/samples/{id}/invalidate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "废弃未确认采样",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.SessionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/scales/{id}/session": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "地磅操作会话",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_ScaleSession"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/scales/{id}/session/acquire": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "取得、续租、释放或接管地磅操作权",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.SessionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_SessionResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/scales/{id}/session/release": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "取得、续租、释放或接管地磅操作权",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.SessionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_SessionResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/scales/{id}/session/renew": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "取得、续租、释放或接管地磅操作权",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.SessionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_SessionResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/scales/{id}/session/takeover": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "取得、续租、释放或接管地磅操作权",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.SessionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_SessionResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "运输任务分页筛选",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数 1-500，默认 10",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/active": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "按车牌查询未结束运输任务",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "人工核对车牌",
+                        "name": "plate",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TaskDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "导出全部筛选结果的测试 CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/first-confirmation": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "确认首磅并原子创建运输任务",
+                "parameters": [
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.ConfirmationInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "运输任务、称重依据与历史详情",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TaskDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/{id}/corrections": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "未完成任务业务资料纠错",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.CorrectionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/{id}/events": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "任务业务历史和异常尝试（分页）",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数 1-500，默认 10",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Page-weighing_BusinessEvent"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/{id}/reweighs": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "指定一磅重称并保留替代链",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.ReweighInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/{id}/second-confirmation": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "确认二磅并原子生成过磅单",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.ConfirmationInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tasks/{id}/termination": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "终止任务且不可恢复",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.TaskActionInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "各版测试单据分页筛选",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "页码，默认 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数 1-500，默认 10",
+                        "name": "pageSize",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "导出全部筛选结果的测试 CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/summary": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "仅计当前有效单的原始或最终净重汇总",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Summary"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/summary/export": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/csv"
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "导出全部筛选结果的测试 CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌、任务号或单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间起始日期 YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "北京时间结束日期 YYYY-MM-DD（包含该日）",
+                        "name": "to",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "inbound/outbound",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "物料 ID",
+                        "name": "materialId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "供收方 ID",
+                        "name": "partyId",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "对应列表状态",
+                        "name": "status",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "当版测试单据不可变快照",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TicketView"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/{id}/preview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "当版测试单据不可变快照",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TicketView"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/{id}/print-attempts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "单据打印发起和人工反馈历史",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "登记打印发起或补打，不推断出纸成功",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.PrintInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/{id}/reopen": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "从末版作废单关联更正重开",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.ReopenInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/tickets/{id}/void": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "作废测试单并保留原内容",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "动作输入，业务重量为吨制字符串",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.VoidInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -5439,6 +7366,1117 @@
                 },
                 "status": {
                     "type": "integer"
+                }
+            }
+        },
+        "weighing.BusinessEvent": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "actorId": {
+                    "type": "integer"
+                },
+                "actorName": {
+                    "type": "string"
+                },
+                "after": {
+                    "type": "object"
+                },
+                "before": {
+                    "type": "object"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "occurredAt": {
+                    "type": "string"
+                },
+                "operationId": {
+                    "type": "integer"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "resourceId": {
+                    "type": "integer"
+                },
+                "resourceType": {
+                    "type": "string"
+                },
+                "sampleId": {
+                    "type": "integer"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "ticketId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.BusinessInfo": {
+            "type": "object",
+            "properties": {
+                "carrierCode": {
+                    "type": "string"
+                },
+                "carrierId": {
+                    "type": "integer"
+                },
+                "carrierName": {
+                    "type": "string"
+                },
+                "carrierVersion": {
+                    "type": "integer"
+                },
+                "contactName": {
+                    "type": "string"
+                },
+                "contactPhone": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "driverPhone": {
+                    "type": "string"
+                },
+                "materialCategoryId": {
+                    "type": "integer"
+                },
+                "materialCategoryName": {
+                    "type": "string"
+                },
+                "materialCode": {
+                    "type": "string"
+                },
+                "materialId": {
+                    "type": "integer"
+                },
+                "materialName": {
+                    "type": "string"
+                },
+                "materialSpec": {
+                    "type": "string"
+                },
+                "materialVersion": {
+                    "type": "integer"
+                },
+                "partyAddress": {
+                    "type": "string"
+                },
+                "partyCode": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "partyNature": {
+                    "type": "string"
+                },
+                "partyPhone": {
+                    "type": "string"
+                },
+                "partyVersion": {
+                    "type": "integer"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.BusinessInput": {
+            "type": "object",
+            "properties": {
+                "carrierId": {
+                    "type": "integer"
+                },
+                "contactName": {
+                    "type": "string"
+                },
+                "contactPhone": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "driverPhone": {
+                    "type": "string"
+                },
+                "materialId": {
+                    "type": "integer"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.CaptureInput": {
+            "type": "object",
+            "properties": {
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInput"
+                },
+                "clientId": {
+                    "type": "string"
+                },
+                "plateEvidence": {
+                    "$ref": "#/definitions/weighing.RecognitionInput"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "sessionToken": {
+                    "type": "string"
+                },
+                "targetRecordId": {
+                    "type": "integer"
+                },
+                "taskId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.Checks": {
+            "type": "object",
+            "properties": {
+                "business": {
+                    "type": "boolean"
+                },
+                "evidence": {
+                    "type": "boolean"
+                },
+                "fullyOnScale": {
+                    "type": "boolean"
+                },
+                "plate": {
+                    "type": "boolean"
+                },
+                "weight": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "weighing.CommandResult": {
+            "type": "object",
+            "properties": {
+                "printAttemptId": {
+                    "type": "integer"
+                },
+                "recordId": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "taskVersion": {
+                    "type": "integer"
+                },
+                "ticketId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.ConfirmationInput": {
+            "type": "object",
+            "properties": {
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInput"
+                },
+                "checks": {
+                    "$ref": "#/definitions/weighing.Checks"
+                },
+                "clientId": {
+                    "type": "string"
+                },
+                "finalWeights": {
+                    "$ref": "#/definitions/weighing.FinalWeights"
+                },
+                "plateEvidence": {
+                    "$ref": "#/definitions/weighing.RecognitionInput"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "reviewedVersions": {
+                    "$ref": "#/definitions/weighing.ReviewedVersions"
+                },
+                "sampleId": {
+                    "type": "integer"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "sessionToken": {
+                    "type": "string"
+                },
+                "targetRecordId": {
+                    "type": "integer"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.CorrectionInput": {
+            "type": "object",
+            "properties": {
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInput"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.FinalWeights": {
+            "type": "object",
+            "properties": {
+                "gross": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "tare": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_CommandResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.CommandResult"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_Operation": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Operation"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_Page-weighing_BusinessEvent": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Page-weighing_BusinessEvent"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_Sample": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Sample"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_ScaleSession": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.ScaleSession"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_SessionResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.SessionResult"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_Summary": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Summary"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_TaskDetail": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.TaskDetail"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_TicketView": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.TicketView"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.Operation": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string"
+                },
+                "committedAt": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "object"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "ticketId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.Page-weighing_BusinessEvent": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "pageSize": {
+                    "type": "integer"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.BusinessEvent"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.PrintInput": {
+            "type": "object",
+            "properties": {
+                "intent": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.PrintResultInput": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.PriorFinalWeights": {
+            "type": "object",
+            "properties": {
+                "gross": {
+                    "type": "string"
+                },
+                "net": {
+                    "type": "string"
+                },
+                "tare": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.RecognitionInput": {
+            "type": "object",
+            "properties": {
+                "at": {
+                    "type": "string"
+                },
+                "candidate": {
+                    "type": "string"
+                },
+                "scenePlate": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.ReopenInput": {
+            "type": "object",
+            "properties": {
+                "basisValid": {
+                    "type": "boolean"
+                },
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInput"
+                },
+                "finalWeights": {
+                    "$ref": "#/definitions/weighing.FinalWeights"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "taskVersion": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.ReviewedVersions": {
+            "type": "object",
+            "properties": {
+                "carrier": {
+                    "type": "integer"
+                },
+                "material": {
+                    "type": "integer"
+                },
+                "party": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.ReweighInput": {
+            "type": "object",
+            "properties": {
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInput"
+                },
+                "checks": {
+                    "$ref": "#/definitions/weighing.Checks"
+                },
+                "clientId": {
+                    "type": "string"
+                },
+                "finalWeights": {
+                    "$ref": "#/definitions/weighing.FinalWeights"
+                },
+                "otherBasisValid": {
+                    "type": "boolean"
+                },
+                "plateEvidence": {
+                    "$ref": "#/definitions/weighing.RecognitionInput"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "reviewedVersions": {
+                    "$ref": "#/definitions/weighing.ReviewedVersions"
+                },
+                "sameLoadConfirmed": {
+                    "type": "boolean"
+                },
+                "sampleId": {
+                    "type": "integer"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "sessionToken": {
+                    "type": "string"
+                },
+                "targetRecordId": {
+                    "type": "integer"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.Sample": {
+            "type": "object",
+            "properties": {
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInfo"
+                },
+                "businessHash": {
+                    "type": "string"
+                },
+                "capturedAt": {
+                    "type": "string"
+                },
+                "deviceOk": {
+                    "type": "integer"
+                },
+                "evidence": {
+                    "type": "object"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "invalidatedAt": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "plateEvidence": {
+                    "type": "object"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "stable": {
+                    "type": "integer"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "targetRecordId": {
+                    "type": "integer"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "taskVersion": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.ScaleSession": {
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "holderName": {
+                    "type": "string"
+                },
+                "holderUserId": {
+                    "type": "integer"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.SessionInput": {
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "sessionToken": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.SessionResult": {
+            "type": "object",
+            "properties": {
+                "clientId": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "generation": {
+                    "type": "integer"
+                },
+                "holderName": {
+                    "type": "string"
+                },
+                "holderUserId": {
+                    "type": "integer"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "sessionToken": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.Summary": {
+            "type": "object",
+            "properties": {
+                "gross": {
+                    "type": "string"
+                },
+                "net": {
+                    "type": "string"
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.SummaryLine"
+                    }
+                },
+                "tare": {
+                    "type": "string"
+                },
+                "taskCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.SummaryLine": {
+            "type": "object",
+            "properties": {
+                "direction": {
+                    "type": "string"
+                },
+                "gross": {
+                    "type": "string"
+                },
+                "materialId": {
+                    "type": "string"
+                },
+                "materialName": {
+                    "type": "string"
+                },
+                "materialSpec": {
+                    "type": "string"
+                },
+                "net": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "string"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "tare": {
+                    "type": "string"
+                },
+                "taskCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.TaskActionInput": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.TaskDetail": {
+            "type": "object",
+            "properties": {
+                "actorId": {
+                    "type": "integer"
+                },
+                "actorName": {
+                    "type": "string"
+                },
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInfo"
+                },
+                "carrierId": {
+                    "type": "integer"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "createTime": {
+                    "type": "string"
+                },
+                "currentFirstRecordId": {
+                    "type": "integer"
+                },
+                "currentSecondRecordId": {
+                    "type": "integer"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.BusinessEvent"
+                    }
+                },
+                "firstWeight": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "materialId": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.WeighRecord"
+                    }
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "secondWeight": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskNo": {
+                    "type": "string"
+                },
+                "terminateReason": {
+                    "type": "string"
+                },
+                "terminatedAt": {
+                    "type": "string"
+                },
+                "updateTime": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.TicketView": {
+            "type": "object",
+            "properties": {
+                "adjustedAt": {
+                    "type": "string"
+                },
+                "adjustedBy": {
+                    "type": "integer"
+                },
+                "adjustmentRemark": {
+                    "type": "string"
+                },
+                "basis": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.WeighRecord"
+                    }
+                },
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInfo"
+                },
+                "finalGross": {
+                    "type": "string"
+                },
+                "finalNet": {
+                    "type": "string"
+                },
+                "finalTare": {
+                    "type": "string"
+                },
+                "firstRecordId": {
+                    "type": "integer"
+                },
+                "grossDifference": {
+                    "type": "string"
+                },
+                "grossSource": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "issuedAt": {
+                    "type": "string"
+                },
+                "issuedBy": {
+                    "type": "integer"
+                },
+                "issuerName": {
+                    "type": "string"
+                },
+                "lastPrintAttemptId": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "originalGross": {
+                    "type": "string"
+                },
+                "originalNet": {
+                    "type": "string"
+                },
+                "originalTare": {
+                    "type": "string"
+                },
+                "previousFinal": {
+                    "$ref": "#/definitions/weighing.PriorFinalWeights"
+                },
+                "previousTicketId": {
+                    "type": "integer"
+                },
+                "printStatus": {
+                    "type": "string"
+                },
+                "reprintCount": {
+                    "type": "integer"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "secondRecordId": {
+                    "type": "integer"
+                },
+                "snapshotSchemaVersion": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tareDifference": {
+                    "type": "string"
+                },
+                "tareSource": {
+                    "type": "string"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "ticketNo": {
+                    "type": "string"
+                },
+                "voidReason": {
+                    "type": "string"
+                },
+                "voidedAt": {
+                    "type": "string"
+                },
+                "voidedBy": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.VoidInput": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.WeighRecord": {
+            "type": "object",
+            "properties": {
+                "actorId": {
+                    "type": "integer"
+                },
+                "actorName": {
+                    "type": "string"
+                },
+                "capturedAt": {
+                    "type": "string"
+                },
+                "confirmedAt": {
+                    "type": "string"
+                },
+                "evidence": {
+                    "type": "object"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "kind": {
+                    "type": "string"
+                },
+                "otherBasisConfirmed": {
+                    "type": "integer"
+                },
+                "plateEvidence": {
+                    "type": "object"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "replacesRecordId": {
+                    "type": "integer"
+                },
+                "retainedRecordId": {
+                    "type": "integer"
+                },
+                "sameLoadConfirmed": {
+                    "type": "integer"
+                },
+                "sampleId": {
+                    "type": "integer"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "string"
                 }
             }
         }

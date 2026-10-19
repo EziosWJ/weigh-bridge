@@ -30,3 +30,7 @@ file:
 log:
   level: debug
   format: text
+
+# task init 生成独立随机密钥，API 与 agent-mock 读取同一份本地配置。
+weighing:
+  agent_key: ""

@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	_ "github.com/EziosWJ/weighbridge/server/docs"
+	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/app"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
@@ -25,13 +26,14 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/usermgmt"
+	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 const defaultUserPassword = "admin123"
 
 // @title Weighbridge Server API
 // @version 0.1.0
-// @description Winery weighbridge management server; Phase 1 scaffold APIs.
+// @description System APIs and server-backed testing weighbridge workflows; formal device integration is not implemented.
 // @BasePath /
 // @securityDefinitions.apikey BearerAuth
 // @in header
@@ -127,6 +129,7 @@ func main() {
 		Log:          logService,
 		Notification: notificationService,
 		Monitoring:   monitoringService,
+		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, SampleTTL: cfg.Weighing.SampleTTL}), agentbridge.New(agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey, ImageDir: cfg.Weighing.ImageDir})),
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)

@@ -18,6 +18,9 @@ type memoryStore struct {
 func newMemoryStore() *memoryStore {
 	return &memoryStore{roles: map[int64]Role{}, menus: map[int64]Menu{}, roleMenus: map[int64][]int64{}, usersByRole: map[int64]int64{}}
 }
+func (s *memoryStore) PermissionCodes(context.Context, int64) ([]string, error) {
+	return []string{}, nil
+}
 func (s *memoryStore) PageRoles(context.Context, RolePageQuery) (Page[Role], error) {
 	return Page[Role]{}, nil
 }

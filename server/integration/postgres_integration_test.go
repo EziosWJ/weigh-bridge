@@ -33,6 +33,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/usermgmt"
+	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 const postgresImage = "postgres:17-alpine"
@@ -967,6 +968,7 @@ func testDependencies(t *testing.T, database *platformdatabase.Database, storage
 		t.Fatalf("create log service: %v", err)
 	}
 	return app.Dependencies{
+		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM), nil),
 		Auth:         authService,
 		RBAC:         rbacService,
 		Department:   deptService,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import type { FinalWeightInput, SimulatedCapture, WeightValues } from '@/types/weighing';
+import type { FinalWeightInput, CaptureSnapshot, WeightValues } from '@/types/weighing';
 import { adjustedWeights, formatWeight, weightDeduction } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
 import { DetailItem } from '@/components/common/detail-item';
@@ -20,7 +20,7 @@ export interface WeighingReviewValue {
   kind: string;
   firstWeight?: string;
   original?: WeightValues;
-  capture?: SimulatedCapture;
+  capture?: CaptureSnapshot;
   supplementary: { label: string; value: string }[];
 }
 
@@ -47,8 +47,8 @@ export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onCon
     <DialogOverlay />
     <DialogContent className="weighing-review flex max-h-[calc(100dvh-32px)] max-w-[1080px] flex-col">
       <DialogHeader className="shrink-0">
-        <div className="min-w-0"><DialogTitle>核对{title}</DialogTitle><DialogDescription>请对照现场车辆核对以下信息，确认后保存本次测试称重。</DialogDescription></div>
-        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap"><StatusTag tone="warning">测试数据</StatusTag><DialogClose aria-label="关闭核对"><X className="h-4 w-4" aria-hidden /></DialogClose></div>
+        <div className="min-w-0"><DialogTitle>核对{title}</DialogTitle><DialogDescription>请对照现场车辆核对以下信息，确认后保存本次称重。</DialogDescription></div>
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap"><StatusTag tone="warning">人工核对</StatusTag><DialogClose aria-label="关闭核对"><X className="h-4 w-4" aria-hidden /></DialogClose></div>
       </DialogHeader>
       <DialogBody className="grid items-start gap-6 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.4fr)]">
         <section aria-label="本趟运输核对依据" className="min-w-0 space-y-4">
@@ -65,8 +65,8 @@ export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onCon
             ...(value.supplementary.length ? [{ value: 'supplementary', label: '补充运输信息', content: <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">{value.supplementary.map(item => <DetailItem key={item.label} label={item.label} value={item.value} />)}</div> }] : []),
           ]} />
           <div className="space-y-2 border-t border-border pt-3">
-            <h4 className="text-sm font-medium">本次模拟抓拍</h4>
-            {value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次模拟图片，请返回重新采集。</p>}
+            <h4 className="text-sm font-medium">本次抓拍</h4>
+            {value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次抓拍图片，请返回重新采集。</p>}
             <p className="text-xs text-text-tertiary">静态示例，非现场抓拍；摄像头未接入。</p>
           </div>
 

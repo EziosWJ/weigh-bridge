@@ -15,6 +15,20 @@ type Repository struct{ db *gorm.DB }
 var _ Store = (*Repository)(nil)
 
 func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
+
+func (r *Repository) PermissionCodes(ctx context.Context, userID int64) ([]string, error) {
+	codes := []string{}
+	err := r.db.WithContext(ctx).Table("sys_menu AS m").
+		Distinct("m.permission_code").
+		Joins("JOIN sys_role_menu AS rm ON rm.menu_id = m.id").
+		Joins("JOIN sys_role AS r ON r.id = rm.role_id").
+		Joins("JOIN sys_user_role AS ur ON ur.role_id = r.id").
+		Joins("JOIN sys_user AS u ON u.id = ur.user_id").
+		Where("u.id = ? AND u.status = 1 AND u.deleted = 0 AND r.status = 1 AND r.deleted = 0 AND m.status = 1 AND m.deleted = 0 AND m.permission_code IS NOT NULL AND m.permission_code <> ''", userID).
+		Order("m.permission_code").Pluck("m.permission_code", &codes).Error
+	return codes, err
+}
+
 func (r *Repository) PageRoles(ctx context.Context, q RolePageQuery) (Page[Role], error) {
 	var p Page[Role]
 	db := r.db.WithContext(ctx).Model(&Role{}).Where("deleted = 0")

@@ -11,7 +11,7 @@ const temporary = await mkdtemp(path.join(tmpdir(), 'weighing-core-'));
 after(() => rm(temporary, { recursive: true, force: true }));
 const sourceRoot = new URL('../src/', import.meta.url);
 const compile = async (relative) => {
-  const source = await readFile(new URL(relative, sourceRoot), 'utf8');
+  const source = await readFile(new URL(relative, ['types/weighing.ts','lib/weighing/engine.ts','lib/weighing/seed.ts','lib/weighing/migration.ts','lib/weighing/camera.ts','lib/weighing/query.ts'].includes(relative) ? new URL('./fixtures/phase2a/', import.meta.url) : sourceRoot), 'utf8');
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText
     .replace(/(from\s+['"])(\.[^'"]+)(['"])/g, '$1$2.js$3');
   const output = path.join(temporary, relative.replace(/\.ts$/, '.js'));

@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { adjustedWeights, formatAdjustment, formatWeight, formatWeightInputValue, weightInMilliTonnes } from '@/lib/weighing/weights';
 import { originalWeights } from '@/lib/weighing/weights';
 import { beijingTime } from '@/lib/weighing/query';
-import { roleLabels, type FinalWeightInput, type TestTicket, type WeightValues } from '@/types/weighing';
+import { roleLabels, type FinalWeightInput, type WeighingTicket, type WeightValues } from '@/types/weighing';
 
 function FinalWeightField({ id, label, value, onChange }: {
   id: string; label: string; value: number; onChange: (value: number) => void;
@@ -19,13 +19,13 @@ function FinalWeightField({ id, label, value, onChange }: {
   }} /></div>;
 }
 
-export function WeightAdjustmentDetails({ ticket }: { ticket: TestTicket }) {
+export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) {
   const snapshot = ticket.adjustment;
   const original = snapshot?.original ?? originalWeights(ticket.records);
   return <div className="space-y-4">
     <div className="grid gap-3 sm:grid-cols-3">{original && <><DetailItem label="原始毛重" value={formatWeight(original.gross)} /><DetailItem label="原始皮重" value={formatWeight(original.tare)} /><DetailItem label="原始净重" value={formatWeight(original.net)} /></>}<DetailItem label="毛重调整差额" value={formatAdjustment(snapshot?.grossDeduction ?? 0)} /><DetailItem label="皮重调整差额" value={formatAdjustment(snapshot?.tareDeduction ?? 0)} /><DetailItem label="调整备注" value={snapshot?.reason || '未填写'} /></div>
     <DetailItem label="重量来源" value={snapshot?.source === 'manual' || (snapshot && (snapshot.grossDeduction !== 0 || snapshot.tareDeduction !== 0)) ? '人工调整最终重量（原始采集依据保留）' : '沿用采集依据'} />
-    {snapshot ? <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2"><DetailItem label="操作人／演示岗位" value={`${snapshot.actor} · ${roleLabels[snapshot.role]}`} /><DetailItem label="操作时间（北京）" value={beijingTime(snapshot.at)} /><DetailItem label="本次操作前毛／皮／净重" value={`${formatWeight(snapshot.before.gross)} / ${formatWeight(snapshot.before.tare)} / ${formatWeight(snapshot.before.net)}`} /><DetailItem label="本次操作后毛／皮／净重" value={`${formatWeight(snapshot.after.gross)} / ${formatWeight(snapshot.after.tare)} / ${formatWeight(snapshot.after.net)}`} /></div> : <p className="text-sm text-text-tertiary">历史测试单未记录人工调整，按未调整展示；不补造操作人或操作时间。</p>}
+    {snapshot ? <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2"><DetailItem label="操作人／记录身份" value={`${snapshot.actor} · ${snapshot.role ? roleLabels[snapshot.role] : '账号操作'}`} /><DetailItem label="操作时间（北京）" value={beijingTime(snapshot.at)} /><DetailItem label="本次操作前毛／皮／净重" value={`${formatWeight(snapshot.before.gross)} / ${formatWeight(snapshot.before.tare)} / ${formatWeight(snapshot.before.net)}`} /><DetailItem label="本次操作后毛／皮／净重" value={`${formatWeight(snapshot.after.gross)} / ${formatWeight(snapshot.after.tare)} / ${formatWeight(snapshot.after.net)}`} /></div> : <p className="text-sm text-text-tertiary">历史测试单未记录人工调整，按未调整展示；不补造操作人或操作时间。</p>}
   </div>;
 }
 

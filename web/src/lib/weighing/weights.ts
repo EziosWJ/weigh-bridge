@@ -67,7 +67,7 @@ export function weightValues(gross: number, tare: number): WeightValues {
 
 export function adjustedWeights(original: WeightValues, input: FinalWeightInput): WeightValues {
   if (![original.gross, original.tare, original.net].every(Number.isFinite) || original.tare <= 0 || original.net <= 0) {
-    throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，在演示设置调整本次模拟重量后重新采集；首次重量有误时须重称，不能通过修改最终重量或交换毛皮重出单。');
+    throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，待设备提供正确重量后重新采集；首次重量有误时须重称，不能通过修改最终重量或交换毛皮重出单。');
   }
   weightInMilliTonnes(original.gross);
   weightInMilliTonnes(original.tare);

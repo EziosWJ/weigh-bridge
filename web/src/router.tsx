@@ -50,7 +50,6 @@ export const router = createBrowserRouter([
       { path: "weighing/parties/new", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingPartyEditPage })) },
       { path: "weighing/parties/:id/edit", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingPartyEditPage })) },
       { path: "weighing/categories", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingCategoriesPage })) },
-      { path: "weighing/settings", lazy: () => import("@/pages/weighing/demo-panel").then((module) => ({ Component: module.DemoSettingsPage })) },
       {
         index: true,
         element: <Navigate to="/weighing/tasks" replace />,

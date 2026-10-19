@@ -50,8 +50,10 @@ func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
 			contents := readFile(t, name)
 			// This schema evolution copies existing rows when SQLite rebuilds
 			// the source constraint; its Down maps BUSINESS back to MANUAL.
-			// It does not insert seed data.
-			if filepath.Base(name) == "00009_business_notification_source.sql" {
+			// Weighing workflow Down also clears cyclic FK pointers before
+			// dropping its tables. Agent contract also rebuilds CHECK constraints
+			// preserving existing rows; none of these migrations inserts seed data.
+			if filepath.Base(name) == "00009_business_notification_source.sql" || filepath.Base(name) == "00011_weighing_workflow_schema.sql" || filepath.Base(name) == "00012_agent_contract.sql" {
 				continue
 			}
 			if schemaDML.Match(contents) {

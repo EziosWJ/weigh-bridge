@@ -19,3 +19,7 @@ status: accepted
 ## 2026-10-18 前端模拟交付补充
 
 本轮已在浏览器模拟中实施上述客户修订：操作员直接处置、隔日续称、双向最终值调整及默认备注、作废后单磅重称和关联重开；原始采集、另一磅依据、替代关系与各版单据快照保留。规则见 [补充 Spec](../requirements/operator-weighing-corrections-spec.md)，验证与限制见 [交付记录](../requirements/operator-weighing-corrections-delivery.md)。上文“待实现”是此前文档阶段的记录；正式 Server 校验、设备及抓拍、通信和物理打印仍未实现。
+
+## 2026-10-19 Agent 接入补充
+
+[ADR 0015](0015-agent-owned-simulation.md) 将模拟行为迁至 Agent，系统统一按 Agent 契约处理新采集，不再维护模拟／正式两套流程。操作员确认、对应重量及抓拍依据和服务端校验规则继续适用。通信及独立 mock 已实现并验证，见 [交付记录](../requirements/agent-mock-delivery.md)；真实设备驱动仍未实现和验收。此前各阶段描述保留其历史含义。

@@ -1,7 +1,7 @@
 import type { BusinessInfo, FinalWeightInput, HistoryEntry, TaskInput, TestTicket, TransportTask, WeighRecord, WeighingCommand, WeighingState, WeightValues } from '../../types/weighing';
 import { emptyTaskInput, roleLabels } from '../../types/weighing';
 import { createInitialState } from './seed';
-import { siteConfigKeys } from './plate';
+const siteConfigKeys = ['weight', 'stable', 'timedOut', 'deviceError', 'online', 'evidence', 'cameraPreset', 'scenePlate', 'recognitionCandidate', 'recognitionScenario', 'submission', 'printOutcome'] as const;
 import { getCameraPreset } from './camera';
 import { adjustedWeights, originalWeights, weightDeduction, weightInMilliTonnes } from './weights';
 
@@ -199,6 +199,8 @@ export function applyCommand(previous: WeighingState, command: WeighingCommand, 
       }
       return state;
     }
+    case 'startPrint': fail('打印发起由服务端处理'); return state;
+    case 'retrySubmission': fail('原请求重试由服务端处理'); return state;
     case 'resolveSubmission': {
       requireDaily();
       if (!state.config.online) fail('请恢复连接后再查询提交结果');

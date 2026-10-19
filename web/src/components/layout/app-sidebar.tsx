@@ -14,6 +14,7 @@ import {
 import { isApiError } from "@/lib/api-error";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+import { useWeighingStore } from "@/store/weighing-store";
 
 type AppSidebarProps = {
   collapsed: boolean;
@@ -56,6 +57,7 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
   const [expandedPaths, setExpandedPaths] = useState<string[]>([]);
   const hasRequestedMenusRef = useRef(false);
   const menus = useAuthStore((state) => state.menus);
+  const weighingCapabilities = useWeighingStore(state => state.capabilities);
   const user = useAuthStore((state) => state.user);
   const isLoadingMenus = useAuthStore((state) => state.isLoadingMenus);
   const fetchCurrentUserMenus = useAuthStore(
@@ -68,9 +70,19 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
       const base = defaultNavItems.map((item) => item.path === "/messages" && messageAdmin
         ? { ...item, children: [...(item.children ?? []), notificationManageNavItem, announcementManageNavItem] }
         : item);
-      return mergeNavItems(base, convertUserMenusToNavItems(menus));
+      const has = (code: string) => weighingCapabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
+      const filterWeighing = (items: NavItem[]): NavItem[] => items.flatMap(item => {
+        if (!item.path.startsWith('/weighing')) return [item];
+        if (item.children?.length) { const children=filterWeighing(item.children);return children.length ? [{ ...item, children }] : []; }
+        const path=item.path;
+        const allowed=path==='/weighing/workbench' ? has('confirm')
+          : path==='/weighing/settings' ? false
+          : ['/weighing/materials','/weighing/parties','/weighing/categories'].includes(path) ? has('master:read') : has('read');
+        return allowed ? [item] : [];
+      });
+      return mergeNavItems(filterWeighing(base), filterWeighing(convertUserMenusToNavItems(menus)));
     },
-    [menus, user],
+    [menus, user, weighingCapabilities],
   );
 
   const activeGroupPaths = useMemo(

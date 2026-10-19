@@ -107,6 +107,7 @@ type MenuInput struct {
 }
 
 type Store interface {
+	PermissionCodes(context.Context, int64) ([]string, error)
 	PageRoles(context.Context, RolePageQuery) (Page[Role], error)
 	FindRole(context.Context, int64) (*Role, error)
 	RoleCodeExists(context.Context, string, int64) (bool, error)

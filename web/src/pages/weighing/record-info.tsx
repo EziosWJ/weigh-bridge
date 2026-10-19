@@ -39,12 +39,12 @@ export function WeighRecords({ records, onPreviewChange }: { records: WeighRecor
     {records.length === 0 && <p className="text-text-tertiary">尚未确认称重。</p>}
     {records.map((record) => <div key={record.id} className="rounded-control border border-border p-space-3 text-sm">
       <div className="flex flex-wrap justify-between gap-space-2"><strong>{record.stage === "first" ? "首次" : "二次"} · {record.kind === "gross" ? "毛重" : "皮重"} {formatWeight(record.weight)}</strong><span>{beijingTime(record.at)}（北京时间）</span></div>
-      <p className="mt-space-2 break-all text-text-secondary">记录 {record.id} · 模拟证据，摄像头未真实接入{records.some((next) => next.replaces === record.id) ? " · 已被后续记录替代" : " · 当前记录"}</p>
+      <p className="mt-space-2 break-all text-text-secondary">记录 {record.id} · 采集依据{records.some((next) => next.replaces === record.id) ? " · 已被后续记录替代" : " · 当前记录"}</p>
       <p className="mt-1 text-text-secondary">操作人：{record.actor || '历史未记录'} · 岗位：{record.role ? roleLabels[record.role] : '历史未记录'} · 采集时间：{record.capture ? beijingTime(record.capture.at) : '历史未记录'}</p>
       {record.retainedRecordId && <p className="mt-1">沿用另一有效磅：{record.retainedRecordId}</p>}
       {record.replaces && <p className="mt-space-1 break-all">替代原记录：{record.replaces}</p>}
       {record.reason && <p className="mt-space-1">原因：{record.reason}</p>}
-      <div className="mt-space-3 max-w-sm">{record.capture ? <CapturePhoto capture={record.capture} onPreviewChange={onPreviewChange} /> : <p className="text-text-tertiary">旧记录未保存模拟抓拍图片，不能用当前示例反填。</p>}</div>
+      <div className="mt-space-3 max-w-sm">{record.capture ? <CapturePhoto capture={record.capture} onPreviewChange={onPreviewChange} /> : <p className="text-text-tertiary">旧记录未保存抓拍图片，不能用当前示例反填。</p>}</div>
     </div>)}
   </div>;
 }

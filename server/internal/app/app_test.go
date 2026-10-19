@@ -258,6 +258,10 @@ func (s *authMemoryStore) FindVisibleMenusByUserID(context.Context, int64) ([]au
 
 type emptyRBACStore struct{}
 
+func (emptyRBACStore) PermissionCodes(context.Context, int64) ([]string, error) {
+	return []string{}, nil
+}
+
 func (emptyRBACStore) PageRoles(context.Context, rbac.RolePageQuery) (rbac.Page[rbac.Role], error) {
 	return rbac.Page[rbac.Role]{}, nil
 }

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { WORKBENCH_WINDOW } from "@/lib/workbench-window";
 import { Outlet } from "react-router-dom";
 import { AppHeader } from "@/components/layout/app-header";
 import { AppSidebar } from "@/components/layout/app-sidebar";
@@ -9,6 +10,9 @@ import { MessageConnections } from "@/components/layout/message-connections";
 import { AnnouncementPanel } from "@/components/layout/announcement-panel";
 
 export function AppShell() {
+  // window.name survives full document navigation; management must not retain
+  // the reserved workbench name and accidentally reuse itself as the popup.
+  useEffect(() => { if (window.name === WORKBENCH_WINDOW) window.name = ''; }, []);
   const [collapsed, setCollapsed] = useState(false);
   const { navigationIntent, handleNavigationClickCapture } = useRouteNavigationLoading();
 

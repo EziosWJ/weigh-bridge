@@ -21,6 +21,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/usermgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/webui"
+	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 // Dependencies holds the named business services the HTTP application assembles.
@@ -37,6 +38,7 @@ type Dependencies struct {
 	Log          *logmgmt.Service
 	Notification *notification.Service
 	Monitoring   *monitoring.Service
+	Weighing     *weighing.Service
 }
 
 // Application is the assembled HTTP application and its process logger.
@@ -83,10 +85,19 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		return nil, fmt.Errorf("create authentication handler: %w", err)
 	}
 	auth.RegisterRoutes(router, authHandler)
+	if deps.Weighing != nil {
+		if devices := deps.Weighing.Agent(); devices != nil {
+			devices.Register(router)
+		}
+		business := router.Group("/api/weighing")
+		business.Use(auth.BearerMiddleware(deps.Auth))
+		weighing.RegisterRoutes(business, weighing.NewHandler(deps.Weighing, deps.RBAC))
+	}
 
 	system := router.Group("/api/system")
 	system.Use(
 		auth.BearerMiddleware(deps.Auth),
+		rbac.ProtectManagementWrites(deps.RBAC),
 		platformhttp.MultipartProtection(platformhttp.MultipartProtectionConfig{
 			Policies: map[string]platformhttp.MultipartPolicy{
 				"/api/system/file/upload":       {MaxBodyBytes: filemgmt.MaxSingleBodySize},

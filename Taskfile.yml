@@ -86,6 +86,18 @@ tasks:
     cmds:
       - npm run dev
 
+  agent:mock:
+    desc: Start the standalone Agent mock web console (127.0.0.1:8090)
+    dir: server
+    cmds:
+      - go run ./cmd/agent-mock {{.CLI_ARGS}}
+
+  agent:build:
+    desc: Build the standalone Agent mock executable
+    dir: server
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-agent-mock ./cmd/agent-mock
+
   host:collector:
     desc: Start the Linux host resource collector; pass flags through CLI_ARGS
     dir: server

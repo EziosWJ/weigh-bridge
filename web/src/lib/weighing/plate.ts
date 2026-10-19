@@ -13,4 +13,3 @@ export function plateError(value: string) {
 }
 
 /** 现场、识别与提交场景变化使采集失效；岗位切换仅实时限制操作。 */
-export const siteConfigKeys = ['weight', 'stable', 'timedOut', 'deviceError', 'online', 'evidence', 'cameraPreset', 'scenePlate', 'recognitionCandidate', 'recognitionScenario', 'submission', 'printOutcome'] as const;
