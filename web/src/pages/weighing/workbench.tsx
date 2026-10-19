@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ClipboardCheck, Scale, Truck } from 'lucide-react';
+import { ClipboardCheck, LoaderCircle, Scale, Truck, TriangleAlert, FileText, X } from 'lucide-react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContentCard } from '@/components/common/content-card';
 import { SectionTabs } from '@/components/common/section-tabs';
@@ -7,6 +7,7 @@ import { DetailItem } from '@/components/common/detail-item';
 import { PageHeader } from '@/components/common/page-header';
 import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogBody, DialogFooter } from '@/components/ui/dialog';
 import { PlateInput } from './plate-input';
 import { normalizePlate, plateError } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
@@ -15,8 +16,9 @@ import { directionLabels, roleLabels, taskStatusLabels, type PlateEvidence, type
 import { weightValues } from '@/lib/weighing/weights';
 import { formatWeight, formatWeightValue } from '@/lib/weighing/weights';
 import { BusinessFields } from './shared';
-import { WeighingReviewDialog } from './review-dialog';
+import { WeighingReviewDialog, type WeighingReviewValue } from './review-dialog';
 import { DeviceCameraPanel, type CameraSize } from './camera-panel';
+import { TicketPrintActions } from './ticket-print-actions';
 import './workbench.css';
 
 const normalizeLegacy = (value: string) => value.trim().toUpperCase();
@@ -32,6 +34,17 @@ function WorkbenchContent() {
   const plateInput = useRef<HTMLInputElement>(null);
   const businessPanel = useRef<HTMLDivElement>(null);
   const [businessTab, setBusinessTab] = useState('basic');
+  const [businessOpen, setBusinessOpen] = useState(false);
+  const businessFocus = useRef('');
+  useEffect(() => {
+    if (!businessOpen) return;
+    const frame = requestAnimationFrame(() => {
+      const target = businessFocus.current ? `input[aria-label="搜索${businessFocus.current}"]` : '[role="tab"][aria-selected="true"]';
+      businessPanel.current?.querySelector<HTMLElement>(target)?.focus();
+      businessFocus.current = '';
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [businessOpen]);
   const [params, setParams] = useSearchParams();
   const location = useLocation();
   const linkedTask = data.tasks.find((task) => task.id === params.get('task'));
@@ -41,7 +54,7 @@ function WorkbenchContent() {
   const [feedback, setFeedback] = useState('');
   const [takeoverReason, setTakeoverReason] = useState('');
   const [cameraSize, setCameraSize] = useState<CameraSize>('standard');
-  const [review, setReview] = useState<WeighingState | null>(null);
+  const [review, setReview] = useState<{ data: WeighingState; title: string; value: WeighingReviewValue } | null>(null);
   const [success, setSuccess] = useState<{ taskId: string; stage: 'first' | 'second' } | null>(null);
   const [recognition, setRecognition] = useState<{ scenePlate: string; candidate?: string } | null>(null);
   const [recognitionHint, setRecognitionHint] = useState('');
@@ -87,9 +100,9 @@ function WorkbenchContent() {
   const phaseLabel = awaitingResult ? '提交待核实' : successfulTask ? '办理完成' : !located ? '等待查找车辆' : stage === 'second' ? '回磅' : '首磅';
 
   async function run(command: WeighingCommand, message = '', expected?: WeighingState) {
+    setReview(null);
     try {
       await dispatch(command, expected);
-      setReview(null);
       setFeedback(message);
       return true;
     } catch (error) {
@@ -147,7 +160,7 @@ function WorkbenchContent() {
     const resolved = useWeighingStore.getState().lastResolution;
     const taskId = resolved?.taskId || pending.taskId || (pending.requestId ? next.firstRequests[pending.requestId] : '');
     if (pending.operation) {
-      const current = pending.operation === 'reopen' && resolved?.committed ? next.tickets.find(ticket => ticket.taskId === taskId && ticket.status === 'valid') : undefined;
+      const current = (pending.operation === 'print' || (pending.operation === 'reopen' && resolved?.committed)) ? next.tickets.find(ticket => ticket.taskId === taskId && ticket.status === 'valid') : undefined;
       navigate(current ? `/weighing/tickets/${encodeURIComponent(current.id)}` : `/weighing/tasks/${encodeURIComponent(taskId)}`);
       return;
     }
@@ -166,7 +179,7 @@ function WorkbenchContent() {
     if (!pending || !await run({ type: 'retrySubmission' })) return;
     const result=useWeighingStore.getState().lastResolution;
     if (!result?.committed || !result.taskId) return;
-    if (pending.operation) { navigate(pending.operation==='print' ? `/weighing/tickets/${useWeighingStore.getState().data.tickets.find(t=>t.taskId===result.taskId&&t.status==='valid')?.id}/preview` : `/weighing/tasks/${result.taskId}`);return; }
+    if (pending.operation) { navigate(pending.operation==='print' ? `/weighing/tickets/${useWeighingStore.getState().data.tickets.find(t=>t.taskId===result.taskId&&t.status==='valid')?.id}` : `/weighing/tasks/${result.taskId}`);return; }
     setParams({task:result.taskId});setSuccess({taskId:result.taskId,stage:pending.stage});setFeedback('已按原请求恢复，沿用服务端记录。');
   }
 
@@ -204,14 +217,26 @@ function WorkbenchContent() {
       setFeedback(`确认前${requiredHint}`);
       const missing = !material?.enabled ? '物料' : direction === 'inbound' ? '供货方' : '收货方';
       setBusinessTab('basic');
-      requestAnimationFrame(() => businessPanel.current?.querySelector<HTMLInputElement>(`input[aria-label="搜索${missing}"]`)?.focus());
+      businessFocus.current = missing;
+      setBusinessOpen(true);
+      if (businessOpen) requestAnimationFrame(() => businessPanel.current?.querySelector<HTMLInputElement>(`input[aria-label="搜索${missing}"]`)?.focus());
       return;
     }
     setFeedback('');
-    setReview(data);
+    setBusinessOpen(false);
+    setReview({ data, title: `${stage === 'first' ? '首磅' : '回磅'}（${kind}）`, value: { plate: summaryPlate, direction: directionLabels[summaryDirection], material: summaryMaterial, partyLabel: summaryDirection === 'inbound' ? '供货方' : '收货方', party: summaryParty, weight: data.config.weight, kind, capture: data.capture,
+        original: stage === 'second' && firstRecord ? weightValues(firstRecord.kind === 'gross' ? firstRecord.weight : data.config.weight, firstRecord.kind === 'tare' ? firstRecord.weight : data.config.weight) : undefined,
+        firstWeight: firstRecord ? `${firstRecord.kind === 'gross' ? '毛重' : '皮重'} ${formatWeight(firstRecord.weight)} · ${beijingTime(firstRecord.at)}（北京时间）` : undefined,
+        supplementary: [
+          { label: '承运方', value: selected ? selected.carrierName ?? '' : data.parties.find(item => item.id === data.draft.carrierId)?.name ?? '' },
+          { label: '本趟联系人', value: [selected ? selected.contactName : data.draft.contactName, selected ? selected.contactPhone : data.draft.contactPhone].filter(Boolean).join(' / ') },
+          { label: '司机', value: [selected ? selected.driver : data.draft.driver, selected ? selected.driverPhone : data.draft.driverPhone].filter(Boolean).join(' / ') },
+          { label: '备注', value: selected?.remark ?? data.draft.remark },
+        ].filter(item => item.value),
+      } });
   }
 
-  return <div className="weighing-workbench space-y-4">
+  return <div className="weighing-workbench">
     <div className="workbench-page-heading"><PageHeader title="称重工作台" actions={<><StatusTag tone={data.config.online ? 'success' : 'warning'}>{data.config.online ? 'Agent 在线' : 'Agent 离线'}</StatusTag><span className="hidden text-sm text-text-tertiary sm:inline">{roleLabels[data.config.role]}</span></>} /></div>
     {(feedback || storageError || syncNotice) && <div role="status" className="workbench-notice rounded-control border border-border bg-neutral-background px-4 py-2 text-sm">{feedback && <p>{feedback}</p>}{syncNotice && <p>{syncNotice}</p>}{storageError && <p className="text-error">{storageError}</p>}</div>}
     <div className={`weighing-station weighing-camera-${cameraSize}`}>
@@ -222,36 +247,47 @@ function WorkbenchContent() {
           <form className="flex flex-wrap items-center gap-3" onSubmit={lookup}>
             <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span></label>
             <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} onChange={changePlate} />
-            <Button type="submit" size="lg" variant={!located && !awaitingResult ? 'primary' : 'secondary'} disabled={awaitingResult}>核对车牌并查找运输</Button>
-            <div className="workbench-phase flex flex-1 items-center justify-end gap-3 text-sm" aria-live="polite"><span className="font-medium text-text-secondary">{phaseLabel}</span>{located && !successfulTask && !awaitingResult && <StatusTag tone="info">{directionLabels[direction]}</StatusTag>}</div>
+            <Button type="submit" size="lg" variant="primary" disabled={awaitingResult}>核对车牌并查找运输</Button>
           </form>
-          {recognitionHint && <p role="status" className="mt-2 text-sm text-warning">{recognitionHint}</p>}
+          <div className="workbench-phase" aria-label="当前作业状态" aria-live="polite"><strong>{phaseLabel}</strong>{hasWeighingContext && <span>{directionLabels[summaryDirection]}</span>}</div>
+          <p role="status" className={`plate-recognition mt-3 text-sm ${recognitionHint ? 'text-warning' : 'text-text-secondary'}`}>{recognitionHint ? <><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{recognitionHint}</> : located ? '车牌已人工核对；请继续核对现场车辆。' : '等待识别候选，可手工录入普通或新能源车牌后核对。'}</p>
+          <div className="workbench-business-entry">
+            <div className="min-w-0 text-sm text-text-secondary"><p className="truncate" title={`${summaryMaterial} / ${summaryParty}`}>{summaryMaterial} / {summaryParty}</p></div>
+            <Button size="lg" variant="primary" className="w-full" disabled={!located && !taskInfo && !awaitingResult} onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />{taskInfo || awaitingResult ? '查看运输资料' : '录入运输资料'}</Button>
+          </div>
         </ContentCard>
-        <ContentCard className="weighing-scale shadow-none" bodyClassName="space-y-3 p-4">
+        <ContentCard className="weighing-scale shadow-none" bodyClassName="p-4">
           <div className="workbench-weighing-heading">
             <h2 className="workbench-weighing-title" aria-label={hasWeighingContext ? `${displayStage === 'first' ? '首磅' : '回磅'}（${displayKind}）` : '待定位车辆'}>
               {hasWeighingContext ? <><span className="workbench-stage-label">{displayStage === 'first' ? '首磅' : '回磅'}</span><span className="workbench-weight-kind">{displayKind}</span></> : <span className="workbench-context-empty">待定位车辆</span>}
             </h2>
-            <StatusTag tone={confirmedRecord ? 'info' : data.config.stable ? 'success' : 'warning'}>{confirmedRecord ? '已确认' : data.config.stable ? '稳定' : '未稳定'}</StatusTag>
+            <StatusTag tone={confirmedRecord ? 'info' : !data.config.online || data.config.deviceError ? 'warning' : data.config.stable ? 'success' : 'warning'}>{confirmedRecord ? '已确认' : !data.config.online ? '设备离线' : data.config.deviceError ? '设备异常' : data.config.stable ? '稳定' : '未稳定'}</StatusTag>
           </div>
           {hasWeighingContext && <p className="workbench-weighing-context">{displayStage === 'first' ? '第一次称重' : '第二次称重'} · {directionLabels[summaryDirection]}{awaitingResult ? ' · 提交待核实' : confirmedRecord ? ' · 本次已确认' : ''}</p>}
           <div className="weighing-instrument">
-            <p className="min-w-0 text-sm text-text-secondary">{confirmedRecord ? '本次已确认重量' : '当前设备重量'}</p>
-            <p className="weighing-readout" aria-label="当前重量">{Number.isFinite(shownWeight) ? formatWeightValue(shownWeight) : '—'}<span>吨</span></p>
+            <p className="instrument-label min-w-0 text-sm text-text-secondary"><Truck className="h-8 w-8" aria-hidden />{confirmedRecord ? '本次已确认重量' : '当前设备重量'}</p>
+            <p className="weighing-readout" aria-label="当前重量">{(confirmedRecord || (device && data.config.online && !data.config.deviceError)) && Number.isFinite(shownWeight) ? formatWeightValue(shownWeight) : '—'}<span>吨</span></p>
           </div>
+          <p className="instrument-source text-xs text-text-tertiary">{confirmedRecord ? `采集时间：${beijingTime(confirmedRecord.at)}` : device?.receivedAt && !device.receivedAt.startsWith('0001') ? `最近上报：${beijingTime(device.receivedAt)} · Agent 设备数据` : '等待 Agent 上报重量与稳定状态'}</p>
         </ContentCard>
         <ContentCard className="workbench-current-action shadow-none" bodyClassName="p-4">
           <div className="space-y-3" aria-label="当前称重操作">
             {awaitingResult ? <><h2 className="font-semibold text-warning">提交结果待核实</h2><p className="text-sm text-text-secondary">先查询原结果，避免重复称重或出单。</p><><Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={resolve}>查询上次提交结果</Button><Button size="lg" className="w-full" disabled={busy} onClick={retry}>按原请求重试</Button></></>
-            : successfulTask ? <><h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成' : '回磅已完成'}</h2><p className="text-sm text-text-secondary">{ticket ? `本趟净重 ${formatWeight(ticket.net)}` : '已保存首次称重，装卸后按车牌办理回磅。'}</p><Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button><div className="flex flex-wrap gap-3 text-sm"><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tasks/${successfulTask.id}`}>查看任务详情</Link>{ticket && <><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link><Link target="_blank" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}/preview`}>打印预览</Link></>}</div></>
-            : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : '请等待设备就绪后继续'}</span>{data.owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <div className="space-y-2"><label htmlFor="takeover-reason" className="text-sm">接管原因</label><input id="takeover-reason" className="w-full rounded-control border border-border px-3 py-2" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /><Button disabled={!takeoverReason.trim() || busy} onClick={() => run({type:'takeover',reason:takeoverReason}, '操作员已接管，记录已保留。')}>接管操作权</Button></div>}</>
+            : successfulTask ? <><h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成' : '回磅已完成'}</h2><p className="text-sm text-text-secondary">{ticket ? `本趟净重 ${formatWeight(ticket.net)}` : '已保存首次称重，装卸后按车牌办理回磅。'}</p><Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button><div className="flex flex-wrap gap-3 text-sm"><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tasks/${successfulTask.id}`}>查看任务详情</Link>{ticket && <><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link></>}</div>{ticket && <TicketPrintActions ticketId={ticket.id} />}</>
+            : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : '请等待设备就绪后继续'}</span><Button size="lg" className="w-full" disabled>采集重量</Button>{data.owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <div className="space-y-2"><label htmlFor="takeover-reason" className="text-sm">接管原因</label><input id="takeover-reason" className="w-full rounded-control border border-border px-3 py-2" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /><Button disabled={!takeoverReason.trim() || busy} onClick={() => run({type:'takeover',reason:takeoverReason}, '操作员已接管，记录已保留。')}>接管操作权</Button></div>}</>
             : !located ? <><p className="text-sm text-text-secondary">先核对车牌并查找运输，再为当前车辆采集。</p><Button size="lg" className="w-full" disabled>采集重量</Button></>
             : !canWeigh ? <><p className="text-sm text-warning">当前任务不能继续称重，请查看任务详情。</p><Button size="lg" className="w-full" disabled>当前不可称重</Button></>
-            : !sampleReady ? <><p className="text-sm text-text-secondary">车辆完全上磅、重量稳定后即可采集，资料可随后补齐。</p><Button size="lg" variant="primary" className="w-full" onClick={() => run({ type: 'capture', taskId: selected?.id, plate: summaryPlate, plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() } })}><Scale className="h-4 w-4" aria-hidden />采集重量</Button></>
-            : <><p className="text-sm text-text-secondary">{requiredHint ? `重量已采集，确认前${requiredHint}。` : '重量与图片已就绪，请集中核对后确认。'}</p><div className="flex flex-wrap gap-2"><Button size="lg" variant="primary" className="flex-1" onClick={openReview}><ClipboardCheck className="h-4 w-4" aria-hidden />{requiredHint ? '补齐资料后核对' : `开始核对${stage === 'first' ? '首磅' : '回磅'}（${kind}）`}</Button><Button size="lg" onClick={() => run({ type: 'capture', taskId: selected?.id, plate: summaryPlate, plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() } })}>重新采集重量</Button></div></>}
+            : !sampleReady ? <><p className="text-sm text-text-secondary">车辆完全上磅、重量稳定后即可采集，资料可随后补齐。</p><Button size="lg" variant="primary" className="w-full" disabled={busy} aria-busy={busy} onClick={() => run({ type: 'capture', taskId: selected?.id, plate: summaryPlate, plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() } })}>{busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <Scale className="h-5 w-5" aria-hidden />}{busy ? '正在采集…' : '采集重量'}</Button></>
+            : <><p className="text-sm text-text-secondary">{requiredHint ? `重量已采集，确认前${requiredHint}。` : '重量与图片已就绪，请集中核对后确认。'}</p><div className="flex flex-wrap gap-2"><Button size="lg" variant="primary" className="flex-1" onClick={openReview}><ClipboardCheck className="h-4 w-4" aria-hidden />{requiredHint ? '补齐资料后核对' : `开始核对${stage === 'first' ? '首磅' : '回磅'}（${kind}）`}</Button><Button size="lg" disabled={busy} aria-busy={busy} onClick={() => run({ type: 'capture', taskId: selected?.id, plate: summaryPlate, plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() } })}>重新采集重量</Button></div></>}
           </div>
         </ContentCard>
-        <div className="weighing-business min-w-0" ref={businessPanel}>{taskInfo ? <ContentCard title={successfulTask ? '本趟运输' : '核对本趟运输'} extra={<StatusTag>{awaitingResult ? '提交待核实' : taskStatusLabels[taskInfo.status]}</StatusTag>}>
+      </div>
+    </div>
+    <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
+      <DialogOverlay />
+      <DialogContent className="workbench-business-dialog flex max-w-[1200px] flex-col">
+        <DialogHeader><div><DialogTitle>{taskInfo || awaitingResult ? '查看运输资料' : '录入运输资料'}</DialogTitle><DialogDescription>{taskInfo || awaitingResult ? '查看本趟运输信息及称重依据。' : '填写本趟资料，修改自动保留；称重仍需单独核对并确认。'}</DialogDescription></div><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
+        <DialogBody>{!taskInfo && located && requiredHint && <p role="status" className="mb-3 text-sm text-warning">确认前{requiredHint}</p>}<div className="weighing-business min-w-0" ref={businessPanel}>{taskInfo ? <ContentCard title={successfulTask ? '本趟运输' : '核对本趟运输'} extra={<StatusTag>{awaitingResult ? '提交待核实' : taskStatusLabels[taskInfo.status]}</StatusTag>}>
           <SectionTabs key={taskInfo.id} label="本趟运输信息" items={[
             { value: 'basic', label: '基本信息', content: <>
               <div className="grid gap-4 sm:grid-cols-2"><DetailItem label="车牌" value={taskInfo.plate} /><DetailItem label="运输方向" value={directionLabels[taskInfo.direction]} /><DetailItem label="物料" value={summaryMaterial} /><DetailItem label={taskInfo.direction === 'inbound' ? '供货方' : '收货方'} value={summaryParty} /></div>
@@ -267,25 +303,20 @@ function WorkbenchContent() {
           />
         </ContentCard> : <ContentCard title={awaitingResult ? '核对提交信息' : '从车牌开始'}>
           {awaitingResult ? <div className="grid gap-4 sm:grid-cols-2"><DetailItem label="车牌" value={summaryPlate} /><DetailItem label="运输方向" value={directionLabels[summaryDirection]} /><DetailItem label="物料" value={summaryMaterial} /><DetailItem label={summaryDirection === 'inbound' ? '供货方' : '收货方'} value={summaryParty} /></div> : <ol className="list-inside list-decimal space-y-4 text-sm text-text-secondary"><li>识别候选或手工录入车牌，人工核对并查找运输。</li><li>车辆上磅后采集重量，再补齐本趟资料。</li><li>集中核对车牌、业务、重量和图片后确认。</li></ol>}
-        </ContentCard>}</div>
-
-      </div>
-    </div>
-    {review === data && canWeigh && !blocked && !requiredHint && sampleReady && <WeighingReviewDialog
-      title={`${stage === 'first' ? '首磅' : '回磅'}（${kind}）`}
-      value={{ plate: summaryPlate, direction: directionLabels[summaryDirection], material: summaryMaterial, partyLabel: summaryDirection === 'inbound' ? '供货方' : '收货方', party: summaryParty, weight: data.config.weight, kind, capture: data.capture,
-        original: stage === 'second' && firstRecord ? weightValues(firstRecord.kind === 'gross' ? firstRecord.weight : data.config.weight, firstRecord.kind === 'tare' ? firstRecord.weight : data.config.weight) : undefined,
-        firstWeight: firstRecord ? `${firstRecord.kind === 'gross' ? '毛重' : '皮重'} ${formatWeight(firstRecord.weight)} · ${beijingTime(firstRecord.at)}（北京时间）` : undefined,
-        supplementary: [
-          { label: '承运方', value: selected ? selected.carrierName ?? '' : data.parties.find(item => item.id === data.draft.carrierId)?.name ?? '' },
-          { label: '本趟联系人', value: [selected ? selected.contactName : data.draft.contactName, selected ? selected.contactPhone : data.draft.contactPhone].filter(Boolean).join(' / ') },
-          { label: '司机', value: [selected ? selected.driver : data.draft.driver, selected ? selected.driverPhone : data.draft.driverPhone].filter(Boolean).join(' / ') },
-          { label: '备注', value: selected?.remark ?? data.draft.remark },
-        ].filter(item => item.value),
-      }}
+        </ContentCard>}</div></DialogBody>
+        <DialogFooter>
+          <Button onClick={() => setBusinessOpen(false)}>{taskInfo || awaitingResult ? '关闭' : '返回工作台'}</Button>
+          {!taskInfo && located && !awaitingResult && <Button variant="primary" onClick={() => { if (sampleReady) openReview(); else setBusinessOpen(false); }}>{sampleReady ? '完成录入并核对' : '完成录入'}</Button>}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    {review && <WeighingReviewDialog
+      title={review.title}
+      invalidReason={review.data !== data || !canWeigh || !!blocked || !!requiredHint || !sampleReady ? syncNotice || blocked || '数据或采集条件已变化，请返回重新采集并核对。' : ''}
+      value={review.value}
       onCancel={() => setReview(null)}
       onMismatch={() => { setReview(null); setFeedback(selected ? '请核对本趟车辆、重量与图片；业务资料有误可前往任务详情办理纠错。' : '请修改本趟资料后重新核对；车牌或现场情况有变化时重新采集。'); }}
-      onConfirm={finalWeights => confirm(review, finalWeights)}
+      onConfirm={finalWeights => confirm(review.data, finalWeights)}
     />}
   </div>;
 }

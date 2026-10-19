@@ -1,152 +1,187 @@
-/* Form / Detail 的称重作业变体；沿用全站色彩、间距与控件。 */
-.weighing-workbench > :first-child { margin-bottom: 16px; }
-.weighing-settings-link { display: inline-flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: 13px; }
-.weighing-settings-link:hover { color: var(--color-primary); }
-.weighing-station { display: grid; align-items: start; gap: 16px; }
-.weighing-camera { min-width: 0; overflow: hidden; }
-.weighing-camera > div { padding: 0; }
-.weighing-scale > div { padding: 16px; }
-.weighing-instrument { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; min-height: 96px; padding: 12px 16px; border-radius: var(--radius-control); background: var(--color-neutral-background); }
-.weighing-readout { display: flex; justify-content: flex-end; align-items: baseline; gap: 12px; margin: 0; font-family: Bahnschrift, 'DIN Alternate', Arial, sans-serif; font-size: 48px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
-.weighing-readout > span { font-family: inherit; font-size: 16px; font-weight: 400; color: var(--color-text-secondary); }
-.workbench-weighing-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 12px; }
-.workbench-weighing-title { display: flex; align-items: center; gap: 14px; margin: 0; line-height: 1.2; }
-.workbench-stage-label { display: inline-flex; align-items: center; min-height: 42px; padding: 6px 12px; border-radius: 4px; background: var(--color-primary); color: white; font-size: 24px; font-weight: 700; }
-.workbench-weight-kind { color: var(--color-text-primary); font-size: 28px; font-weight: 700; }
-.workbench-weighing-context { margin: 0; color: var(--color-text-secondary); font-size: 14px; line-height: 22px; }
-.workbench-context-empty { color: var(--color-text-secondary); font-size: 20px; font-weight: 600; }
-.weighing-action-link { display: flex; min-height: 40px; align-items: center; justify-content: center; padding: 8px 16px; border-radius: var(--radius-control); background: var(--color-primary); color: var(--color-surface); font-weight: 500; }
-.weighing-action-link:hover { background: var(--color-primary-hover); }
-.weighing-business > section { box-shadow: none; }
-.weighing-business > section > header { padding: 12px 16px; }
-.weighing-business > section > div { padding: 16px; }
-@media (min-width: 1024px) {
-  .weighing-station { grid-template-columns: minmax(0, 1.1fr) minmax(420px, 1fr); }
-  .weighing-camera-small { grid-template-columns: minmax(0, 0.65fr) minmax(420px, 1fr); }
-  .weighing-camera-large { grid-template-columns: minmax(0, 1.65fr) minmax(400px, 1fr); }
-  .weighing-scale { position: sticky; top: 80px; z-index: 10; }
-}
-@media (max-width: 1023px) {
-  .weighing-camera-small .weighing-camera { width: 75%; justify-self: start; }
-  .weighing-camera-standard .weighing-camera { width: 90%; justify-self: start; }
-  .weighing-camera-large .weighing-camera { width: 100%; }
-}
-@media (max-width: 639px) {
-  .weighing-workbench > :first-child { gap: 8px; }
-  .weighing-workbench > :first-child > :last-child { flex-wrap: wrap; }
-  .weighing-settings-link { font-size: 12px; }
-  .weighing-camera-small .weighing-camera { width: 90%; }
-  .weighing-camera-standard .weighing-camera { width: 100%; }
-}
-/* B：现场观察优先；局部 token 不影响后台主题。 */
-.standalone-workbench {
-  --color-primary: #245ba8;
-  --color-primary-hover: #1d4c90;
-  --color-text-primary: #26343d;
-  --color-text-secondary: #52616a;
-  --color-text-tertiary: #65747e;
-  --color-border: #cbd5dc;
-  --color-background: #e2e7eb;
-  --color-surface: #fff;
-  --color-neutral-background: #eff3f5;
-  --color-success: #28724f;
-  --radius-control: 4px;
-  --radius-admin: 4px;
+/* 工业作业台局部主题，同时覆盖本页通过 Portal 打开的核对和资料窗口。 */
+body:has(.standalone-workbench), .standalone-workbench {
+  --color-primary: #168fe5;
+  --color-primary-hover: #0878ca;
+  --color-text-primary: #edf8ff;
+  --color-text-secondary: #afc5d5;
+  --color-text-tertiary: #91aabb;
+  --color-background: #06121b;
+  --color-surface: #102331;
+  --color-neutral-background: #152e3e;
+  --color-border: #315065;
+  --color-neutral-border: #315065;
+  --color-success: #41d8a0;
+  --color-success-background: #10382f;
+  --color-success-border: #24634f;
+  --color-warning: #ffb454;
+  --color-warning-background: #392b1b;
+  --color-warning-border: #71512e;
+  --color-error: #ff8585;
+  --color-error-background: #3d242b;
+  --color-error-border: #73404a;
+  --color-info: #65d9fb;
+  --color-info-background: #10344a;
+  --color-info-border: #24617b;
+  --radius-control: 5px;
+  --radius-admin: 9px;
   --shadow-admin: none;
-  background: var(--color-background);
+  color-scheme: dark;
+}
+.standalone-workbench {
   color: var(--color-text-primary);
-  font-family: 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  background: url('/weighbridge/backgrounds/industrial-grid.svg') repeat, var(--color-background);
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
 }
-.standalone-workbench .workbench-page-heading { display: none; }
-.standalone-workbench .workbench-content { padding: 16px 22px; }
-.standalone-workbench .workbench-topbar {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 64px;
-  margin: 0 22px; padding: 8px 0; border-bottom: 1px solid var(--color-border);
-  background: var(--color-background); font-size: 14px;
-}
-.standalone-workbench .workbench-brand { display: flex; align-items: center; gap: 10px; }
-.standalone-workbench .workbench-brand-mark { display: grid; place-items: center; width: 34px; height: 34px; background: #243746; color: white; }
-.standalone-workbench .weighing-workbench > * { margin-top: 0; margin-bottom: 0; }
-.standalone-workbench .workbench-notice { margin-bottom: 12px; }
-.standalone-workbench .weighing-station { display: grid; align-items: start; gap: 16px; }
-.standalone-workbench .weighing-console {
-  display: grid; grid-template-rows: auto auto auto 1fr; gap: 16px;
-  min-width: 0; padding: 16px; background: var(--color-surface);
-}
-.standalone-workbench .weighing-console > * { min-width: 0; margin: 0; }
-.standalone-workbench .weighing-console > section,
-.standalone-workbench .weighing-business > section { border: 0; border-radius: 0; box-shadow: none; }
-.standalone-workbench .weighing-vehicle-bar > div,
-.standalone-workbench .workbench-current-action > div { padding: 0; }
-.standalone-workbench .workbench-current-vehicle { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.standalone-workbench .workbench-current-vehicle h2 { font-size: 18px; font-weight: 600; }
-.standalone-workbench .weighing-vehicle-bar form { display: grid; grid-template-columns: 1.15fr 1fr; align-items: start; gap: 8px; }
-.standalone-workbench .weighing-vehicle-bar form > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.standalone-workbench .weighing-vehicle-bar .plate-control,
-.standalone-workbench .workbench-phase { grid-column: 1 / -1; }
-.standalone-workbench .weighing-vehicle-bar form > button { padding-left: 8px; padding-right: 8px; font-size: 13px; }
-.standalone-workbench .plate-entry { gap: 0; }
-.standalone-workbench .plate-entry > button { background: var(--color-primary); color: white; border-color: var(--color-primary); border-radius: 0; }
-.standalone-workbench .plate-number { flex: 1; min-width: 0; max-width: none; border-radius: 0; }
-.standalone-workbench .workbench-phase { justify-content: space-between; font-size: 13px; }
-.standalone-workbench .weighing-scale { position: static; min-height: 0; padding: 12px 14px; background: var(--color-background); }
-.standalone-workbench .weighing-scale > div { padding: 0; }
-.standalone-workbench .weighing-scale h2 { font-size: 14px; }
-.standalone-workbench .weighing-instrument { min-height: 0; padding: 0; gap: 8px; border-radius: 0; background: transparent; }
-.standalone-workbench .weighing-readout { justify-content: flex-start; gap: 8px; font-size: 56px; }
-.standalone-workbench .weighing-business { min-height: 0; }
-.standalone-workbench .weighing-business [role="tabpanel"] > .grid { grid-template-columns: minmax(0, 1fr); row-gap: 8px; }
-.standalone-workbench .weighing-business [role="tabpanel"] > .grid > .md\:col-span-2 { grid-column: auto; }
-.standalone-workbench .weighing-business input,
-.standalone-workbench .weighing-business textarea,
-.standalone-workbench .weighing-business select { scroll-margin-block: 100px 200px; }
-.standalone-workbench .weighing-business > section > header { padding: 0 0 8px; }
-.standalone-workbench .weighing-business > section > header p { display: none; }
-.standalone-workbench .weighing-business > section > div { padding: 8px 0 0; }
-.standalone-workbench .weighing-business [role="tab"] { padding: 6px 8px; font-size: 13px; }
-.standalone-workbench .weighing-business [role="tabpanel"] { padding-top: 10px; }
-.standalone-workbench .workbench-current-action { padding-top: 12px; border-top: 1px solid var(--color-border); }
-.standalone-workbench .workbench-current-action button { padding-left: 10px; padding-right: 10px; font-size: 13px; }
-.standalone-workbench .workbench-current-action [aria-label="当前称重操作"] { display: flex; flex-direction: column; gap: 8px; }
-.standalone-workbench .workbench-current-action [aria-label="当前称重操作"] > * { margin-top: 0; }
-.standalone-workbench .weighing-camera { width: 100%; border: 0; border-radius: 0; background: transparent; }
-.standalone-workbench .workbench-camera-toolbar { padding: 8px 12px; color: white; background: #243746; }
-.standalone-workbench .workbench-camera-toolbar h2 { font-size: 14px; }
-.standalone-workbench .workbench-camera-toolbar button,
-.standalone-workbench .workbench-camera-toolbar svg { color: white; }
-.standalone-workbench .workbench-camera-toolbar button:hover,
-.standalone-workbench .workbench-camera-toolbar button[aria-pressed="true"] { background: #435a6b; }
-.standalone-workbench .workbench-camera-feed { background: #243746; }
-.standalone-workbench .workbench-camera-feed > img { width: 100%; height: 420px; object-fit: contain; }
-.standalone-workbench .workbench-camera-evidence { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 12px; margin-top: 12px; }
-.standalone-workbench .workbench-camera-evidence > * { min-width: 0; margin: 0; }
-.standalone-workbench .workbench-camera-plate,
-.standalone-workbench .workbench-camera-capture { padding: 12px; border: 0; background: var(--color-surface); }
-.standalone-workbench .workbench-camera-capture h3 { margin-bottom: 8px; }
-.standalone-workbench .workbench-camera-plate > [aria-label] { padding: 0; border: 0; background: transparent; }
-.standalone-workbench .workbench-camera-evidence img { max-height: 100px; object-fit: contain; }
-.standalone-workbench .workbench-camera-evidence .grid { grid-template-columns: 96px minmax(0, 1fr); }
+.standalone-workbench :is(button, a, input, select, textarea):focus-visible,
+body:has(.standalone-workbench) [role='dialog'] :is(button, a, input, select, textarea):focus-visible { outline: 2px solid #65d9fb; outline-offset: 3px; }
+.standalone-workbench button:disabled { opacity: .5; cursor: not-allowed; }
+.workbench-skip { position: absolute; z-index: 60; left: 16px; top: -80px; padding: 12px; background: var(--color-surface); }
+.workbench-skip:focus { top: 8px; }
+.workbench-topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; min-height: 64px; padding: 8px 12px; border-bottom: 1px solid var(--color-border); background: #0c1c29; }
+.workbench-brand { display: flex; align-items: center; gap: 12px; }
+.workbench-brand-mark { width: 48px; height: 48px; }
+.workbench-brand p { margin-top: 4px; }
+.workbench-connection { display: flex; align-items: center; gap: 8px; padding-left: 24px; border-left: 1px solid var(--color-border); }
+.connection-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; background: var(--color-warning); }
+.connection-dot.is-online { background: var(--color-success); }
+.workbench-management-link { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: 5px; padding: 7px 12px; }
+.workbench-management-link:hover { background: var(--color-neutral-background); }
+.standalone-workbench .workbench-content { padding: 8px; }
+.workbench-page-heading { display: none; }
+.weighing-workbench { min-width: 0; }
+.weighing-workbench > * { margin-top: 0; margin-bottom: 0; }
+.weighing-workbench > * + * { margin-top: 8px; }
+.workbench-notice { border-left: 3px solid var(--color-warning); overflow-wrap: anywhere; }
+.weighing-station { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(420px, 1fr); align-items: stretch; gap: 8px; }
+.weighing-camera, .weighing-console, .weighing-business { min-width: 0; }
+.weighing-camera, .weighing-console > section, .weighing-business > section { border: 1px solid var(--color-border); border-radius: 9px; background: linear-gradient(115deg, #152d3d, #0e202e 70%); box-shadow: inset 0 1px #ffffff08; }
+.weighing-camera { display: flex; flex-direction: column; overflow: hidden; }
+.weighing-camera > div { display: flex; flex: 1; flex-direction: column; padding: 0; }
+.workbench-camera-toolbar { min-height: 56px; border-bottom: 1px solid var(--color-border); }
+.workbench-camera-toolbar h2 { font-size: 18px; }
+.workbench-camera-toolbar svg { color: #86c5e5; }
+.camera-source-label { margin-left: 4px; font-size: 12px; font-weight: 400; color: var(--color-text-secondary); }
+.workbench-camera-toolbar button[aria-pressed='true'], .workbench-camera-views button[aria-pressed='true'] { background: var(--color-neutral-background); color: var(--color-info); border-color: #3b7695; }
+.workbench-camera-views { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; }
+.workbench-camera-feed { display: grid; place-items: center; min-height: 240px; flex: 1; overflow: hidden; background: #07141e; border-block: 1px solid #253f51; }
+.workbench-camera-feed > img { width: 100%; height: 100%; max-height: 380px; object-fit: contain; }
+.camera-placeholder { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; color: var(--color-text-secondary); font-size: 13px; }
+.camera-placeholder svg { margin-bottom: 8px; color: #4f819e; }
+.camera-placeholder strong { color: var(--color-text-primary); font-size: 16px; font-weight: 500; }
+.workbench-camera-evidence { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 16px; padding: 12px 16px; }
+.workbench-camera-evidence > * { margin: 0; min-width: 0; }
+.workbench-camera-evidence > [role='alert'] { grid-column: 1 / -1; }
+.workbench-camera-plate > div { padding: 8px; }
+.workbench-camera-capture { border: 0; border-left: 1px solid var(--color-border); padding: 0 0 0 16px; }
+.workbench-camera-capture h3 { margin-bottom: 8px; }
+.workbench-camera-evidence img { max-height: 88px; object-fit: contain; }
+.weighing-console { display: flex; flex-direction: column; gap: 8px; }
+.weighing-console > * { min-width: 0; margin: 0 !important; }
+.weighing-vehicle-bar > div { padding: 12px; }
+.workbench-current-vehicle { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.workbench-current-vehicle h2 { font-size: 20px; font-weight: 600; }
+.weighing-vehicle-bar form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.weighing-vehicle-bar form > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.weighing-vehicle-bar .plate-control { grid-column: 1 / -1; width: max-content; }
+.plate-entry { gap: 8px; }
+.standalone-workbench .plate-entry > button { height: 48px; background: #1069a8; border-color: #3aaee9; color: white; }
+.standalone-workbench .plate-number { --plate-cell-width: 36px; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 48px; background-color: #091b28; font-size: 24px; }
+.workbench-phase { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 8px; padding: 8px 12px; border-left: 3px solid var(--color-info); background: var(--color-info-background); font-size: 22px; line-height: 1.4; font-weight: 600; }
+.workbench-phase strong { color: var(--color-info); }
+.workbench-phase > span { padding-left: 12px; border-left: 1px solid var(--color-info-border); }
+.plate-recognition { display: flex; align-items: center; gap: 8px; line-height: 1.6; }
+.weighing-scale { flex: 1; }
+.weighing-scale > div { padding: 12px; }
+.workbench-weighing-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.workbench-weighing-title { display: flex; gap: 12px; align-items: center; font-size: 18px; font-weight: 600; }
+.workbench-stage-label { padding-right: 12px; border-right: 1px solid var(--color-border); }
+.workbench-weight-kind, .workbench-context-empty { color: var(--color-text-secondary); }
+.workbench-weighing-context { color: var(--color-text-secondary); font-size: 13px; }
+.weighing-instrument { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; min-height: 120px; padding: 12px; border: 1px solid #26495e; border-radius: 5px; background: #071923; }
+.instrument-label { display: flex; flex-direction: column; gap: 8px; }
+.instrument-label svg { color: #66c9f3; }
+.weighing-readout { display: flex; align-items: baseline; justify-content: flex-end; gap: 8px; color: #3ce0f5; font-family: Bahnschrift, 'DIN Alternate', 'Arial Narrow', sans-serif; font-size: 76px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 0; }
+.weighing-readout > span { font-size: 20px; }
+.instrument-source { line-height: 1.6; }
+.workbench-current-action > div { padding: 12px; }
+.workbench-current-action [aria-label='当前称重操作'] > button, .workbench-current-action [aria-label='当前称重操作'] > div > button { min-height: 48px; font-size: 16px; }
+.workbench-current-action button.bg-primary { background: linear-gradient(100deg, #078ac4, #1766dc); border-color: #4dc3f2; color: #fff; box-shadow: 0 3px 14px #0389e221; }
+.workbench-current-action button.bg-primary:hover { filter: brightness(1.12); }
+.workbench-current-action [role='alert'] { border-left: 3px solid var(--color-warning); padding-left: 12px; }
+.weighing-business > section > header { padding: 12px 20px; border-bottom: 1px solid var(--color-border); }
+.weighing-business > section > header h2 { font-size: 18px; }
+.weighing-business > section > div { padding: 8px 20px 16px; }
+.weighing-business [role='tablist'] { overflow-x: auto; }
+.weighing-business [role='tab'] { white-space: nowrap; }
+.weighing-business [role='tabpanel'] > .grid { grid-template-columns: minmax(180px, .75fr) repeat(2, minmax(0, 1.5fr)); gap: 12px 24px; }
+.weighing-business [role='tabpanel'] > .grid > .md\:col-span-2 { grid-column: auto; border: 0; padding: 0; margin: 0; align-content: start; }
+.weighing-business :is(input, select, textarea) { background-color: #0b1e2c; scroll-margin-block: 32px; }
+.weighing-business ol { display: flex; flex-wrap: wrap; gap: 16px 32px; }
+.weighing-business ol > li { margin: 0; }
 @media (min-width: 1100px) {
-  .standalone-workbench .weighing-station { grid-template-columns: minmax(0, 1.78fr) minmax(440px, 1fr); }
-  .standalone-workbench .weighing-console { min-height: calc(100dvh - 96px); }
-  .standalone-workbench .weighing-camera { position: sticky; top: 16px; }
-  .standalone-workbench .weighing-camera-small .workbench-camera-feed > img { height: 300px; }
-  .standalone-workbench .weighing-camera-large .workbench-camera-feed > img { height: 520px; }
+  .standalone-workbench { display: flex; flex-direction: column; min-height: 100dvh; }
+  .standalone-workbench .workbench-topbar { flex-shrink: 0; }
+  .standalone-workbench .workbench-content { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+  .weighing-workbench { display: flex; flex: 1; flex-direction: column; gap: 8px; }
+  .weighing-workbench > * + * { margin-top: 0; }
+  .weighing-station { flex: 1; }
+  .workbench-camera-feed { position: relative; }
+  .workbench-camera-feed > img { position: absolute; inset: 0; height: 100%; max-height: none; }
+  .workbench-camera-toolbar, .workbench-camera-views, .workbench-camera-evidence { flex-shrink: 0; }
+  .weighing-scale { display: flex; flex-direction: column; }
+  .weighing-scale > div { display: flex; flex: 1; flex-direction: column; gap: 12px; }
+  .weighing-scale > div > * { margin: 0; }
+  .weighing-instrument { flex: 1; }
+
+  .weighing-camera-small { grid-template-columns: minmax(0, 1fr) minmax(440px, 1.2fr); }
+  .weighing-camera-large { grid-template-columns: minmax(0, 1.8fr) minmax(420px, 1fr); }
+  .weighing-camera-small .workbench-camera-feed { min-height: 180px; }
+  .weighing-camera-large .workbench-camera-feed { min-height: 360px; }
 }
+@media (min-width: 1600px) { .weighing-readout { font-size: 96px; } }
 @media (max-width: 1099px) {
-  .standalone-workbench .weighing-station { grid-template-columns: minmax(0, 1fr); }
-  .standalone-workbench .weighing-console { height: auto; min-height: 0; }
-  .standalone-workbench .weighing-business { overflow: visible; }
-  .standalone-workbench .workbench-camera-feed > img { height: auto; max-height: 520px; aspect-ratio: 16 / 9; }
-  .standalone-workbench .weighing-camera-small .workbench-camera-feed { width: 75%; margin: auto; }
-  .standalone-workbench .weighing-camera-standard .workbench-camera-feed { width: 90%; margin: auto; }
+  .weighing-station { grid-template-columns: minmax(0, 1fr); }
+  .weighing-console { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .workbench-current-action { grid-column: 1 / -1; }
+  .weighing-business [role='tabpanel'] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .weighing-business [role='tabpanel'] > .grid > .md\:col-span-2 { grid-column: 1 / -1; }
+  .workbench-connection { padding-left: 0; border-left: 0; }
 }
 @media (max-width: 639px) {
+  .workbench-topbar { padding: 12px; gap: 12px; }
+  .workbench-topbar nav { width: 100%; margin: 0; }
   .standalone-workbench .workbench-content { padding: 12px; }
-  .standalone-workbench .workbench-topbar { margin: 0 12px; gap: 8px 12px; }
-  .standalone-workbench .workbench-topbar nav { width: 100%; margin-left: 0; }
-  .standalone-workbench .weighing-console { padding: 12px; }
-  .standalone-workbench .workbench-current-vehicle { flex-wrap: wrap; gap: 4px; }
-  .standalone-workbench .workbench-camera-evidence { grid-template-columns: minmax(0, 1fr); }
-  .standalone-workbench .workbench-camera-feed > img { max-height: 300px; }
+  .workbench-connection { font-size: 12px; }
+  .workbench-camera-toolbar { padding: 12px; }
+  .camera-source-label { display: none; }
+  .workbench-camera-evidence, .weighing-console, .weighing-business [role='tabpanel'] > .grid { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .workbench-camera-capture { border-left: 0; border-top: 1px solid var(--color-border); padding: 12px 0 0; }
+  .weighing-vehicle-bar form { grid-template-columns: minmax(0, 1fr); }
+  .weighing-vehicle-bar form > button { white-space: normal; }
+  .workbench-phase { justify-content: flex-start; }
+  .weighing-readout { font-size: 60px; }
+  .weighing-business > section > div { padding-inline: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .standalone-workbench .animate-spin { animation: none; } }
+
+.workbench-business-entry { display: flex; flex-direction: column; align-items: stretch; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.workbench-business-entry p + p { margin-top: 4px; }
+.workbench-business-dialog .weighing-business > section { border: 0; background: transparent; box-shadow: none; }
+.workbench-business-dialog .weighing-business > section > header { padding: 0 0 12px; }
+.workbench-business-dialog .weighing-business > section > div { padding: 8px 0; }
+.workbench-business-dialog .weighing-business [role='tabpanel'] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workbench-business-dialog .weighing-business [role='tabpanel'] > .grid > .md\:col-span-2 { grid-column: 1 / -1; }
+.workbench-business-dialog :is(input, select, textarea) { scroll-margin-block: 24px; }
+@media (max-width: 639px) {
+  .workbench-business-entry { align-items: stretch; flex-direction: column; }
+  .workbench-business-dialog .weighing-business [role='tabpanel'] > .grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 639px) { .standalone-workbench .plate-number { --plate-cell-width: clamp(24px, calc((100vw - 174px) / 7), 29px); } .workbench-phase { font-size: 20px; } }
+
+@media (min-width: 1100px) and (max-height: 800px) {
+  .weighing-vehicle-bar > div { padding: 8px 12px; }
+  .weighing-vehicle-bar form { gap: 8px; }
+  .workbench-phase { padding-block: 6px; }
+  .workbench-business-entry { gap: 8px; margin-top: 8px; padding-top: 8px; }
 }

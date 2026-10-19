@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">称重工作台标志</title>
+  <defs>
+    <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#66F0FF"/><stop offset="1" stop-color="#159DFF"/></linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="13" fill="#071824" stroke="#1D526C" stroke-width="2"/>
+  <path d="M32 11v35M19 18h26M32 13l-4 5h8z" fill="none" stroke="url(#cyan)" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 19l-8 15h16zM44 19l-8 15h16z" fill="#102F42" stroke="url(#cyan)" stroke-width="2.2" stroke-linejoin="round"/>
+  <path d="M10 36c2 5 16 5 18 0M36 36c2 5 16 5 18 0M20 47h24M24 52h16" fill="none" stroke="#D5F9FF" stroke-width="2.3" stroke-linecap="round"/>
+</svg>

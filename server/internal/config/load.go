@@ -178,7 +178,7 @@ func defaultValues() map[string]interface{} {
 		"log.add_source":                         false,
 		"monitoring.enabled":                     false,
 		"weighing.session_ttl":                   "60s",
-		"weighing.sample_ttl":                    "30s",
+		"weighing.ticket_title":                  "酒厂过磅单",
 		"weighing.agent_id":                      "scale-agent-1",
 		"weighing.agent_key":                     "",
 		"weighing.scale_id":                      1,

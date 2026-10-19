@@ -130,6 +130,7 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 			return err
 		}
 		view = ticketView(ticket)
+		view.PrintSheet = compactPrintSheet(view, r.ticketTitle)
 		if ticket.PreviousTicketID != nil {
 			previous, err := findOne[Ticket](tx, *ticket.PreviousTicketID)
 			if err != nil {

@@ -56,6 +56,13 @@ func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
 			if filepath.Base(name) == "00009_business_notification_source.sql" || filepath.Base(name) == "00011_weighing_workflow_schema.sql" || filepath.Base(name) == "00012_agent_contract.sql" {
 				continue
 			}
+			if filepath.Base(name) == "00013_sample_without_timeout.sql" {
+				// These exact statements preserve existing samples during the table
+				// rebuild and restore the former NOT NULL constraint on rollback.
+				// Keep rejecting any other DML, including seed inserts.
+				preservation := regexp.MustCompile(`(?m)^(INSERT INTO wb_sample_no_timeout_new SELECT \* FROM wb_sample;|UPDATE wb_sample SET expires_at=datetime\(captured_at, '\+30 seconds'\) WHERE expires_at IS NULL;|UPDATE wb_sample SET expires_at = captured_at \+ INTERVAL '30 seconds' WHERE expires_at IS NULL;)\s*$`)
+				contents = preservation.ReplaceAll(contents, nil)
+			}
 			if schemaDML.Match(contents) {
 				t.Errorf("schema migration %s contains seed-data DML", name)
 			}

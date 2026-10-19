@@ -23,7 +23,8 @@ export interface WeightValues { gross: number; tare: number; net: number; source
 export interface WeightDeduction { grossDeduction: number; tareDeduction: number; reason?: string }
 export type FinalWeightInput = Pick<WeightValues, 'gross' | 'tare'> & { reason?: string };
 export interface WeightAdjustment extends WeightDeduction { source?: 'manual' | 'collected'; actor: string; role?: OperatorRole; at: string; original: WeightValues; before: WeightValues; after: WeightValues }
-export interface WeighingTicket extends BusinessInfo { legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
+export interface PrintSheet { template: string; widthMm: number; heightMm: number; layers: number; title: string; marks: string[]; rows: { label: string; value: string }[][] }
+export interface WeighingTicket extends BusinessInfo { printSheet?: PrintSheet; legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
 export interface DeviceImage { id: string; view: 'front' | 'rear'; url: string; sha256: string }
 export interface DeviceState { agentId: string; scaleId: number; weight: string; stable: boolean; deviceOk: boolean; online: boolean; revision: string; receivedAt: string; plate: { candidate: string; failed: boolean; at: string }; images: DeviceImage[] }
 export interface DeviceConfig { role: OperatorRole; weight: number; stable: boolean; timedOut: boolean; deviceError: boolean; online: boolean; evidence: boolean }
@@ -63,4 +64,4 @@ export interface WeighingFilter { keyword?: string; direction?: string; material
 export const roleLabels: Record<OperatorRole, string> = { operator: '操作员', supervisor: '主管', admin: '管理员' };
 export const directionLabels: Record<Direction, string> = { inbound: '入厂卸货', outbound: '出厂装货' };
 export const taskStatusLabels: Record<TaskStatus, string> = { first: '待首次称重', second: '待二次称重', completed: '已完成', terminated: '已终止' };
-export const printStatusLabels: Record<PrintStatus, string> = { unprinted: '未发起打印', failed: '明确失败未出纸', unknown: '待核实', printed: '操作员确认已打印' };
+export const printStatusLabels: Record<PrintStatus, string> = { unprinted: '未发起打印', failed: '明确失败未出纸', unknown: '待核实', printed: '已打印' };

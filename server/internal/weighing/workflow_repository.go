@@ -298,7 +298,7 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 			front = captured.Images[1]
 		}
 		evidence := snapshot(map[string]any{"source": "agent", "agentId": device.State.AgentID, "imageSrc": front.URL, "sha256": front.SHA256, "images": captured.Images, "preset": "front", "cameraLabel": "车头视角", "at": captured.CapturedAt, "receivedAt": now, "weight": captured.Weight, "plate": business.Plate, "plateEvidence": json.RawMessage(plateEvidence)})
-		result = Sample{ScaleID: in.ScaleID, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: "agent", Weight: captured.Weight, CapturedAt: now, ExpiresAt: now.Add(r.sampleTTL), Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision}
+		result = Sample{ScaleID: in.ScaleID, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: "agent", Weight: captured.Weight, CapturedAt: now, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision}
 		// Recapture invalidates earlier unconfirmed samples in this session.
 		if err := tx.Model(&Sample{}).Where("scale_id=? AND session_generation=? AND invalidated_at IS NULL AND id NOT IN (SELECT sample_id FROM wb_weigh_record)", in.ScaleID, session.Generation).Update("invalidated_at", now).Error; err != nil {
 			return err
@@ -337,7 +337,7 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 	if !validSession(session, actor, in.SessionInput) {
 		return sample, ErrSession
 	}
-	if sample.ScaleID != in.ScaleID || sample.OwnerUserID != actor || sample.ClientID != in.ClientID || sample.SessionGeneration != session.Generation || sample.InvalidatedAt != nil || !sample.ExpiresAt.After(time.Now().UTC()) || sample.Stable != 1 || sample.DeviceOK != 1 || sample.Weight <= 0 {
+	if sample.ScaleID != in.ScaleID || sample.OwnerUserID != actor || sample.ClientID != in.ClientID || sample.SessionGeneration != session.Generation || sample.InvalidatedAt != nil || sample.Stable != 1 || sample.DeviceOK != 1 || sample.Weight <= 0 {
 		return sample, ErrConditions
 	}
 	device, ok := ctx.Value(deviceKey{}).(deviceContext)
@@ -403,7 +403,7 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 			return nil
 		}
 		lockErr := lock(tx)
-		// Recheck before reporting an expired sample, session, or old version.
+		// Recheck before reporting an invalid sample, expired session, or old version.
 		op, found, err = findOperation(tx, e.Metadata.ActorID, key)
 		if err != nil {
 			return err

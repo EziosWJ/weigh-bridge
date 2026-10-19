@@ -3,12 +3,12 @@ service:
 
 # Explicit opt-in for the server-backed testing workflow; never creates formal tickets.
 weighing:
+  ticket_title: 酒厂过磅单 # Replace with the actual winery name before deployment
   agent_id: scale-agent-1
   scale_id: 1
   agent_key: "" # Set locally or with APP_WEIGHING__AGENT_KEY
   image_dir: data/agent-images
   session_ttl: 60s
-  sample_ttl: 30s
 
 http:
   address: ":8900"

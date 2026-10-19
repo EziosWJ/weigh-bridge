@@ -1,0 +1,17 @@
+.ticket-sheet-scroll { overflow-x: auto; }
+.weighing-ticket-sheet { box-sizing: border-box; width: 210mm; min-height: 99mm; padding: 6mm 8mm; background: white; color: black; font: 10pt/1.5 "SimSun", "Noto Serif CJK SC", serif; }
+.weighing-ticket-sheet h2 { margin: 0; text-align: center; font-size: 16pt; font-weight: bold; }
+.ticket-sheet-marks { min-height: 5mm; margin: 0 0 2mm; text-align: right; font-weight: bold; }
+.ticket-sheet-rows { border: 0.25mm solid black; }
+.ticket-sheet-row { display: flex; border-bottom: 0.25mm solid black; }
+.ticket-sheet-row:last-child { border-bottom: 0; }
+.ticket-sheet-field { min-width: 0; flex: 1; padding: 2mm; overflow-wrap: anywhere; border-right: 0.25mm solid black; }
+.ticket-sheet-field:last-child { border-right: 0; }
+.ticket-sheet-field strong { font-weight: normal; font-variant-numeric: tabular-nums; }
+@page { size: 210mm 99mm; margin: 0; }
+@media print {
+  body * { visibility: hidden; }
+  .weighing-ticket-sheet, .weighing-ticket-sheet * { visibility: visible; }
+  .ticket-sheet-scroll { overflow: visible; }
+  .weighing-ticket-sheet { position: absolute; left: 0; top: 0; margin: 0; }
+}

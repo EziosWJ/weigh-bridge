@@ -253,6 +253,14 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	}
 	checks := map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}
 	input := map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "first-request-0001", "checks": checks}
+	// Time alone must not invalidate a sample. Age both legacy expiry and capture
+	// timestamps while leaving the active session and device conditions intact.
+	if err := database.GORM.Model(&weighing.Sample{}).Where("id=?", sample.ID).Updates(map[string]any{
+		"captured_at": time.Now().UTC().Add(-time.Hour),
+		"expires_at":  time.Now().UTC().Add(-time.Hour),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	firstBody := encode(input)
 	responses := make(chan *httptest.ResponseRecorder, 2)
 	for i := 0; i < 2; i++ {

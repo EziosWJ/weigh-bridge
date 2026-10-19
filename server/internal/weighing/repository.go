@@ -13,21 +13,23 @@ import (
 )
 
 type Repository struct {
-	db                    *gorm.DB
-	sessionTTL, sampleTTL time.Duration
+	db          *gorm.DB
+	sessionTTL  time.Duration
+	ticketTitle string
 }
-type RuntimeOptions struct{ SessionTTL, SampleTTL time.Duration }
+type RuntimeOptions struct {
+	SessionTTL  time.Duration
+	TicketTitle string
+}
 
 var _ Store = (*Repository)(nil)
 
 func NewRepository(db *gorm.DB, options ...RuntimeOptions) *Repository {
-	r := &Repository{db: db, sessionTTL: time.Minute, sampleTTL: 30 * time.Second}
+	r := &Repository{db: db, sessionTTL: time.Minute}
 	if len(options) > 0 {
+		r.ticketTitle = options[0].TicketTitle
 		if options[0].SessionTTL > 0 {
 			r.sessionTTL = options[0].SessionTTL
-		}
-		if options[0].SampleTTL > 0 {
-			r.sampleTTL = options[0].SampleTTL
 		}
 	}
 	return r

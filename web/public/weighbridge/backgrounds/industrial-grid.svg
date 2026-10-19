@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640">
+  <defs><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#39BFE8" stroke-opacity=".11" stroke-width=".7"/></pattern><radialGradient id="glow"><stop offset="0" stop-color="#087BA5" stop-opacity=".24"/><stop offset="1" stop-color="#07141E" stop-opacity="0"/></radialGradient></defs>
+  <rect width="640" height="640" fill="#07141E"/><rect width="640" height="640" fill="url(#grid)"/><circle cx="500" cy="70" r="320" fill="url(#glow)"/>
+  <path d="M0 160H210l26-26h100M640 500H460l-20 20H320" fill="none" stroke="#29D9FF" stroke-opacity=".2" stroke-width="1.5"/>
+</svg>

@@ -38,7 +38,6 @@ let pendingRequest: PendingRequest | null = null;
 let heartbeat: ReturnType<typeof setInterval> | null = null;
 let refreshPromise: Promise<void> | null = null;
 let refreshToken: string | null = null;
-let sampleExpiry: ReturnType<typeof setTimeout> | null = null;
 let actorId = 0;
 const uiKey = () => `${WEIGHING_STORAGE_KEY}:${actorId}:${clientId}`;
 const checks = { plate: true, business: true, weight: true, evidence: true, fullyOnScale: true };
@@ -49,7 +48,7 @@ function persist() {
   try { sessionStorage.setItem(uiKey(), JSON.stringify({ draft: data.draft, draftRequestId: data.draftRequestId, pending: pendingRequest } satisfies UIState)); }
   catch { useWeighingStore.setState({ storageError: '本地草稿或待决请求保存失败；业务记录仍由服务端保存。' }); }
 }
-function clearSample() { if (sampleExpiry) { clearTimeout(sampleExpiry); sampleExpiry = null; } sample = null; useWeighingStore.setState(s => ({ data: { ...s.data, capture: undefined, sampleReady: false } })); }
+function clearSample() { sample = null; useWeighingStore.setState(s => ({ data: { ...s.data, capture: undefined, sampleReady: false } })); }
 async function invalidate() {
   const old = sample; clearSample();
   if (old && lease?.sessionToken) await workflowApi.post(`/samples/${old.id}/invalidate`, sessionInput());
@@ -240,8 +239,6 @@ export const useWeighingStore = create<Store>((set, get) => ({
             throw new Error('采集期间条件已变化，请重新采集并核对。');
           }
           sample = value;
-          if (sampleExpiry) clearTimeout(sampleExpiry);
-          sampleExpiry = setTimeout(() => { if (sample?.id === value.id) { clearSample(); set({ syncNotice: '采样已过期，请重新采集并核对。' }); } }, Math.max(0, Date.parse(value.expiresAt) - Date.now()));
           set({ syncNotice: '' });
           updateData({ sampleReady: true, capture: { ...value.evidence, id: String(value.id), stage: value.stage, weight: Number(value.weight), plateEvidence: value.plateEvidence } });
           break;

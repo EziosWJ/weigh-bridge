@@ -6,9 +6,11 @@
 
 称重模块提供资料、操作会话、Agent 采集、任务首磅／回磅、纠错重称、单据作废重开、列表汇总／CSV、Agent 打印及人工反馈 API。用户业务入口沿用现有 Bearer、RBAC、响应及审计；Agent 单独以配置密钥连接，不获得用户操作权限。
 
-配置 `weighing.agent_id`、`scale_id`、`agent_key` 和 `image_dir`；密钥为空时禁止 Agent 接入。`session_ttl` 默认 60s、`sample_ttl` 默认 30s。不再使用测试模式门控。重量传吨制十进制字符串，数据库存千分之一吨整数。新增 schema 00012 和 seed 00007，不改写旧 migration 或历史测试单据。
+配置 `weighing.agent_id`、`scale_id`、`agent_key` 和 `image_dir`；密钥为空时禁止 Agent 接入。`session_ttl` 默认 60s，用于操作权续租；采样不设时间有效期，移除 `sample_ttl` 配置。采样仅在现场条件、业务绑定或操作会话失效时失效。不再使用测试模式门控。重量传吨制十进制字符串，数据库存千分之一吨整数。新增 schema 00012／00013 和 seed 00007，不改写旧 migration 或历史测试单据。
 
 通过 `task agent:mock` 启动独立设备模拟控制台；[运行说明](../agent/README.md)及[协议 v1](../protocol/v1.md)描述连接、图片上传、状态、采集与打印命令。图片目录应与业务数据库一起备份。真实仪表、摄像头识别及物理打印驱动仍未实现。
+
+精简五联针打方案见 [单据查看与打印](../docs/requirements/ticket-view-print-spec.md)。`weighing.ticket_title`（或 `APP_WEIGHING__TICKET_TITLE`）配置完整纸单标题，默认“酒厂过磅单”，部署前替换为实际酒厂名称。单据详情及 Agent 打印任务携带相同的 `printSheet` 字段；五联纸一次复写，不生成五个任务。
 
 ## 前置条件
 

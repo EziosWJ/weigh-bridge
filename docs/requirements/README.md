@@ -2,6 +2,7 @@
 
 | 阶段或材料 | 状态 | 入口 |
 | --- | --- | --- |
+| 单据查看与五联针打 | 2026-10-19 已确认；实现与验证见交付记录，真实针打待现场验收 | [需求](ticket-view-print-spec.md)、[交付记录](ticket-view-print-delivery.md) |
 | Phase 1：工程初始化 | 已验收，保留脚手架模块、依赖与 migration 历史 | [交付与验收记录](phase-1-delivery.md) |
 | 业务一期需求访谈 | 当前界面阶段范围已确认，后续现场事项仍待核实 | [访谈结论](business-v1-discovery.md) |
 | 客户业务核实清单 | 10 个主问题；已记录隔日回磅、免审核及人工调整默认备注的客户结论，其余继续核实 | [客户确认清单](customer-confirmation-checklist.md) |

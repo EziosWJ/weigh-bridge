@@ -1,5 +1,5 @@
 import { http } from '@/lib/http';
-import type { BusinessInfo, HistoryEntry, PlateEvidence, CaptureSnapshot, WeighingTicket, TransportTask, WeighRecord } from '@/types/weighing';
+import type { BusinessInfo, HistoryEntry, PlateEvidence, CaptureSnapshot, WeighingTicket, TransportTask, WeighRecord, PrintSheet } from '@/types/weighing';
 
 type WireBusiness = Omit<BusinessInfo, 'materialId' | 'partyId' | 'carrierId'> & { materialId: number; partyId: number; carrierId: number | null };
 export interface WireEvent { action: string; reason: string; actorName: string; occurredAt: string }
@@ -17,7 +17,7 @@ export interface WireTask {
   records?: WireRecord[]; events?: WireEvent[];
 }
 export interface WireSample {
-  id: number; taskId: number | null; targetRecordId: number | null; stage: 'first' | 'second'; weight: string; expiresAt: string;
+  id: number; taskId: number | null; targetRecordId: number | null; stage: 'first' | 'second'; weight: string; expiresAt: string | null;
   evidence: Omit<CaptureSnapshot, 'weight'> & { weight: string };
   plateEvidence: PlateEvidence;
 }
@@ -27,6 +27,7 @@ export interface WireSession {
   sessionToken?: string;
 }
 export interface WireTicket {
+  printSheet?: PrintSheet;
   mode?: string;
   id: number; taskId: number; ticketNo: string; revision: number;
   business: WireBusiness; basis: WireRecord[]; previousTicketId: number | null;
@@ -63,7 +64,7 @@ export function ticket(row: WireTicket, previous?: WireTicket): WeighingTicket {
   if (!row.previousFinal && previous) row = { ...row, previousFinal: { gross: previous.finalGross, tare: previous.finalTare, net: String(Number(previous.finalGross)-Number(previous.finalTare)) } };
   const original = { gross: Number(row.originalGross), tare: Number(row.originalTare), net: Number(row.originalGross) - Number(row.originalTare) };
   const after = { gross: Number(row.finalGross), tare: Number(row.finalTare), net: Number(row.finalGross) - Number(row.finalTare) };
-  return { ...business(row.business), ...after, legacyTest: row.mode === 'test', id: String(row.id), ticketNo: row.ticketNo, taskId: String(row.taskId), issuedAt: row.issuedAt, status: row.status, previousId: row.previousTicketId == null ? undefined : String(row.previousTicketId), unit: '吨', records: row.basis.map(record), history: [{ actor: row.issuerName, at: row.issuedAt, action: '生成过磅单' }, ...(row.voidedAt ? [{ at: row.voidedAt, action: '单据作废', reason: row.voidReason }] : [])], adjustment: { source: row.grossSource === 'manual' || row.tareSource === 'manual' ? 'manual' : 'collected', actor: row.issuerName, at: row.issuedAt, original, before: row.previousFinal ? { gross: Number(row.previousFinal.gross), tare: Number(row.previousFinal.tare), net: Number(row.previousFinal.net) } : original, after, grossDeduction: original.gross - after.gross, tareDeduction: original.tare - after.tare, reason: row.adjustmentRemark }, printStatus: row.printStatus ?? 'unprinted', reprintCount: row.reprintCount ?? 0, lastPrintAttemptId: row.lastPrintAttemptId == null ? undefined : String(row.lastPrintAttemptId), reprintAuthorized: false };
+  return { ...business(row.business), ...after, printSheet: row.printSheet, legacyTest: row.mode === 'test', id: String(row.id), ticketNo: row.ticketNo, taskId: String(row.taskId), issuedAt: row.issuedAt, status: row.status, previousId: row.previousTicketId == null ? undefined : String(row.previousTicketId), unit: '吨', records: row.basis.map(record), history: [{ actor: row.issuerName, at: row.issuedAt, action: '生成过磅单' }, ...(row.voidedAt ? [{ at: row.voidedAt, action: '单据作废', reason: row.voidReason }] : [])], adjustment: { source: row.grossSource === 'manual' || row.tareSource === 'manual' ? 'manual' : 'collected', actor: row.issuerName, at: row.issuedAt, original, before: row.previousFinal ? { gross: Number(row.previousFinal.gross), tare: Number(row.previousFinal.tare), net: Number(row.previousFinal.net) } : original, after, grossDeduction: original.gross - after.gross, tareDeduction: original.tare - after.tare, reason: row.adjustmentRemark }, printStatus: row.printStatus ?? 'unprinted', reprintCount: row.reprintCount ?? 0, lastPrintAttemptId: row.lastPrintAttemptId == null ? undefined : String(row.lastPrintAttemptId), reprintAuthorized: false };
 }
 
 export interface WireOriginal extends WireTask { originalGross: string; originalTare: string; originalNet: string; firstConfirmedAt: string; secondConfirmedAt: string; currentTicketId: number | null; currentTicketStatus: string }

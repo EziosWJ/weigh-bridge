@@ -129,7 +129,7 @@ func main() {
 		Log:          logService,
 		Notification: notificationService,
 		Monitoring:   monitoringService,
-		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, SampleTTL: cfg.Weighing.SampleTTL}), agentbridge.New(agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey, ImageDir: cfg.Weighing.ImageDir})),
+		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, TicketTitle: cfg.Weighing.TicketTitle}), agentbridge.New(agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey, ImageDir: cfg.Weighing.ImageDir})),
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)

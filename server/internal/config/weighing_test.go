@@ -13,7 +13,7 @@ func TestWeighingAgentKeyRequiresExplicitConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Weighing.SessionTTL != time.Minute || cfg.Weighing.SampleTTL != 30*time.Second {
+	if cfg.Weighing.SessionTTL != time.Minute {
 		t.Fatalf("weighing defaults=%+v", cfg.Weighing)
 	}
 	if cfg.Weighing.AgentKey != "" {
@@ -29,17 +29,12 @@ func TestWeighingAgentKeyRequiresExplicitConfiguration(t *testing.T) {
 	}
 }
 
-func TestWeighingInvalidTestingTimeoutsAreRejected(t *testing.T) {
+func TestWeighingInvalidSessionTimeoutIsRejected(t *testing.T) {
 	dir := t.TempDir()
 	writeConfig(t, dir, "config.yaml", "database:\n  url: postgres://localhost/base\n  username: user\n  password: password\njwt:\n  secret: secret\n")
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("APP_WEIGHING__SESSION_TTL", "0s")
 	if _, err := LoadFromDir(dir); err == nil {
 		t.Fatal("zero lease accepted")
-	}
-	t.Setenv("APP_WEIGHING__SESSION_TTL", "10s")
-	t.Setenv("APP_WEIGHING__SAMPLE_TTL", "-1s")
-	if _, err := LoadFromDir(dir); err == nil {
-		t.Fatal("negative sample lifetime accepted")
 	}
 }

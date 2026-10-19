@@ -37,12 +37,12 @@ type Config struct {
 }
 
 type WeighingConfig struct {
-	AgentID    string        `koanf:"agent_id"`
-	AgentKey   string        `koanf:"agent_key"`
-	ScaleID    int64         `koanf:"scale_id"`
-	ImageDir   string        `koanf:"image_dir"`
-	SessionTTL time.Duration `koanf:"session_ttl"`
-	SampleTTL  time.Duration `koanf:"sample_ttl"`
+	TicketTitle string        `koanf:"ticket_title"`
+	AgentID     string        `koanf:"agent_id"`
+	AgentKey    string        `koanf:"agent_key"`
+	ScaleID     int64         `koanf:"scale_id"`
+	ImageDir    string        `koanf:"image_dir"`
+	SessionTTL  time.Duration `koanf:"session_ttl"`
 }
 
 type MonitoringConfig struct {
@@ -136,9 +136,6 @@ func (c Config) Validate() error {
 	}
 	if c.Weighing.SessionTTL < time.Second {
 		errs = append(errs, errors.New("weighing.session_ttl must be at least 1s"))
-	}
-	if c.Weighing.SampleTTL <= 0 {
-		errs = append(errs, errors.New("weighing.sample_ttl must be greater than zero"))
 	}
 
 	if c.Monitoring.Enabled && !oneOf(c.Monitoring.Source, "native", "unix") {

@@ -24,10 +24,11 @@ export interface WeighingReviewValue {
   supplementary: { label: string; value: string }[];
 }
 
-/** 集中核对绑定本次数据快照；父页面在资料或现场条件变化时卸载。 */
-export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onConfirm }: {
+/** 集中核对保留本次快照；失效后保留内容供查看，同时禁止提交。 */
+export function WeighingReviewDialog({ value, title, invalidReason = '', onCancel, onMismatch, onConfirm }: {
   value: WeighingReviewValue;
   title: string;
+  invalidReason?: string;
   onCancel: () => void;
   onMismatch: () => void;
   onConfirm: (finalWeights: FinalWeightInput) => void;
@@ -41,7 +42,7 @@ export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onCon
   let calculatedWeights: WeightValues | undefined;
   if (value.original) { try { calculatedWeights = adjustedWeights(value.original, finalInput); } catch (error) { deductionError = error instanceof Error ? error.message : '请核对最终重量'; } }
   const calculatedDeduction = value.original && calculatedWeights ? weightDeduction(value.original, calculatedWeights) : undefined;
-  const ready = !!value.capture && imageReady && !deductionError;
+  const ready = !!value.capture && imageReady && !deductionError && !invalidReason;
 
   return <Dialog open onOpenChange={open => { if (!open) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay />
@@ -80,6 +81,7 @@ export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onCon
         </section>
       </DialogBody>
       <DialogFooter className="shrink-0 flex-wrap items-center justify-between">
+        {invalidReason && <p role="alert" className="w-full text-sm text-warning">{invalidReason} 当前显示的是原核对内容，不能提交；关闭窗口后重新采集。</p>}
         {deductionError && <p role="alert" className="w-full text-xs text-error">无法出单：{deductionError}</p>}
         {!imageReady && <p className="w-full text-xs text-warning">请等待本次抓拍图片加载；加载失败时返回重新采集。</p>}
         {calculatedWeights && calculatedDeduction && <div className="w-full space-y-2" aria-live="polite">
@@ -90,8 +92,8 @@ export function WeighingReviewDialog({ value, title, onCancel, onMismatch, onCon
           </div>
           <p className="text-xs tabular-nums text-text-secondary">系统计算调整差额：毛重 {formatWeight(calculatedDeduction.grossDeduction)} · 皮重 {formatWeight(calculatedDeduction.tareDeduction)}</p>
         </div>}
-        <Button size="lg" onClick={onMismatch}>不一致，返回修改</Button>
-        <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!ready} onClick={() => onConfirm(finalInput)}>{value.original ? '确认称重并出单' : `确认${title}`}</Button>
+        <Button size="lg" onClick={invalidReason ? onCancel : onMismatch}>{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
+        <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!ready} onClick={() => { if (ready) onConfirm(finalInput); }}>{value.original ? '确认称重并出单' : `确认${title}`}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;

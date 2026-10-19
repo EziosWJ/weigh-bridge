@@ -152,7 +152,7 @@ type Sample struct {
 	Source            string       `json:"source"`
 	Weight            Tonnes       `json:"weight" gorm:"column:weight_milli_tonne" swaggertype:"string"`
 	CapturedAt        time.Time    `json:"capturedAt"`
-	ExpiresAt         time.Time    `json:"expiresAt"`
+	ExpiresAt         *time.Time   `json:"expiresAt"` // Legacy field; new samples have no time limit.
 	Stable            int          `json:"stable"`
 	DeviceOK          int          `json:"deviceOk"`
 	Evidence          JSON         `json:"evidence" gorm:"column:evidence_snapshot" swaggertype:"object"`

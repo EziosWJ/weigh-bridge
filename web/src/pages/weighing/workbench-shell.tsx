@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Maximize, Minimize, Scale } from 'lucide-react';
+import { Maximize, Minimize, Monitor } from 'lucide-react';
 import { Outlet } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth-store';
@@ -25,11 +25,12 @@ export function WorkbenchShell() {
     return () => { document.removeEventListener('fullscreenchange', update); if (window.name === WORKBENCH_WINDOW) window.name = previousName; };
   }, []);
   return <div className="standalone-workbench min-h-screen bg-background">
+    <a href="#main-content" className="workbench-skip">跳转到称重操作</a>
     <header className="workbench-topbar">
-      <div className="workbench-brand"><span className="workbench-brand-mark" aria-hidden><Scale className="h-5 w-5" /></span><div><h1 className="text-base font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">现场监看台</p></div></div>
-      <span className="text-sm text-text-secondary">{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
+      <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">地磅现场作业 · 人工核对确认</p></div></div>
+      <span className="workbench-connection text-sm text-text-secondary"><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
       <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
-        <a className="text-primary hover:underline" href="/weighing/tasks" target="weighbridge-management">后台查询</a>
+        <a className="workbench-management-link" href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>
         {owner === 'self' && !pending && <Button size="sm" onClick={() => void dispatch({type:'occupy',owner:null}).catch(e => setError(e instanceof Error ? e.message : '释放失败'))}>释放操作权</Button>}
         <Button size="sm" onClick={async () => {
           try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); setError(''); }
