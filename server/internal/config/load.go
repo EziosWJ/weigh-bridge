@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -113,6 +114,12 @@ func envKeyValue(key, value string) (string, interface{}) {
 	key = strings.ToLower(strings.ReplaceAll(key, "__", delimiter))
 
 	switch key {
+	case "weighing.agents":
+		var bindings []map[string]any
+		if json.Unmarshal([]byte(value), &bindings) == nil {
+			return key, bindings
+		}
+		return key, value
 	case "env":
 		return key, strings.ToLower(strings.TrimSpace(value))
 	case "cors.allowed_origins", "cors.allowed_methods", "cors.allowed_headers", "cors.exposed_headers", "http.trusted_proxies":

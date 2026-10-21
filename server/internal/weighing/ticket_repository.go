@@ -33,7 +33,7 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAd
 		return Ticket{}, ErrForbidden
 	}
 	now := time.Now().UTC()
-	ticket := Ticket{TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", IssuedAt: now, IssuedBy: actor, IssuerName: name}
+	ticket := Ticket{SiteID: task.SiteID, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", IssuedAt: now, IssuedBy: actor, IssuerName: name}
 	if changed {
 		ticket.AdjustedBy = ptr(actor)
 		ticket.AdjustedAt = &now
@@ -60,6 +60,11 @@ func insertTicket(tx *gorm.DB, ticket *Ticket) error {
 	if err != nil {
 		return err
 	}
+	site, err := findOne[Site](tx, ticket.SiteID)
+	if err != nil {
+		return err
+	}
+	ticket.SiteName = site.Name
 	ticket.TicketNo = number
 	return tx.Create(ticket).Error
 }
@@ -128,6 +133,15 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 		}
 		if err := fillPrintStatus(tx, &ticket); err != nil {
 			return err
+		}
+		// Historical tickets predate the site-name snapshot. Resolve their added
+		// ownership label without rewriting any stored ticket or weight evidence.
+		if ticket.SiteName == "" {
+			site, err := findOne[Site](tx, ticket.SiteID)
+			if err != nil {
+				return err
+			}
+			ticket.SiteName = site.Name
 		}
 		view = ticketView(ticket)
 		view.PrintSheet = compactPrintSheet(view, r.ticketTitle)

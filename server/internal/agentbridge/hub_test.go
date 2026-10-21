@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/png"
 	"io"
@@ -179,11 +180,35 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("failure receipt missing")
 	}
+	incumbent := hub.State(1)
 	replacement := dial()
 	defer replacement.Close()
-	wait(func(s bridge.State) bool { return !s.Online })
-	if _, release, err := hub.Guard(1, 0); err == nil {
+	_ = replacement.SetReadDeadline(time.Now().Add(time.Second))
+	var conflict p.Message
+	if err := websocket.JSON.Receive(replacement, &conflict); err != nil || conflict.Type != "error" || !bytes.Contains(conflict.Payload, []byte("agent_conflict")) {
+		t.Fatalf("duplicate connection: %+v %v", conflict, err)
+	}
+	current := hub.State(1)
+	if !current.Online || current.Revision != incumbent.Revision || current.ConnectionID != incumbent.ConnectionID {
+		t.Fatal("duplicate connection changed incumbent state")
+	}
+	if _, release, err := hub.Guard(1, current.Revision); err != nil {
+		t.Fatal(err)
+	} else {
 		release()
-		t.Fatal("replacement connection reused old telemetry")
+	}
+	// An old client that never acknowledges kick must not be reported as exited.
+	outcome, err := hub.Kick(context.Background(), 1, current.ConnectionID)
+	if err != nil || !outcome.Disconnected || outcome.ExitConfirmed {
+		t.Fatalf("unacknowledged kick: %+v %v", outcome, err)
+	}
+	next := dial()
+	defer next.Close()
+	wait(func(s bridge.State) bool { return s.ConnectionID != "" && s.ConnectionID != current.ConnectionID })
+	if _, err := hub.Kick(context.Background(), 1, current.ConnectionID); !errors.Is(err, bridge.ErrConnectionChanged) {
+		t.Fatalf("stale kick: %v", err)
+	}
+	if hub.State(1).ConnectionID == "" {
+		t.Fatal("stale kick disconnected the replacement")
 	}
 }

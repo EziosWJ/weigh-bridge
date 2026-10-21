@@ -45,7 +45,8 @@ function WorkbenchContent() {
     });
     return () => cancelAnimationFrame(frame);
   }, [businessOpen]);
-  const [params, setParams] = useSearchParams();
+  const [params, setSearchParams] = useSearchParams();
+  const setParams=(next:Record<string,string>)=>setSearchParams({scaleId:params.get('scaleId')??'',...next});
   const location = useLocation();
   const linkedTask = data.tasks.find((task) => task.id === params.get('task'));
   const draftTask = data.tasks.find((task) => task.plate === normalizeLegacy(data.draft.plate) && (task.status === 'first' || task.status === 'second'));

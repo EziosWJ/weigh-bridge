@@ -1,3 +1,4 @@
+import { SiteAssignDialog } from "./site-assign-dialog";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -103,6 +104,7 @@ export function UsersPage() {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [siteDialogUser,setSiteDialogUser]=useState<UserRecord|null>(null);
   const [roleDialogUser, setRoleDialogUser] = useState<UserRecord | null>(null);
   const [roleOptions, setRoleOptions] = useState<AssignableRole[]>([]);
   const [selectedRoleIds, setSelectedRoleIds] = useState<number[]>([]);
@@ -396,6 +398,7 @@ export function UsersPage() {
   const columns = createUserColumns({
     onEdit: (user) => void openEditForm(user),
     onAssignRoles: (user) => void openRoleDialog(user),
+    onAssignSites: setSiteDialogUser,
     onChangeStatus: (user, status) =>
       setConfirmAction({ type: "status", user, status }),
     onResetPassword: (user) =>
@@ -556,6 +559,7 @@ export function UsersPage() {
         onSubmit={submitUserForm}
       />
 
+      {siteDialogUser&&<SiteAssignDialog user={siteDialogUser} onClose={()=>setSiteDialogUser(null)}/>}
       {roleDialogUser && <RoleAssignDialog
         key={roleDialogUser.id}
         user={roleDialogUser}

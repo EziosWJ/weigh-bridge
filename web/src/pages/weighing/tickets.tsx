@@ -53,6 +53,7 @@ export function WeighingTicketsPage() {
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const download = (kind: string) => void downloadWeighingCsv(kind, filter).catch(error => setDownloadError(error.message));
   const columns: DataTableColumn<WireTicket>[] = [
+    {title:"厂区",key:"site",width:120,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
     { title: '单号 / 车牌', key: 'ticket', width: 230, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>{row.ticketNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
     { title: '方向 / 物料规格', key: 'business', width: 210, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 180, render: (_, row) => row.business.partyName },
@@ -92,7 +93,7 @@ export function WeighingTicketDetailPage() {
     if (!id) return;
     void (async () => { await loadTicket(id); const found=useWeighingStore.getState().data.tickets.find(t=>t.id===id);if(found) await loadTask(found.taskId); })().catch(failure=>setError(failure instanceof Error?failure.message:'详情加载失败'));
   }, [id, loadTicket, loadTask]);
-  const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
+  const can = (code: string) => (code==='print'||!!capabilities?.sites.some(s=>s.id===ticket?.siteId&&s.canOperate))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
   const operationBasis = useRef(data);
 
   function startOperation(next: TicketOperation) {

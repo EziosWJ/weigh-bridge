@@ -3,6 +3,8 @@ package weighing
 import "time"
 
 type Ticket struct {
+	SiteID                int64         `json:"siteId"`
+	SiteName              string        `json:"siteName"`
 	PrintStatus           string        `json:"printStatus" gorm:"->"`
 	ReprintCount          int64         `json:"reprintCount" gorm:"->"`
 	LastPrintAttemptID    *int64        `json:"lastPrintAttemptId" gorm:"->"`

@@ -28,16 +28,20 @@ var imageName = regexp.MustCompile(`^[0-9]+_[a-f0-9]{32}_(front|rear)\.(png|jpg)
 func (h *Hub) Register(router gin.IRouter) {
 	g := router.Group("/api/agent")
 	g.Use(func(c *gin.Context) {
-		if h.cfg.Key == "" || subtle.ConstantTimeCompare([]byte(c.GetHeader("Authorization")), []byte("Bearer "+h.cfg.Key)) != 1 || c.GetHeader("X-Agent-ID") != h.cfg.ID || c.GetHeader("X-Scale-ID") != strconv.FormatInt(h.cfg.ScaleID, 10) {
+		scale, _ := strconv.ParseInt(c.GetHeader("X-Scale-ID"), 10, 64)
+		child := h.forScale(scale)
+		if child == nil || child.cfg.Key == "" || subtle.ConstantTimeCompare([]byte(c.GetHeader("Authorization")), []byte("Bearer "+child.cfg.Key)) != 1 || c.GetHeader("X-Agent-ID") != child.cfg.ID {
 			ph.AbortError(c, 401, 401, "Agent 身份无效", nil)
 			return
 		}
+		c.Set("agentHub", child)
 		c.Next()
 	})
 	g.GET("/ws", func(c *gin.Context) {
-		websocket.Server{Handshake: func(_ *websocket.Config, _ *http.Request) error { return nil }, Handler: websocket.Handler(h.Serve)}.ServeHTTP(c.Writer, c.Request)
+		child := c.MustGet("agentHub").(*Hub)
+		websocket.Server{Handshake: func(_ *websocket.Config, _ *http.Request) error { return nil }, Handler: websocket.Handler(child.Serve)}.ServeHTTP(c.Writer, c.Request)
 	})
-	g.POST("/images", h.upload)
+	g.POST("/images", func(c *gin.Context) { c.MustGet("agentHub").(*Hub).upload(c) })
 }
 func (h *Hub) upload(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 11<<20)
@@ -89,6 +93,13 @@ func (h *Hub) SaveImage(view string, reader io.Reader) (p.Image, error) {
 	return p.Image{ID: id, View: view, URL: "/api/weighing/agent-images/" + id, SHA256: hex.EncodeToString(sum[:])}, nil
 }
 func (h *Hub) Image(id string) (p.Image, error) {
+	if h.children != nil {
+		scale, _ := strconv.ParseInt(strings.Split(id, "_")[0], 10, 64)
+		if child := h.children[scale]; child != nil {
+			return child.Image(id)
+		}
+		return p.Image{}, fmt.Errorf("invalid image reference")
+	}
 	if !imageName.MatchString(id) || !strings.HasPrefix(id, strconv.FormatInt(h.cfg.ScaleID, 10)+"_") {
 		return p.Image{}, fmt.Errorf("invalid image reference")
 	}
@@ -110,7 +121,13 @@ func (h *Hub) ServeImage(c *gin.Context) {
 		return
 	}
 	c.Header("Cache-Control", "private, max-age=86400, immutable")
-	c.File(filepath.Join(h.cfg.ImageDir, id))
+	scale, _ := strconv.ParseInt(strings.Split(id, "_")[0], 10, 64)
+	child := h.forScale(scale)
+	if child == nil {
+		ph.WriteError(c, 404, 404, "图片不存在", nil)
+		return
+	}
+	c.File(filepath.Join(child.cfg.ImageDir, id))
 }
 func (h *Hub) resolveImages(input []p.Image) ([]p.Image, error) {
 	if len(input) != 2 {

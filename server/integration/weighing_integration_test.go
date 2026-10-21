@@ -108,7 +108,7 @@ func TestSQLiteWeighingMasterMigrationRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	var count int64
-	if err := database.GORM.Table("wb_scale").Count(&count).Error; err != nil || count != 1 {
+	if err := database.GORM.Table("wb_scale").Count(&count).Error; err != nil || count != 2 {
 		t.Fatalf("scale identity after round trip: %d %v", count, err)
 	}
 	if err := database.GORM.Table("wb_material").Count(&count).Error; err != nil || count != 0 {
@@ -136,7 +136,7 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 		}
 	}
 	var scales int64
-	if err := database.GORM.Table("wb_scale").Count(&scales).Error; err != nil || scales != 1 {
+	if err := database.GORM.Table("wb_scale").Count(&scales).Error; err != nil || scales != 2 {
 		t.Fatalf("scale identity: count=%d error=%v", scales, err)
 	}
 	hub := agentbridge.New(agentbridge.Config{ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key", ImageDir: t.TempDir()})

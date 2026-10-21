@@ -22,6 +22,12 @@ func main() {
 	serverURL := "http://127.0.0.1:8080"
 	if cfg, err := config.Load(); err == nil {
 		agent = cfg.Weighing
+		if len(agent.Agents) > 0 {
+			first := agent.Agents[0]
+			agent.AgentID = first.ID
+			agent.ScaleID = first.ScaleID
+			agent.AgentKey = first.Key
+		}
 		serverURL = localServerURL(cfg.HTTP.Address)
 	}
 	if value := os.Getenv("APP_WEIGHING__AGENT_KEY"); value != "" {
@@ -43,12 +49,20 @@ func main() {
 	id := flag.String("agent-id", agent.AgentID, "Agent identity")
 	scale := flag.Int64("scale-id", agent.ScaleID, "scale identity")
 	flag.Parse()
+	if os.Getenv("APP_WEIGHING__AGENT_KEY") == "" {
+		for _, binding := range agent.Agents {
+			if binding.ID == *id && binding.ScaleID == *scale {
+				agent.AgentKey = binding.Key
+				break
+			}
+		}
+	}
 	if agent.AgentKey == "" {
 		slog.Error("set APP_WEIGHING__AGENT_KEY in both API and mock environments")
 		os.Exit(1)
 	}
-	m := agentmock.New(agentmock.Config{Server: *server, ID: *id, ScaleID: *scale, Key: agent.AgentKey})
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	m := agentmock.New(agentmock.Config{Server: *server, ID: *id, ScaleID: *scale, Key: agent.AgentKey, OnKick: stop})
 	defer stop()
 	go m.Run(ctx)
 	srv := &http.Server{Addr: *listen, Handler: m.Handler(), ReadHeaderTimeout: 5 * time.Second}

@@ -178,6 +178,7 @@ type CaptureInput struct {
 	Business       BusinessInput `json:"business"`
 }
 type Task struct {
+	SiteID                int64        `json:"siteId"`
 	FirstWeight           *Tonnes      `json:"firstWeight" gorm:"->" swaggertype:"string"`
 	SecondWeight          *Tonnes      `json:"secondWeight" gorm:"->" swaggertype:"string"`
 	ID                    int64        `json:"id" gorm:"primaryKey"`

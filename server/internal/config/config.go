@@ -36,13 +36,19 @@ type Config struct {
 	Weighing    WeighingConfig   `koanf:"weighing"`
 }
 
+type AgentBinding struct {
+	ID      string `koanf:"id"`
+	ScaleID int64  `koanf:"scale_id"`
+	Key     string `koanf:"key"`
+}
 type WeighingConfig struct {
-	TicketTitle string        `koanf:"ticket_title"`
-	AgentID     string        `koanf:"agent_id"`
-	AgentKey    string        `koanf:"agent_key"`
-	ScaleID     int64         `koanf:"scale_id"`
-	ImageDir    string        `koanf:"image_dir"`
-	SessionTTL  time.Duration `koanf:"session_ttl"`
+	Agents      []AgentBinding `koanf:"agents"`
+	TicketTitle string         `koanf:"ticket_title"`
+	AgentID     string         `koanf:"agent_id"`
+	AgentKey    string         `koanf:"agent_key"`
+	ScaleID     int64          `koanf:"scale_id"`
+	ImageDir    string         `koanf:"image_dir"`
+	SessionTTL  time.Duration  `koanf:"session_ttl"`
 }
 
 type MonitoringConfig struct {
@@ -125,6 +131,18 @@ type LogConfig struct {
 // created. This keeps configuration errors deterministic and close to startup.
 func (c Config) Validate() error {
 	var errs []error
+	seenScales := map[int64]bool{}
+	seenAgents := map[string]bool{}
+	for _, v := range c.Weighing.Agents {
+		if v.ScaleID < 1 || strings.TrimSpace(v.ID) == "" || strings.TrimSpace(v.Key) == "" || seenScales[v.ScaleID] || seenAgents[v.ID] {
+			errs = append(errs, errors.New("weighing.agents requires unique positive scale_id, unique id and nonempty key"))
+		}
+		seenScales[v.ScaleID] = true
+		seenAgents[v.ID] = true
+	}
+	if len(c.Weighing.Agents) > 0 && strings.TrimSpace(c.Weighing.ImageDir) == "" {
+		errs = append(errs, errors.New("weighing.image_dir is required when Agent is enabled"))
+	}
 	if c.Weighing.ScaleID < 1 {
 		errs = append(errs, errors.New("weighing.scale_id must be positive"))
 	}

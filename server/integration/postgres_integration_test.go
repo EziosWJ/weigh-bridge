@@ -5,6 +5,7 @@ package integration
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -747,7 +748,9 @@ func startPostgres(t *testing.T) temporaryPostgres {
 	t.Helper()
 	container := fmt.Sprintf("server-integration-%d", time.Now().UnixNano())
 	password := "integration-password"
-	command := exec.Command(
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx,
 		"docker", "run", "--detach", "--rm", "--name", container,
 		"--env", "POSTGRES_DB=integration",
 		"--env", "POSTGRES_USER=integration",
@@ -782,30 +785,28 @@ func startPostgres(t *testing.T) temporaryPostgres {
 
 func (database temporaryPostgres) waitUntilReady(t *testing.T) {
 	t.Helper()
-	endpoint, err := url.Parse(database.dsn)
+	connection, err := sql.Open("pgx", database.dsn)
 	if err != nil {
-		t.Fatalf("parse temporary PostgreSQL endpoint: %v", err)
+		t.Fatal(err)
 	}
+	defer connection.Close()
 	deadline := time.Now().Add(45 * time.Second)
 	readyStreak := 0
 	for time.Now().Before(deadline) {
-		if err := exec.Command("docker", "exec", database.container, "pg_isready", "-U", "integration", "-d", "integration").Run(); err == nil {
-			connection, dialErr := net.DialTimeout("tcp", endpoint.Host, time.Second)
-			if dialErr == nil {
-				_ = connection.Close()
-				readyStreak++
-				if readyStreak >= 2 {
-					return
-				}
-			} else {
-				readyStreak = 0
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		err = connection.PingContext(ctx)
+		cancel()
+		if err == nil {
+			readyStreak++
+			if readyStreak >= 2 {
+				return
 			}
 		} else {
 			readyStreak = 0
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	t.Fatal("temporary PostgreSQL did not become ready within 45 seconds")
+	t.Fatalf("temporary PostgreSQL did not accept authenticated SQL connections within 45 seconds: %v", err)
 }
 
 func runMigrations(t *testing.T, root, dsn string) {

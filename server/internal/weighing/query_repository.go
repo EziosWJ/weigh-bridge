@@ -50,6 +50,7 @@ func withDates(db *gorm.DB, q PageQuery, column string) (*gorm.DB, error) {
 	return db, nil
 }
 func taskFilters(db *gorm.DB, q PageQuery) *gorm.DB {
+	db = siteFilter(db, q, "t.site_id")
 	if q.Direction != "" {
 		db = db.Where("t.direction=?", q.Direction)
 	}
@@ -75,6 +76,7 @@ func taskQuery(db *gorm.DB, q PageQuery) (*gorm.DB, error) {
 }
 func ticketQuery(db *gorm.DB, q PageQuery) (*gorm.DB, error) {
 	query := db.Table("wb_ticket AS k").Joins("JOIN wb_transport_task t ON t.id=k.task_id").Select("k.*")
+	query = siteFilter(query, q, "t.site_id")
 	if q.TaskID != nil {
 		query = query.Where("k.task_id=?", *q.TaskID)
 	}
@@ -183,7 +185,7 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 		tare = "k.final_tare_milli_tonne"
 		direction = jsonIDExpression(query, column, "direction")
 	}
-	dimensions := []struct{ key, expression string }{{"direction", direction}, {"material_id", jsonIDExpression(query, column, "materialId")}, {"material_name", jsonIDExpression(query, column, "materialName")}, {"material_spec", jsonIDExpression(query, column, "materialSpec")}, {"party_id", jsonIDExpression(query, column, "partyId")}, {"party_name", jsonIDExpression(query, column, "partyName")}}
+	dimensions := []struct{ key, expression string }{{"site_id", "t.site_id"}, {"direction", direction}, {"material_id", jsonIDExpression(query, column, "materialId")}, {"material_name", jsonIDExpression(query, column, "materialName")}, {"material_spec", jsonIDExpression(query, column, "materialSpec")}, {"party_id", jsonIDExpression(query, column, "partyId")}, {"party_name", jsonIDExpression(query, column, "partyName")}}
 	selects := []string{}
 	groups := []string{}
 	for _, d := range dimensions {

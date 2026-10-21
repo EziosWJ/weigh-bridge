@@ -32,6 +32,9 @@ interface Store {
   locate: (plate: string) => Promise<TransportTask | undefined>;
   dispatch: (command: WeighingCommand, expected?: WeighingState) => Promise<void>;
 }
+const isWorkbench=location.pathname==='/weighing/workbench';
+let selectedScaleId=Number(new URLSearchParams(location.search).get('scaleId'))||0;
+export function selectedScale(capabilities:WeighingCapabilities|null){return capabilities?.scales.find(s=>s.id===selectedScaleId&&s.enabled===1);}
 let lease: WireSession | null = null;
 let sample: WireSample | null = null;
 let pendingRequest: PendingRequest | null = null;
@@ -39,7 +42,7 @@ let heartbeat: ReturnType<typeof setInterval> | null = null;
 let refreshPromise: Promise<void> | null = null;
 let refreshToken: string | null = null;
 let actorId = 0;
-const uiKey = () => `${WEIGHING_STORAGE_KEY}:${actorId}:${clientId}`;
+const uiKey = () => `${WEIGHING_STORAGE_KEY}:${actorId}:${selectedScaleId}:${clientId}`;
 const checks = { plate: true, business: true, weight: true, evidence: true, fullyOnScale: true };
 function businessInput(value: TaskInput) { return { ...value, materialId: Number(value.materialId), partyId: Number(value.partyId), carrierId: value.carrierId ? Number(value.carrierId) : null }; }
 function sessionInput() { return { clientId, sessionToken: lease?.sessionToken ?? '' }; }
@@ -77,8 +80,8 @@ async function release(original?: PendingRequest) {
 }
 async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') {
   const state = useWeighingStore.getState();
-  const scale = state.capabilities?.scales.find(s => s.enabled === 1);
-  if (!scale) throw new Error('未配置可用地磅');
+  const scale = selectedScale(state.capabilities);
+  if (!scale?.canOperate) throw new Error('请从已授权厂区进入对应地磅');
   try { lease = await workflowApi.post<WireSession>(`/scales/${scale.id}/session/${action}`, { clientId, reason }); }
   catch (error) { updateData({ owner: 'other' }); throw error; }
   updateData({ owner: 'self' });
@@ -127,6 +130,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
   loadTask: async id => {
     const token = useAuthStore.getState().token;
     const value = taskView(await workflowApi.task(id));
+ if(isWorkbench&&value.scaleId!==selectedScaleId) throw new Error('该任务属于其他厂区，请从对应厂区工作台办理');
+ if(!isWorkbench) selectedScaleId=value.scaleId??0;
     const versions: WireTicket[] = [];
     for (let page = 1;; page++) {
       const batch = await workflowApi.get<ApiPageResult<WireTicket>>(`/tickets?taskId=${id}&page=${page}&pageSize=500`);
@@ -149,7 +154,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
   },
   locate: async plate => {
     const token = useAuthStore.getState().token;
-    const wire = await workflowApi.active(plate);
+    const wire = await workflowApi.active(plate,selectedScaleId||undefined);
     if (!wire) return undefined;
     const value = taskView(wire);
     if (useAuthStore.getState().token === token) set(s => ({ data: { ...s.data, tasks: [...s.data.tasks.filter(t => t.id !== value.id), value] } }));
@@ -181,7 +186,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
           for (const id of ids) await get().loadTask(id);
           if (ticketPath) await get().loadTicket(ticketPath);
           if (!plateError(get().data.draft.plate)) await get().locate(get().data.draft.plate);
-          const scale=masters.capabilities.scales.find(value=>value.enabled===1);
+          const scale=selectedScale(masters.capabilities);
           if(scale){
             const current=await workflowApi.get<WireSession>(`/scales/${scale.id}/session`);
             const active=!!current.holderUserId&&!!current.expiresAt&&Date.parse(current.expiresAt)>Date.now();
@@ -329,7 +334,7 @@ let pollingDevice = false;
 setInterval(() => {
  const state = useWeighingStore.getState();
  const token = useAuthStore.getState().token;
- const scale = state.capabilities?.scales.find(s => s.enabled === 1);
+ const scale = selectedScale(state.capabilities);
  if (!token || !scale || pollingDevice || !state.capabilities?.permissionCodes.includes('weighing:read')) return;
  pollingDevice = true;
  void workflowApi.get<DeviceState>(`/scales/${scale.id}/device`).then(device => {

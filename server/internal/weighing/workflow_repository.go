@@ -237,6 +237,11 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 			if err != nil {
 				return err
 			}
+			if scale, err := findOne[Scale](tx, in.ScaleID); err != nil {
+				return err
+			} else if scale.SiteID != task.SiteID {
+				return ErrForbidden
+			}
 			business = task.Business
 			version = ptr(task.Version)
 			stage = "second"
@@ -253,7 +258,7 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 					return ErrConflict
 				}
 				if task.Status == "completed" {
-					if err := activePlateConflict(tx, task.Plate, task.ID); err != nil {
+					if err := activePlateConflict(tx, task.Plate, task.ID, task.SiteID); err != nil {
 						return err
 					}
 					var active int64
@@ -511,8 +516,12 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 				return out, ErrConflict
 			}
 		}
+		scale, err := findOne[Scale](tx, in.ScaleID)
+		if err != nil {
+			return out, err
+		}
 		var active int64
-		if err := tx.Model(&Task{}).Where("plate=? AND status='awaiting_second'", business.Plate).Count(&active).Error; err != nil {
+		if err := tx.Model(&Task{}).Where("site_id=? AND plate=? AND status='awaiting_second'", scale.SiteID, business.Plate).Count(&active).Error; err != nil {
 			return out, err
 		}
 		if active > 0 {
@@ -523,7 +532,7 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 			return out, err
 		}
 		now := time.Now().UTC()
-		task := Task{TaskNo: number, Mode: "normal", Plate: business.Plate, Direction: business.Direction, Status: "awaiting_second", ScaleID: in.ScaleID, MaterialID: business.MaterialID, PartyID: business.PartyID, CarrierID: business.CarrierID, Business: business, Version: 1, CreateTime: now, UpdateTime: now, ActorID: e.Metadata.ActorID, ActorName: name}
+		task := Task{SiteID: scale.SiteID, TaskNo: number, Mode: "normal", Plate: business.Plate, Direction: business.Direction, Status: "awaiting_second", ScaleID: in.ScaleID, MaterialID: business.MaterialID, PartyID: business.PartyID, CarrierID: business.CarrierID, Business: business, Version: 1, CreateTime: now, UpdateTime: now, ActorID: e.Metadata.ActorID, ActorName: name}
 		if err := tx.Create(&task).Error; err != nil {
 			return out, err
 		}
@@ -564,15 +573,22 @@ func (r *Repository) FindTask(ctx context.Context, id int64) (TaskDetail, error)
 	return detail, err
 }
 func (r *Repository) ActiveTask(ctx context.Context, plate string) (*TaskDetail, error) {
-	var task Task
-	result := r.db.WithContext(ctx).Where("plate=? AND status='awaiting_second'", normalizePlate(plate)).Limit(1).Find(&task)
+	var tasks []Task
+	db := siteFilter(r.db.WithContext(ctx).Model(&Task{}), PageQuery{}, "site_id")
+	if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok && scope.ScaleID > 0 {
+		db = db.Where("scale_id=?", scope.ScaleID)
+	}
+	result := db.Where("plate=? AND status='awaiting_second'", normalizePlate(plate)).Limit(2).Find(&tasks)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
 		return nil, nil
 	}
-	detail, err := r.FindTask(ctx, task.ID)
+	if len(tasks) > 1 {
+		return nil, ErrInvalid
+	}
+	detail, err := r.FindTask(ctx, tasks[0].ID)
 	if err == nil && detail.Status != "awaiting_second" {
 		return nil, nil
 	}

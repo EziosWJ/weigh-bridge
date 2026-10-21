@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,7 +43,11 @@ func main() {
 	for ctx.Err() == nil {
 		statusPath := filepath.Join(filepath.Dir(state), "maintenance-status.json")
 		pausePath := filepath.Join(filepath.Dir(state), "maintenance.pause")
-		if err := run(ctx, cfg, identityDir, statusPath, pausePath); err != nil {
+		if err := run(ctx, cfg, identityDir, statusPath, pausePath); errors.Is(err, p.ErrKicked) {
+			writeAgentStatus(statusPath, false, digest)
+			slog.Info("Agent 已被后台踢出，停止运行")
+			return
+		} else if err != nil {
 			writeAgentStatus(statusPath, false, digest)
 			slog.Warn("connection ended", "error", err)
 		}
@@ -53,7 +58,14 @@ func main() {
 		}
 	}
 }
-func run(ctx context.Context, cfg agentprinter.Config, state, statusPath, pausePath string) error {
+func run(parent context.Context, cfg agentprinter.Config, state, statusPath, pausePath string) (resultErr error) {
+	ctx, cancelRun := context.WithCancelCause(parent)
+	defer cancelRun(nil)
+	defer func() {
+		if errors.Is(context.Cause(ctx), p.ErrKicked) {
+			resultErr = p.ErrKicked
+		}
+	}()
 	server, id, key, scale, queue := cfg.ServerURL, cfg.AgentID, cfg.AgentKey, cfg.ScaleID, cfg.Queue
 	digest := agentprinter.ConfigDigest(cfg)
 	u, err := url.Parse(server)
@@ -96,14 +108,21 @@ func run(ctx context.Context, cfg agentprinter.Config, state, statusPath, pauseP
 		}
 	}()
 	slog.Info("printer Agent connected", "queue", queue, "scale", scale)
+	var writes sync.Mutex
+	sendMessage := func(message p.Message) error {
+		writes.Lock()
+		defer writes.Unlock()
+		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+		return websocket.JSON.Send(conn, message)
+	}
 	send := func(kind string, payload any) error {
 		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		return websocket.JSON.Send(conn, p.New(kind, fmt.Sprintf("printer-%d", time.Now().UnixNano()), "", payload))
+		return sendMessage(p.New(kind, fmt.Sprintf("printer-%d", time.Now().UnixNano()), "", payload))
 	}
 	if err = send("device.state", p.DeviceState{Unit: "t", DeviceOK: false, Error: "仪表和摄像头未接入；仅打印可用"}); err != nil {
 		return err
 	}
-	incoming := make(chan p.Message)
+	incoming := make(chan p.Message, 32)
 	readErr := make(chan error, 1)
 	go func() {
 		for {
@@ -111,6 +130,12 @@ func run(ctx context.Context, cfg agentprinter.Config, state, statusPath, pauseP
 			var m p.Message
 			if err := websocket.JSON.Receive(conn, &m); err != nil {
 				readErr <- err
+				return
+			}
+			if m.Type == "agent.kick" {
+				_ = sendMessage(p.New("agent.kicked", fmt.Sprintf("kick-%d", time.Now().UnixNano()), m.RequestID, struct{}{}))
+				cancelRun(p.ErrKicked)
+				_ = conn.Close()
 				return
 			}
 			select {

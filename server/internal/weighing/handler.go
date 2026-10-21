@@ -22,6 +22,8 @@ func NewHandler(s *Service, permissions *rbac.Service) *Handler {
 	return &Handler{service: s, permissions: permissions}
 }
 func RegisterRoutes(router gin.IRouter, h *Handler) {
+	router.Use(h.siteScope)
+	registerSiteRoutes(router, h)
 	router.GET("/capabilities", h.capabilities)
 	registerWorkflowRoutes(router, h)
 	registerCorrectionRoutes(router, h)
@@ -52,8 +54,13 @@ func (h *Handler) capabilities(c *gin.Context) {
 		writeResult(c, nil, err)
 		return
 	}
-	scales, err := h.service.Scales(c.Request.Context())
-	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales}, err)
+	scales, err := h.service.Scales(c)
+	if err != nil {
+		writeResult(c, nil, err)
+		return
+	}
+	sites, err := h.service.Sites(c, principal.UserID)
+	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}
@@ -103,7 +110,7 @@ func pageQuery(c *gin.Context) (PageQuery, error) {
 	for _, field := range []struct {
 		key    string
 		target **int64
-	}{{"materialId", &q.MaterialID}, {"partyId", &q.PartyID}} {
+	}{{"materialId", &q.MaterialID}, {"partyId", &q.PartyID}, {"siteId", &q.SiteID}} {
 		if value := c.Query(field.key); value != "" {
 			n, err := strconv.ParseInt(value, 10, 64)
 			if err != nil || n < 1 {

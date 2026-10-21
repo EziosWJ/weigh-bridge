@@ -41,6 +41,9 @@ func compactPrintSheet(ticket TicketView, title string) *PrintSheet {
 		}
 		return ""
 	}
+	if ticket.SiteName != "" {
+		title += " · " + ticket.SiteName
+	}
 	partyLabel, direction := "供货方", "入厂卸货"
 	if ticket.Business.Direction == "outbound" {
 		partyLabel, direction = "收货方", "出厂装货"

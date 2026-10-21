@@ -26,6 +26,7 @@ var assets embed.FS
 
 type Config struct {
 	Server, ID, Key string
+	OnKick          func()
 	ScaleID         int64
 }
 type Print struct {
@@ -40,6 +41,7 @@ type Mock struct {
 	conn                     *websocket.Conn
 	enabled                  bool
 	online                   bool
+	kicked                   bool
 	err                      string
 	target                   p.Weight
 	current                  p.DeviceState
@@ -83,7 +85,11 @@ func (m *Mock) Run(ctx context.Context) {
 		}
 		m.mu.Lock()
 		enabled := m.enabled
+		kicked := m.kicked
 		m.mu.Unlock()
+		if kicked {
+			return
+		}
 		if enabled {
 			m.runConnection(ctx)
 		}
@@ -167,8 +173,18 @@ func (m *Mock) runConnection(ctx context.Context) {
 				return
 			}
 			switch msg.Type {
+			case "agent.kick":
+				_ = m.send("agent.kicked", msg.RequestID, struct{}{})
+				m.mu.Lock()
+				m.kicked = true
+				m.enabled = false
+				m.mu.Unlock()
+				if m.cfg.OnKick != nil {
+					m.cfg.OnKick()
+				}
+				return
 			case "capture.request":
-				m.capture(msg.RequestID)
+				go m.capture(msg.RequestID)
 			case "print.request":
 				var value p.PrintRequest
 				if json.Unmarshal(msg.Payload, &value) == nil {

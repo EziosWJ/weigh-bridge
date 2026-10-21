@@ -149,7 +149,11 @@ func decorateParty(v *Party, contacts []Contact) {
 }
 func (r *Repository) Scales(ctx context.Context) ([]Scale, error) {
 	v := []Scale{}
-	err := r.db.WithContext(ctx).Order("id").Find(&v).Error
+	db := r.db.WithContext(ctx).Table("wb_scale").Select("wb_scale.*,s.name AS site_name").Joins("JOIN wb_site s ON s.id=wb_scale.site_id AND s.enabled=1")
+	err := siteFilter(db, PageQuery{}, "wb_scale.site_id").Order("wb_scale.id").Find(&v).Error
+	for i := range v {
+		v[i].CanOperate = mayOperate(ctx, v[i].SiteID)
+	}
 	return v, err
 }
 func lockRow[T any](tx *gorm.DB, id int64) (T, error) {

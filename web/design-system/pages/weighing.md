@@ -1,5 +1,13 @@
 # Phase 2A 称重页面覆盖说明
 
+## 2026-10-21 多厂区入口
+
+新增 `/weighing/sites`，采用 Detail Pattern 的状态摘要及入口变体：复用 PageHeader、ContentCard、StatusTag、EmptyState、Button 与 FormDialog，按厂区排列响应式面板。仅列已授权厂区，分别提供称重台入口及有权限时的 Agent 踢出操作；加载、失败、未知和空授权明确区分。
+
+用户管理的厂区分配复用现有 FormDialog 和选择控件，区分未授权、仅查询及查询与操作；角色动作权限继续独立生效。列表沿用原 Pattern，仅增加厂区列与筛选。
+
+工作台必须绑定 `scaleId`，窗口名称按地磅区分，顶栏明显显示厂区和地磅。定位任务、切换车辆和核对流程更新 URL 时保留地磅参数，工作台不静默换厂。单厂区用户也从厂区面板进入。
+
 ## 当前视觉：工业现代称重控制台（2026-10-19）
 
 本节覆盖下文历史 B 方案的浅色视觉与布局约束。独立工作台继续使用 Form / Detail 业务变体及现有 ContentCard、SectionTabs、PlateInput、资料选择和核对窗口，不新增通用 Pattern，不改变后台管理主题、路由、接口或轮询。

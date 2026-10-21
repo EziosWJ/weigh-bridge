@@ -47,14 +47,15 @@ func TestUserPageLoadsDepartmentAndRolesInBatches(t *testing.T) {
 	if err := database.GORM.Exec(`
 		INSERT INTO sys_dept (id, parent_id, dept_name, dept_code, status, is_builtin)
 		VALUES (2, 1, '研发部', 'BATCH-RND', 1, 0);
-		INSERT INTO sys_role (id, role_name, role_code, status, sort_order, is_builtin)
-		VALUES (2, '运营', 'BATCH-OPS', 1, 2, 0);
+		INSERT INTO sys_role (role_name, role_code, status, sort_order, is_builtin)
+		VALUES ('运营', 'BATCH-OPS', 1, 2, 0);
 		INSERT INTO sys_user (id, username, nickname, password, gender, dept_id, status, is_builtin)
 		VALUES
 			(2, 'batch-user-1', '批量用户一', 'password', 'UNSPECIFIED', 2, 1, 0),
 			(3, 'batch-user-2', '批量用户二', 'password', 'UNSPECIFIED', 2, 1, 0);
-		INSERT INTO sys_user_role (id, user_id, role_id)
-		VALUES (2, 2, 2), (3, 3, 1);
+		INSERT INTO sys_user_role (user_id, role_id)
+		SELECT 2,id FROM sys_role WHERE role_code='BATCH-OPS'
+		UNION ALL SELECT 3,id FROM sys_role WHERE role_code='ADMIN';
 	`).Error; err != nil {
 		t.Fatalf("seed batch user page fixture: %v", err)
 	}

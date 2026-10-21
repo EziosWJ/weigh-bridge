@@ -30,7 +30,8 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { path: "weighing", element: <Navigate to="/weighing/workbench" replace /> },
+      { path: "weighing", element: <Navigate to="/weighing/sites" replace /> },
+      { path: "weighing/sites", lazy: () => import("@/pages/weighing/sites").then(module => ({Component:module.WeighingSitesPage})) },
       { path: "weighing/tasks", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTasksPage })) },
       { path: "weighing/tasks/:id", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTaskDetailPage })) },
       { path: "weighing/originals", lazy: () => import("@/pages/weighing/originals").then((module) => ({ Component: module.WeighingOriginalsPage })) },

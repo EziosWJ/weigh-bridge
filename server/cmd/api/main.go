@@ -129,7 +129,7 @@ func main() {
 		Log:          logService,
 		Notification: notificationService,
 		Monitoring:   monitoringService,
-		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, TicketTitle: cfg.Weighing.TicketTitle}), agentbridge.New(agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey, ImageDir: cfg.Weighing.ImageDir})),
+		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, TicketTitle: cfg.Weighing.TicketTitle}), configuredAgents(cfg.Weighing)),
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)
@@ -204,4 +204,15 @@ func newAuthService(database *platformdatabase.Database, jwtConfig config.JWTCon
 		return nil, fmt.Errorf("build login guard: %w", err)
 	}
 	return auth.NewService(auth.NewRepository(database.GORM), tokens, loginGuard)
+}
+
+func configuredAgents(cfg config.WeighingConfig) *agentbridge.Hub {
+	if len(cfg.Agents) == 0 {
+		return agentbridge.New(agentbridge.Config{ID: cfg.AgentID, ScaleID: cfg.ScaleID, Key: cfg.AgentKey, ImageDir: cfg.ImageDir})
+	}
+	bindings := make([]agentbridge.Config, 0, len(cfg.Agents))
+	for _, v := range cfg.Agents {
+		bindings = append(bindings, agentbridge.Config{ID: v.ID, ScaleID: v.ScaleID, Key: v.Key, ImageDir: cfg.ImageDir})
+	}
+	return agentbridge.NewMultiple(bindings)
 }

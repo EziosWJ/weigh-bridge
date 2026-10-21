@@ -18,6 +18,7 @@ const statusMeta: Record<
 type UserColumnActions = {
   onEdit: (user: UserRecord) => void;
   onAssignRoles: (user: UserRecord) => void;
+  onAssignSites:(user:UserRecord)=>void;
   onChangeStatus: (user: UserRecord, status: ApiStatus) => void;
   onResetPassword: (user: UserRecord) => void;
   onDelete: (user: UserRecord) => void;
@@ -31,6 +32,7 @@ type UserColumnActions = {
 export function createUserColumns({
   onEdit,
   onAssignRoles,
+  onAssignSites,
   onChangeStatus,
   onResetPassword,
   onDelete,
@@ -144,13 +146,14 @@ export function createUserColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 340,
+      width: 410,
       render: (_, user) => (
         <TableActions>
           <Button size="sm" variant="ghost" onClick={() => onEdit(user)}>
             <Pencil className="h-4 w-4" aria-hidden />
             编辑
           </Button>
+          <Button size="sm" variant="ghost" onClick={()=>onAssignSites(user)}>厂区</Button>
           <Button size="sm" variant="ghost" onClick={() => onAssignRoles(user)}>
             <ShieldCheck className="h-4 w-4" aria-hidden />
             角色

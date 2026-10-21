@@ -75,10 +75,13 @@ type Contact struct {
 func (Contact) TableName() string { return "wb_party_contact" }
 
 type Scale struct {
-	ID      int64  `json:"id"`
-	Code    string `json:"code"`
-	Name    string `json:"name"`
-	Enabled int    `json:"enabled"`
+	SiteID     int64  `json:"siteId"`
+	SiteName   string `json:"siteName" gorm:"->"`
+	CanOperate bool   `json:"canOperate" gorm:"-"`
+	ID         int64  `json:"id"`
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	Enabled    int    `json:"enabled"`
 }
 
 func (Scale) TableName() string { return "wb_scale" }
@@ -96,6 +99,7 @@ type PageQuery struct {
 	Keyword, Role, Nature       string
 	Enabled                     *int
 	CategoryID                  *int64
+	SiteID                      *int64
 	TaskID                      *int64
 }
 type CategoryInput struct {
@@ -129,6 +133,13 @@ type PartyInput struct {
 	Contacts   []ContactInput `json:"contacts"`
 }
 type Store interface {
+	RecordAgentKick(context.Context, audit.Event) error
+	Sites(context.Context, int64) ([]Site, error)
+	SiteOptions(context.Context) ([]Site, error)
+	SiteGrants(context.Context, int64) ([]SiteGrant, error)
+	SaveSiteGrants(context.Context, int64, []SiteGrant, audit.Event) error
+	ResourceSite(context.Context, string, int64) (int64, error)
+
 	TaskEvents(context.Context, int64, PageQuery) (Page[BusinessEvent], error)
 	TasksAll(context.Context, PageQuery) ([]Task, error)
 	Originals(context.Context, PageQuery) (Page[OriginalView], error)

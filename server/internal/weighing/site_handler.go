@@ -1,0 +1,205 @@
+package weighing
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"github.com/EziosWJ/weighbridge/server/internal/auth"
+	"github.com/EziosWJ/weighbridge/server/internal/rbac"
+	"github.com/gin-gonic/gin"
+	"io"
+	"net/http"
+	"slices"
+	"strconv"
+	"strings"
+)
+
+func registerSiteRoutes(router gin.IRouter, h *Handler) {
+	router.GET("/sites", rbac.RequirePermission(h.permissions, "weighing:read"), func(c *gin.Context) {
+		p, _ := auth.PrincipalFromContext(c.Request.Context())
+		v, e := h.service.Sites(c, p.UserID)
+		writeResult(c, v, e)
+	})
+	manage := rbac.RequirePermission(h.permissions, "system:user")
+	router.GET("/site-options", manage, func(c *gin.Context) { v, e := h.service.SiteOptions(c); writeResult(c, v, e) })
+	router.GET("/users/:userId/sites", manage, func(c *gin.Context) {
+		id, e := strconv.ParseInt(c.Param("userId"), 10, 64)
+		if e != nil || id < 1 {
+			writeResult(c, nil, ErrInvalid)
+			return
+		}
+		v, e := h.service.SiteGrants(c, id)
+		writeResult(c, v, e)
+	})
+	router.PUT("/users/:userId/sites", manage, func(c *gin.Context) {
+		id, e := strconv.ParseInt(c.Param("userId"), 10, 64)
+		var in struct {
+			Grants []SiteGrant `json:"grants"`
+		}
+		if e != nil || id < 1 || c.ShouldBindJSON(&in) != nil {
+			writeResult(c, nil, ErrInvalid)
+			return
+		}
+		writeResult(c, nil, h.service.SaveSiteGrants(c, id, in.Grants, requestEvent(c)))
+	})
+	router.POST("/scales/:id/agent/kick", rbac.RequirePermission(h.permissions, "weighing:agent:kick"), h.kickAgent)
+}
+
+// siteScope is the common HTTP boundary for both queries and ID-based actions.
+// Reference ownership is checked before reading device data or running a command.
+func (h *Handler) siteScope(c *gin.Context) {
+	p, _ := auth.PrincipalFromContext(c.Request.Context())
+	sites, err := h.service.Sites(c, p.UserID)
+	if err != nil {
+		writeResult(c, nil, err)
+		c.Abort()
+		return
+	}
+	scope := siteScope{Read: []int64{}, Operate: []int64{}}
+	for _, s := range sites {
+		scope.Read = append(scope.Read, s.ID)
+		if s.CanOperate {
+			scope.Operate = append(scope.Operate, s.ID)
+		}
+	}
+	c.Set(siteScopeKey, scope)
+	fail := func(err error) { writeResult(c, nil, err); c.Abort() }
+	path := strings.TrimPrefix(c.FullPath(), "/api/weighing/")
+	if strings.HasPrefix(path, "users/") || path == "site-options" || strings.HasPrefix(path, "material") || strings.HasPrefix(path, "parties") {
+		c.Next()
+		return
+	}
+	write := c.Request.Method != http.MethodGet
+	allowed := scope.Read
+	if write {
+		allowed = scope.Operate
+	}
+	var expected int64
+	check := func(kind string, id int64) bool {
+		site, e := h.service.ResourceSite(c, kind, id)
+		if e != nil {
+			fail(e)
+			return false
+		}
+		if !slices.Contains(allowed, site) {
+			fail(ErrForbidden)
+			return false
+		}
+		if expected != 0 && expected != site {
+			fail(ErrForbidden)
+			return false
+		}
+		expected = site
+		return true
+	}
+	if value := c.Query("siteId"); value != "" {
+		id, e := strconv.ParseInt(value, 10, 64)
+		if e != nil || id < 1 {
+			fail(ErrInvalid)
+			return
+		}
+		if !slices.Contains(scope.Read, id) {
+			fail(ErrForbidden)
+			return
+		}
+	}
+	if value := c.Query("scaleId"); value != "" {
+		id, e := strconv.ParseInt(value, 10, 64)
+		if e != nil || id < 1 {
+			fail(ErrInvalid)
+			return
+		}
+		if !check("scales", id) {
+			return
+		}
+		scope.ScaleID = id
+	}
+	parts := strings.Split(path, "/")
+	if len(parts) > 1 && parts[1] == ":id" {
+		id, e := pathID(c)
+		if e != nil {
+			fail(e)
+			return
+		}
+		if !check(parts[0], id) {
+			return
+		}
+	}
+	if strings.HasPrefix(path, "agent-images/") {
+		id, e := strconv.ParseInt(strings.Split(c.Param("imageId"), "_")[0], 10, 64)
+		if e != nil || !check("scales", id) {
+			if e != nil {
+				fail(ErrInvalid)
+			}
+			return
+		}
+	}
+	if value := c.Query("taskId"); value != "" {
+		id, e := strconv.ParseInt(value, 10, 64)
+		if e != nil {
+			fail(ErrInvalid)
+			return
+		}
+		if !check("tasks", id) {
+			return
+		}
+	}
+	if write && c.Request.Body != nil {
+		body, e := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
+		if e != nil {
+			fail(ErrInvalid)
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(body))
+
+		var refs struct {
+			ScaleID        int64  `json:"scaleId"`
+			TaskID         int64  `json:"taskId"`
+			SampleID       int64  `json:"sampleId"`
+			TargetRecordID int64  `json:"targetRecordId"`
+			RequestID      string `json:"requestId"`
+		}
+		if len(body) > 0 && json.Unmarshal(body, &refs) != nil {
+			fail(ErrInvalid)
+			return
+		}
+		replay := false
+		if refs.RequestID != "" {
+			op, e := h.service.Operation(c, p.UserID, refs.RequestID)
+			if e != nil {
+				fail(e)
+				return
+			}
+			replay = op.Status != "not_found"
+			if replay && op.TaskID != nil && !check("tasks", *op.TaskID) {
+				return
+			}
+		}
+		for _, v := range []struct {
+			kind string
+			id   int64
+		}{{"scales", refs.ScaleID}, {"tasks", refs.TaskID}, {"samples", refs.SampleID}, {"records", refs.TargetRecordID}} {
+			if v.id < 0 {
+				fail(ErrInvalid)
+				return
+			}
+			if !replay && v.id > 0 && !check(v.kind, v.id) {
+				return
+			}
+		}
+
+	}
+	if strings.HasPrefix(path, "operations/") {
+		op, e := h.service.Operation(c, p.UserID, c.Param("requestId"))
+		if e != nil {
+			fail(e)
+			return
+		}
+		if op.TaskID != nil && !check("tasks", *op.TaskID) {
+			return
+		}
+	}
+	c.Set(siteScopeKey, scope)
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
+	c.Next()
+}

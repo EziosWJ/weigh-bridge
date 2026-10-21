@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { Maximize, Minimize, Monitor } from 'lucide-react';
-import { Outlet } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth-store';
 import { useWeighingStore } from '@/store/weighing-store';
 import { roleLabels } from '@/types/weighing';
-import { WORKBENCH_WINDOW } from '@/lib/workbench-window';
+import { WORKBENCH_WINDOW,workbenchWindow } from '@/lib/workbench-window';
 import './workbench.css';
 
 export function WorkbenchShell() {
+  const capabilities=useWeighingStore(s=>s.capabilities);
+  const ready=useWeighingStore(s=>s.ready);
+  const scaleId=Number(new URLSearchParams(location.search).get('scaleId'));
+  const scale=capabilities?.scales.find(s=>s.id===scaleId);
   const dispatch = useWeighingStore(s => s.dispatch);
   const owner = useWeighingStore(s => s.data.owner);
   const pending = useWeighingStore(s => s.data.pending);
@@ -18,16 +22,20 @@ export function WorkbenchShell() {
   const [fullscreen, setFullscreen] = useState(!!document.fullscreenElement);
   const [error, setError] = useState('');
   useEffect(() => {
-    const previousName = window.name === WORKBENCH_WINDOW ? '' : window.name;
-    window.name = WORKBENCH_WINDOW;
+    const name=workbenchWindow(scaleId);
+    const previousName=window.name.startsWith(WORKBENCH_WINDOW)?'':window.name;
+    window.name=name;
     const update = () => setFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', update);
-    return () => { document.removeEventListener('fullscreenchange', update); if (window.name === WORKBENCH_WINDOW) window.name = previousName; };
-  }, []);
+    return () => { document.removeEventListener('fullscreenchange', update); if (window.name === name) window.name = previousName; };
+  }, [scaleId]);
+  if(!scaleId)return <Navigate to="/weighing/sites" replace/>;
+  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无该厂区称重操作权限。<a href="/weighing/sites" className="text-primary underline">返回厂区面板</a></div>;
+  if(!ready)return <p role="status" className="p-6">正在核对厂区授权…</p>;
   return <div className="standalone-workbench min-h-screen bg-background">
     <a href="#main-content" className="workbench-skip">跳转到称重操作</a>
     <header className="workbench-topbar">
-      <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">地磅现场作业 · 人工核对确认</p></div></div>
+      <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name} · 人工核对确认</p></div></div>
       <span className="workbench-connection text-sm text-text-secondary"><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
       <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
         <a className="workbench-management-link" href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>

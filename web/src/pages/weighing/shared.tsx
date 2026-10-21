@@ -89,8 +89,10 @@ export function BusinessFields({ value, onChange, lockDirection = false, hidePla
 
 export function WeighingFilters({ value, onChange, ticket = false, dateLabel, hideStatus = false }: { value: WeighingFilter; onChange: (value: WeighingFilter) => void; ticket?: boolean; dateLabel?: string; hideStatus?: boolean }) {
   const { materials, parties } = useWeighingStore(s => s.data);
+  const sites=useWeighingStore(s=>s.capabilities?.sites);
   const change = (patch: Partial<WeighingFilter>) => onChange({ ...value, ...patch });
   return <SearchFilterBar actions={<Button variant="secondary" onClick={() => onChange({})}>清空筛选</Button>}>
+    <Select aria-label="筛选厂区" value={value.siteId??''} onChange={e=>change({siteId:e.target.value})}><option value="">全部授权厂区</option>{sites?.map(site=><option key={site.id} value={site.id}>{site.name}</option>)}</Select>
     <Input aria-label="车牌或编号" placeholder={ticket ? '车牌 / 单号 / 任务号' : '车牌 / 任务号'} value={value.keyword ?? ''} onChange={e => change({ keyword: e.target.value })} />
     <Select aria-label="筛选方向" value={value.direction ?? ''} onChange={e => change({ direction: e.target.value })}><option value="">全部方向</option><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
     <Select aria-label="筛选物料" value={value.materialId ?? ''} onChange={e => change({ materialId: e.target.value })}><option value="">全部物料</option>{materials.map(m => <option key={m.id} value={m.id}>{m.name} {m.spec}</option>)}</Select>

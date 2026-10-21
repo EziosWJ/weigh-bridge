@@ -24,6 +24,7 @@ type Config struct {
 	ImageDir string
 }
 type State struct {
+	ConnectionID string `json:"connectionId"`
 	p.DeviceState
 	AgentID    string    `json:"agentId"`
 	ScaleID    int64     `json:"scaleId"`
@@ -34,6 +35,10 @@ type State struct {
 	Images     []p.Image `json:"images"`
 }
 type connection struct {
+	id      string
+	kicking bool
+	kickID  string
+	kickAck chan struct{}
 	ws      *websocket.Conn
 	writes  sync.Mutex
 	seen    time.Time
@@ -41,6 +46,7 @@ type connection struct {
 	prints  map[string]int64
 }
 type Hub struct {
+	children    map[int64]*Hub
 	mu          sync.Mutex
 	cfg         Config
 	conn        *connection
@@ -53,6 +59,12 @@ func New(cfg Config) *Hub {
 }
 func ID() string { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func (h *Hub) SetPrintHandler(fn func(context.Context, int64, p.PrintResult) error) {
+	if h.children != nil {
+		for _, child := range h.children {
+			child.SetPrintHandler(fn)
+		}
+		return
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.printResult = fn
@@ -64,12 +76,18 @@ func (c *connection) send(m p.Message) error {
 	return websocket.JSON.Send(c.ws, m)
 }
 func (h *Hub) freshLocked() bool {
-	return h.conn != nil && time.Since(h.conn.seen) < 15*time.Second && !h.state.ReceivedAt.IsZero() && time.Since(h.state.ReceivedAt) < 3*time.Second
+	return h.conn != nil && !h.conn.kicking && time.Since(h.conn.seen) < 15*time.Second && !h.state.ReceivedAt.IsZero() && time.Since(h.state.ReceivedAt) < 3*time.Second
 }
 func (h *Hub) readyLocked() bool {
 	return h.freshLocked() && h.state.Stable && h.state.DeviceOK && h.state.Weight > 0
 }
 func (h *Hub) State(scale int64) State {
+	if h.children != nil {
+		if child := h.children[scale]; child != nil {
+			return child.State(scale)
+		}
+		return State{ScaleID: scale, Images: []p.Image{}}
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s := h.state
@@ -83,6 +101,12 @@ func (h *Hub) State(scale int64) State {
 
 // Guard serializes a business commit with device changes. The caller must release it.
 func (h *Hub) Guard(scale, revision int64) (State, func(), error) {
+	if h.children != nil {
+		if child := h.children[scale]; child != nil {
+			return child.Guard(scale, revision)
+		}
+		return State{}, nil, ErrUnavailable
+	}
 	h.mu.Lock()
 	if scale != h.cfg.ScaleID || !h.readyLocked() || (revision != 0 && h.state.Revision != revision) {
 		h.mu.Unlock()
@@ -98,6 +122,7 @@ func (h *Hub) disconnect(c *connection) {
 		h.conn = nil
 		h.state.Revision++
 		h.state.Online = false
+		h.state.ConnectionID = ""
 		for _, ch := range c.pending {
 			close(ch)
 		}
@@ -107,21 +132,17 @@ func (h *Hub) disconnect(c *connection) {
 	_ = c.ws.Close()
 }
 func (h *Hub) Serve(ws *websocket.Conn) {
-	c := &connection{ws: ws, seen: time.Now(), pending: map[string]chan p.Message{}, prints: map[string]int64{}}
+	c := &connection{id: ID(), ws: ws, seen: time.Now(), pending: map[string]chan p.Message{}, prints: map[string]int64{}}
 	h.mu.Lock()
-	old := h.conn
+	if h.conn != nil {
+		h.mu.Unlock()
+		_ = c.send(p.New("error", ID(), "", map[string]string{"code": "agent_conflict", "message": "该地磅已有 Agent 在线，请先在后台踢出或停止原进程"}))
+		_ = ws.Close()
+		return
+	}
 	h.conn = c
-	h.state = State{AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}}
-	if old != nil {
-		for _, ch := range old.pending {
-			close(ch)
-		}
-		old.pending = map[string]chan p.Message{}
-	}
+	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}}
 	h.mu.Unlock()
-	if old != nil {
-		_ = old.ws.Close()
-	}
 	defer h.disconnect(c)
 	ws.MaxPayloadBytes = 128 << 10
 	for {
@@ -146,6 +167,13 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 		return ErrUnavailable
 	}
 	defer h.mu.Unlock()
+	if c.kicking {
+		if m.Type == "agent.kicked" && m.RequestID == c.kickID && c.kickAck != nil {
+			close(c.kickAck)
+			c.kickAck = nil
+		}
+		return nil
+	}
 	switch m.Type {
 	case "device.state":
 		var v p.DeviceState
@@ -219,6 +247,12 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 	return nil
 }
 func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error) {
+	if h.children != nil {
+		if child := h.children[scale]; child != nil {
+			return child.Capture(ctx, scale)
+		}
+		return p.Capture{}, 0, ErrUnavailable
+	}
 	h.mu.Lock()
 	if scale != h.cfg.ScaleID || !h.readyLocked() {
 		h.mu.Unlock()
@@ -266,8 +300,14 @@ func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error
 	return result, revision, nil
 }
 func (h *Hub) Print(scale int64, id int64, ticket any) error {
+	if h.children != nil {
+		if child := h.children[scale]; child != nil {
+			return child.Print(scale, id, ticket)
+		}
+		return ErrUnavailable
+	}
 	h.mu.Lock()
-	if scale != h.cfg.ScaleID || h.conn == nil || time.Since(h.conn.seen) > 15*time.Second {
+	if scale != h.cfg.ScaleID || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
 		h.mu.Unlock()
 		return ErrUnavailable
 	}

@@ -34,3 +34,13 @@ log:
 # task init 生成独立随机密钥，API 与 agent-mock 读取同一份本地配置。
 weighing:
   agent_key: ""
+
+  # 两厂区配置示例：取消注释后列表整体替代旧单磅映射。
+  # 原厂沿用已有有效身份和本地密钥，第二厂使用独立密钥；真实值只写忽略配置。
+  # agents:
+  #   - id: scale-agent-1
+  #     scale_id: 1
+  #     key: replace-with-existing-first-site-secret
+  #   - id: scale-agent-2
+  #     scale_id: 2
+  #     key: replace-with-independent-second-site-secret

@@ -12,7 +12,7 @@ import { AnnouncementPanel } from "@/components/layout/announcement-panel";
 export function AppShell() {
   // window.name survives full document navigation; management must not retain
   // the reserved workbench name and accidentally reuse itself as the popup.
-  useEffect(() => { if (window.name === WORKBENCH_WINDOW) window.name = ''; }, []);
+  useEffect(() => { if (window.name.startsWith(WORKBENCH_WINDOW)) window.name = ''; }, []);
   const [collapsed, setCollapsed] = useState(false);
   const { navigationIntent, handleNavigationClickCapture } = useRouteNavigationLoading();
 

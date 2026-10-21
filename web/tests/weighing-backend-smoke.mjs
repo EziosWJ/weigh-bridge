@@ -16,7 +16,7 @@ const children = [];
 let browser;
 let page;
 const workflowResponses = [];
-const env = { ...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_DATABASE__DRIVER: 'sqlite', APP_DATABASE__URL: join(directory, 'test.db'), APP_DATABASE__USERNAME: '', APP_DATABASE__PASSWORD: '', APP_JWT__SECRET: 'isolated-browser-test-secret-never-deployed', APP_FILE__STORAGE_ROOT: join(directory, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18085', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'isolated-agent-browser-key', APP_WEIGHING__IMAGE_DIR: join(directory, 'agent-images') };
+const env = { ...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_DATABASE__DRIVER: 'sqlite', APP_DATABASE__URL: join(directory, 'test.db'), APP_DATABASE__USERNAME: '', APP_DATABASE__PASSWORD: '', APP_JWT__SECRET: 'isolated-browser-test-secret-never-deployed', APP_FILE__STORAGE_ROOT: join(directory, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18085', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'isolated-agent-browser-key', APP_WEIGHING__IMAGE_DIR: join(directory, 'agent-images'), APP_WEIGHING__AGENTS: JSON.stringify([{id:'scale-agent-1',scale_id:1,key:'isolated-agent-browser-key'},{id:'scale-agent-2',scale_id:2,key:'isolated-agent-browser-key-2'}]) };
 function start(command, args, cwd, extraEnv = {}) {
   const child = spawn(command, args, { cwd, env: { ...env, ...extraEnv }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   child.output = '';
@@ -91,16 +91,26 @@ try {
   const menu=page.getByRole('navigation',{name:'主导航'});
   console.log('browser: master data ready; opening standalone workbench', await page.evaluate(() => ({name:window.name,url:location.href})), errors);
   assert.notEqual(await page.evaluate(() => window.name),'weighbridge-workbench','离开工作台后不得占用独立窗口名称');
+  await menu.getByRole('link',{name:'厂区工作台',exact:true}).click();
+  await page.getByRole('heading',{name:'厂区工作台',exact:true}).waitFor();
+  await page.getByRole('link',{name:'进入称重台',exact:true}).nth(1).waitFor();
+  assert.equal(await page.getByRole('link',{name:'进入称重台',exact:true}).count(),2);
   const popupPromise=admin.waitForEvent('page');
-  await menu.getByRole('link',{name:'称重工作台',exact:true}).click();
-  const popup=await popupPromise.catch(async error => { console.error('popup diagnostics',page.url(),await page.locator('body').innerText(),errors); throw error; });
+  await page.getByRole('link',{name:'进入称重台',exact:true}).first().click();
+  const popup=await popupPromise;
   await popup.getByRole('heading',{name:'称重工作台',exact:true}).waitFor();
-  assert.equal(await popup.locator('aside').count(),0);
   assert.equal(await popup.getByRole('navigation',{name:'主导航'}).count(),0);
+  assert.match(await popup.locator('.workbench-brand').innerText(),/原厂区/);
   const pageCount=admin.pages().length;
-  await menu.getByRole('link',{name:'称重工作台',exact:true}).click();
-  await delay(150); assert.equal(admin.pages().length,pageCount);
-  await popup.close();
+  await page.getByRole('link',{name:'进入称重台',exact:true}).first().click();
+  await delay(150);assert.equal(admin.pages().length,pageCount);
+  const secondPopupPromise=admin.waitForEvent('page');
+  await page.getByRole('link',{name:'进入称重台',exact:true}).nth(1).click();
+  const secondPopup=await secondPopupPromise;
+  await secondPopup.getByRole('heading',{name:'称重工作台',exact:true}).waitFor();
+  assert.match(await secondPopup.locator('.workbench-brand').innerText(),/新增厂区/);
+  assert.notEqual(await popup.evaluate(()=>window.name),await secondPopup.evaluate(()=>window.name));
+  await popup.close();await secondPopup.close();
 
   // Use the actual workbench, server samples and confirmation dialogs for both directions.
   const settings = await admin.newPage();
@@ -164,7 +174,7 @@ try {
   };
   for (const [direction, plate, firstWeight, secondWeight] of [['inbound', '川A54321', 30, 10], ['outbound', '川A54322', 10, 30]]) {
     await setWeight(firstWeight);
-    await page.goto(`${web}/weighing/workbench`);
+    await page.goto(`${web}/weighing/workbench?scaleId=1`);
     await locate(plate);
     await setDirection(direction);
     assert.equal(await page.locator('aside').count(), 0, '独立工作台不应显示后台侧栏');
@@ -353,7 +363,7 @@ try {
   // An unknown successful response survives reload and is resolved without a new submission.
   await page.route('**/api/weighing/tasks/first-confirmation', async route => { await route.fetch(); await route.abort('failed'); }, {times:1});
   await setWeight(25);
-  await page.goto(`${web}/weighing/workbench`);
+  await page.goto(`${web}/weighing/workbench?scaleId=1`);
   await locate('川A54323');
   await pick('物料', '服务端冒烟高粱'); await pick('供货方', '服务端个人供运人');
   await page.getByRole('button', { name: '采集重量', exact: true }).click();
@@ -385,7 +395,7 @@ try {
 
   // Preserve the invalid-original and responsive-dialog regression checks against real server data.
   await setWeight(5);
-  await page.goto(`${web}/weighing/workbench`); await locate('川A54327');
+  await page.goto(`${web}/weighing/workbench?scaleId=1`); await locate('川A54327');
   await pick('物料','服务端冒烟高粱'); await pick('供货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   await reviewAndConfirm('首磅','毛重');
@@ -436,7 +446,7 @@ try {
   // Agent recognition candidates still need manual confirmation.
   await settings.locator('#plate').fill('苏AD12346');
   await settings.getByRole('button',{name:'发送识别候选',exact:true}).click();
-  await page.goto(`${web}/weighing/workbench`);
+  await page.goto(`${web}/weighing/workbench?scaleId=1`);
   await page.getByText(/识别候选 苏AD12346/).waitFor();
   assert.equal(await page.getByRole('button',{name:'采集重量',exact:true}).isDisabled(),true);
   await page.getByRole('textbox',{name:'车牌号码',exact:true}).fill('苏ad12345');
@@ -465,9 +475,21 @@ try {
   const role = roles.find(row => row.roleCode === 'WEIGHING_OPERATOR');
   assert.ok(user && role);
   await call(`/api/system/user/${user.id}/roles`, 'PUT', { roleIds: [role.id] });
+  await page.goto(`${web}/system/user`);
+  await page.getByRole('row').filter({hasText:'master-reader'}).getByRole('button',{name:'厂区',exact:true}).click();
+  const siteDialog=page.getByRole('dialog',{name:'厂区授权',exact:true});
+  await siteDialog.getByLabel('原厂区授权范围',{exact:true}).selectOption('operate');
+  await siteDialog.getByRole('button',{name:'保存',exact:true}).click();
+  await siteDialog.waitFor({state:'hidden'});
+  assert.deepEqual((await call(`/api/weighing/users/${user.id}/sites`)).map(({siteId,canOperate})=>({siteId,canOperate})),[{siteId:1,canOperate:1}]);
   const reader = await browser.newContext();
   const readerPage = await reader.newPage();
   await login(readerPage, 'master-reader');
+  await readerPage.goto(`${web}/weighing/sites`);
+  await readerPage.getByRole('heading',{name:'厂区工作台',exact:true}).waitFor();
+  await readerPage.getByRole('link',{name:'进入称重台',exact:true}).waitFor();
+  assert.equal(await readerPage.getByText('新增厂区',{exact:true}).count(),0);
+  assert.equal(await readerPage.getByRole('button',{name:'踢出 Agent',exact:true}).count(),0);
   await readerPage.goto(`${web}/weighing/materials`);
   await readerPage.getByRole('link', { name: '服务端冒烟高粱', exact: true }).waitFor();
   assert.equal(await readerPage.getByRole('link', { name: '新增物料', exact: true }).count(), 0);
@@ -481,12 +503,12 @@ try {
 
   // A second real account must acquire/take over the same server lease; stale confirmation cannot succeed.
   await setWeight(30);
-  await page.goto(`${web}/weighing/workbench`); await locate('川A54325');
+  await page.goto(`${web}/weighing/workbench?scaleId=1`); await locate('川A54325');
   await pick('物料','服务端冒烟高粱'); await pick('供货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   await page.getByRole('button',{name:'开始核对首磅（毛重）',exact:true}).waitFor();
   await page.getByRole('button',{name:'开始核对首磅（毛重）',exact:true}).click();
-  await readerPage.goto(`${web}/weighing/workbench`);
+  await readerPage.goto(`${web}/weighing/workbench?scaleId=1`);
   await readerPage.getByRole('textbox',{name:'车牌号码',exact:true}).fill('川A54326');
   await readerPage.getByRole('button',{name:'核对车牌并查找运输',exact:true}).click();
   assert.equal(await readerPage.getByRole('button',{name:'采集重量',exact:true}).isDisabled(),true,'其他账号持有会话时必须禁用采集');
@@ -500,6 +522,15 @@ try {
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54325')}`)).total,0);
   await readerPage.getByRole('button',{name:'释放操作权',exact:true}).click();
 
+  await page.goto(`${web}/weighing/sites`);
+  await page.getByRole('button',{name:'踢出 Agent',exact:true}).waitFor();
+  await page.getByRole('button',{name:'踢出 Agent',exact:true}).click();
+  await page.getByRole('dialog',{name:'踢出 Agent',exact:true}).getByRole('button',{name:'确认踢出',exact:true}).click();
+  await page.getByText('Agent 已确认收到踢出指令，连接已断开。',{exact:true}).waitFor();
+  for(let n=0;n<30&&mock.exitCode===null;n++)await delay(100);
+  assert.equal(mock.exitCode,0,'收到 kick 后真实 mock 进程应正常退出，不自动重连');
+  assert.equal((await call('/api/weighing/scales/1/device')).online,false);
+  console.log('browser: site panels, distinct windows, scoped user access and kick process exit passed');
   assert.deepEqual(errors, []);
   console.log('Server-backed business loop: persistence, permissions, both weighing directions, capture before business data, immutable ticket versions, correction/reopen, server lists/CSV, Agent printing, manual feedback, invalid original recovery, responsive layout, recognition evidence and real account takeover passed.');
 } catch (error) {

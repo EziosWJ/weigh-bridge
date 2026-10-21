@@ -9,9 +9,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func activePlateConflict(tx *gorm.DB, plate string, exclude int64) error {
+func activePlateConflict(tx *gorm.DB, plate string, exclude int64, siteID int64) error {
 	var count int64
-	if err := tx.Model(&Task{}).Where("plate=? AND id<>? AND status='awaiting_second'", plate, exclude).Count(&count).Error; err != nil {
+	if err := tx.Model(&Task{}).Where("site_id=? AND plate=? AND id<>? AND status='awaiting_second'", siteID, plate, exclude).Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {
@@ -34,7 +34,7 @@ func (r *Repository) CorrectTask(ctx context.Context, id int64, in CorrectionInp
 		if err != nil {
 			return out, err
 		}
-		if err := activePlateConflict(tx, business.Plate, id); err != nil {
+		if err := activePlateConflict(tx, business.Plate, id, task.SiteID); err != nil {
 			return out, err
 		}
 		out.event.Before = snapshot(task.Business)
@@ -150,7 +150,7 @@ func (r *Repository) Reweigh(ctx context.Context, id int64, in ReweighInput, e a
 			if active > 0 {
 				return out, ErrConflict
 			}
-			if err := activePlateConflict(tx, task.Plate, id); err != nil {
+			if err := activePlateConflict(tx, task.Plate, id, task.SiteID); err != nil {
 				return out, err
 			}
 		}
@@ -256,7 +256,7 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 			}
 		}
 		if business.Plate != task.Plate {
-			if err := activePlateConflict(tx, business.Plate, task.ID); err != nil {
+			if err := activePlateConflict(tx, business.Plate, task.ID, task.SiteID); err != nil {
 				return out, err
 			}
 		}

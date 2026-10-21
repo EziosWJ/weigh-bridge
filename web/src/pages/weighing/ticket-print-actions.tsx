@@ -11,7 +11,7 @@ import { printStatusLabels } from '@/types/weighing';
 export function TicketPrintActions({ ticketId }: { ticketId: string }) {
   const { data, capabilities, busy, dispatch, loadTicket } = useWeighingStore();
   const ticket = data.tickets.find(item => item.id === ticketId);
-  const canPrint = capabilities?.permissionCodes.includes('weighing:print') ?? false;
+  const canPrint = !!capabilities?.sites.some(s=>s.id===ticket?.siteId&&s.canOperate)&&capabilities.permissionCodes.includes('weighing:print');
   const canReprint = capabilities?.permissionCodes.includes('weighing:reprint') ?? false;
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
