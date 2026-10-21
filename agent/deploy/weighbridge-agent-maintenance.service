@@ -1,0 +1,20 @@
+[Unit]
+Description=Weighbridge local printer maintenance UI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/weighbridge-agent
+ExecStart=%h/weighbridge-agent/bin/weighbridge-agent-maintenance --data-dir %h/weighbridge-agent
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/weighbridge-agent
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=default.target

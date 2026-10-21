@@ -20,12 +20,19 @@ type Field struct {
 	Value string `json:"value"`
 }
 type Sheet struct {
-	Template string    `json:"template"`
-	Width    int       `json:"widthMm"`
-	Height   int       `json:"heightMm"`
-	Title    string    `json:"title"`
-	Marks    []string  `json:"marks"`
-	Rows     [][]Field `json:"rows"`
+	Template    string      `json:"template"`
+	Width       int         `json:"widthMm"`
+	Height      int         `json:"heightMm"`
+	Title       string      `json:"title"`
+	Marks       []string    `json:"marks"`
+	Rows        [][]Field   `json:"rows"`
+	Calibration Calibration `json:"calibration,omitempty"`
+}
+type Calibration struct {
+	WidthMM      int `json:"printWidthMm"`
+	OffsetXMM    int `json:"offsetXmm"`
+	OffsetYMM    int `json:"offsetYmm"`
+	FormLengthMM int `json:"formLengthMm"`
 }
 type Request struct {
 	AttemptID int64 `json:"attemptId"`

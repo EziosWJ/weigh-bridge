@@ -39,7 +39,7 @@ func main() {
 		agent.ScaleID = parsed
 	}
 	server := flag.String("server", serverURL, "Server HTTP(S) address (defaults to local API configuration)")
-	listen := flag.String("listen", "127.0.0.1:8090", "mock control page listen address")
+	listen := flag.String("listen", "0.0.0.0:8090", "mock control page listen address")
 	id := flag.String("agent-id", agent.AgentID, "Agent identity")
 	scale := flag.Int64("scale-id", agent.ScaleID, "scale identity")
 	flag.Parse()

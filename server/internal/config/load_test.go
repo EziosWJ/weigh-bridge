@@ -168,6 +168,9 @@ log:
 	if cfg.Environment != EnvironmentDev {
 		t.Errorf("Environment = %q, want dev", cfg.Environment)
 	}
+	if cfg.HTTP.Address != "0.0.0.0:8080" {
+		t.Errorf("HTTP.Address = %q, want 0.0.0.0:8080", cfg.HTTP.Address)
+	}
 	if cfg.HTTP.ReadHeaderTimeout != 10*time.Second || cfg.HTTP.ReadTimeout != 5*time.Minute {
 		t.Errorf("HTTP timeouts = (%s, %s), want (10s, 5m)", cfg.HTTP.ReadHeaderTimeout, cfg.HTTP.ReadTimeout)
 	}

@@ -18,12 +18,24 @@ Agent 每秒上报零重量、`stable=false`、`deviceOk=false` 及未接入说�
 
 构建：`task agent:printer:build`，产物 `bin/weighbridge-agent-printer`，Linux amd64、无 CGO。目标主机不需要安装 Go；运行时需要 Python 3、Pillow、`/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`（可用环境变量 `WEIGHBRIDGE_PRINT_FONT` 指定其他完整中文字体）。本次目标主机已具备这些依赖，没有执行安装。
 
+### 2026-10-21 后续部署
+
+通过 SSH 别名 `fcc-com-01` 部署到上述 HP 主机（远端主机名 `hp-HP-ProDesk-400-G2-MINI`）。更新了打印 Agent 与本地维护服务二进制；`agent.env`、打印尝试账本和现有维护数据未改动。打印服务使用 systemd 用户级 drop-in 指向 `http://skyrim:8900`，其中 `skyrim` 在目标机解析到本机的 Tailscale 地址。两个服务均已启用且运行，远端二进制 SHA-256 与本机构建一致。
+
+部署核查时 `skyrim:8900/health` 连接超时，本机 Server 未监听该端口，因此 Agent 尚未连入 Server；服务会继续重试。启动本机 Server 并确认目标机可访问其 8900 端口后，再检查 Agent 在线状态。此部署不代表仪表、摄像头或称重能力已接入。
+
+### 2026-10-21 维护改版重新部署
+
+按[维护控制台改版](../requirements/agent-maintenance-revision-delivery.md)重新构建并部署打印 Agent、维护服务及两个用户级 unit。将旧启动参数迁入 `agent.env`：Server 为 `http://skyrim:8900`，保留原连接密钥、Agent／地磅身份、`Aisino-SK820-raw` 队列及 175 mm 校准设置；打印尝试账本、维护密码和记录均保留。旧打印 unit 的固定 Server drop-in 已移除，旧 SSH 隧道已关闭，本次没有使用隧道。
+
+维护服务现在默认监听 `0.0.0.0:18901`，`http://fcc-com-01:18901/` 返回 HTTP 200。打印与维护服务均为 active。部署核查时 `skyrim:8900` 超时，Agent 按 `agent.env` 直连并持续重试；Server 恢复可达后应自动重连。此记录不代表现场防火墙或打印纸面效果已验收。
+
 HP 主机文件：
 
 - 程序：`~/weighbridge-agent/bin/weighbridge-agent-printer`
 - 密钥：`~/weighbridge-agent/agent.env`，权限 600，不纳入仓库
 - 尝试记录：`~/weighbridge-agent/state/`，目录权限 700
-- 用户服务：`~/.config/systemd/user/weighbridge-agent-printer.service`，仓库[模板](../../agent/deploy/weighbridge-agent-printer.service)使用本次测试隧道地址
+- 用户服务：`~/.config/systemd/user/weighbridge-agent-printer.service`，该次部署使用当时的测试隧道参数；当前仓库[模板](../../agent/deploy/weighbridge-agent-printer.service)已改为显式读取 `agent.env`，后续升级须按[迁移说明](agent-local-maintenance.md#从旧启动参数升级)处理旧参数及 drop-in
 
 用户服务通过 `flock` 防止重复启动，已启用 `enabled`；`loginctl show-user hp -p Linger` 为 `yes`。CUPS 保持既有已启动、开机自启配置。
 

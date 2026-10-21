@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>现场 Agent 维护</title>
+<link rel="stylesheet" href="/assets/maintenance.css">
+<script src="/assets/maintenance.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#content">跳到页面内容</a>
+<header class="top">
+<div class="top-inner"><a class="brand" href="#overview"><span class="brand-mark" aria-hidden="true">磅</span><strong>现场 Agent 维护</strong></a><div class="session"><span id="sessionState">只读访问</span><button id="logoutButton" class="hidden" onclick="logout()">退出维护登录</button></div></div>
+<nav aria-label="主菜单" class="navigation"><div class="nav-inner">
+<a href="#overview" data-nav="overview">总览</a><a href="#printing" data-nav="printing">打印与队列</a><a href="#devices" data-nav="devices">设备</a><a href="#config" data-nav="config">配置</a><a href="#records" data-nav="records">记录</a>
+</div></nav>
+</header>
+<main class="wrap" id="content">
+<div class="page-header"><div><h1 id="pageTitle">运行总览</h1><p id="pageDescription" class="lead">查看现场服务状态，定位连接与打印异常。</p></div><button onclick="refreshPage()">刷新</button></div>
+<p id="operationMessage" class="status-message" role="status" aria-live="polite"></p>
+<section id="auth" class="card auth-card" aria-labelledby="authTitle"><div><h2 id="authTitle">维护登录</h2><p class="muted">状态摘要可直接查看。配置、完整日志及维护操作需要本地维护密码。</p></div><form onsubmit="event.preventDefault();login()"><label for="password">本地维护密码</label><div class="inline"><input id="password" type="password" autocomplete="current-password" required><button class="primary" type="submit">验证并登录</button></div><p id="msg" class="bad" role="alert"></p></form></section>
+<section data-page="overview">
+<div id="stats" class="stats" aria-live="polite">读取中…</div>
+<div class="card"><div class="section-head"><h2>现场诊断</h2><span id="checked" class="muted"></span></div><p id="error" class="bad" role="alert"></p><p id="statusJobs">正在读取未结束作业…</p><p class="muted">CUPS 作业完成不代表纸面合格。仪表及摄像头尚未接入。</p><div class="actions"><a class="button" href="#printing">查看打印与队列</a><a class="button" href="#config">检查连接配置</a></div></div>
+<div class="notice">本地维护在云端断连时仍可使用；正式称重确认、单据及补打通过业务系统办理。</div>
+</section>
+<section data-page="devices" hidden>
+<div class="device-grid"><article class="card"><div class="section-head"><h2>称重仪表</h2><span class="badge">未接入</span></div><p>D12 仪表采集驱动尚未实现。</p><div class="preview-empty"><strong>暂无重量预览</strong><span>等待仪表驱动接入</span></div><p class="muted">串口参数、实时重量与稳定状态预览将在驱动接入后提供。</p></article><article class="card"><div class="section-head"><h2>摄像头</h2><span class="badge">未接入</span></div><p>摄像头连接及 RTSP 驱动尚未实现。</p><div class="preview-empty"><strong>暂无视频预览</strong><span>等待摄像头驱动接入</span></div><p class="muted">摄像头地址、连接参数与实时视频预览将在驱动接入后提供。</p></article></div>
+</section>
+<div id="private" class="hidden">
+<section data-page="printing" hidden>
+<div class="card"><div class="section-head"><h2>服务</h2><span class="muted">操作后重新检查实际状态</span></div><div id="services" class="table-wrap">正在读取服务…</div></div>
+<div class="card"><div class="section-head"><h2>本机打印队列</h2><span id="queueCount" class="muted"></span></div><div id="queues" class="table-wrap">正在读取队列…</div></div>
+<div class="card"><div class="section-head"><h2>未结束作业</h2><button onclick="loadJobs()">查看未结束作业</button></div><div class="toolbar"><label class="filter-label" for="jobQueue">所属队列<select id="jobQueue" onchange="renderJobs()"><option value="">全部队列</option></select></label><span id="jobCount" class="muted"></span><button id="cancelJobsButton" class="danger" onclick="cancelSelected()" disabled>取消选中作业</button></div><div id="jobs" class="table-wrap">进入页面后自动读取作业。</div><p class="muted">取消作业不代表此前未出纸，纸面结果仍需现场核实。</p></div>
+<div class="card"><div class="section-head"><h2>校准测试打印</h2><button id="testPrintButton" class="primary" onclick="testPrint()">打印一份校准样张</button></div><p id="calibrationSummary">使用已应用的打印校准参数。</p><p class="muted">每次一份固定测试样张，不改变业务单据和打印次数。</p></div>
+</section>
+<section data-page="config" hidden>
+<div class="card"><div class="section-head"><h2>连接与打印配置</h2><span class="badge">保存后需应用</span></div><p id="saved" class="notice"></p><form id="configForm" onsubmit="event.preventDefault();save()"><div id="form"></div><div class="form-actions"><button class="primary" type="submit">保存草稿</button><button type="button" onclick="apply()">应用配置</button><button type="button" id="restoreConfig" onclick="restore()">恢复上一份</button><span id="draftState" class="muted"></span></div></form></div>
+<div class="card"><h2>已应用配置与待应用差异</h2><p id="activeConfig" class="muted"></p><p id="runtimeConfig" class="notice"></p><div id="configDiff" class="table-wrap"></div></div>
+<div class="card"><h2>维护访问地址</h2><p id="listenerSummary"></p><p class="muted">监听地址与可选 TLS 通过维护服务启动参数设置。调整并重启维护服务后，请用新的访问地址重新打开页面。</p></div>
+</section>
+<section data-page="records" hidden>
+<div class="card"><h2>维护记录</h2><form class="filter-form" onsubmit="event.preventDefault();loadAudit(0)"><div><label for="afrom">开始日期</label><input id="afrom" type="date"></div><div><label for="ato">结束日期</label><input id="ato" type="date"></div><div><label for="atype">操作类型</label><input id="atype" placeholder="例如：取消打印作业"></div><div><label for="ares">结果包含</label><input id="ares" placeholder="例如：成功"></div><button class="primary" type="submit">查询记录</button></form><div id="audit" class="table-wrap"></div><div class="pagination"><p id="auditCount" class="muted"></p><div><button id="auditPrev" onclick="loadAudit(Math.max(0,auditOffset-100))">上一页</button><button id="auditNext" onclick="loadAudit(auditOffset+100)">下一页</button></div></div><p class="muted">记录保存在本机，不提供导出；维护密码及连接密钥已脱敏。</p></div>
+<div class="card"><div class="section-head"><h2>运行日志</h2><button onclick="loadLogs()">读取最近 200 行</button></div><pre id="logs">尚未读取运行日志。</pre></div>
+</section>
+</div>
+</main>
+<footer class="footer">现场维护服务独立运行，云端断连仍可排障。</footer>
+</body>
+</html>

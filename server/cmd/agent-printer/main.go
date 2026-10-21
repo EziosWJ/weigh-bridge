@@ -4,12 +4,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -21,21 +23,27 @@ import (
 )
 
 func main() {
-	server := flag.String("server", "http://127.0.0.1:18900", "Server URL")
-	id := flag.String("agent-id", "scale-agent-1", "Agent identity")
-	scale := flag.Int64("scale-id", 1, "Scale identity")
-	queue := flag.String("queue", "Aisino-SK820-raw", "CUPS queue")
-	state := flag.String("state-dir", "./state", "Durable attempt directory")
-	flag.Parse()
-	key := os.Getenv("APP_WEIGHING__AGENT_KEY")
-	if key == "" || *scale < 1 {
-		slog.Error("Agent key and valid scale required")
+	cfg, state, err := printerOptions(os.Args[1:], os.Getenv)
+	if errors.Is(err, flag.ErrHelp) {
+		return
+	}
+	if err != nil {
+		slog.Error("invalid printer configuration", "error", err)
+		os.Exit(1)
+	}
+	digest := agentprinter.ConfigDigest(cfg)
+	identityDir, identityErr := agentprinter.IdentityDirectory(state, cfg.ServerURL, cfg.AgentID, cfg.ScaleID)
+	if identityErr != nil {
+		slog.Error("attempt identity initialization failed", "error", identityErr)
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	for ctx.Err() == nil {
-		if err := run(ctx, *server, *id, key, *scale, *queue, *state); err != nil {
+		statusPath := filepath.Join(filepath.Dir(state), "maintenance-status.json")
+		pausePath := filepath.Join(filepath.Dir(state), "maintenance.pause")
+		if err := run(ctx, cfg, identityDir, statusPath, pausePath); err != nil {
+			writeAgentStatus(statusPath, false, digest)
 			slog.Warn("connection ended", "error", err)
 		}
 		select {
@@ -45,7 +53,9 @@ func main() {
 		}
 	}
 }
-func run(ctx context.Context, server, id, key string, scale int64, queue, state string) error {
+func run(ctx context.Context, cfg agentprinter.Config, state, statusPath, pausePath string) error {
+	server, id, key, scale, queue := cfg.ServerURL, cfg.AgentID, cfg.AgentKey, cfg.ScaleID, cfg.Queue
+	digest := agentprinter.ConfigDigest(cfg)
 	u, err := url.Parse(server)
 	if err != nil {
 		return err
@@ -59,20 +69,22 @@ func run(ctx context.Context, server, id, key string, scale int64, queue, state 
 		return fmt.Errorf("expected HTTP(S) Server URL")
 	}
 	u.Path = strings.TrimSuffix(u.Path, "/") + "/api/agent/ws"
-	cfg, err := websocket.NewConfig(u.String(), server)
+	wsConfig, err := websocket.NewConfig(u.String(), server)
 	if err != nil {
 		return err
 	}
-	cfg.Header.Set("Authorization", "Bearer "+key)
-	cfg.Header.Set("X-Agent-ID", id)
-	cfg.Header.Set("X-Scale-ID", strconv.FormatInt(scale, 10))
+	wsConfig.Header.Set("Authorization", "Bearer "+key)
+	wsConfig.Header.Set("X-Agent-ID", id)
+	wsConfig.Header.Set("X-Scale-ID", strconv.FormatInt(scale, 10))
 	dial, cancel := context.WithTimeout(ctx, 5*time.Second)
-	conn, err := cfg.DialContext(dial)
+	conn, err := wsConfig.DialContext(dial)
 	cancel()
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	writeAgentStatus(statusPath, true, digest)
+	defer writeAgentStatus(statusPath, false, digest)
 	conn.MaxPayloadBytes = 128 << 10
 	done := make(chan struct{})
 	defer close(done)
@@ -117,6 +129,7 @@ func run(ctx context.Context, server, id, key string, scale int64, queue, state 
 		case err := <-readErr:
 			return err
 		case <-ticker.C:
+			writeAgentStatus(statusPath, true, digest)
 			if err := send("device.state", p.DeviceState{Unit: "t", DeviceOK: false, Error: "仪表和摄像头未接入；仅打印可用"}); err != nil {
 				return err
 			}
@@ -136,7 +149,20 @@ func run(ctx context.Context, server, id, key string, scale int64, queue, state 
 				slog.Error("print identity mismatch")
 				continue
 			}
+			for {
+				if _, e := os.Stat(pausePath); os.IsNotExist(e) {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
 			jobCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			if req.Ticket.PrintSheet != nil {
+				req.Ticket.PrintSheet.Calibration = agentprinter.Calibration{WidthMM: cfg.PrintWidthMM, OffsetXMM: cfg.OffsetXMM, OffsetYMM: cfg.OffsetYMM, FormLengthMM: cfg.FormLengthMM}
+			}
 			data, err := agentprinter.Render(jobCtx, req.Ticket.PrintSheet)
 			job := ""
 			if err == nil {
@@ -147,5 +173,17 @@ func run(ctx context.Context, server, id, key string, scale int64, queue, state 
 			// CUPS submission does not prove physical output. Leave the Server attempt
 			// unknown for the existing operator verification workflow; never auto-reprint.
 		}
+	}
+}
+
+func writeAgentStatus(path string, connected bool, digest string) {
+	b, _ := json.Marshal(struct {
+		At           time.Time `json:"at"`
+		Connected    bool      `json:"connected"`
+		ConfigDigest string    `json:"configDigest"`
+	}{time.Now(), connected, digest})
+	tmp := path + ".tmp"
+	if os.WriteFile(tmp, b, 0600) == nil {
+		_ = os.Rename(tmp, path)
 	}
 }

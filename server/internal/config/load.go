@@ -142,7 +142,7 @@ func defaultValues() map[string]interface{} {
 	return map[string]interface{}{
 		"env":                                    EnvironmentDev,
 		"service.name":                           "weighbridge-server",
-		"http.address":                           ":8080",
+		"http.address":                           "0.0.0.0:8080",
 		"http.trusted_proxies":                   []string{},
 		"http.read_header_timeout":               "10s",
 		"http.read_timeout":                      "5m",

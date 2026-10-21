@@ -67,3 +67,41 @@ func TestSubmitDoesNotRepeatAcrossCallsOrFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestIdentityDirectoryBindsLegacyAttemptsAndIsolatesSwitches(t *testing.T) {
+	root := t.TempDir()
+	legacy := filepath.Join(root, "attempt-7.json")
+	if err := os.WriteFile(legacy, []byte("reserved"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	first, err := IdentityDirectory(root, "http://server.example/", "agent-a", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != root {
+		t.Fatalf("legacy attempts not bound to first identity: %s", first)
+	}
+	same, err := IdentityDirectory(root, "http://server.example", "agent-a", 1)
+	if err != nil || same != root {
+		t.Fatalf("equivalent URL split identity: %s %v", same, err)
+	}
+	other, err := IdentityDirectory(root, "https://server.example", "agent-a", 1)
+	if err != nil || other == root {
+		t.Fatalf("different server not isolated: %s %v", other, err)
+	}
+	back, err := IdentityDirectory(root, "http://server.example", "agent-a", 1)
+	if err != nil || back != root {
+		t.Fatalf("switch back lost original ledger: %s %v", back, err)
+	}
+	otherScale, err := IdentityDirectory(root, "http://server.example", "agent-a", 2)
+	if err != nil || otherScale == root {
+		t.Fatalf("scale identity not isolated: %s %v", otherScale, err)
+	}
+	equivalent, err := IdentityDirectory(root, "http://SERVER.example:80/", "agent-a", 1)
+	if err != nil || equivalent != root {
+		t.Fatalf("URL spelling bypassed legacy ledger: %s %v", equivalent, err)
+	}
+	if _, err := IdentityDirectory(root, "http://server.example/?new=1", "agent-a", 1); err == nil {
+		t.Fatal("query parameters created a new print identity")
+	}
+}

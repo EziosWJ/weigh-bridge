@@ -2,6 +2,8 @@
 
 | 阶段或材料 | 状态 | 入口 |
 | --- | --- | --- |
+| Agent 本地维护现场反馈改版 | 2026-10-21 授权实施，代码及受控验证完成；真实工控机升级、CUPS 和实物验收待完成 | [改版需求](agent-maintenance-revision-spec.md)、[改版交付记录](agent-maintenance-revision-delivery.md)、[ADR 0017](../adr/0017-agent-maintenance-config-and-lan.md) |
+| Agent 本地打印维护 | 2026-10-20 实现、review 与受控验证完成；工控机服务／CUPS 授权／现场 TLS／纸面效果待现场验收 | [首期需求与验收](agent-maintenance-spec.md)、[交付记录](agent-maintenance-delivery.md)、[讨论记录](agent-maintenance-discovery.md)、[ADR 0016](../adr/0016-agent-local-maintenance.md) |
 | 单据查看与五联针打 | 2026-10-19 已确认；实现与验证见交付记录，真实针打待现场验收 | [需求](ticket-view-print-spec.md)、[交付记录](ticket-view-print-delivery.md) |
 | Phase 1：工程初始化 | 已验收，保留脚手架模块、依赖与 migration 历史 | [交付与验收记录](phase-1-delivery.md) |
 | 业务一期需求访谈 | 当前界面阶段范围已确认，后续现场事项仍待核实 | [访谈结论](business-v1-discovery.md) |

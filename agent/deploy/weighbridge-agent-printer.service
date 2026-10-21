@@ -6,9 +6,10 @@ After=network-online.target
 Type=simple
 WorkingDirectory=%h/weighbridge-agent
 EnvironmentFile=%h/weighbridge-agent/agent.env
-ExecStart=/usr/bin/flock -n %h/weighbridge-agent/agent.lock %h/weighbridge-agent/bin/weighbridge-agent-printer --server http://127.0.0.1:18900 --state-dir %h/weighbridge-agent/state
+ExecStart=/usr/bin/flock -n %h/weighbridge-agent/agent.lock %h/weighbridge-agent/bin/weighbridge-agent-printer --env-file %h/weighbridge-agent/agent.env --state-dir %h/weighbridge-agent/state
 Restart=on-failure
 RestartSec=3
+TimeoutStopSec=5
 UMask=0077
 
 [Install]

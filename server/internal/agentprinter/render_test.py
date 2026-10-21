@@ -1,4 +1,5 @@
 import unittest
+import hashlib
 import render
 
 
@@ -12,6 +13,41 @@ def sheet():
 
 
 class TableTest(unittest.TestCase):
+    def test_confirmed_defaults_preserve_raster_and_escp(self):
+        s = sheet()
+        im = render.render_image(s)
+        self.assertEqual(im.size, (1240, 600))
+        self.assertEqual(hashlib.sha256(im.tobytes()).hexdigest(), '318a40b77b57e937dbdafae360772f45d1e388eaf72e7dfa26099a5be8a16a20')
+        self.assertEqual(hashlib.sha256(render.escp(im, s)).hexdigest(), '3bb2586721e2b6541bd5a62a78ddc1a8aead508249a9180b86a7bee08d2a9e6f')
+
+    def test_calibration_changes_output_and_refuses_short_form(self):
+        base = sheet()
+        tuned = sheet()
+        tuned['calibration'] = {'printWidthMm': 170, 'offsetXmm': 4, 'offsetYmm': 3, 'formLengthMm': 110}
+        im = render.render_image(tuned)
+        self.assertEqual(im.width, round(170 * 180 / 25.4) + round(4 * 180 / 25.4))
+        self.assertNotEqual(im.tobytes(), render.render_image(base).tobytes())
+        self.assertNotEqual(render.escp(im, tuned), render.escp(render.render_image(base), base))
+        tuned['calibration']['formLengthMm'] = 50
+        with self.assertRaises(ValueError):
+            render.render_image(tuned)
+
+    def test_offsets_translate_without_squeezing_or_cropping(self):
+        base = render.render_image(sheet())
+        tuned = sheet()
+        tuned['calibration'] = {'printWidthMm': 175, 'offsetXmm': 5,
+                                'offsetYmm': 3, 'formLengthMm': 110}
+        im = render.render_image(tuned)
+        dx, dy = round(5 * 180 / 25.4), round(3 * 180 / 25.4)
+        self.assertEqual(im.size, (base.width + dx, base.height + dy))
+        self.assertEqual(im.crop((dx, dy, dx + base.width, dy + base.height)).tobytes(), base.tobytes())
+        for invalid in ({'offsetXmm': -1}, {'offsetYmm': -1},
+                        {'printWidthMm': 210, 'offsetXmm': 1},
+                        {'offsetYmm': 1, 'formLengthMm': 86},
+                        {'offsetYmm': 30, 'formLengthMm': 99}):
+            tuned['calibration'] = invalid
+            with self.assertRaises(ValueError):
+                render.render_image(tuned)
     def test_printed_width_reserves_paper_margins(self):
         im = render.render_image(sheet())
         self.assertLessEqual(im.width / 180 * 25.4, 175, "printed table exceeds safe 175mm width")
@@ -34,7 +70,7 @@ class TableTest(unittest.TestCase):
 
     def test_escp_graphics_match_pixels(self):
         im = render.render_image(sheet())
-        data = render.escp(im)
+        data = render.escp(im, {})
         offset = data.index(b'\x1b*')
         for y in range(0, im.height, 24):
             for x in range(0, im.width, 128):

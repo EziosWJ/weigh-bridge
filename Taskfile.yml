@@ -87,7 +87,7 @@ tasks:
       - npm run dev
 
   agent:mock:
-    desc: Start the standalone Agent mock web console (127.0.0.1:8090)
+    desc: Start the standalone Agent mock web console (0.0.0.0:8090)
     dir: server
     cmds:
       - go run ./cmd/agent-mock {{.CLI_ARGS}}
@@ -107,6 +107,20 @@ tasks:
       GOARCH: amd64
     cmds:
       - go build -trimpath -o ../bin/weighbridge-agent-printer ./cmd/agent-printer
+
+  agent:maintenance:build:
+    desc: Build the offline local Agent printer maintenance service
+    dir: server
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-agent-maintenance ./cmd/agent-maintenance
+
+  agent:maintenance:smoke:
+    desc: Verify local maintenance in Chromium with isolated fake CUPS/systemd commands
+    deps:
+      - agent:maintenance:build
+      - agent:printer:build
+    cmds:
+      - node scripts/check-agent-maintenance.mjs
 
   host:collector:
     desc: Start the Linux host resource collector; pass flags through CLI_ARGS

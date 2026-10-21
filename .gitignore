@@ -1,3 +1,11 @@
 .task/
 .data/
 bin/
+
+# Local Agent credentials, runtime state and Python test cache.
+maintenance/
+agent.env
+bootstrap-password.txt
+maintenance.json
+maintenance.jsonl
+__pycache__/
