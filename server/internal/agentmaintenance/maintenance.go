@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
+	platformhttp "github.com/EziosWJ/weighbridge/server/internal/platform/http"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -36,6 +37,11 @@ type Result struct {
 	Err    error
 }
 type Runner interface{ Run(args []string) Result }
+
+// BusinessConfigValidator binds business maintenance operations to the local
+// site's immutable device identity. The legacy standalone maintenance handler
+// intentionally does not use this callback.
+type BusinessConfigValidator func(context.Context, Config) error
 
 // ExecRunner permits only commands selected by the service; request data never supplies executable names.
 type ExecRunner struct{ Timeout time.Duration }
@@ -67,6 +73,7 @@ func (r ExecRunner) Run(args []string) Result {
 
 type Audit struct {
 	At      time.Time `json:"at"`
+	ActorID int64     `json:"actorId,omitempty"`
 	Source  string    `json:"source"`
 	Session string    `json:"session"`
 	Action  string    `json:"action"`
@@ -83,19 +90,43 @@ type Job struct {
 	State string `json:"state"`
 }
 type Service struct {
-	dir             string
-	runner          Runner
-	mu              sync.Mutex
-	opMu            sync.Mutex
-	sessions        map[string]time.Time
-	draft           Config
-	active          Config
-	previous        Config
-	previews        map[string][]Job
-	unknownPreviews map[string]bool
-	password        string
-	page            []byte
-	startupError    string
+	dir                     string
+	runner                  Runner
+	mu                      sync.Mutex
+	opMu                    sync.Mutex
+	sessions                map[string]time.Time
+	draft                   Config
+	active                  Config
+	previous                Config
+	previews                map[string][]Job
+	unknownPreviews         map[string]bool
+	password                string
+	page                    []byte
+	startupError            string
+	businessConfigValidator BusinessConfigValidator
+}
+
+func (s *Service) SetBusinessConfigValidator(v BusinessConfigValidator) {
+	s.mu.Lock()
+	s.businessConfigValidator = v
+	s.mu.Unlock()
+}
+
+func (s *Service) validateBusinessConfig(r *http.Request, cfg Config) error {
+	if !isBusinessRequest(r) {
+		return nil
+	}
+	s.mu.Lock()
+	v := s.businessConfigValidator
+	s.mu.Unlock()
+	if v == nil {
+		return errors.New("本站维护身份校验未配置，无法执行此操作")
+	}
+	return v(r.Context(), cfg)
+}
+
+func isBusinessRequest(r *http.Request) bool {
+	return r != nil && r.Context().Value(businessRequestKey{}) == true
 }
 
 func Open(dir string, runner Runner) (*Service, error) {
@@ -211,7 +242,8 @@ func (s *Service) audit(r *http.Request, action, target string, before, after an
 		token := sha256.Sum256([]byte(cookie.Value))
 		session = hex.EncodeToString(token[:8])
 	}
-	row := Audit{At: time.Now().UTC(), Source: source, Session: session, Action: action, Target: target, Before: redact(before), After: redact(after), Result: s.redactLog(status)}
+	actorID, _ := platformhttp.UserIDFromContext(r.Context())
+	row := Audit{At: time.Now().UTC(), ActorID: actorID, Source: source, Session: session, Action: action, Target: target, Before: redact(before), After: redact(after), Result: s.redactLog(status)}
 	if text, ok := row.After.(string); ok {
 		row.After = s.redactLog(text)
 	}
@@ -242,7 +274,7 @@ func redact(v any) any {
 	b, _ := json.Marshal(v)
 	var m map[string]any
 	_ = json.Unmarshal(b, &m)
-	for _, k := range []string{"agentKey", "password", "passwordHash"} {
+	for _, k := range []string{"agentKey", "cameraFrontUrl", "cameraRearUrl", "plateRecognitionUrl", "password", "passwordHash"} {
 		if x, ok := m[k]; ok && x != "" {
 			m[k] = "••••••"
 		}
@@ -327,6 +359,9 @@ func (s *Service) authenticated(r *http.Request) bool {
 	return ok && time.Now().Before(expiry)
 }
 func (s *Service) require(w http.ResponseWriter, r *http.Request) bool {
+	if r.Context().Value(businessRequestKey{}) == true {
+		return true
+	}
 	if !s.authenticated(r) {
 		http.Error(w, "需要本地维护密码", http.StatusUnauthorized)
 		return false
@@ -427,7 +462,15 @@ func (s *Service) status(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	scaleView := readScaleView(filepath.Join(s.dir, "scale-status.json"), now, agentState == "运行中")
-	s.json(w, map[string]any{"checkedAt": now.Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil, "scale": scaleView})
+	cameraConfigured := cfg.CameraFrontURL != "" && cfg.CameraRearURL != ""
+	cameraState := "未配置"
+	if cameraConfigured && agentState == "运行中" {
+		cameraState = "抓拍已配置；连接状态在称重采集时确认"
+	} else if cameraConfigured {
+		cameraState = "已配置；Agent 未运行"
+	}
+	camera := map[string]any{"frontConfigured": cfg.CameraFrontURL != "", "rearConfigured": cfg.CameraRearURL != "", "recognitionConfigured": cfg.PlateRecognitionURL != "", "captureConfigured": cameraConfigured, "state": cameraState}
+	s.json(w, map[string]any{"checkedAt": now.Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil, "scale": scaleView, "camera": camera})
 }
 func cloudStatus(path string) string {
 	b, e := os.ReadFile(path)
@@ -533,7 +576,13 @@ func (s *Service) configAPI(w http.ResponseWriter, r *http.Request) {
 		if !environmentKnown {
 			runtimeState = "未知／尚未载入有效的 agent.env"
 		}
-		s.json(w, map[string]any{"config": c, "active": active, "hasPrevious": hasPrevious, "hasAgentKey": hasKey, "hasActiveAgentKey": hasActiveKey, "keyChanged": keyChanged, "saved": saved, "environmentKnown": environmentKnown, "environmentError": errorString(envErr), "runtimeState": runtimeState})
+		hasCameraFrontURL := c.CameraFrontURL != ""
+		hasCameraRearURL := c.CameraRearURL != ""
+		hasPlateRecognitionURL := c.PlateRecognitionURL != ""
+		cameraConfigChanged := c.CameraFrontURL != active.CameraFrontURL || c.CameraRearURL != active.CameraRearURL || c.PlateRecognitionURL != active.PlateRecognitionURL
+		active.CameraFrontURL, active.CameraRearURL, active.PlateRecognitionURL = "", "", ""
+		c.CameraFrontURL, c.CameraRearURL, c.PlateRecognitionURL = "", "", ""
+		s.json(w, map[string]any{"config": c, "active": active, "hasPrevious": hasPrevious, "hasAgentKey": hasKey, "hasActiveAgentKey": hasActiveKey, "keyChanged": keyChanged, "hasCameraFrontUrl": hasCameraFrontURL, "hasCameraRearUrl": hasCameraRearURL, "hasPlateRecognitionUrl": hasPlateRecognitionURL, "cameraConfigChanged": cameraConfigChanged, "saved": saved, "environmentKnown": environmentKnown, "environmentError": errorString(envErr), "runtimeState": runtimeState})
 		return
 	}
 	if r.Method != "PUT" {
@@ -551,16 +600,31 @@ func (s *Service) configAPI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c = agentprinter.NormalizeConfig(c)
-	if e := validate(c); e != nil {
-		s.fail(w, e)
-		return
-	}
 	s.mu.Lock()
 	before := s.draft
 	if c.AgentKey == "••••••" || c.AgentKey == "" {
 		c.AgentKey = before.AgentKey
 	}
+	if c.CameraFrontURL == "" || c.CameraFrontURL == "••••••" {
+		c.CameraFrontURL = before.CameraFrontURL
+	}
+	if c.CameraRearURL == "" || c.CameraRearURL == "••••••" {
+		c.CameraRearURL = before.CameraRearURL
+	}
+	if c.PlateRecognitionURL == "" || c.PlateRecognitionURL == "••••••" {
+		c.PlateRecognitionURL = before.PlateRecognitionURL
+	}
 	c = agentprinter.NormalizeConfig(c)
+	s.mu.Unlock()
+	if e := validate(c); e != nil {
+		s.fail(w, e)
+		return
+	}
+	if e := s.validateBusinessConfig(r, c); e != nil {
+		s.fail(w, e)
+		return
+	}
+	s.mu.Lock()
 	s.draft = c
 	e := s.persist()
 	if e != nil {
@@ -619,6 +683,10 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := validate(cfg); err != nil {
+			s.fail(w, err)
+			return
+		}
+		if err := s.validateBusinessConfig(r, cfg); err != nil {
 			s.fail(w, err)
 			return
 		}
@@ -748,9 +816,21 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 		s.json(w, map[string]any{"ok": true, "output": s.redactLog(result.Output)})
 		return
 	}
+	if in.Action == "start-agent" || in.Action == "restart-agent" {
+		if err := s.validateBusinessConfig(r, s.activeConfig()); err != nil {
+			s.fail(w, err)
+			return
+		}
+	}
 	switch in.Action {
 	case "start-agent":
 		result = s.runner.Run([]string{"systemctl", "--user", "start", "weighbridge-agent-printer.service"})
+	case "stop-agent":
+		var handled bool
+		result, handled = s.runRecovery(w, r, in.Action, in.PreviewToken, in.Disposition, in.JobIDs)
+		if !handled {
+			return
+		}
 	case "restart-agent":
 		var handled bool
 		result, handled = s.runRecovery(w, r, in.Action, in.PreviewToken, in.Disposition, in.JobIDs)
@@ -801,6 +881,8 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 		switch in.Action {
 		case "start-agent", "restart-agent":
 			result.Err = s.verifyAgent()
+		case "stop-agent":
+			result.Err = s.verifyAgentStopped()
 		case "restart-cups":
 			result.Err = s.verifyCUPS()
 		case "enable-queue":
@@ -844,6 +926,13 @@ func (s *Service) verifyAgent() error {
 	r := s.runner.Run([]string{"systemctl", "--user", "is-active", "weighbridge-agent-printer.service"})
 	if r.Err != nil || strings.TrimSpace(r.Output) != "active" {
 		return fmt.Errorf("打印 Agent 启动后未报告 active：%s", redactText(strings.TrimSpace(r.Output)))
+	}
+	return nil
+}
+func (s *Service) verifyAgentStopped() error {
+	r := s.runner.Run([]string{"systemctl", "--user", "is-active", "weighbridge-agent-printer.service"})
+	if strings.TrimSpace(r.Output) != "inactive" {
+		return fmt.Errorf("打印 Agent 停止后未确认 inactive：%s", redactText(strings.TrimSpace(r.Output)))
 	}
 	return nil
 }
@@ -1047,6 +1136,7 @@ func (s *Service) redactLog(v string) string {
 	activeKey := s.active.AgentKey
 	draftKey := s.draft.AgentKey
 	previousKey := s.previous.AgentKey
+	cameraURLs := []string{s.active.CameraFrontURL, s.active.CameraRearURL, s.active.PlateRecognitionURL, s.draft.CameraFrontURL, s.draft.CameraRearURL, s.draft.PlateRecognitionURL, s.previous.CameraFrontURL, s.previous.CameraRearURL, s.previous.PlateRecognitionURL}
 	s.mu.Unlock()
 	if activeKey != "" {
 		v = strings.ReplaceAll(v, activeKey, "[连接密钥已脱敏]")
@@ -1056,6 +1146,11 @@ func (s *Service) redactLog(v string) string {
 	}
 	if previousKey != "" {
 		v = strings.ReplaceAll(v, previousKey, "[连接密钥已脱敏]")
+	}
+	for _, value := range cameraURLs {
+		if value != "" {
+			v = strings.ReplaceAll(v, value, "[设备地址已脱敏]")
+		}
 	}
 	return redactText(v)
 }
@@ -1149,6 +1244,7 @@ func BuildAgentEnvironment(dir string, c Config) error {
 	data := fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\nWEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.AgentKey), strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
 	data += fmt.Sprintf("WEIGHBRIDGE_SITE_ID=%d\nWEIGHBRIDGE_SITE_CODE=%s\nWEIGHBRIDGE_SITE_NAME=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_SCALE_NAME=%s\n", c.SiteID, strconv.Quote(c.SiteCode), strconv.Quote(c.SiteName), strconv.Quote(c.ScaleCode), strconv.Quote(c.ScaleName))
 	data += fmt.Sprintf("WEIGHBRIDGE_SERIAL_ENABLED=%t\nWEIGHBRIDGE_SERIAL_PORT=%s\nWEIGHBRIDGE_SERIAL_BAUD=%d\nWEIGHBRIDGE_SERIAL_PROTOCOL=%s\nWEIGHBRIDGE_SERIAL_WEIGHT_UNIT=%s\nWEIGHBRIDGE_SERIAL_STALE_MS=%d\n", c.SerialEnabled, strconv.Quote(c.SerialPort), c.SerialBaud, strconv.Quote(c.SerialProtocol), strconv.Quote(c.SerialWeightUnit), c.SerialStaleMS)
+	data += fmt.Sprintf("WEIGHBRIDGE_CAMERA_FRONT_URL=%s\nWEIGHBRIDGE_CAMERA_REAR_URL=%s\nWEIGHBRIDGE_PLATE_RECOGNITION_URL=%s\nWEIGHBRIDGE_CAMERA_TIMEOUT_MS=%d\n", strconv.Quote(c.CameraFrontURL), strconv.Quote(c.CameraRearURL), strconv.Quote(c.PlateRecognitionURL), c.CameraTimeoutMS)
 	return writePrivate(filepath.Join(dir, "agent.env"), []byte(data))
 }
 func PortIsLoopback(addr string) bool {

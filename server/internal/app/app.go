@@ -8,6 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/EziosWJ/weighbridge/server/internal/agentmaintenance"
+	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/dept"
@@ -29,18 +31,21 @@ import (
 // Core management services are required; notification routes are enabled when
 // the optional Notification service is supplied.
 type Dependencies struct {
-	Node         *nodesync.Service
-	Auth         *auth.Service
-	RBAC         *rbac.Service
-	Department   *dept.Service
-	User         *usermgmt.Service
-	Dictionary   *dictionary.Service
-	SysConfig    *sysconfig.Service
-	File         *filemgmt.Service
-	Log          *logmgmt.Service
-	Notification *notification.Service
-	Monitoring   *monitoring.Service
-	Weighing     *weighing.Service
+	Node                         *nodesync.Service
+	Auth                         *auth.Service
+	RBAC                         *rbac.Service
+	Department                   *dept.Service
+	User                         *usermgmt.Service
+	Dictionary                   *dictionary.Service
+	SysConfig                    *sysconfig.Service
+	File                         *filemgmt.Service
+	Log                          *logmgmt.Service
+	Notification                 *notification.Service
+	Monitoring                   *monitoring.Service
+	Maintenance                  *agentmaintenance.Service
+	MaintenanceBusinessValidator agentmaintenance.BusinessConfigValidator
+	AuditRecorder                audit.Recorder
+	Weighing                     *weighing.Service
 }
 
 // Application is the assembled HTTP application and its process logger.
@@ -52,8 +57,16 @@ type Application struct {
 // New assembles the HTTP router. Database readiness is supplied by the caller
 // so that the application layer does not depend on a concrete database driver.
 func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Dependencies) (*Application, error) {
-	if cfg.Node.Role!="" && deps.Node==nil{return nil,fmt.Errorf("node service is required for independent deployment")}
- if err := deps.validate(); err != nil {
+	if cfg.Node.Role == "standalone" && deps.Maintenance != nil {
+		if deps.MaintenanceBusinessValidator == nil {
+			return nil, fmt.Errorf("standalone Agent maintenance requires a local identity validator")
+		}
+		deps.Maintenance.SetBusinessConfigValidator(deps.MaintenanceBusinessValidator)
+	}
+	if cfg.Node.Role != "" && deps.Node == nil {
+		return nil, fmt.Errorf("node service is required for independent deployment")
+	}
+	if err := deps.validate(); err != nil {
 		return nil, err
 	}
 
@@ -93,7 +106,7 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 	}
 	auth.RegisterRoutes(router, authHandler)
 	if deps.Weighing != nil {
-		deps.Weighing.SetNode(cfg.Node,cfg.Weighing.ImageDir)
+		deps.Weighing.SetNode(cfg.Node, cfg.Weighing.ImageDir)
 		if devices := deps.Weighing.Agent(); devices != nil && cfg.Node.Role != "central" {
 			devices.Register(router)
 		}
@@ -153,6 +166,9 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		return nil, fmt.Errorf("create log handler: %w", err)
 	}
 	logmgmt.RegisterRoutes(system, logHandler)
+	if deps.Maintenance != nil {
+		deps.Maintenance.RegisterBusinessRoutes(system, deps.Auth, deps.RBAC, deps.AuditRecorder)
+	}
 
 	if deps.Notification != nil {
 		notificationHandler, err := notification.NewHandler(deps.Notification)

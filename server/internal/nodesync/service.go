@@ -62,6 +62,34 @@ func (s *Service) Run(ctx context.Context) {
 		}
 	}
 }
+
+// RefreshInitialized permanently enables a standalone site once local setup has
+// at least two named, active users with permission to confirm weighing.
+func (s *Service) RefreshInitialized(ctx context.Context) (bool, error) {
+	if s.cfg.Role != "standalone" {
+		id, err := loadIdentity(ctx, s.db)
+		return id.Initialized == 1, err
+	}
+	var id Identity
+	if err := s.db.WithContext(ctx).First(&id, 1).Error; err != nil {
+		return false, err
+	}
+	if id.Initialized == 1 {
+		return true, nil
+	}
+	var operators int64
+	err := s.db.WithContext(ctx).Table("sys_user u").Joins("JOIN wb_user_site g ON g.user_id=u.id").Where("g.site_id=? AND g.can_operate=1 AND u.status=1 AND u.deleted=0 AND u.is_builtin=0 AND btrim(u.nickname)<>'' AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id JOIN sys_role_menu rm ON rm.role_id=r.id JOIN sys_menu m ON m.id=rm.menu_id WHERE ur.user_id=u.id AND r.status=1 AND r.deleted=0 AND m.status=1 AND m.deleted=0 AND m.permission_code='weighing:confirm')", s.cfg.SiteID).Distinct("u.id").Count(&operators).Error
+	if err != nil {
+		return false, err
+	}
+	if operators < 2 {
+		return false, nil
+	}
+	if err := s.db.WithContext(ctx).Model(&Identity{}).Where("id=1 AND role='standalone' AND site_id=?", s.cfg.SiteID).Update("initialized", 1).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
 func (s *Service) snapshot(tx *gorm.DB, site int64, central bool) (map[string][]Row, error) {
 	tables := append([]string{}, businessTables...)
 	if central {
@@ -639,13 +667,16 @@ func (s *Service) applyMasters(ctx context.Context, p Packet) error {
 				return e
 			}
 		}
-		// First installation must have two named, authorized shift operators.
-		var operators int64
-		if e := tx.Table("sys_user u").Joins("JOIN wb_user_site g ON g.user_id=u.id").Where("g.site_id=? AND g.can_operate=1 AND u.status=1 AND u.deleted=0 AND u.nickname<>'' AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id JOIN sys_role_menu rm ON rm.role_id=r.id JOIN sys_menu m ON m.id=rm.menu_id WHERE ur.user_id=u.id AND r.status=1 AND r.deleted=0 AND m.status=1 AND m.deleted=0 AND m.permission_code='weighing:confirm')", s.cfg.SiteID).Count(&operators).Error; e != nil {
-			return e
-		}
-		if operators >= 2 {
-			return tx.Model(&Identity{}).Where("id=1").Update("initialized", 1).Error
+		// Legacy site activation remains tied to the central exchange. Standalone
+		// activation is evaluated from local account and RBAC state.
+		if s.cfg.Role == "site" {
+			var operators int64
+			if e := tx.Table("sys_user u").Joins("JOIN wb_user_site g ON g.user_id=u.id").Where("g.site_id=? AND g.can_operate=1 AND u.status=1 AND u.deleted=0 AND u.nickname<>'' AND EXISTS (SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.id=ur.role_id JOIN sys_role_menu rm ON rm.role_id=r.id JOIN sys_menu m ON m.id=rm.menu_id WHERE ur.user_id=u.id AND r.status=1 AND r.deleted=0 AND m.status=1 AND m.deleted=0 AND m.permission_code='weighing:confirm')", s.cfg.SiteID).Distinct("u.id").Count(&operators).Error; e != nil {
+				return e
+			}
+			if operators >= 2 {
+				return tx.Model(&Identity{}).Where("id=1").Update("initialized", 1).Error
+			}
 		}
 		return nil
 	})

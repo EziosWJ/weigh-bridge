@@ -19,6 +19,7 @@ import type { DataTableColumn } from '@/types';
 import { NodeSyncStatus } from './node-sync-status';
 
 const labels:Record<string,string>={pending:'待中心确认',returned:'退回补充',resubmitted:'补充后待确认',approved:'已转正式',linked:'已关联正式主体'};
+const legacyLabels:Record<string,string>={pending:'历史待确认状态',returned:'历史退回状态',resubmitted:'历史再次提交状态',approved:'历史已转正式',linked:'历史已关联正式主体'};
 export function TemporaryPartiesPage(){
  const caps=useWeighingStore(s=>s.capabilities);
  const [rows,setRows]=useState<TemporaryParty[]>([]);
@@ -31,14 +32,15 @@ export function TemporaryPartiesPage(){
  const refresh=useCallback(async()=>{setLoading(true);try{setRows(await nodeApi.temporary());setError('');}catch(e){setError(getErrorMessage(e,'临时主体读取失败'));}finally{setLoading(false);}},[]);
  useEffect(()=>{void refresh();},[refresh]);
  const central=caps?.nodeRole==='central';
- const canCreate=caps?.nodeRole==='site'&&caps.permissionCodes.includes('weighing:temporary:create')&&caps.sites.some(s=>s.canOperate);
+ const standalone=caps?.nodeRole==='standalone';
+ const canCreate=!standalone&&caps?.nodeRole==='site'&&caps.permissionCodes.includes('weighing:temporary:create')&&caps.sites.some(s=>s.canOperate);
  const canReview=central&&caps?.permissionCodes.includes('weighing:master:write');
  const run=async(fn:()=>Promise<void>)=>{setBusy(true);setError('');try{await fn();await refresh();}catch(e){setError(getErrorMessage(e,'操作失败'));}finally{setBusy(false);}};
  const columns:DataTableColumn<TemporaryParty>[]=[
   {title:'临时主体',key:'name',render:(_,r)=><span className="font-medium">{r.name}</span>},
   {title:'来源厂区',dataIndex:'siteId'},
-  {title:'处理状态',key:'state',render:(_,r)=>labels[r.state]??r.state},
-  {title:'中心意见 / 正式档案',key:'reason',render:(_,r)=>r.reason||(r.formalPartyId?`正式主体 ${r.formalPartyId}`:'—')},
+  {title:'处理状态',key:'state',render:(_,r)=>(standalone?legacyLabels:labels)[r.state]??r.state},
+  {title:standalone?'历史处理信息':'中心意见 / 正式档案',key:'reason',render:(_,r)=>r.reason||(r.formalPartyId?`正式主体 ${r.formalPartyId}`:'—')},
   {title:'操作',key:'actions',render:(_,r)=><TableActions>
    {canCreate&&r.state==='returned'&&<Button variant="ghost" disabled={busy} onClick={()=>void run(async()=>{const data=(await weighingApi.parties()).find(p=>p.id===String(r.partyId));if(!data)throw new Error('主体不存在');setEditing({id:r.partyId,version:data.version,name:data.name,nature:data.nature,roles:data.roles,phone:data.phone,address:data.address});})}>补充并提交</Button>}
    {canReview&&['pending','resubmitted'].includes(r.state)&&<Button variant="ghost" disabled={busy} onClick={()=>void run(async()=>{setFormalOptions((await weighingApi.parties()).filter(p=>!rows.some(r=>r.partyId===Number(p.id))));setReview(r);setAction('approve');setReason('');setFormal('');})}>处理</Button>}
@@ -46,11 +48,11 @@ export function TemporaryPartiesPage(){
  ];
  const filtered=rows.filter(r=>r.name.includes(keyword));
  return <>
-  <PageHeader title="临时往来主体" description="同名不会自动归并；中心确认及关联保留来源和历史单据快照。" actions={canCreate&&<Button variant="primary" onClick={()=>setEditing({name:'',nature:'enterprise',roles:['supplier'],phone:'',address:''})}>补录临时主体</Button>}/>
+  <PageHeader title={standalone?'遗留临时主体记录':'临时往来主体'} description={standalone?'保留历史来源、状态和关联快照；本厂新资料请在往来主体中直接建档。':'同名不会自动归并；中心确认及关联保留来源和历史单据快照。'} actions={canCreate&&<Button variant="primary" onClick={()=>setEditing({name:'',nature:'enterprise',roles:['supplier'],phone:'',address:''})}>补录临时主体</Button>}/>
   <NodeSyncStatus/>
   <SearchFilterBar><Input aria-label="查找临时主体" placeholder="主体名称" value={keyword} onChange={e=>{setKeyword(e.target.value);setPage(1);}}/></SearchFilterBar>
   {error&&<p role="alert" className="mb-3 text-error">{error}</p>}
-  <DataTableCard><TableToolbar title="临时主体列表" description="初次待确认仅本厂可选；退回及再次提交后须中心确认才可用于新任务。" actions={<Button onClick={()=>void refresh()}>刷新</Button>}/><DataTable columns={columns} dataSource={filtered.slice((page-1)*10,page*10)} rowKey="partyId" loading={loading} minWidth={760}/><Pagination page={page} pageSize={10} total={filtered.length} onPageChange={setPage}/></DataTableCard>
+  <DataTableCard><TableToolbar title={standalone?'历史主体记录':'临时主体列表'} description={standalone?'历史状态仅供查询，不再触发中心审批或资料下发。':'初次待确认仅本厂可选；退回及再次提交后须中心确认才可用于新任务。'} actions={<Button onClick={()=>void refresh()}>刷新</Button>}/><DataTable columns={columns} dataSource={filtered.slice((page-1)*10,page*10)} rowKey="partyId" loading={loading} minWidth={760}/><Pagination page={page} pageSize={10} total={filtered.length} onPageChange={setPage}/></DataTableCard>
   <FormDialog open={!!editing} title={editing?.id?'补充临时主体':'补录临时主体'} loading={busy} onCancel={()=>setEditing(null)} onSubmit={()=>run(async()=>{if(!editing)return;const previous=editing.id?(await weighingApi.parties()).find(p=>p.id===String(editing.id)):undefined;await nodeApi.saveTemporary(editing.id,{...previous,...editing,enabled:true,contacts:previous?.contacts.map(c=>({...c,id:Number(c.id)}))??[]});setEditing(null);await useWeighingStore.getState().refresh();})}>
    {editing&&<>
     <Field label="主体名称" required><Input required maxLength={100} value={editing.name} onChange={e=>setEditing({...editing,name:e.target.value})}/></Field>

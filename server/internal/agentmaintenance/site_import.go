@@ -49,6 +49,10 @@ func (s *Service) importConnection(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	if err := s.validateBusinessConfig(r, cfg); err != nil {
+		s.fail(w, err)
+		return
+	}
 	if in.Confirm {
 		s.mu.Lock()
 		s.draft = cfg
@@ -63,6 +67,13 @@ func (s *Service) importConnection(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	hasAgentKey := cfg.AgentKey != ""
+	hasCameraFrontURL := cfg.CameraFrontURL != ""
+	hasCameraRearURL := cfg.CameraRearURL != ""
+	hasPlateRecognitionURL := cfg.PlateRecognitionURL != ""
 	cfg.AgentKey = ""
-	s.json(w, map[string]any{"config": cfg, "saved": in.Confirm})
+	cfg.CameraFrontURL, cfg.CameraRearURL, cfg.PlateRecognitionURL = "", "", ""
+	s.json(w, map[string]any{"config": cfg, "saved": in.Confirm, "hasAgentKey": hasAgentKey,
+		"hasCameraFrontUrl": hasCameraFrontURL, "hasCameraRearUrl": hasCameraRearURL,
+		"hasPlateRecognitionUrl": hasPlateRecognitionURL})
 }

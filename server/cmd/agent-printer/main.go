@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/EziosWJ/weighbridge/server/internal/agentcamera"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"github.com/EziosWJ/weighbridge/server/internal/agentscale"
@@ -168,6 +169,8 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 	prints := make(chan agentprinter.Request, 16)
 	go printWorker(ctx, cfg, state, queue, pausePath, prints)
 
+	captureBusy := make(chan struct{}, 1)
+
 	stateTicker := time.NewTicker(500 * time.Millisecond)
 	defer stateTicker.Stop()
 	heartbeatTicker := time.NewTicker(5 * time.Second)
@@ -194,8 +197,20 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 		case m := <-incoming:
 			switch m.Type {
 			case "capture.request":
-				if err := sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), m.RequestID, captureFailure(scale, time.Now()))); err != nil {
-					return err
+				select {
+				case captureBusy <- struct{}{}:
+					go func(requestID string) {
+						defer func() { <-captureBusy }()
+						result := captureEvidence(ctx, cfg, scale)
+						if err := sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), requestID, result)); err != nil {
+							cancelRun(err)
+						}
+					}(m.RequestID)
+				default:
+					result := p.Capture{Success: false, Error: "正在采集，请核实前次请求结果", CapturedAt: time.Now().UTC()}
+					if err := sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), m.RequestID, result)); err != nil {
+						return err
+					}
 				}
 			case "print.request":
 				var req agentprinter.Request
@@ -246,6 +261,54 @@ func captureFailure(scale *agentscale.Monitor, now time.Time) p.Capture {
 		Success: false, Error: reason, DeviceState: currentDeviceState(scale, now),
 		CapturedAt: now.UTC(), Images: []p.Image{},
 	}
+}
+
+// captureEvidence keeps camera acquisition off the WSS event loop. Every new
+// attempt uses fresh images and rechecks the live instrument throughout capture.
+func captureEvidence(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor) p.Capture {
+	if cfg.CameraFrontURL == "" || cfg.CameraRearURL == "" {
+		return captureFailure(scale, time.Now())
+	}
+	initial := currentDeviceState(scale, time.Now())
+	if !initial.DeviceOK || !initial.Stable {
+		return p.Capture{Error: "称重仪表不可用或未稳定", DeviceState: initial, CapturedAt: time.Now().UTC()}
+	}
+	ctx, cancel := context.WithTimeout(parent, 8*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(20 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				state := currentDeviceState(scale, time.Now())
+				if !state.DeviceOK || !state.Stable || state.Weight != initial.Weight {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	images, plate, err := (agentcamera.Client{Config: cfg}).Capture(ctx)
+	now := time.Now().UTC()
+	final := currentDeviceState(scale, now)
+	result := p.Capture{DeviceState: final, CapturedAt: now, Images: []p.Image{}, Plate: plate}
+	if err != nil {
+		result.Error = err.Error()
+		return result
+	}
+	if ctx.Err() != nil || !final.DeviceOK || !final.Stable || final.Weight != initial.Weight {
+		result.Error = "抓拍期间仪表失稳、重量变化或采集超时，请重新采集"
+		return result
+	}
+	result.Success, result.Images = true, images
+	return result
 }
 
 func printWorker(ctx context.Context, cfg agentprinter.Config, state, queue, pausePath string, jobs <-chan agentprinter.Request) {

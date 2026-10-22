@@ -116,7 +116,7 @@ PostgreSQL 集成测试每次运行共用一个临时容器，迁移命令只编
 - 数据库改动及当前交付：运行 `task db:check`，包含本地业务、权限、设备契约、迁移及数据库恢复回归。CI 默认执行同一集成集合。
 - 维护历史中心同步：额外运行 `task backend:integration:legacy-sync`。旧中心／厂区同步测试由 `integration && legacy_sync` 标签单独启用，也可在 GitHub Actions 手动勾选 `legacy_sync` 运行；不作为当前本厂自治的默认门禁。
 
-`TestPostgresLocalBusinessRecovery` 覆盖数据库恢复后单据／称重依据不变、未决业务和打印不自动重放、旧备份不复用后续编号。它使用现有业务 HTTP 测试入口及厂区数据身份分配器，不是独立运行模式的初始化验收；该验收应在独立运行功能合入后补充，不通过设置 `initialized` 或假造中心完成。图片文件和设备打印账本的完整备份恢复也不在此测试范围内。独立浏览器／监控脚本的环境组织不受本次拆分影响。
+`TestPostgresLocalBusinessRecovery` 覆盖数据库恢复后单据／称重依据不变、未决业务和打印不自动重放、旧备份不复用后续编号。它使用现有业务 HTTP 测试入口及厂区数据身份分配器，不是独立运行模式的初始化验收；独立初始化和正式 `standalone` HTTP／权限边界由现有 `standalone_*_test.go` 验证，不通过设置 `initialized` 或假造中心完成。图片文件和设备打印账本的完整备份恢复也不在此测试范围内。独立浏览器／监控脚本的环境组织不受本次拆分影响。
 
 ## 称重业务入口
 

@@ -51,6 +51,10 @@ func (s *Service) runRecovery(w http.ResponseWriter, r *http.Request, action, to
 		if result.Err == nil {
 			result.Err = s.verifyAgent()
 		}
+	} else if action == "stop-agent" {
+		wasRunning = false
+		result = Result{Output: "stopped"}
+		result.Err = s.verifyAgentStopped()
 	} else if action == "restart-cups" {
 		result = s.runner.Run([]string{"systemctl", "restart", "cups.service"})
 		if result.Err == nil {

@@ -9,11 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	_ "github.com/EziosWJ/weighbridge/server/docs"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
+	"github.com/EziosWJ/weighbridge/server/internal/agentmaintenance"
 	"github.com/EziosWJ/weighbridge/server/internal/app"
+	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/dept"
@@ -132,6 +135,15 @@ func main() {
 	if len(initial) == 0 && cfg.Weighing.AgentKey != "" {
 		initial = append(initial, agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey})
 	}
+	if cfg.Node.Role == "standalone" {
+		for _, binding := range initial {
+			site, e := weighRepo.ResourceSite(context.Background(), "scales", binding.ScaleID)
+			if e != nil || site != cfg.Node.SiteID {
+				slog.Error("configured Agent is outside standalone site", "agent", binding.ID)
+				os.Exit(1)
+			}
+		}
+	}
 	if err := weighRepo.ImportAgentBindings(context.Background(), initial); err != nil {
 		slog.Error("import Agent bindings; run migrations first", "error", err)
 		os.Exit(1)
@@ -141,12 +153,22 @@ func main() {
 		slog.Error("load Agent bindings", "error", err)
 		os.Exit(1)
 	}
+	if cfg.Node.Role == "standalone" {
+		local := managed[:0]
+		for _, binding := range managed {
+			site, e := weighRepo.ResourceSite(context.Background(), "scales", binding.ScaleID)
+			if e == nil && site == cfg.Node.SiteID {
+				local = append(local, binding)
+			}
+		}
+		managed = local
+	}
 	agents := agentbridge.NewMultiple(managed)
 	agents.SetResolver(func(ctx context.Context, scale int64) (agentbridge.Config, error) {
 		if cfg.Node.Role == "central" {
 			return agentbridge.Config{}, fmt.Errorf("central has no local Agent")
 		}
-		if cfg.Node.Role == "site" {
+		if cfg.Node.Role == "site" || cfg.Node.Role == "standalone" {
 			site, e := weighRepo.ResourceSite(ctx, "scales", scale)
 			if e != nil || site != cfg.Node.SiteID {
 				return agentbridge.Config{}, fmt.Errorf("Agent outside local site")
@@ -154,19 +176,38 @@ func main() {
 		}
 		return weighRepo.AgentConfig(ctx, scale, cfg.Weighing.ImageDir)
 	})
+	var maintenanceService *agentmaintenance.Service
+	var maintenanceValidator agentmaintenance.BusinessConfigValidator
+	if cfg.Node.Role == "standalone" || cfg.Maintenance.DataDir != "" {
+		maintenanceDir := cfg.Maintenance.DataDir
+		if maintenanceDir == "" {
+			maintenanceDir = filepath.Join(filepath.Dir(cfg.File.StorageRoot), "agent")
+		}
+		maintenanceService, err = agentmaintenance.Open(maintenanceDir, nil)
+		if err != nil {
+			slog.Error("open Agent maintenance service", "error", err)
+			os.Exit(1)
+		}
+		if cfg.Node.Role == "standalone" {
+			maintenanceValidator = newMaintenanceConfigValidator(weighRepo, cfg.Node.SiteID)
+		}
+	}
 	application, err := app.New(*cfg, database, app.Dependencies{
-		Node:         nodeService,
-		Auth:         authService,
-		RBAC:         rbacService,
-		Department:   deptService,
-		User:         userService,
-		Dictionary:   dictionaryService,
-		SysConfig:    configService,
-		File:         fileService,
-		Log:          logService,
-		Notification: notificationService,
-		Monitoring:   monitoringService,
-		Weighing:     weighing.NewService(weighRepo, agents),
+		Node:                         nodeService,
+		Auth:                         authService,
+		RBAC:                         rbacService,
+		Department:                   deptService,
+		User:                         userService,
+		Dictionary:                   dictionaryService,
+		SysConfig:                    configService,
+		File:                         fileService,
+		Log:                          logService,
+		Notification:                 notificationService,
+		Monitoring:                   monitoringService,
+		Maintenance:                  maintenanceService,
+		MaintenanceBusinessValidator: maintenanceValidator,
+		AuditRecorder:                audit.NewRecorder(database.GORM),
+		Weighing:                     weighing.NewService(weighRepo, agents),
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)
@@ -184,7 +225,11 @@ func main() {
 	}
 	defer stopMonitoring()
 	syncDone := make(chan struct{})
-	go func() { defer close(syncDone); nodeService.Run(monitoringContext) }()
+	if cfg.Node.Role == "site" {
+		go func() { defer close(syncDone); nodeService.Run(monitoringContext) }()
+	} else {
+		close(syncDone)
+	}
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,

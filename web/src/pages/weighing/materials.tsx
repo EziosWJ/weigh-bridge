@@ -91,7 +91,7 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
     { title: '操作', key: 'actions', width: 144, nowrap: true, render: (_, r) => <TableActions><Link className="text-primary hover:underline" to={`${base}/${r.id}/edit${suffix}`}>{admin ? '编辑' : '查看'}</Link>{admin && <Button size="sm" variant="ghost" onClick={() => { setError(''); setDeleting(r); }}>删除</Button>}</TableActions> },
   ];
   return <div className="weighing-list-page">
-    <PageHeader title={`${name}资料`} description={parties ? '企业与个人分别建档，可兼具供货商、客户和承运商身份。' : '按可独立称重、查询汇总的规格建档，历史业务保留当时资料。'} actions={<><ReturnLink />{parties&&capabilities?.nodeRole&&<Link className={linkClass} to="/weighing/temporary-parties">临时主体登记与确认</Link>}{admin && <Link className={linkClass} to={`${base}/new${suffix}`}>新增{name}</Link>}</>} />
+    <PageHeader title={`${name}资料`} description={parties ? '企业与个人分别建档，可兼具供货商、客户和承运商身份。' : '按可独立称重、查询汇总的规格建档，历史业务保留当时资料。'} actions={<><ReturnLink />{parties&&capabilities?.nodeRole&&capabilities.nodeRole!=='standalone'&&<Link className={linkClass} to="/weighing/temporary-parties">临时主体登记与确认</Link>}{admin && <Link className={linkClass} to={`${base}/new${suffix}`}>新增{name}</Link>}</>} />
     {!admin && <RoleHint />}
     <SearchFilterBar compact actions={<Button onClick={() => { setKeyword(''); setEnabled(''); setClassification(''); setNature(''); setPage(1); }}>清空筛选</Button>}>
       <Input aria-label="资料搜索" placeholder={parties ? '名称 / 简称 / 编码 / 电话' : '名称 / 编码 / 规格'} value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1); }} />

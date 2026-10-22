@@ -255,6 +255,39 @@ tasks:
       - go test -tags=embedweb ./...
       - go vet -tags=embedweb ./...
 
+  standalone:package:
+    desc: Build a unified Linux amd64 standalone release (pass VERSION=<unique-version>)
+    deps:
+      - frontend:build
+    dir: server
+    env:
+      CGO_ENABLED: '0'
+      GOOS: linux
+      GOARCH: amd64
+    vars:
+      VERSION: '{{.VERSION | default ""}}'
+    cmds:
+      - node ../scripts/prepare-webui.mjs
+      - go build -tags=embedweb -trimpath -o ../bin/weighbridge-server ./cmd/api
+      - go build -trimpath -o ../bin/weighbridge-migrate ./cmd/migrate
+      - go build -trimpath -o ../bin/weighbridge-agent-printer ./cmd/agent-printer
+      - go build -trimpath -o ../bin/weighbridge-standalone-init ./cmd/standalone-init
+      - node ../scripts/package-standalone.mjs '{{.VERSION}}'
+
+  standalone:install:smoke:
+    desc: Verify an unpacked standalone package in temporary directories (pass PACKAGE_DIR=<path>)
+    requires:
+      vars: [PACKAGE_DIR]
+    cmds:
+      - node scripts/check-standalone-install.mjs '{{.PACKAGE_DIR}}'
+
+  standalone:release:smoke:
+    desc: Verify packaged API startup and restart with isolated PostgreSQL (pass PACKAGE_DIR=<path>)
+    requires:
+      vars: [PACKAGE_DIR]
+    cmds:
+      - node scripts/check-standalone-release.mjs '{{.PACKAGE_DIR}}'
+
   test:
     desc: Run the default test suite
     deps:

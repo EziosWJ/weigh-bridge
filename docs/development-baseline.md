@@ -1,6 +1,6 @@
 # 当前开发基线与文档效力
 
-生效日期：2026-10-22。用户已接受本厂自治、三个核心服务和中心暂缓，授权本轮收敛文档。决策见 [ADR 0023](adr/0023-standalone-site-baseline.md)，当前阶段唯一总规格为[本厂自治与三服务部署](requirements/standalone-site-spec.md)。架构目标已确认；代码改造与现场切换尚未完成。
+生效日期：2026-10-22。用户已接受本厂自治、三个核心服务和中心暂缓，并已启动 [Issue #6](https://github.com/EziosWJ/weigh-bridge/issues/6) 代码实施。决策见 [ADR 0023](adr/0023-standalone-site-baseline.md)，当前阶段唯一总规格为[本厂自治与三服务部署](requirements/standalone-site-spec.md)。架构目标已确认；自治软件实现与验证见[交付记录](requirements/standalone-site-delivery.md)，现场切换及真实闭环尚未完成。
 
 ## 开发阅读顺序与冲突处理
 
@@ -15,7 +15,7 @@
 | 主题／材料 | 当前效力 | 保留与替代范围 |
 | --- | --- | --- |
 | [ADR 0024](adr/0024-postgresql-only.md)、[数据库交付](requirements/postgresql-only-delivery.md) | 当前数据库依据，已完成收敛 | 开发、数据库集成测试与生产仅 PostgreSQL；旧 SQLite 要求退役，历史验证事实保留 |
-| [ADR 0023](adr/0023-standalone-site-baseline.md)、[当前规格](requirements/standalone-site-spec.md) | 当前架构与阶段依据 | 本地自治、三服务、维护整合、中心暂缓；代码待调整 |
+| [ADR 0023](adr/0023-standalone-site-baseline.md)、[当前规格](requirements/standalone-site-spec.md) | 当前架构与阶段依据 | 本地自治、三服务、维护整合、中心暂缓；软件交付见 Issue #6 记录 |
 | [ADR 0021](adr/0021-local-weighing-authority-and-central-sync.md)、[中心同步业务规格](requirements/local-first-deployment-spec.md)、[Issue #4 规格](requirements/local-first-deployment-issue-spec.md)、[同步设计](architecture/local-first-sync-design.md) | 部分被替代／中心能力暂缓 | 保留本地业务权威、断互联网可用、编号与快照；替代中心管理权和首次下发；同步与跨厂查询退出本期 |
 | [Issue #4 交付](requirements/local-first-deployment-delivery.md)、[旧部署说明](device/local-first-deployment.md) | 历史实现事实／旧拓扑操作说明 | 软件验证事实保留；旧三实例启用步骤不用于新自治部署 |
 | [ADR 0018](adr/0018-site-business-isolation.md)、[多厂区需求](requirements/multi-site-discovery.md) | 部分被替代 | 集中部署、共享资料与跨厂入口退出本期；厂区隔离、同厂两次称重、权限范围保留 |
@@ -32,7 +32,7 @@
 
 已具备服务端业务闭环、厂区隔离、Agent 协议与 mock、内嵌前端发布、打印与 D12 部分真实接入。Issue #4 中心同步已有软件实现和双数据库／浏览器验证；真实生产未切换。详见[历史与交付索引](history/README.md)。
 
-当前 `site` 配置、初始化与写入权限仍依赖中心，独立维护服务仍存在；摄像头未接入，真实非零称重及连续纸等尚待现场验收。具体改造项与验收以当前规格为准，不把“暂停中心”理解为现有 site 实例关掉中心即可正式上线。
+旧 `site` 配置、初始化与写入权限仍依赖中心，作为历史模式保留。Issue #6 新增显式 `standalone` 模式、本地初始化及统一维护 API，生产包不依赖独立维护服务；通用摄像头抓拍通道已实现，现场设备参数、真实非零称重及连续纸等尚待验收。具体改造项与验收以当前规格为准，不把“暂停中心”理解为现有 site 实例关掉中心即可正式上线。
 
 ## 工作项映射
 
@@ -40,9 +40,9 @@
 | --- | --- |
 | [EziosWJ/weigh-bridge #4](https://github.com/EziosWJ/weigh-bridge/issues/4) | 旧中心＋厂区同步实现来源；本地需求／设计已标效力，不再作为当前启动或验收总依据 |
 | [EziosWJ/weigh-bridge #3](https://github.com/EziosWJ/weigh-bridge/issues/3) | Agent 契约与 mock 实现来源；设备通信细则继续复用，部署与断网规则按 ADR 0023 |
-| 本厂自治改造 | 当前规格定义下一步范围，尚未创建远程工作项；后续工作项必须链接本规格和 ADR 0023 |
+| [EziosWJ/weigh-bridge #6](https://github.com/EziosWJ/weigh-bridge/issues/6) | 当前本厂自治软件实施及 S1..S4 验收来源；软件与现场状态见交付记录 |
 
-本轮未读取或修改远程 Issue 状态，未发布、评论或关闭工作项；表格不宣称远程标签或正文已同步。远程工作项后续更新遵循[工作项约定](agents/issue-tracker.md)，保留源仓库身份和历史事实。
+本次开发已读取 Issue #6；未发布、评论、修改或关闭远程工作项，表格不宣称远程标签或正文已同步。远程工作项后续更新遵循[工作项约定](agents/issue-tracker.md)，保留源仓库身份和历史事实。
 
 ## 后续维护规则
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
+	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	"slices"
 	"time"
 
@@ -23,6 +24,16 @@ type RuntimeOptions struct {
 	TicketTitle string
 }
 
+type maintenanceIdentity struct {
+	SiteID    int64
+	ScaleID   int64
+	SiteCode  string
+	ScaleCode string
+	ServerURL string
+	AgentID   string
+	AgentKey  string
+}
+
 var _ Store = (*Repository)(nil)
 
 func NewRepository(db *gorm.DB, options ...RuntimeOptions) *Repository {
@@ -35,6 +46,34 @@ func NewRepository(db *gorm.DB, options ...RuntimeOptions) *Repository {
 	}
 	return r
 }
+
+// ValidateMaintenanceConfig ensures the local maintenance UI cannot rebind
+// its Agent to another site, scale, server, or credential. Site and scale
+// display names are intentionally mutable and do not form part of identity.
+func (r *Repository) ValidateMaintenanceConfig(ctx context.Context, candidate agentprinter.Config, localSiteID int64) error {
+	if candidate.SiteID != localSiteID {
+		return fmt.Errorf("Agent 配置厂区身份与本机不符")
+	}
+	var identity maintenanceIdentity
+	result := r.db.WithContext(ctx).Table("wb_site s").Select(
+		"s.id AS site_id, s.code AS site_code, s.server_url, sc.id AS scale_id, sc.code AS scale_code, a.agent_id, a.agent_key",
+	).Joins("JOIN wb_scale sc ON sc.site_id=s.id").Joins("JOIN wb_agent_binding a ON a.scale_id=sc.id").Where("s.id = ?", localSiteID).Order("sc.id ASC").Take(&identity)
+	if result.Error != nil {
+		return fmt.Errorf("读取本厂 Agent 身份失败: %w", result.Error)
+	}
+	if !matchesMaintenanceIdentity(candidate, identity) {
+		return fmt.Errorf("Agent 配置不能修改本机厂区、地磅、服务地址或身份密钥")
+	}
+	return nil
+}
+
+func matchesMaintenanceIdentity(candidate agentprinter.Config, identity maintenanceIdentity) bool {
+	return candidate.SiteID == identity.SiteID && candidate.ScaleID == identity.ScaleID &&
+		candidate.SiteCode == identity.SiteCode && candidate.ScaleCode == identity.ScaleCode &&
+		candidate.ServerURL == identity.ServerURL && candidate.AgentID == identity.AgentID &&
+		candidate.AgentKey == identity.AgentKey
+}
+
 func masterFilter(db *gorm.DB, q PageQuery) *gorm.DB {
 	if q.Enabled != nil {
 		db = db.Where("enabled=?", *q.Enabled)
@@ -78,6 +117,11 @@ func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], err
 	}
 	if node.Role == "site" {
 		db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party WHERE site_id<>?)", node.SiteID)
+	}
+	if node.Role == "standalone" {
+		// Legacy centrally-reviewed parties remain available through their historic
+		// records, but are not active local master data after center retirement.
+		db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party)")
 	}
 	if node.Role == "central" {
 		if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok {
@@ -219,7 +263,7 @@ func nextNumber(tx *gorm.DB, kind, prefix string) (string, error) {
 	if err := tx.Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
 		return "", err
 	}
-	if node.Role == "site" && (kind == "task" || kind == "ticket" || kind == "party") {
+	if (node.Role == "site" || node.Role == "standalone") && (kind == "task" || kind == "ticket" || kind == "party") {
 		var site Site
 		if err := tx.First(&site, node.SiteID).Error; err != nil {
 			return "", err
