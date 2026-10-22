@@ -118,15 +118,15 @@ func Open(dir string, runner Runner) (*Service, error) {
 		if json.Unmarshal(b, &v) != nil {
 			return nil, errors.New("invalid maintenance config")
 		}
-		s.draft = v.Draft
-		s.active = v.Active
+		s.draft = agentprinter.NormalizeConfig(v.Draft)
+		s.active = agentprinter.NormalizeConfig(v.Active)
 		if s.draft.AgentID == "" {
-			s.draft = v.Config
+			s.draft = agentprinter.NormalizeConfig(v.Config)
 		}
 		if s.active.AgentID == "" {
-			s.active = v.Saved
+			s.active = agentprinter.NormalizeConfig(v.Saved)
 		}
-		s.previous = v.Previous
+		s.previous = agentprinter.NormalizeConfig(v.Previous)
 		s.password = v.Password
 	} else if !os.IsNotExist(e) {
 		return nil, e
@@ -425,7 +425,9 @@ func (s *Service) status(w http.ResponseWriter, r *http.Request) {
 			queueDetails = append(queueDetails, map[string]string{"name": name, "state": queueState(queues.Output, name)})
 		}
 	}
-	s.json(w, map[string]any{"checkedAt": time.Now().Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil})
+	now := time.Now()
+	scaleView := readScaleView(filepath.Join(s.dir, "scale-status.json"), now, agentState == "运行中")
+	s.json(w, map[string]any{"checkedAt": now.Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil, "scale": scaleView})
 }
 func cloudStatus(path string) string {
 	b, e := os.ReadFile(path)
@@ -558,6 +560,7 @@ func (s *Service) configAPI(w http.ResponseWriter, r *http.Request) {
 	if c.AgentKey == "••••••" || c.AgentKey == "" {
 		c.AgentKey = before.AgentKey
 	}
+	c = agentprinter.NormalizeConfig(c)
 	s.draft = c
 	e := s.persist()
 	if e != nil {
@@ -1145,6 +1148,7 @@ func BuildAgentEnvironment(dir string, c Config) error {
 	}
 	data := fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\nWEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.AgentKey), strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
 	data += fmt.Sprintf("WEIGHBRIDGE_SITE_ID=%d\nWEIGHBRIDGE_SITE_CODE=%s\nWEIGHBRIDGE_SITE_NAME=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_SCALE_NAME=%s\n", c.SiteID, strconv.Quote(c.SiteCode), strconv.Quote(c.SiteName), strconv.Quote(c.ScaleCode), strconv.Quote(c.ScaleName))
+	data += fmt.Sprintf("WEIGHBRIDGE_SERIAL_ENABLED=%t\nWEIGHBRIDGE_SERIAL_PORT=%s\nWEIGHBRIDGE_SERIAL_BAUD=%d\nWEIGHBRIDGE_SERIAL_PROTOCOL=%s\nWEIGHBRIDGE_SERIAL_WEIGHT_UNIT=%s\nWEIGHBRIDGE_SERIAL_STALE_MS=%d\n", c.SerialEnabled, strconv.Quote(c.SerialPort), c.SerialBaud, strconv.Quote(c.SerialProtocol), strconv.Quote(c.SerialWeightUnit), c.SerialStaleMS)
 	return writePrivate(filepath.Join(dir, "agent.env"), []byte(data))
 }
 func PortIsLoopback(addr string) bool {

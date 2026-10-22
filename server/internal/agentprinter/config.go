@@ -30,10 +30,20 @@ type Config struct {
 	OffsetYMM    int     `json:"offsetYmm"`
 	FormLengthMM float64 `json:"formLengthMm"`
 	PrintScale   float64 `json:"printScale"`
+
+	SerialEnabled    bool   `json:"serialEnabled"`
+	SerialPort       string `json:"serialPort"`
+	SerialBaud       int    `json:"serialBaud"`
+	SerialProtocol   string `json:"serialProtocol"`
+	SerialWeightUnit string `json:"serialWeightUnit"`
+	SerialStaleMS    int    `json:"serialStaleMs"`
 }
 
 func Defaults() Config {
-	return Config{ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99, PrintScale: 1}
+	return Config{
+		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99, PrintScale: 1,
+		SerialPort: "/dev/ttyS0", SerialBaud: 9600, SerialProtocol: "keli-d12-tf05", SerialWeightUnit: "t", SerialStaleMS: 1000,
+	}
 }
 
 func ValidateConfig(c Config) error {
@@ -55,6 +65,30 @@ func ValidateConfig(c Config) error {
 	}
 	if err := c.Calibration().Validate(); err != nil {
 		return err
+	}
+	if err := validateSerial(c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSerial(c Config) error {
+	if c.SerialPort == "" || !strings.HasPrefix(c.SerialPort, "/dev/") || strings.Contains(c.SerialPort, "..") || strings.ContainsAny(c.SerialPort, "\r\n\x00") {
+		return errors.New("称重仪表串口路径无效，须为 /dev 下的设备路径")
+	}
+	switch c.SerialBaud {
+	case 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200:
+	default:
+		return errors.New("称重仪表波特率无效")
+	}
+	if c.SerialProtocol != "keli-d12-tf05" {
+		return errors.New("称重仪表协议无效，当前仅支持 keli-d12-tf05")
+	}
+	if c.SerialWeightUnit != "t" && c.SerialWeightUnit != "kg" {
+		return errors.New("称重仪表现场源单位须为 t 或 kg，并按实际仪表核对")
+	}
+	if c.SerialStaleMS < 200 || c.SerialStaleMS >= 3000 {
+		return errors.New("称重仪表陈旧阈值须在 200～2999 ms 之间，并早于 Server 的 3000 ms 门限")
 	}
 	return nil
 }
@@ -127,9 +161,23 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 		}
 	}
 
-	for key, dst := range map[string]*string{"WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName} {
+	for key, dst := range map[string]*string{"WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName, "WEIGHBRIDGE_SERIAL_PORT": &cfg.SerialPort, "WEIGHBRIDGE_SERIAL_PROTOCOL": &cfg.SerialProtocol, "WEIGHBRIDGE_SERIAL_WEIGHT_UNIT": &cfg.SerialWeightUnit} {
 		if value, ok := values[key]; ok {
 			*dst = value
+		}
+	}
+	for key, dst := range map[string]*int{"WEIGHBRIDGE_SERIAL_BAUD": &cfg.SerialBaud, "WEIGHBRIDGE_SERIAL_STALE_MS": &cfg.SerialStaleMS} {
+		if value, ok := values[key]; ok {
+			*dst, err = strconv.Atoi(value)
+			if err != nil {
+				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
+			}
+		}
+	}
+	if value, ok := values["WEIGHBRIDGE_SERIAL_ENABLED"]; ok {
+		cfg.SerialEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return cfg, errors.New("agent.env 参数 WEIGHBRIDGE_SERIAL_ENABLED 无效")
 		}
 	}
 	if value := values["WEIGHBRIDGE_SITE_ID"]; value != "" {
@@ -150,10 +198,28 @@ func ConfigDigest(c Config) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// NormalizeConfig keeps pre-scaling maintenance files equivalent to 100% scale.
+// NormalizeConfig keeps pre-scaling maintenance files equivalent to 100% scale
+// and fills serial fields absent from older drafts. SerialEnabled is not
+// defaulted: an old file means "printing only".
 func NormalizeConfig(c Config) Config {
 	if c.PrintScale == 0 {
 		c.PrintScale = 1
+	}
+	d := Defaults()
+	if c.SerialPort == "" {
+		c.SerialPort = d.SerialPort
+	}
+	if c.SerialBaud == 0 {
+		c.SerialBaud = d.SerialBaud
+	}
+	if c.SerialProtocol == "" {
+		c.SerialProtocol = d.SerialProtocol
+	}
+	if c.SerialWeightUnit == "" {
+		c.SerialWeightUnit = d.SerialWeightUnit
+	}
+	if c.SerialStaleMS == 0 {
+		c.SerialStaleMS = d.SerialStaleMS
 	}
 	return c
 }

@@ -1,6 +1,8 @@
 # 现场 Agent 与开发 mock
 
-现场 Linux Agent 的 D12 仪表、RTSP/HyperLPR3 识别尚未实现。SK-820 最小打印 Agent 已实现并部署，A4 单张纸版面已获现场确认，五联效果及连续走纸仍待验收，见[部署记录](../docs/device/aisino-sk820-agent-test.md)。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
+现场 Linux Agent 已具备 SK-820 打印与柯力 D12 tF=05 重量采集：同一 `agent-printer` 进程共用一个 WSS 连接和地磅身份，串口读取与打印互不阻塞。2026-10-22 已在 `fcc-com-01` 部署并验证稳定零值、串口占用故障及恢复；真实非零带载、面板稳定灯对照、重启后串口权限及五联／连续走纸仍待现场验收。RTSP/HyperLPR3 识别与摄像头尚未实现，收到采集请求会明确失败，不会伪造图片或采集成功。见[交付记录](../docs/requirements/d12-agent-integration-delivery.md)与[打印部署记录](../docs/device/aisino-sk820-agent-test.md)。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
+
+D12 的现场依据、单位差异与验证清单见[RS232 现场实验记录／博客稿](../docs/device/keli-d12-rs232-blog.md)与[Agent 接入开发指导](../docs/device/keli-d12-agent-integration-guide.md)。驱动实现位于 `server/internal/agentscale`。本机 `tF=05` 共 868 帧带载样本验证了累加校验；现场确认数值单位为吨，因此显式配置源单位 `t`，不根据文档 kg 标志再次除以 1000。单位结论仅适用于已核对的现场仪表。
 
 ## 本机启动
 
@@ -37,7 +39,18 @@ Server 将抓拍保存于 `weighing.image_dir`，默认 `server/data/agent-image
 
 ## 本地打印维护
 
-SK-820 打印 Agent 的离线维护页面是独立进程，即使打印 Agent 无法启动仍可使用。维护服务默认监听 `0.0.0.0:18901`，资源随 Go 二进制嵌入；可信维护局域网可通过 HTTP 访问，TLS 可选，防火墙须限制来源且不得开放公网。打印 Agent 的受维护运行配置统一从 `agent.env` 读取，旧 unit／drop-in 的连接参数需按部署说明先迁入文件。页面通过顶部菜单提供总览、打印与队列、设备、配置和记录；仪表／摄像头仅显示未接入状态。构建入口为 `task agent:maintenance:build`。部署、CUPS 最小授权、维护密码首次设置／恢复、队列操作边界和未现场验证项见[本地维护部署说明](../docs/device/agent-local-maintenance.md)。
+SK-820 打印 Agent 的离线维护页面是独立进程，即使打印 Agent 无法启动仍可使用。维护服务默认监听 `0.0.0.0:18901`，资源随 Go 二进制嵌入；可信维护局域网可通过 HTTP 访问，TLS 可选，防火墙须限制来源且不得开放公网。打印 Agent 的受维护运行配置统一从 `agent.env` 读取，旧 unit／drop-in 的连接参数需按部署说明先迁入文件。页面通过顶部菜单提供总览、打印与队列、设备、配置和记录；设备页显示 Agent 写入的实时重量、单位、稳定状态、最后有效时间、校验与故障原因，维护服务只读状态文件、不打开串口。摄像头仍显示未接入。构建入口为 `task agent:maintenance:build`。部署、CUPS 最小授权、维护密码首次设置／恢复、队列操作边界和未现场验证项见[本地维护部署说明](../docs/device/agent-local-maintenance.md)。串口字段示例：
+
+```dotenv
+WEIGHBRIDGE_SERIAL_ENABLED=true
+WEIGHBRIDGE_SERIAL_PORT="/dev/ttyS0"
+WEIGHBRIDGE_SERIAL_BAUD=9600
+WEIGHBRIDGE_SERIAL_PROTOCOL="keli-d12-tf05"
+WEIGHBRIDGE_SERIAL_WEIGHT_UNIT="t"
+WEIGHBRIDGE_SERIAL_STALE_MS=1000
+```
+
+旧 `agent.env` 没有这些字段时按仅打印运行。现场串口权限须按实际服务账号持久配置，不能以 root 运行 Agent。
 
 ## 五联三等分连续纸
 
