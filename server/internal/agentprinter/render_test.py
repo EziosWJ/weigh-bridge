@@ -1,5 +1,6 @@
 import unittest
 import hashlib
+import math
 import render
 
 
@@ -13,6 +14,53 @@ def sheet():
 
 
 class TableTest(unittest.TestCase):
+    def test_fractional_form_length_survives_escp_encoding(self):
+        s = sheet()
+        s['calibration'] = {'formLengthMm': 93.13}
+        im = render.render_image(s)
+        data = render.escp(im, s)
+        start = data.index(b'\x1b(C\x02\x00') + 5
+        units = int.from_bytes(data[start:start + 2], 'little')
+        self.assertEqual(units, math.floor(93.13 * 360 / 25.4 + .5))
+        self.assertLessEqual(abs(units * 25.4 / 360 - 93.13), 25.4 / 720)
+        self.assertNotEqual(units, round(93 * 360 / 25.4))
+        self.assertTrue(data.endswith(b'\x1b2\x0c'))
+
+    def test_scaling_preserves_full_image_then_offsets_in_physical_mm(self):
+        s = sheet()
+        base = render.render_image(s)
+        s['calibration'] = {'printScale': 1.02, 'offsetXmm': 4,
+                            'offsetYmm': 1, 'formLengthMm': 93.13}
+        im = render.render_image(s)
+        dx, dy = render.rounded(4 * 180 / 25.4), render.rounded(180 / 25.4)
+        scaled = base.resize((render.rounded(base.width * 1.02), 612), render.Image.Resampling.NEAREST)
+        self.assertEqual(im.size, (scaled.width + dx, scaled.height + dy))
+        self.assertEqual(im.crop((dx, dy, im.width, im.height)).tobytes(), scaled.tobytes())
+
+    def test_scaled_bands_and_invalid_numbers_are_rejected(self):
+        for c in ({'printScale': 1.3}, {'formLengthMm': 85, 'offsetYmm': 1},
+                  {'formLengthMm': 93.13, 'printScale': 1.1},
+                  {'printScale': .49}, {'formLengthMm': 0},
+                  {'formLengthMm': float('nan')}, {'printScale': float('inf')}):
+            s = sheet()
+            s['calibration'] = c
+            with self.subTest(calibration=c), self.assertRaises(ValueError):
+                render.render_image(s)
+
+    def test_calibration_ruler_keeps_mm_spacing_after_scaling(self):
+        s = sheet()
+        s['calibration'] = {'printScale': .8}
+        s['calibrationPattern'] = True
+        im = render.render_image(s)
+        self.assertEqual(im.getpixel((im.width // 2, 0)), 0)
+        for mm in (0, 10, 20, 30):
+            x = 18 + render.rounded(mm * 180 / 25.4)
+            self.assertEqual(im.getpixel((x, im.height - 9)), 0)
+        # Unchanged business rendering has no ruler at these positions.
+        s['calibrationPattern'] = False
+        plain = render.render_image(s)
+        self.assertNotEqual(im.tobytes(), plain.tobytes())
+
     def test_confirmed_defaults_preserve_raster_and_escp(self):
         s = sheet()
         im = render.render_image(s)

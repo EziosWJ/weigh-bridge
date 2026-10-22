@@ -186,7 +186,7 @@ func run(parent context.Context, cfg agentprinter.Config, state, statusPath, pau
 			}
 			jobCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			if req.Ticket.PrintSheet != nil {
-				req.Ticket.PrintSheet.Calibration = agentprinter.Calibration{WidthMM: cfg.PrintWidthMM, OffsetXMM: cfg.OffsetXMM, OffsetYMM: cfg.OffsetYMM, FormLengthMM: cfg.FormLengthMM}
+				req.Ticket.PrintSheet.Calibration = cfg.Calibration()
 			}
 			data, err := agentprinter.Render(jobCtx, req.Ticket.PrintSheet)
 			job := ""

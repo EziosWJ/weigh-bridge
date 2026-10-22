@@ -20,19 +20,21 @@ type Field struct {
 	Value string `json:"value"`
 }
 type Sheet struct {
-	Template    string      `json:"template"`
-	Width       int         `json:"widthMm"`
-	Height      int         `json:"heightMm"`
-	Title       string      `json:"title"`
-	Marks       []string    `json:"marks"`
-	Rows        [][]Field   `json:"rows"`
-	Calibration Calibration `json:"calibration,omitempty"`
+	CalibrationPattern bool        `json:"calibrationPattern,omitempty"`
+	Template           string      `json:"template"`
+	Width              int         `json:"widthMm"`
+	Height             int         `json:"heightMm"`
+	Title              string      `json:"title"`
+	Marks              []string    `json:"marks"`
+	Rows               [][]Field   `json:"rows"`
+	Calibration        Calibration `json:"calibration,omitempty"`
 }
 type Calibration struct {
-	WidthMM      int `json:"printWidthMm"`
-	OffsetXMM    int `json:"offsetXmm"`
-	OffsetYMM    int `json:"offsetYmm"`
-	FormLengthMM int `json:"formLengthMm"`
+	WidthMM      int     `json:"printWidthMm"`
+	OffsetXMM    int     `json:"offsetXmm"`
+	OffsetYMM    int     `json:"offsetYmm"`
+	FormLengthMM float64 `json:"formLengthMm"`
+	Scale        float64 `json:"printScale,omitempty"`
 }
 type Request struct {
 	AttemptID int64 `json:"attemptId"`

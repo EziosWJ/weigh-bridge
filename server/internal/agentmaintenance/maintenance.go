@@ -141,6 +141,9 @@ func Open(dir string, runner Runner) (*Service, error) {
 		}
 		s.active = s.draft
 	}
+	s.draft = agentprinter.NormalizeConfig(s.draft)
+	s.active = agentprinter.NormalizeConfig(s.active)
+	s.previous = agentprinter.NormalizeConfig(s.previous)
 	if s.password == "" {
 		pw := randomToken(18)
 		s.password = hashPassword(pw)
@@ -545,6 +548,7 @@ func (s *Service) configAPI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid", 400)
 		return
 	}
+	c = agentprinter.NormalizeConfig(c)
 	if e := validate(c); e != nil {
 		s.fail(w, e)
 		return
@@ -990,7 +994,7 @@ func (s *Service) testPrint(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	q, c := s.active.Queue, s.active
 	s.mu.Unlock()
-	sample := &agentprinter.Sheet{Template: "weighing-compact-v1", Width: 210, Height: 99, Title: "打印校准测试样张", Marks: []string{"测试／校准 · 非业务单据"}, Calibration: agentprinter.Calibration{WidthMM: c.PrintWidthMM, OffsetXMM: c.OffsetXMM, OffsetYMM: c.OffsetYMM, FormLengthMM: c.FormLengthMM}, Rows: [][]agentprinter.Field{{{Label: "用途", Value: "打印位置与尺寸校准"}, {Label: "状态", Value: "仅测试"}}, {{Label: "打印宽度", Value: strconv.Itoa(c.PrintWidthMM) + " mm"}}, {{Label: "水平偏移", Value: strconv.Itoa(c.OffsetXMM) + " mm"}}, {{Label: "垂直偏移", Value: strconv.Itoa(c.OffsetYMM) + " mm"}}, {{Label: "表长", Value: strconv.Itoa(c.FormLengthMM) + " mm"}}}}
+	sample := agentprinter.CalibrationSheet(c)
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
 	rendered, renderErr := agentprinter.Render(ctx, sample)
@@ -1021,7 +1025,7 @@ func (s *Service) testPrint(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, result.Err)
 		return
 	}
-	s.json(w, map[string]any{"submitted": true, "paperVerified": false, "message": "已提交一份校准测试样张；CUPS 接收不代表纸面已核实。当前参数仅在 Agent 应用后用于业务单据渲染。", "widthMm": c.PrintWidthMM, "offsetXmm": c.OffsetXMM, "offsetYmm": c.OffsetYMM, "formLengthMm": c.FormLengthMM})
+	s.json(w, map[string]any{"submitted": true, "paperVerified": false, "message": "已提交一份校准测试样张；CUPS 接收不代表纸面已核实。当前参数仅在 Agent 应用后用于业务单据渲染。", "widthMm": c.PrintWidthMM, "printScale": c.Calibration().Scale, "output": c.Calibration().Geometry(), "offsetXmm": c.OffsetXMM, "offsetYmm": c.OffsetYMM, "formLengthMm": c.FormLengthMM})
 }
 func (s *Service) logs(w http.ResponseWriter, r *http.Request) {
 	if !s.require(w, r) {
@@ -1139,7 +1143,7 @@ func BuildAgentEnvironment(dir string, c Config) error {
 	if c.AgentKey == "" || strings.ContainsAny(c.AgentKey, "\r\n\x00") {
 		return errors.New("Agent 连接密钥未设置或格式无效")
 	}
-	data := fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\nWEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%d\n", strconv.Quote(c.AgentKey), strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM)
+	data := fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\nWEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.AgentKey), strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
 	data += fmt.Sprintf("WEIGHBRIDGE_SITE_ID=%d\nWEIGHBRIDGE_SITE_CODE=%s\nWEIGHBRIDGE_SITE_NAME=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_SCALE_NAME=%s\n", c.SiteID, strconv.Quote(c.SiteCode), strconv.Quote(c.SiteName), strconv.Quote(c.ScaleCode), strconv.Quote(c.ScaleName))
 	return writePrivate(filepath.Join(dir, "agent.env"), []byte(data))
 }

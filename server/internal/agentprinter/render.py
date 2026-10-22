@@ -2,6 +2,7 @@
 Runtime dependencies: python3, Pillow, and an installed Chinese TrueType font.
 """
 import json
+import math
 import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
@@ -10,20 +11,56 @@ DEFAULT_WIDTH, HEIGHT = 1240, 600
 FONT = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
 
 
-def render_image(sheet):
-    calibration = sheet.get('calibration') or {}
-    width_mm = calibration.get('printWidthMm') or 175
-    width = round(width_mm * 180 / 25.4)
-    offset_x = round(calibration.get('offsetXmm', 0) * 180 / 25.4)
-    offset_y = round(calibration.get('offsetYmm', 0) * 180 / 25.4)
-    form_length = int(calibration.get('formLengthMm') or 99)
-    feed_height = ((HEIGHT + offset_y + 23) // 24) * 24
-    if (not 100 <= width_mm <= 210 or not 85 <= form_length <= 300
-            or not 0 <= calibration.get('offsetXmm', 0) <= 30
-            or not 0 <= calibration.get('offsetYmm', 0) <= 30
-            or width_mm + calibration.get('offsetXmm', 0) > 210
-            or feed_height > round(form_length * 180 / 25.4)):
+def rounded(value):
+    # Match Go math.Round for these nonnegative physical dimensions.
+    return math.floor(value + 0.5)
+
+
+def geometry(sheet):
+    c = sheet.get('calibration') or {}
+    width_mm = c.get('printWidthMm', 175)
+    scale = c.get('printScale') or 1
+    form_length = c.get('formLengthMm', 99)
+    x, y = c.get('offsetXmm', 0), c.get('offsetYmm', 0)
+    if not all(math.isfinite(v) for v in (width_mm, scale, form_length, x, y)):
+        raise ValueError('calibration must be finite')
+    if (not 100 <= width_mm <= 210 or not .5 <= scale <= 1.5
+            or not 85 <= form_length <= 300 or not 0 <= x <= 30 or not 0 <= y <= 30):
+        raise ValueError('calibration outside allowed range')
+    width = rounded(width_mm * 180 / 25.4)
+    scaled_width, scaled_height = rounded(width * scale), rounded(HEIGHT * scale)
+    dx, dy = rounded(x * 180 / 25.4), rounded(y * 180 / 25.4)
+    feed_height = ((scaled_height + dy + 23) // 24) * 24
+    form_units = rounded(form_length * 360 / 25.4)
+    if scaled_width + dx > rounded(210 * 180 / 25.4) or feed_height * 2 > form_units:
         raise ValueError('calibration offsets exceed printable area')
+    return width, scaled_width, scaled_height, dx, dy, form_units
+
+
+def calibration_pattern(im, font_path):
+    # Rulers are added AFTER scaling: each tick always represents a physical mm.
+    draw = ImageDraw.Draw(im)
+    w, h = im.size
+    draw.rectangle((0, 0, w - 1, h - 1), outline=0)
+    for x in (w // 2,):
+        draw.line((x, 0, x, 2), fill=0)
+        draw.line((x, h - 3, x, h - 1), fill=0)
+    for y in (h // 2,):
+        draw.line((0, y, 2, y), fill=0)
+        draw.line((w - 3, y, w - 1, y), fill=0)
+    font = ImageFont.truetype(font_path, 12)
+    origin, baseline = 18, h - 2
+    draw.line((origin, baseline, w - 18, baseline), fill=0)
+    for mm in range(int((w - 36) * 25.4 / 180) + 1):
+        x = origin + rounded(mm * 180 / 25.4)
+        length = 7 if mm % 10 == 0 else 3
+        draw.line((x, baseline - length, x, baseline), fill=0)
+        if mm % 10 == 0:
+            draw.text((x, baseline - 9), str(mm), font=font, fill=0, anchor='mb')
+
+
+def render_image(sheet):
+    width, scaled_width, scaled_height, offset_x, offset_y, _ = geometry(sheet)
     content_width = width
     x_origin = 0
     top = 84
@@ -68,10 +105,14 @@ def render_image(sheet):
         raise ValueError('title exceeds page width')
     if draw.textlength(marks, font=normal) > content_width - 24:
         raise ValueError('marks exceed page width')
+    if (scaled_width, scaled_height) != im.size:
+        im = im.resize((scaled_width, scaled_height), Image.Resampling.NEAREST)
+    if sheet.get('calibrationPattern'):
+        calibration_pattern(im, font_path)
     if offset_x or offset_y:
         # Offsets add blank paper before the entire image; they must never
         # squeeze the table or crop its title, marks, borders, or contents.
-        positioned = Image.new('1', (width + offset_x, HEIGHT + offset_y), 1)
+        positioned = Image.new('1', (im.width + offset_x, im.height + offset_y), 1)
         positioned.paste(im, (offset_x, offset_y))
         return positioned
     return im
@@ -80,8 +121,7 @@ def render_image(sheet):
 def escp(im, sheet):
     # 99 mm form, 180 dpi square pixels. 24-row bands use the same ESC * 39
     # path already verified by the onsite QR test. No font alignment assumptions.
-    sheet_length = int((sheet.get('calibration') or {}).get('formLengthMm') or 99)
-    form = round(sheet_length * 360 / 25.4)
+    _, _, _, _, _, form = geometry(sheet)
     out = bytearray(b'\x1b@\x1b(U\x01\x00\x0a\x1b(C\x02\x00' + bytes((form & 255, form >> 8)) + b'\x1bU\x01\x1b3\x18')
     pixels = im.load()
     for y in range(0, im.height, 24):

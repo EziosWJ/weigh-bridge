@@ -60,10 +60,19 @@ func printerOptions(args []string, getenv func(string) string) (agentprinter.Con
 		}
 		for key, dst := range map[string]*int{
 			"WEIGHBRIDGE_PRINT_WIDTH_MM": &c.PrintWidthMM, "WEIGHBRIDGE_PRINT_OFFSET_X_MM": &c.OffsetXMM,
-			"WEIGHBRIDGE_PRINT_OFFSET_Y_MM": &c.OffsetYMM, "WEIGHBRIDGE_FORM_LENGTH_MM": &c.FormLengthMM,
+			"WEIGHBRIDGE_PRINT_OFFSET_Y_MM": &c.OffsetYMM,
 		} {
 			if value := getenv(key); value != "" {
 				n, err := strconv.Atoi(value)
+				if err != nil {
+					return c, *state, fmt.Errorf("%s 无效", key)
+				}
+				*dst = n
+			}
+		}
+		for key, dst := range map[string]*float64{"WEIGHBRIDGE_FORM_LENGTH_MM": &c.FormLengthMM, "WEIGHBRIDGE_PRINT_SCALE": &c.PrintScale} {
+			if value := getenv(key); value != "" {
+				n, err := strconv.ParseFloat(value, 64)
 				if err != nil {
 					return c, *state, fmt.Errorf("%s 无效", key)
 				}
@@ -74,5 +83,6 @@ func printerOptions(args []string, getenv func(string) string) (agentprinter.Con
 	if c.AgentKey == "" {
 		return c, *state, errors.New("Agent 连接密钥尚未设置")
 	}
+	c = agentprinter.NormalizeConfig(c)
 	return c, *state, agentprinter.ValidateConfig(c)
 }

@@ -67,6 +67,24 @@ elif tool == 'lp':
     assert args[:8] == ['-d',q,'-o','raw','-n','1','-t','weighbridge-CALIBRATION-TEST']
     payload = Path(args[8]).read_bytes()
     assert payload.startswith(b'\x1b@') and len(payload) > 1000
+    start = payload.index(b'\x1b(C\x02\x00') + 5
+    s['lastFormUnits'] = int.from_bytes(payload[start:start+2], 'little')
+    # Decode graphic block boundaries instead of scanning arbitrary raster bytes.
+    pos, bands, width = payload.index(b'\x1b*'), 0, 0
+    while payload[pos:pos+2] == b'\x1b*':
+        band_width = 0
+        while payload[pos:pos+2] == b'\x1b*':
+            assert payload[pos+2] == 39
+            count = int.from_bytes(payload[pos+3:pos+5], 'little')
+            band_width += count
+            pos += 5 + count * 3
+        assert payload[pos:pos+2] == b'\r\n'
+        pos += 2
+        bands += 1
+        if width: assert width == band_width
+        width = band_width
+    assert payload[pos:] == b'\x1b2\x0c'
+    s['lastRasterWidth'], s['lastBands'] = width, bands
     s['prints'] += 1
     job = q+'-'+str(100+s['prints'])
     s['jobs'].append(job); save()
@@ -203,6 +221,11 @@ try {
 
   await page.getByRole('link', { name: '配置', exact: true }).click();
   await page.getByLabel('打印宽度 (mm)', { exact: true }).fill('170');
+  await page.getByLabel('整体缩放 (倍)', { exact: true }).fill('1.02');
+  await page.getByLabel('连续纸表长 (mm)', { exact: true }).fill('93.13');
+  await page.getByLabel('向右偏移 (mm)', { exact: true }).fill('4');
+  await page.getByLabel('向下偏移 (mm)', { exact: true }).fill('1');
+  assert.ok((await page.locator('#draftGeometry').textContent()).includes('173.43 × 86.36 mm'));
   await page.getByRole('button', { name: '保存草稿', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('#saved').textContent.includes('存在未应用'));
   assert.ok((await page.locator('#activeConfig').textContent()).includes('175 mm'));
@@ -222,6 +245,9 @@ try {
   await page.getByRole('button', { name: '确认打印一份', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('#operationMessage').textContent.includes('已提交一份'));
   assert.equal((await readState()).prints, 1);
+  assert.equal((await readState()).lastFormUnits, Math.round(93.13 * 360 / 25.4));
+  assert.equal((await readState()).lastRasterWidth, Math.round(Math.round(170 * 180 / 25.4) * 1.02) + Math.round(4 * 180 / 25.4));
+  assert.equal((await readState()).lastBands, Math.ceil((612 + Math.round(180 / 25.4)) / 24));
   await page.getByRole('button', { name: '查看未结束作业', exact: true }).click();
   await page.locator('#jobs input[type=checkbox]').check();
   await page.getByRole('button', { name: '取消选中作业', exact: true }).click();
@@ -254,6 +280,8 @@ try {
     if (effective.runtimeState === '运行配置与 agent.env 一致') {
       assert.equal(effective.active.serverUrl, url);
       assert.equal(effective.active.printWidthMm, 170);
+      assert.equal(effective.active.formLengthMm, 93.13);
+      assert.equal(effective.active.printScale, 1.02);
       runtimeVerified = true;
       break;
     }
@@ -295,7 +323,7 @@ try {
   await page.getByRole('button',{name:'确认导入',exact:true}).click();
   await page.locator('#siteIdentity').filter({hasText:'维护测试厂区'}).waitFor();
   const afterImport = (await (await context.request.get(`${url}/api/config`)).json()).config;
-  for(const key of ['queue','printWidthMm','offsetXmm','offsetYmm','formLengthMm'])assert.equal(afterImport[key],beforeImport[key]);
+  for(const key of ['queue','printWidthMm','offsetXmm','offsetYmm','formLengthMm','printScale'])assert.equal(afterImport[key],beforeImport[key]);
   assert.equal(await fs.readFile(path.join(data,'agent.env'),'utf8'),envBeforeImport);
   await page.getByRole('link', { name: '设备', exact: true }).click();
   await page.getByText('暂无重量预览', { exact: true }).waitFor();

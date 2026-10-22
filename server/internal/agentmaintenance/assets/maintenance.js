@@ -15,10 +15,11 @@ const fields = [
   ['scaleId', '地磅编号', 'number', 1, null, '应与 Server 的地磅映射一致'],
   ['agentKey', '连接密钥（留空保持原值）', 'password', null, null, '密钥不回显，仅在需要替换时填写'],
   ['queue', '已有 CUPS 队列', 'text', null, null, '选择已经安装的本机打印队列'],
-  ['printWidthMm', '打印宽度 (mm)', 'number', 100, 210, '允许 100～210 mm；宽度加右移不超过 210 mm'],
+  ['printWidthMm', '打印宽度 (mm)', 'number', 100, 210, '缩放前基准宽度 100～210 mm；缩放后宽度加右移不超过 210 mm'],
+  ['printScale', '整体缩放 (倍)', 'number', 0.5, 1.5, '0.5～1.5 倍；文字、表格及行高统一缩放，偏移和表长不缩放'],
   ['offsetXmm', '向右偏移 (mm)', 'number', 0, 30, '允许 0～30 mm'],
   ['offsetYmm', '向下偏移 (mm)', 'number', 0, 30, '允许 0～30 mm'],
-  ['formLengthMm', '连续纸表长 (mm)', 'number', 85, 300, '允许 85～300 mm；需核对实际走纸'],
+  ['formLengthMm', '连续纸表长 (mm)', 'number', 85, 300, '允许 85～300 mm，支持小数；量相邻横向撕纸线间距，不直接按 99 mm 推定'],
 ];
 let cfg = {};
 let configData;
@@ -147,7 +148,21 @@ async function logout() {
   try { await api('/api/logout', { method: 'POST' }); location.reload(); }
   catch (error) { showMessage(error.message, true); }
 }
-function calibration(c) { return `打印队列 ${c.queue}，宽 ${c.printWidthMm} mm，右移 ${c.offsetXmm} mm，下移 ${c.offsetYmm} mm，表长 ${c.formLengthMm} mm`; }
+function outputGeometry(c) {
+  const scale = c.printScale || 1;
+  const width = Math.round(Math.round(c.printWidthMm * 180 / 25.4) * scale);
+  const height = Math.round(600 * scale);
+  const feed = Math.ceil((height + Math.round(c.offsetYmm * 180 / 25.4)) / 24) * 24;
+  const form = Math.round(c.formLengthMm * 360 / 25.4);
+  const valid = width + Math.round(c.offsetXmm * 180 / 25.4) <= Math.round(210 * 180 / 25.4) && feed * 2 <= form;
+  return `内容约 ${(width * 25.4 / 180).toFixed(2)} × ${(height * 25.4 / 180).toFixed(2)} mm，含下移及分带走纸 ${(feed * 25.4 / 180).toFixed(2)} mm，指令表长 ${(form * 25.4 / 360).toFixed(3)} mm${valid ? '' : '；超出纸宽或表长，请减小缩放或偏移'}`;
+}
+function calibration(c) { return `打印队列 ${c.queue}，基准宽 ${c.printWidthMm} mm，缩放 ${c.printScale || 1} 倍，右移 ${c.offsetXmm} mm，下移 ${c.offsetYmm} mm，表长 ${c.formLengthMm} mm；${outputGeometry(c)}`; }
+function updateDraftGeometry() {
+  const draft = { ...cfg };
+  for (const [key, , type] of fields) if (type === 'number') draft[key] = Number($(`f-${key}`).value);
+  $('draftGeometry').textContent = `未应用预估：${outputGeometry(draft)}`;
+}
 function configDifferences(data) {
   return `<table><thead><tr><th>参数</th><th>agent.env 中的配置</th><th>已保存的草稿</th></tr></thead><tbody>${fields.map(([key, name]) => key === 'agentKey' ? `<tr class="${data.keyChanged ? 'changed' : ''}"><td>连接密钥</td><td>${data.hasActiveAgentKey ? '已设置（不回显）' : '未设置'}</td><td>${data.keyChanged ? '待替换（不回显）' : data.hasAgentKey ? '已设置（不回显）' : '未设置'}</td></tr>` : `<tr class="${data.active[key] !== data.config[key] ? 'changed' : ''}"><td>${name}</td><td>${esc(data.active[key])}</td><td>${esc(data.config[key])}${data.active[key] !== data.config[key] ? ' <span class="badge">待应用</span>' : ''}</td></tr>`).join('')}</tbody></table>`;
 }
@@ -157,8 +172,9 @@ async function loadConfig() {
  $('siteIdentity').textContent = cfg.siteName ? `草稿归属：${cfg.siteName}（${cfg.siteCode}） · ${cfg.scaleName || cfg.scaleId}` : '现有配置未记录厂区名称，可导入后台下载的厂区配置。';
   configData = data;
   const queues = lastState?.queues || (await api('/api/status')).queues || [];
-  const fieldHTML = ([key, name, type, min, max, help]) => `<div><label for="f-${key}">${name}</label>${key === 'queue' ? `<select id="f-${key}">${[...new Set([cfg[key], ...queues])].map((value) => `<option>${esc(value)}</option>`).join('')}</select>` : `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="1" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' ? '' : 'required'} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`}<p class="field-help" id="hint-${key}">${help}</p></div>`;
-  $('form').innerHTML = `<fieldset><legend>云端连接与身份</legend><div class="fields-grid">${fields.slice(0, 4).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>打印目标与校准</legend><div class="fields-grid">${fields.slice(4).map(fieldHTML).join('')}</div></fieldset>`;
+  const fieldHTML = ([key, name, type, min, max, help]) => `<div><label for="f-${key}">${name}</label>${key === 'queue' ? `<select id="f-${key}">${[...new Set([cfg[key], ...queues])].map((value) => `<option>${esc(value)}</option>`).join('')}</select>` : `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="${key === 'formLengthMm' || key === 'printScale' ? 'any' : '1'}" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' ? '' : 'required'} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`}<p class="field-help" id="hint-${key}">${help}</p></div>`;
+  $('form').innerHTML = `<fieldset><legend>云端连接与身份</legend><div class="fields-grid">${fields.slice(0, 4).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>打印目标与校准</legend><div class="fields-grid">${fields.slice(4).map(fieldHTML).join('')}</div><p id="draftGeometry" class="muted"></p><p class="field-help">票面位置、每单走纸和撕纸停靠需分别校准。撕纸位置请按打印机说明调整；软件尺寸预估不代表实际纸面已验收。</p></fieldset>`;
+  updateDraftGeometry();
   $('saved').textContent = `${data.hasAgentKey ? '连接密钥已设置。' : '连接密钥尚未设置。'}${data.saved ? '当前无未应用草稿。' : '存在未应用草稿，尚未影响运行配置。'}打印运行参数需要应用并重启打印 Agent。`;
   $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.siteName || "厂区名称未配置"}，${data.active.scaleName || "地磅 " + data.active.scaleId}\n${data.active.serverUrl}，${data.active.agentId}\n${calibration(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
   $('runtimeConfig').textContent = data.runtimeState;
@@ -326,7 +342,7 @@ async function loadAudit(offset = 0) {
     updateControls();
   } catch (error) { if (version === auditVersion) $('audit').textContent = error.message; }
 }
-$('configForm').addEventListener('input', () => { formDirty = true; $('draftState').textContent = '表单有尚未保存的修改'; });
+$('configForm').addEventListener('input', () => { formDirty = true; $('draftState').textContent = '表单有尚未保存的修改'; updateDraftGeometry(); });
 $('jobs').addEventListener('change', updateControls);
 window.addEventListener('hashchange', visitPage);
 showPage();

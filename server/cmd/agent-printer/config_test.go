@@ -32,7 +32,7 @@ func TestManagedPrinterUsesSharedFileWithoutEnvironmentOverrides(t *testing.T) {
 }
 
 func TestStandaloneInvalidNumericEnvironmentIsRejected(t *testing.T) {
-	for _, key := range []string{"WEIGHBRIDGE_SCALE_ID", "WEIGHBRIDGE_PRINT_WIDTH_MM"} {
+	for _, key := range []string{"WEIGHBRIDGE_SCALE_ID", "WEIGHBRIDGE_PRINT_WIDTH_MM", "WEIGHBRIDGE_FORM_LENGTH_MM", "WEIGHBRIDGE_PRINT_SCALE"} {
 		t.Run(key, func(t *testing.T) {
 			_, _, err := printerOptions(nil, func(name string) string {
 				if name == key {
@@ -47,6 +47,14 @@ func TestStandaloneInvalidNumericEnvironmentIsRejected(t *testing.T) {
 				t.Fatal("invalid config silently fell back to defaults")
 			}
 		})
+	}
+}
+
+func TestStandaloneFractionalCalibration(t *testing.T) {
+	values := map[string]string{"APP_WEIGHING__AGENT_KEY": "test-key", "WEIGHBRIDGE_FORM_LENGTH_MM": "93.13", "WEIGHBRIDGE_PRINT_SCALE": "1.02"}
+	c, _, err := printerOptions(nil, func(key string) string { return values[key] })
+	if err != nil || c.FormLengthMM != 93.13 || c.PrintScale != 1.02 {
+		t.Fatalf("fractional calibration lost: %+v %v", c.Calibration(), err)
 	}
 }
 

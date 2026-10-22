@@ -38,3 +38,7 @@ Server 将抓拍保存于 `weighing.image_dir`，默认 `server/data/agent-image
 ## 本地打印维护
 
 SK-820 打印 Agent 的离线维护页面是独立进程，即使打印 Agent 无法启动仍可使用。维护服务默认监听 `0.0.0.0:18901`，资源随 Go 二进制嵌入；可信维护局域网可通过 HTTP 访问，TLS 可选，防火墙须限制来源且不得开放公网。打印 Agent 的受维护运行配置统一从 `agent.env` 读取，旧 unit／drop-in 的连接参数需按部署说明先迁入文件。页面通过顶部菜单提供总览、打印与队列、设备、配置和记录；仪表／摄像头仅显示未接入状态。构建入口为 `task agent:maintenance:build`。部署、CUPS 最小授权、维护密码首次设置／恢复、队列操作边界和未现场验证项见[本地维护部署说明](../docs/device/agent-local-maintenance.md)。
+
+## 五联三等分连续纸
+
+小数毫米表长、统一缩放及校准样张的参数含义与现场验收顺序见[SK-820 连续纸校准](../docs/device/sk820-continuous-paper-calibration.md)。本次软件实现与验证记录见[交付记录](../docs/requirements/continuous-paper-print-delivery.md)；真实走纸、撕纸停靠和第五联清晰度仍需现场验收。

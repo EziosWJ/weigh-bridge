@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"os"
 	"regexp"
@@ -16,24 +15,25 @@ import (
 
 // Config is shared by the printer process and its local maintenance service.
 type Config struct {
-	SiteID       int64  `json:"siteId"`
-	SiteCode     string `json:"siteCode"`
-	SiteName     string `json:"siteName"`
-	ScaleCode    string `json:"scaleCode"`
-	ScaleName    string `json:"scaleName"`
-	ServerURL    string `json:"serverUrl"`
-	AgentID      string `json:"agentId"`
-	ScaleID      int64  `json:"scaleId"`
-	AgentKey     string `json:"agentKey"`
-	Queue        string `json:"queue"`
-	PrintWidthMM int    `json:"printWidthMm"`
-	OffsetXMM    int    `json:"offsetXmm"`
-	OffsetYMM    int    `json:"offsetYmm"`
-	FormLengthMM int    `json:"formLengthMm"`
+	SiteID       int64   `json:"siteId"`
+	SiteCode     string  `json:"siteCode"`
+	SiteName     string  `json:"siteName"`
+	ScaleCode    string  `json:"scaleCode"`
+	ScaleName    string  `json:"scaleName"`
+	ServerURL    string  `json:"serverUrl"`
+	AgentID      string  `json:"agentId"`
+	ScaleID      int64   `json:"scaleId"`
+	AgentKey     string  `json:"agentKey"`
+	Queue        string  `json:"queue"`
+	PrintWidthMM int     `json:"printWidthMm"`
+	OffsetXMM    int     `json:"offsetXmm"`
+	OffsetYMM    int     `json:"offsetYmm"`
+	FormLengthMM float64 `json:"formLengthMm"`
+	PrintScale   float64 `json:"printScale"`
 }
 
 func Defaults() Config {
-	return Config{ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99}
+	return Config{ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99, PrintScale: 1}
 }
 
 func ValidateConfig(c Config) error {
@@ -53,9 +53,8 @@ func ValidateConfig(c Config) error {
 	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`).MatchString(c.Queue) {
 		return errors.New("打印队列名称无效")
 	}
-	feedDots := (600 + int(math.Round(float64(c.OffsetYMM)*180/25.4)) + 23) / 24 * 24
-	if c.PrintWidthMM < 100 || c.PrintWidthMM > 210 || c.OffsetXMM < 0 || c.OffsetXMM > 30 || c.OffsetYMM < 0 || c.OffsetYMM > 30 || c.FormLengthMM < 85 || c.FormLengthMM > 300 || c.PrintWidthMM+c.OffsetXMM > 210 || feedDots > int(math.Round(float64(c.FormLengthMM)*180/25.4)) {
-		return errors.New("打印尺寸或偏移超出允许范围")
+	if err := c.Calibration().Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -110,9 +109,18 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 			return cfg, errors.New("agent.env 地磅编号无效")
 		}
 	}
-	for key, dst := range map[string]*int{"WEIGHBRIDGE_PRINT_WIDTH_MM": &cfg.PrintWidthMM, "WEIGHBRIDGE_PRINT_OFFSET_X_MM": &cfg.OffsetXMM, "WEIGHBRIDGE_PRINT_OFFSET_Y_MM": &cfg.OffsetYMM, "WEIGHBRIDGE_FORM_LENGTH_MM": &cfg.FormLengthMM} {
+	for key, dst := range map[string]*int{"WEIGHBRIDGE_PRINT_WIDTH_MM": &cfg.PrintWidthMM, "WEIGHBRIDGE_PRINT_OFFSET_X_MM": &cfg.OffsetXMM, "WEIGHBRIDGE_PRINT_OFFSET_Y_MM": &cfg.OffsetYMM} {
 		if value, ok := values[key]; ok {
 			*dst, err = strconv.Atoi(value)
+			if err != nil {
+				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
+			}
+		}
+	}
+
+	for key, dst := range map[string]*float64{"WEIGHBRIDGE_FORM_LENGTH_MM": &cfg.FormLengthMM, "WEIGHBRIDGE_PRINT_SCALE": &cfg.PrintScale} {
+		if value, ok := values[key]; ok {
+			*dst, err = strconv.ParseFloat(value, 64)
 			if err != nil {
 				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
 			}
@@ -130,6 +138,7 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 			return cfg, errors.New("厂区编号无效")
 		}
 	}
+	cfg = NormalizeConfig(cfg)
 	return cfg, ValidateConfig(cfg)
 }
 
@@ -139,4 +148,18 @@ func ConfigDigest(c Config) string {
 	data, _ := json.Marshal(c)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// NormalizeConfig keeps pre-scaling maintenance files equivalent to 100% scale.
+func NormalizeConfig(c Config) Config {
+	if c.PrintScale == 0 {
+		c.PrintScale = 1
+	}
+	return c
+}
+
+// Calibration is the single local configuration mapping used by both print paths.
+func (c Config) Calibration() Calibration {
+	c = NormalizeConfig(c)
+	return Calibration{WidthMM: c.PrintWidthMM, OffsetXMM: c.OffsetXMM, OffsetYMM: c.OffsetYMM, FormLengthMM: c.FormLengthMM, Scale: c.PrintScale}
 }
