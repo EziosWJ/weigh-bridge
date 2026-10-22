@@ -29,7 +29,7 @@ async function waitForVite() {
   throw new Error(`Vite did not become ready:\n${vite.output}`);
 }
 
-async function newAdminPage(permissionCodes) {
+async function newAdminPage(permissionCodes, nodeRole = 'standalone', maintenanceEnabled = true) {
   const context = await browser.newContext({ viewport: { width: 1366, height: 900 } });
   await context.addInitScript(() => localStorage.setItem('react-admin-auth', JSON.stringify({
     token: 'Bearer standalone-management-smoke',
@@ -37,7 +37,7 @@ async function newAdminPage(permissionCodes) {
   })));
   const page = await context.newPage();
   page.setDefaultTimeout(7000);
-  const capabilities = { nodeRole: 'standalone', nodeSiteId: 1, permissionCodes, sites: [], scales: [], userId: 1 };
+  const capabilities = { nodeRole, maintenanceEnabled, nodeSiteId: 1, permissionCodes, sites: [], scales: [], userId: 1 };
   const apiRoute = (url) => new URL(url).pathname.startsWith('/api/');
   await context.route(apiRoute, async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -59,6 +59,25 @@ try {
   await waitForVite();
   browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
 
+  // Default development has no standalone role. A mounted maintenance API and
+  // the same RBAC grants must still provide a discoverable sidebar entry.
+  const development = await newAdminPage(['agent:maintenance:view'], '');
+  await development.page.goto(`${webUrl}/system/agent-maintenance`);
+  await development.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
+  assert.equal(await development.page.getByRole('link', { name: '设备维护', exact: true }).count(), 1, 'enabled maintenance must appear in the default development sidebar');
+  await development.context.close();
+
+  for (const [label, permissions, enabled] of [
+    ['disabled backend', ['agent:maintenance:view'], false],
+    ['missing permission', [], true],
+  ]) {
+    const hidden = await newAdminPage(permissions, '', enabled);
+    await hidden.page.goto(`${webUrl}/system/agent-maintenance`);
+    await hidden.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
+    assert.equal(await hidden.page.getByRole('link', { name: '设备维护', exact: true }).count(), 0, `${label} must hide the maintenance menu`);
+    await hidden.context.close();
+  }
+
   // While nodeRole is unresolved, old approval/sync navigation must stay hidden.
   const pending = await newAdminPage(['system:user', 'system:role', 'agent:maintenance:view']);
   const pageErrors = [];
@@ -77,7 +96,7 @@ try {
     }
     if (path === '/api/weighing/capabilities') {
       await capabilityGate;
-      return route.fulfill({ json: { code: 200, message: 'ok', data: { nodeRole: 'standalone', nodeSiteId: 1, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:view'], sites: [], scales: [], userId: 1 } } });
+      return route.fulfill({ json: { code: 200, message: 'ok', data: { nodeRole: 'standalone', maintenanceEnabled: true, nodeSiteId: 1, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:view'], sites: [], scales: [], userId: 1 } } });
     }
     return route.fulfill({ json: {} });
   });
@@ -86,7 +105,7 @@ try {
   await delay(100);
   assert.equal(await pending.page.getByText('临时主体登记与确认', { exact: true }).count(), 0, 'center approval menu must not flash before node mode loads');
   releaseCapabilities();
-  await pending.page.getByRole('heading', { name: '设备维护' }).waitFor();
+  await pending.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
   assert.equal(await pending.page.getByRole('link', { name: '临时主体登记与确认' }).count(), 0, 'standalone mode must hide the legacy approval entry');
   await pending.page.getByRole('button', { name: '设备与打印' }).click();
   for (const actionName of ['启动打印 Agent', '停止打印 Agent', '重启打印 Agent', '重启 CUPS', '恢复目标队列', '打印校准样张']) {
@@ -107,7 +126,7 @@ try {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path === '/api/auth/menus') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
-    if (path === '/api/weighing/capabilities') return route.fulfill({ json: { code: 200, message: 'ok', data: { nodeRole: 'standalone', nodeSiteId: 1, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 } } });
+    if (path === '/api/weighing/capabilities') return route.fulfill({ json: { code: 200, message: 'ok', data: { nodeRole: 'standalone', maintenanceEnabled: true, nodeSiteId: 1, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 } } });
     if (path.endsWith('/status')) return route.fulfill({ json: {
       checkedAt: new Date().toISOString(), maintenance: '运行中', agent: '已停止', agentKnown: true,
       cups: '未知', cupsKnown: false, queue: 'unknown', queueState: '未知', queueKnown: false,
@@ -141,7 +160,7 @@ try {
   });
   managed.page.on('dialog', (dialog) => dialog.accept());
   await managed.page.goto(`${webUrl}/system/agent-maintenance`);
-  await managed.page.getByRole('heading', { name: '设备维护' }).waitFor();
+  await managed.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
   await managed.page.getByRole('button', { name: '启动打印 Agent', exact: true }).waitFor();
   assert.ok(await managed.page.getByText('未知', { exact: true }).count() > 0, 'unknown runtime fields should render as unknown');
   await managed.page.getByRole('button', { name: '配置', exact: true }).click();

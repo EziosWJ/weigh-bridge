@@ -25,6 +25,11 @@ file:
   # 生成时会填为本检出的绝对路径；手工修改后同样必须是绝对路径。
   storage_root: /home/your-user/project/weighbridge/.data/uploads
 
+# 同址设备维护只准备草稿，不自动应用或启动真实设备。
+maintenance:
+  # task init 填为本检出的独立目录；显式设为空字符串可关闭维护入口。
+  data_dir: /home/your-user/project/weighbridge/.data/agent
+
 log:
   level: debug
   format: text

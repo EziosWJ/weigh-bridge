@@ -130,6 +130,19 @@ func isBusinessRequest(r *http.Request) bool {
 }
 
 func Open(dir string, runner Runner) (*Service, error) {
+	return open(dir, runner, nil)
+}
+
+// OpenWithDraft prepares a new maintenance directory without applying device
+// configuration. Existing drafts and agent.env remain authoritative.
+func OpenWithDraft(dir string, runner Runner, draft Config) (*Service, error) {
+	if err := validate(draft); err != nil {
+		return nil, err
+	}
+	return open(dir, runner, &draft)
+}
+
+func open(dir string, runner Runner, initialDraft *Config) (*Service, error) {
 	if runner == nil {
 		runner = ExecRunner{}
 	}
@@ -171,6 +184,9 @@ func Open(dir string, runner Runner) (*Service, error) {
 			s.draft = imported
 		}
 		s.active = s.draft
+		if _, err := os.Stat(filepath.Join(dir, "agent.env")); os.IsNotExist(err) && initialDraft != nil {
+			s.draft = *initialDraft
+		}
 	}
 	s.draft = agentprinter.NormalizeConfig(s.draft)
 	s.active = agentprinter.NormalizeConfig(s.active)

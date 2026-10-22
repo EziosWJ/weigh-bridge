@@ -183,13 +183,10 @@ func main() {
 		if maintenanceDir == "" {
 			maintenanceDir = filepath.Join(filepath.Dir(cfg.File.StorageRoot), "agent")
 		}
-		maintenanceService, err = agentmaintenance.Open(maintenanceDir, nil)
+		maintenanceService, maintenanceValidator, err = openMaintenance(*cfg, weighRepo, maintenanceDir)
 		if err != nil {
 			slog.Error("open Agent maintenance service", "error", err)
 			os.Exit(1)
-		}
-		if cfg.Node.Role == "standalone" {
-			maintenanceValidator = newMaintenanceConfigValidator(weighRepo, cfg.Node.SiteID)
 		}
 	}
 	application, err := app.New(*cfg, database, app.Dependencies{

@@ -133,10 +133,10 @@ tasks:
       - python3 scripts/check-monitoring-docker.py {{.CLI_ARGS}}
 
   dev:
-    desc: 执行迁移并启动 API 和 Web
-    deps:
-      - db:migrate
+    desc: 补齐开发配置、执行迁移并启动 API 和 Web
     cmds:
+      - task: init
+      - task: db:migrate
       - task --parallel api web
 
   backend:test:

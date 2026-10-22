@@ -48,6 +48,7 @@ function stateValue(value: unknown) {
 }
 
 export function AgentMaintenancePage() {
+  const [maintenanceEnabled, setMaintenanceEnabled] = useState<boolean | null>(null);
   const [status, setStatus] = useState<ServiceStatus | null>(null);
   const [configData, setConfigData] = useState<MaintenanceConfig | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
@@ -59,14 +60,16 @@ export function AgentMaintenancePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [tab, setTab] = useState<'overview' | 'devices' | 'config' | 'records'>('overview');
-  const canManage = permissionCodes.includes('agent:maintenance:manage');
-  const canView = canManage || permissionCodes.includes('agent:maintenance:view');
+  const canManage = maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:manage');
+  const canView = canManage || (maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:view'));
 
   const refresh = useCallback(async () => {
     setError('');
     try {
       const caps = await weighingApi.capabilities();
       setPermissionCodes(caps.permissionCodes);
+      setMaintenanceEnabled(caps.maintenanceEnabled === true);
+      if (!caps.maintenanceEnabled) { setStatus(null); return; }
       if (!caps.permissionCodes.includes('agent:maintenance:view') && !caps.permissionCodes.includes('agent:maintenance:manage')) { setStatus(null); return; }
       const state = await agentMaintenanceApi.status(); setStatus(state);
       if (caps.permissionCodes.includes('agent:maintenance:manage')) {
@@ -135,8 +138,9 @@ export function AgentMaintenancePage() {
 
   if (!initialLoaded) return <p role="status">正在检查本机维护状态…</p>;
   return <div className="space-y-space-4">
-    <PageHeader title="设备维护" description="使用本地账号查看现场设备，按权限保存配置和执行维护操作。设备停止时仍可查看配置并启动 Agent。" actions={<><StatusTag tone="info">本厂独立运行</StatusTag><Button variant="secondary" disabled={busy} onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" aria-hidden />刷新状态</Button></>} />
-    {!canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
+    <PageHeader title="设备维护" description="使用本地账号查看现场设备，按权限保存配置和执行维护操作。设备停止时仍可查看配置并启动 Agent。" actions={<><StatusTag tone="info">本机设备维护</StatusTag><Button variant="secondary" disabled={busy} onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" aria-hidden />刷新状态</Button></>} />
+    {maintenanceEnabled === false && <ContentCard title="设备维护未启用"><p>当前业务服务未启用设备维护，请联系管理员检查本机维护配置。</p></ContentCard>}
+    {maintenanceEnabled === true && !canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
     {canView && <>
       <nav aria-label="设备维护页面" className="flex flex-wrap gap-2 border-b border-border pb-3">
         {([['overview', '运行总览', Activity], ['devices', '设备与打印', Printer], ['config', '配置', Settings2], ['records', '维护记录', FileClock]] as const).map(([key, label, Icon]) => <Button key={key} variant={tab === key ? 'primary' : 'secondary'} onClick={() => { setTab(key); if (key === 'records') void loadRecords(); }}>{<Icon className="mr-2 h-4 w-4" aria-hidden />}{label}</Button>)}

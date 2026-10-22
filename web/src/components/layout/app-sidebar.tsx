@@ -75,15 +75,20 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
         ? { ...item, children: [...(item.children ?? []), notificationManageNavItem, announcementManageNavItem] }
         : item);
       const has = (code: string) => weighingCapabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
+      const maintenanceItem = weighingCapabilities?.maintenanceEnabled &&
+        (weighingCapabilities.permissionCodes.includes('agent:maintenance:view') || weighingCapabilities.permissionCodes.includes('agent:maintenance:manage'))
+        ? agentMaintenanceNavItem : undefined;
       const localChildren = [
         weighingCapabilities?.permissionCodes.includes('system:user') ? localManagementNavItem.children?.[0] : undefined,
         weighingCapabilities?.permissionCodes.includes('system:role') ? localManagementNavItem.children?.[1] : undefined,
         weighingCapabilities?.permissionCodes.includes('weighing:site:manage') ? localManagementNavItem.children?.[2] : undefined,
-        (weighingCapabilities?.permissionCodes.includes('agent:maintenance:view') || weighingCapabilities?.permissionCodes.includes('agent:maintenance:manage')) ? agentMaintenanceNavItem : undefined,
+        maintenanceItem,
       ].filter((item): item is NavItem => Boolean(item));
       const localItems = weighingCapabilities?.nodeRole === 'standalone' && localChildren.length
         ? [...base, { ...localManagementNavItem, children: localChildren }]
-        : base;
+        : maintenanceItem
+          ? [...base, { label: '系统管理', path: '/system', icon: localManagementNavItem.icon, children: [maintenanceItem] }]
+          : base;
       const filterWeighing = (items: NavItem[]): NavItem[] => items.flatMap(item => {
         const isLocalNodeStatus = item.path === '/weighing/node-sync' || item.path === '/weighing/node-status';
         const isCenterWorkflow = !isLocalNodeStatus && /temporary-parties|sync|center|central|中心|审批|下发/i.test(`${item.path} ${item.label}`);

@@ -6,12 +6,78 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/config"
+	"github.com/knadh/koanf/parsers/yaml"
 )
+
+func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testing.T) {
+	root := checkout(t)
+	if _, err := invoke(t, "init"); err != nil {
+		t.Fatal(err)
+	}
+	original, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.Maintenance.DataDir != filepath.Join(root, ".data", "agent") {
+		t.Fatal("new development config lacks its isolated maintenance directory")
+	}
+	path := filepath.Join("configs", "config.dev.yaml")
+	contents, _ := os.ReadFile(path)
+	doc, err := yaml.Parser().Unmarshal(contents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(doc, "maintenance")
+	legacy, err := yaml.Parser().Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, legacy, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := invoke(t, "init"); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Maintenance.DataDir != original.Maintenance.DataDir {
+		t.Fatal("existing development config did not gain a maintenance directory")
+	}
+	if updated.JWT != original.JWT || updated.Weighing.AgentKey != original.Weighing.AgentKey || !reflect.DeepEqual(updated.Node, original.Node) || updated.Database != original.Database {
+		t.Fatal("backfill changed existing credentials or deployment identity")
+	}
+	before, _ := os.ReadFile(path)
+	if _, err := invoke(t, "init"); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Fatal("repeated initialization changed configured maintenance")
+	}
+	for _, text := range []string{"maintenance:\n  data_dir: \"\"\n", "node:\n  role: site\n", "maintenance: {data_dir: /custom/agent}\n"} {
+		if out, changed, err := withMaintenanceDirectory(text); err != nil || changed || out != text {
+			t.Fatal("explicit disable/custom path or named deployment role must be preserved")
+		}
+	}
+}
+
+func TestNamedDeploymentInitDoesNotGenerateFallbackDeviceKey(t *testing.T) {
+	for _, role := range []string{"standalone", "site", "central"} {
+		contents := "node:\n  role: " + role + "\nweighing:\n  agent_key: \"\"\n"
+		out, changed, err := withAgentKey(contents)
+		if err != nil || changed || out != contents {
+			t.Fatal("named deployment must retain its existing credential source")
+		}
+	}
+}
 
 func checkout(t *testing.T) string {
 	t.Helper()

@@ -13,11 +13,12 @@ import (
 )
 
 type Service struct {
-	imageDir string
-	node     config.NodeConfig
-	printMu  sync.Mutex
-	store    Store
-	devices  *agentbridge.Hub
+	imageDir           string
+	maintenanceEnabled bool
+	node               config.NodeConfig
+	printMu            sync.Mutex
+	store              Store
+	devices            *agentbridge.Hub
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {
@@ -29,7 +30,8 @@ func NewService(store Store, devices *agentbridge.Hub) *Service {
 	}
 	return s
 }
-func (s *Service) Agent() *agentbridge.Hub { return s.devices }
+func (s *Service) SetMaintenanceEnabled(enabled bool) { s.maintenanceEnabled = enabled }
+func (s *Service) Agent() *agentbridge.Hub            { return s.devices }
 func (s *Service) Categories(ctx context.Context, q PageQuery) (Page[Category], error) {
 	return s.store.Categories(ctx, q)
 }

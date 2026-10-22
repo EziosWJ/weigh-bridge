@@ -72,7 +72,17 @@ task doctor
 task dev
 ```
 
-`task init` 生成随机 JWT 和本机上传路径，保留已有配置，不创建数据库。`task dev` 显式执行 Goose migration 后启动 API（8900）和 Web（5173）。开发前端通过 `web/.env.development` 的 `VITE_API_BASE_URL=http://localhost:8900` 直连 API，无需新增代理；生产构建使用同源 API。不要把开发数据库凭据提交到仓库。
+`task init` 生成随机 JWT 和本机上传路径，保留已有配置，不创建数据库。`task dev` 先补齐缺失的开发配置，再显式执行 Goose migration，随后启动 API（8900）和 Web（5173）。开发前端通过 `web/.env.development` 的 `VITE_API_BASE_URL=http://localhost:8900` 直连 API，无需新增代理；生产构建使用同源 API。不要把开发数据库凭据提交到仓库。
+
+### 开发环境的设备维护入口
+
+运行 `task dev` 后，具有 `agent:maintenance:view` 或 `agent:maintenance:manage` 权限的账号可从「系统管理 → 设备维护」访问同址维护页 `/system/agent-maintenance`。自治部署仍在「本地管理」中显示同一入口；菜单依据后端实际启用状态与 RBAC，不依赖把开发库切成自治身份。
+
+`task init` 为新配置设置本检出的 `.data/agent` 维护目录，也为已有普通开发配置补齐缺失项；JWT、数据库连接、节点角色和已有 Agent 密钥不变。显式配置的目录或空字符串保留，空字符串表示关闭维护功能。已配置 `standalone`／`site`／`central` 的环境沿用各自初始化与凭据来源，不由开发初始化补入其他身份。
+
+默认开发维护从现有数据库读取配置中所选地磅及 Agent 绑定，以当前 API 地址准备新目录的草稿；不修改节点身份、不自动启用正式业务、不写入有效 `agent.env`，也不启动设备。已有草稿、有效配置及账本不覆盖。没有安装 CUPS 或 Agent 用户服务时，如实显示不可读取／未知，相关维护动作会失败，不使用模拟结果。
+
+本地服务已在运行时，停止并重新运行 `task dev`，随后刷新浏览器。若菜单仍缺失，检查迁移是否成功、账号是否有上述权限，以及 `maintenance.data_dir` 是否被显式关闭。
 
 ### 接入独立 Agent mock
 
@@ -99,7 +109,7 @@ task agent:mock
 
 直接运行 `task`（或 `task --list`）只展示日常常用入口；`task tasks`（或 `task --list-all`）查看所有任务。设备、监控、历史同步和专项验证命令仍可按原名称直接执行，用 `task <任务名> --summary` 查看用途及执行步骤。
 
-本厂三服务打包使用 `task package VERSION=<唯一版本>`，它是 `task standalone:package` 的别名；安装与发布验证见[自治部署说明](docs/device/standalone-deployment.md)。列表精简不改变 `init`／`dev` 的初始化和启动行为。
+本厂三服务打包使用 `task package VERSION=<唯一版本>`，它是 `task standalone:package` 的别名；安装与发布验证见[自治部署说明](docs/device/standalone-deployment.md)。原有专项任务仍可直接调用。
 
 | 命令（仓库根目录） | 用途 |
 | --- | --- |

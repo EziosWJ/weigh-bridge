@@ -57,9 +57,9 @@ type Application struct {
 // New assembles the HTTP router. Database readiness is supplied by the caller
 // so that the application layer does not depend on a concrete database driver.
 func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Dependencies) (*Application, error) {
-	if cfg.Node.Role == "standalone" && deps.Maintenance != nil {
+	if deps.Maintenance != nil {
 		if deps.MaintenanceBusinessValidator == nil {
-			return nil, fmt.Errorf("standalone Agent maintenance requires a local identity validator")
+			return nil, fmt.Errorf("Agent maintenance requires a local identity validator")
 		}
 		deps.Maintenance.SetBusinessConfigValidator(deps.MaintenanceBusinessValidator)
 	}
@@ -107,6 +107,7 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 	auth.RegisterRoutes(router, authHandler)
 	if deps.Weighing != nil {
 		deps.Weighing.SetNode(cfg.Node, cfg.Weighing.ImageDir)
+		deps.Weighing.SetMaintenanceEnabled(deps.Maintenance != nil)
 		if devices := deps.Weighing.Agent(); devices != nil && cfg.Node.Role != "central" {
 			devices.Register(router)
 		}
