@@ -1,7 +1,7 @@
 .task/
 .data/
 bin/
-
+tmp/
 # Local Agent credentials, runtime state and Python test cache.
 maintenance/
 agent.env
