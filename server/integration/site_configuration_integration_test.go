@@ -25,8 +25,7 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
-	temporary := startPostgres(t)
-	runMigrations(t, projectRoot(t), temporary.dsn)
+	temporary := startBusinessPostgres(t)
 	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
 	checkSiteConfiguration(t, db, testDependencies(t, db, t.TempDir()))

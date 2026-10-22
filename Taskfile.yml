@@ -170,13 +170,19 @@ tasks:
       - go test -tags=integration ./integration -run 'Notification|Announcement' -count=1
 
   backend:integration:
-    desc: Run backend PostgreSQL integration tests
+    desc: Run current local PostgreSQL integration tests
     dir: server
     cmds:
       - go test -tags=integration ./integration -count=1 -timeout=20m
 
+  backend:integration:legacy-sync:
+    desc: Run historical central/site synchronization regression tests (optional)
+    dir: server
+    cmds:
+      - go test -tags=integration,legacy_sync ./integration -run '^TestPostgresLegacyCentralSync$' -count=1 -timeout=5m
+
   db:integration:postgres:
-    desc: Run the PostgreSQL database integration contract
+    desc: Run the current local PostgreSQL database integration contract
     dir: server
     cmds:
       - go test -tags=integration ./integration -count=1 -timeout=20m

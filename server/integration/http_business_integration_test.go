@@ -21,8 +21,7 @@ import (
 
 func TestPostgresSharedHTTPBusinessContract(t *testing.T) {
 	directory := t.TempDir()
-	temporary := startPostgres(t)
-	runMigrations(t, projectRoot(t), temporary.dsn)
+	temporary := startBusinessPostgres(t)
 	database := openTemporaryDatabase(t, temporary.dsn)
 	defer func() { _ = database.Close() }()
 

@@ -110,6 +110,14 @@ task agent:mock
 
 Go 原生命令从 `server/` 运行：`go test ./...`、`go vet ./...`；npm 原生命令从 `web/` 运行：`npm ci`、`npm run build`、`npm run lint`。
 
+PostgreSQL 集成测试每次运行共用一个临时容器，迁移命令只编译一次。普通业务测试通过 `startBusinessPostgres` 从本次进程迁移一次的模板库克隆独立数据库；模板使用 test 环境种子，完成迁移后禁止连接，随容器一并清理。迁移、环境种子、升级／回退专项通过 `startPostgres` 创建空库并执行真实迁移，备份恢复目标也使用空库。各测试结束删除其数据库；整套结束清理容器和临时可执行文件。Goose 回退测试仍使用全局状态，当前保持串行执行。
+
+- 日常修改：在 `server/` 运行受影响测试，例如 `go test -tags=integration ./integration -run 'TestPostgresWeighing' -count=1 -timeout=20m`。
+- 数据库改动及当前交付：运行 `task db:check`，包含本地业务、权限、设备契约、迁移及数据库恢复回归。CI 默认执行同一集成集合。
+- 维护历史中心同步：额外运行 `task backend:integration:legacy-sync`。旧中心／厂区同步测试由 `integration && legacy_sync` 标签单独启用，也可在 GitHub Actions 手动勾选 `legacy_sync` 运行；不作为当前本厂自治的默认门禁。
+
+`TestPostgresLocalBusinessRecovery` 覆盖数据库恢复后单据／称重依据不变、未决业务和打印不自动重放、旧备份不复用后续编号。它使用现有业务 HTTP 测试入口及厂区数据身份分配器，不是独立运行模式的初始化验收；该验收应在独立运行功能合入后补充，不通过设置 `initialized` 或假造中心完成。图片文件和设备打印账本的完整备份恢复也不在此测试范围内。独立浏览器／监控脚本的环境组织不受本次拆分影响。
+
 ## 称重业务入口
 
 登录后从“称重工作台”打开独立操作窗口，后台保留运输任务、原始称重、最终单据及基础资料。设备控制仅位于独立 Agent mock 页面。工作台实时展示 Agent 上报状态，稳定后由操作员采集并确认；异常处置、隔日回磅、人工调整、单磅重称及作废重开沿用现有业务规则。

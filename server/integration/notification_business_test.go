@@ -16,8 +16,7 @@ import (
 )
 
 func TestNotificationBusinessEntryPostgres(t *testing.T) {
-	temporary := startPostgres(t)
-	runMigrations(t, projectRoot(t), temporary.dsn)
+	temporary := startBusinessPostgres(t)
 	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
 	businessEntryContract(t, db, testDependencies(t, db, t.TempDir()))

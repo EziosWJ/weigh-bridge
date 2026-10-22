@@ -1,6 +1,12 @@
 name: PostgreSQL and release gate
 
 on:
+  workflow_dispatch:
+    inputs:
+      legacy_sync:
+        description: Run historical central/site synchronization regression
+        type: boolean
+        default: false
   push:
     paths:
       - "server/**"
@@ -74,7 +80,7 @@ jobs:
           go vet ./...
 
   postgres-contract:
-    name: PostgreSQL integration contract
+    name: Local PostgreSQL integration contract
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,7 +93,38 @@ jobs:
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
-      - name: Run PostgreSQL integration contract
+      - name: Set up Node for notification capacity browser test
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Prepare notification capacity browser dependencies
+        working-directory: web
+        run: |
+          npm ci
+          npx --no-install playwright install --with-deps chromium
+      - name: Run local PostgreSQL integration contract
         run: >-
           go test -tags=integration ./integration
           -count=1 -timeout=20m
+
+  legacy-sync-regression:
+    name: Historical central/site synchronization (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.legacy_sync }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: Run historical synchronization regression
+        run: >-
+          go test -tags=integration,legacy_sync ./integration
+          -run '^TestPostgresLegacyCentralSync$' -count=1 -timeout=5m

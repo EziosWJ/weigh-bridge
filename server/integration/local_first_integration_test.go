@@ -1,4 +1,4 @@
-//go:build integration
+//go:build integration && legacy_sync
 
 package integration
 
@@ -27,7 +27,8 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
-func TestPostgresLocalFirst(t *testing.T) {
+// Historical central/site replication contract. Run through backend:integration:legacy-sync.
+func TestPostgresLegacyCentralSync(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	type node struct {
@@ -41,11 +42,12 @@ func TestPostgresLocalFirst(t *testing.T) {
 	}
 	makeNode := func(name string, cfg config.NodeConfig, restore ...[]byte) *node {
 		dir := t.TempDir()
-		temporary := startPostgres(t)
+		var temporary temporaryPostgres
 		if len(restore) > 0 {
+			temporary = startPostgres(t)
 			temporary.restore(t, restore[0])
 		} else {
-			runMigrations(t, projectRoot(t), temporary.dsn)
+			temporary = startBusinessPostgres(t)
 		}
 		db := openTemporaryDatabase(t, temporary.dsn)
 		t.Cleanup(func() { db.Close() })
