@@ -57,15 +57,19 @@ func (h *Handler) siteScope(c *gin.Context) {
 	}
 	scope := siteScope{Read: []int64{}, Operate: []int64{}}
 	for _, s := range sites {
+		if h.service.node.Role == "site" && s.ID != h.service.node.SiteID {
+			continue
+		}
 		scope.Read = append(scope.Read, s.ID)
-		if s.CanOperate {
+		if s.CanOperate && s.Enabled == 1 && h.service.node.Role != "central" {
 			scope.Operate = append(scope.Operate, s.ID)
 		}
 	}
 	c.Set(siteScopeKey, scope)
+	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	fail := func(err error) { writeResult(c, nil, err); c.Abort() }
 	path := strings.TrimPrefix(c.FullPath(), "/api/weighing/")
-	if strings.HasPrefix(path, "users/") || path == "site-options" || strings.HasPrefix(path, "material") || strings.HasPrefix(path, "parties") {
+	if strings.HasPrefix(path, "temporary-parties") || strings.HasPrefix(path, "configuration/") || strings.HasPrefix(path, "site-config") || strings.HasPrefix(path, "agent-settings") || strings.HasPrefix(path, "users/") || path == "site-options" || strings.HasPrefix(path, "material") || strings.HasPrefix(path, "parties") {
 		c.Next()
 		return
 	}
@@ -102,6 +106,8 @@ func (h *Handler) siteScope(c *gin.Context) {
 			fail(ErrForbidden)
 			return
 		}
+		scope.FilterSiteID = id
+		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	}
 	if value := c.Query("scaleId"); value != "" {
 		id, e := strconv.ParseInt(value, 10, 64)
@@ -199,6 +205,7 @@ func (h *Handler) siteScope(c *gin.Context) {
 			return
 		}
 	}
+	scope.WriteSiteID = expected
 	c.Set(siteScopeKey, scope)
 	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	c.Next()

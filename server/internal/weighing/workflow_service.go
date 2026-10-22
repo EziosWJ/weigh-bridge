@@ -82,11 +82,21 @@ func (s *Service) ConfirmSecond(ctx context.Context, id int64, in ConfirmationIn
 	return s.deviceCommand(ctx, in.ScaleID, func(ctx context.Context) (CommandResult, error) { return s.store.ConfirmSecond(ctx, id, in, e) })
 }
 func (s *Service) FindTicket(ctx context.Context, id int64) (TicketView, error) {
-	return s.store.FindTicket(ctx, id)
+	v, err := s.store.FindTicket(ctx, id)
+	if err == nil {
+		s.decorateTicketImages(&v)
+	}
+	return v, err
 }
 func (s *Service) Tasks(ctx context.Context, q PageQuery) (Page[Task], error) {
 	return s.store.Tasks(ctx, q)
 }
 func (s *Service) Tickets(ctx context.Context, q PageQuery) (Page[TicketView], error) {
-	return s.store.Tickets(ctx, q)
+	v, err := s.store.Tickets(ctx, q)
+	if err == nil {
+		for i := range v.Records {
+			s.decorateTicketImages(&v.Records[i])
+		}
+	}
+	return v, err
 }

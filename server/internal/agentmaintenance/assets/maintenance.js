@@ -154,12 +154,13 @@ function configDifferences(data) {
 async function loadConfig() {
   const data = await api('/api/config');
   cfg = data.config;
+ $('siteIdentity').textContent = cfg.siteName ? `草稿归属：${cfg.siteName}（${cfg.siteCode}） · ${cfg.scaleName || cfg.scaleId}` : '现有配置未记录厂区名称，可导入后台下载的厂区配置。';
   configData = data;
   const queues = lastState?.queues || (await api('/api/status')).queues || [];
   const fieldHTML = ([key, name, type, min, max, help]) => `<div><label for="f-${key}">${name}</label>${key === 'queue' ? `<select id="f-${key}">${[...new Set([cfg[key], ...queues])].map((value) => `<option>${esc(value)}</option>`).join('')}</select>` : `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="1" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' ? '' : 'required'} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`}<p class="field-help" id="hint-${key}">${help}</p></div>`;
   $('form').innerHTML = `<fieldset><legend>云端连接与身份</legend><div class="fields-grid">${fields.slice(0, 4).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>打印目标与校准</legend><div class="fields-grid">${fields.slice(4).map(fieldHTML).join('')}</div></fieldset>`;
   $('saved').textContent = `${data.hasAgentKey ? '连接密钥已设置。' : '连接密钥尚未设置。'}${data.saved ? '当前无未应用草稿。' : '存在未应用草稿，尚未影响运行配置。'}打印运行参数需要应用并重启打印 Agent。`;
-  $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.serverUrl}，${data.active.agentId}，地磅 ${data.active.scaleId}\n${calibration(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
+  $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.siteName || "厂区名称未配置"}，${data.active.scaleName || "地磅 " + data.active.scaleId}\n${data.active.serverUrl}，${data.active.agentId}\n${calibration(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
   $('runtimeConfig').textContent = data.runtimeState;
   $('configDiff').innerHTML = configDifferences(data);
   $('calibrationSummary').textContent = calibration(data.active);
@@ -335,3 +336,17 @@ api('/api/session').then(async (session) => {
   if (session.authenticated) { await loadConfig(); await visitPage(); }
 }).catch((error) => showMessage(error.message, true));
 setInterval(refresh, 15000);
+
+async function importSiteConfiguration(input) {
+ const file=input.files?.[0];if(!file||busy)return;
+ try {
+  if(file.size>16384)throw Error('厂区配置文件过大');
+  const connection=JSON.parse(await file.text());
+  const preview=await api('/api/config/import',{method:'POST',body:JSON.stringify({connection})});
+  const c=preview.config;
+  if(!await confirmAction('导入厂区配置',`<p>厂区：${esc(c.siteName)}（${esc(c.siteCode)}）</p><p>地磅：${esc(c.scaleName)}（${esc(c.scaleCode)}）</p><p>Agent：${esc(c.agentId)}</p><p>Server：${esc(c.serverUrl)}</p><p>保留${esc(calibration(c))}。导入只保存草稿，需明确应用后生效。</p>`,'确认导入'))return;
+  setBusy(true);
+  await api('/api/config/import',{method:'POST',body:JSON.stringify({connection,confirm:true})});
+  await loadConfig();showMessage('厂区配置已导入草稿，点击“应用配置”后生效。');
+ }catch(error){showMessage(error.message,true)}finally{input.value='';setBusy(false)}
+}

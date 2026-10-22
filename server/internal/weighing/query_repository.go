@@ -58,7 +58,7 @@ func taskFilters(db *gorm.DB, q PageQuery) *gorm.DB {
 		db = db.Where("t.material_id=?", *q.MaterialID)
 	}
 	if q.PartyID != nil {
-		db = db.Where("t.party_id=?", *q.PartyID)
+		db = db.Where(canonicalPartyID("CAST(t.party_id AS TEXT)")+"=?", strconv.FormatInt(*q.PartyID, 10))
 	}
 	return db
 }
@@ -90,7 +90,7 @@ func ticketQuery(db *gorm.DB, q PageQuery) (*gorm.DB, error) {
 		query = query.Where(jsonIDExpression(query, "k.business_snapshot", "materialId")+"=?", strconv.FormatInt(*q.MaterialID, 10))
 	}
 	if q.PartyID != nil {
-		query = query.Where(jsonIDExpression(query, "k.business_snapshot", "partyId")+"=?", strconv.FormatInt(*q.PartyID, 10))
+		query = query.Where(canonicalPartyID(jsonIDExpression(query, "k.business_snapshot", "partyId"))+"=?", strconv.FormatInt(*q.PartyID, 10))
 	}
 	if q.Keyword != "" {
 		v := "%" + q.Keyword + "%"
@@ -185,7 +185,7 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 		tare = "k.final_tare_milli_tonne"
 		direction = jsonIDExpression(query, column, "direction")
 	}
-	dimensions := []struct{ key, expression string }{{"site_id", "t.site_id"}, {"direction", direction}, {"material_id", jsonIDExpression(query, column, "materialId")}, {"material_name", jsonIDExpression(query, column, "materialName")}, {"material_spec", jsonIDExpression(query, column, "materialSpec")}, {"party_id", jsonIDExpression(query, column, "partyId")}, {"party_name", jsonIDExpression(query, column, "partyName")}}
+	dimensions := []struct{ key, expression string }{{"site_id", "t.site_id"}, {"direction", direction}, {"material_id", jsonIDExpression(query, column, "materialId")}, {"material_name", jsonIDExpression(query, column, "materialName")}, {"material_spec", jsonIDExpression(query, column, "materialSpec")}, {"party_id", canonicalPartyID(jsonIDExpression(query, column, "partyId"))}, {"party_name", canonicalPartyName(jsonIDExpression(query, column, "partyId"), jsonIDExpression(query, column, "partyName"))}}
 	selects := []string{}
 	groups := []string{}
 	for _, d := range dimensions {
@@ -244,4 +244,11 @@ func (r *Repository) TaskEvents(ctx context.Context, id int64, q PageQuery) (Pag
 	}
 	err := db.Order("occurred_at DESC,id DESC").Limit(q.PageSize).Offset((q.Page - 1) * q.PageSize).Find(&result.Records).Error
 	return result, err
+}
+
+func canonicalPartyID(expression string) string {
+	return "COALESCE((SELECT CAST(tp.formal_party_id AS TEXT) FROM wb_temporary_party tp WHERE CAST(tp.party_id AS TEXT)=" + expression + ")," + expression + ")"
+}
+func canonicalPartyName(id, name string) string {
+	return "COALESCE((SELECT fp.name FROM wb_temporary_party tp JOIN wb_party fp ON fp.id=tp.formal_party_id WHERE CAST(tp.party_id AS TEXT)=" + id + ")," + name + ")"
 }

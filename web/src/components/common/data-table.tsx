@@ -12,6 +12,11 @@ type DataTableProps<T> = {
   empty?: ReactNode;
   minWidth?: number;
   className?: string;
+  compact?: boolean;
+  stickyHeader?: boolean;
+  /** 桌面端固定首尾两列；业务页面将标识列放首位、操作列放末位。 */
+  fixedEdges?: boolean;
+  ariaLabel?: string;
   onRowClick?: (record: T) => void;
   rowClassName?: (record: T, index: number) => string | undefined;
 };
@@ -40,12 +45,16 @@ export function DataTable<T>({
   empty,
   minWidth = 840,
   className,
+  compact = false,
+  stickyHeader = false,
+  fixedEdges = false,
+  ariaLabel = "数据表格",
   onRowClick,
   rowClassName,
 }: DataTableProps<T>) {
   if (loading) {
     return (
-      <div className="space-y-space-3 p-card" aria-busy="true" aria-live="polite">
+      <div className={cn("space-y-space-3 p-card", className)} aria-busy="true" aria-live="polite">
         {Array.from({ length: 5 }).map((_, index) => (
           <div
             key={index}
@@ -58,7 +67,7 @@ export function DataTable<T>({
 
   if (error) {
     return (
-      <div className="p-card">
+      <div className={cn("p-card", className)}>
         {typeof error === "string" ? (
           <EmptyState title="加载失败" description={error} />
         ) : (
@@ -70,7 +79,7 @@ export function DataTable<T>({
 
   if (dataSource.length === 0) {
     return (
-      <div className="p-card">
+      <div className={cn("p-card", className)}>
         {empty ?? (
           <EmptyState
             title="暂无数据"
@@ -82,9 +91,14 @@ export function DataTable<T>({
   }
 
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    <div
+      className={cn("min-w-0 overflow-auto", (stickyHeader || fixedEdges) && "isolate", className)}
+      role={stickyHeader || fixedEdges ? "region" : undefined}
+      aria-label={stickyHeader || fixedEdges ? ariaLabel : undefined}
+      tabIndex={stickyHeader || fixedEdges ? 0 : undefined}
+    >
       <table
-        className="w-full border-separate border-spacing-0 text-left"
+        className={cn("w-full border-separate border-spacing-0 text-left", compact && "table-fixed")}
         style={{ minWidth }}
       >
         <thead>
@@ -94,6 +108,10 @@ export function DataTable<T>({
                 key={getColumnKey(column, index)}
                 className={cn(
                   "border-b border-border px-space-5 py-space-3 font-medium",
+                  compact && "!px-space-3 !py-space-2",
+                  stickyHeader && "sticky top-0 z-20 bg-neutral-background",
+                  fixedEdges && index === 0 && "lg:sticky lg:left-0 lg:z-30 lg:bg-neutral-background lg:border-r",
+                  fixedEdges && index === columns.length - 1 && "lg:sticky lg:right-0 lg:z-30 lg:bg-neutral-background lg:border-l",
                   column.align === "center" && "text-center",
                   column.align === "right" && "text-right",
                   column.nowrap && "whitespace-nowrap",
@@ -111,7 +129,8 @@ export function DataTable<T>({
             <tr
               key={getRowKey(rowKey, record)}
               className={cn(
-                "transition-colors",
+                "group transition-colors",
+                compact && "hover:bg-neutral-background",
                 onRowClick && "cursor-pointer hover:bg-neutral-background",
                 rowClassName?.(record, rowIndex),
               )}
@@ -136,6 +155,9 @@ export function DataTable<T>({
                     key={getColumnKey(column, columnIndex)}
                     className={cn(
                       "border-b border-border px-space-5 py-space-3 align-middle",
+                      compact && "break-words !px-space-3 !py-space-2 [overflow-wrap:anywhere]",
+                      fixedEdges && columnIndex === 0 && "lg:sticky lg:left-0 lg:z-10 lg:border-r lg:bg-surface lg:group-hover:bg-neutral-background",
+                      fixedEdges && columnIndex === columns.length - 1 && "lg:sticky lg:right-0 lg:z-10 lg:border-l lg:bg-surface lg:group-hover:bg-neutral-background",
                       column.align === "center" && "text-center",
                       column.align === "right" && "text-right",
                       column.nowrap && "whitespace-nowrap",

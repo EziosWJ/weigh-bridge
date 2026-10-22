@@ -27,6 +27,7 @@ export interface WireSession {
   sessionToken?: string;
 }
 export interface WireTicket {
+ imagesComplete?:boolean;
  siteId:number;siteName:string;
   printSheet?: PrintSheet;
   mode?: string;

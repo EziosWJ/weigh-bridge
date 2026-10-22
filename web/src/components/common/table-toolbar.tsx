@@ -21,13 +21,13 @@ export function TableToolbar({
         className,
       )}
     >
-      <div>
+      <div className="min-w-0">
         {title && <h2 className="text-card-title font-semibold">{title}</h2>}
         {description && (
           <p className="mt-space-1 text-body-secondary text-text-tertiary">{description}</p>
         )}
       </div>
-      {actions && <div className="flex items-center gap-space-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-space-2">{actions}</div>}
     </div>
   );
 }

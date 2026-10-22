@@ -26,13 +26,16 @@ func siteFilter(db *gorm.DB, q PageQuery, column string) *gorm.DB {
 }
 func (r *Repository) Sites(ctx context.Context, user int64) ([]Site, error) {
 	rows := []Site{}
-	db := r.db.WithContext(ctx).Table("wb_site s").Select("s.*,us.can_operate").Joins("JOIN wb_user_site us ON us.site_id=s.id AND us.user_id=?", user).Where("s.enabled=1")
+	db := r.db.WithContext(ctx).Table("wb_site s").Select("s.*,CASE WHEN s.enabled=1 THEN us.can_operate ELSE 0 END AS can_operate").Joins("JOIN wb_user_site us ON us.site_id=s.id AND us.user_id=?", user)
+	if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok {
+		db = db.Where("s.id IN ?", scope.Read)
+	}
 	err := db.Order("s.id").Find(&rows).Error
 	return rows, err
 }
 func (r *Repository) SiteOptions(ctx context.Context) ([]Site, error) {
 	rows := []Site{}
-	err := r.db.WithContext(ctx).Where("enabled=1").Order("id").Find(&rows).Error
+	err := r.db.WithContext(ctx).Order("id").Find(&rows).Error
 	return rows, err
 }
 func (r *Repository) SiteGrants(ctx context.Context, user int64) ([]SiteGrant, error) {
@@ -61,7 +64,7 @@ func (r *Repository) SaveSiteGrants(ctx context.Context, user int64, rows []Site
 			seen[v.SiteID] = true
 			v.UserID = user
 			var n int64
-			if err := tx.Model(&Site{}).Where("id=? AND enabled=1", v.SiteID).Count(&n).Error; err != nil {
+			if err := tx.Model(&Site{}).Where("id=?", v.SiteID).Count(&n).Error; err != nil {
 				return err
 			}
 			if n != 1 {
@@ -88,7 +91,7 @@ func (r *Repository) ResourceSite(ctx context.Context, kind string, id int64) (i
 	db := r.db.WithContext(ctx)
 	switch kind {
 	case "scales":
-		db = db.Table("wb_scale").Select("site_id").Where("id=? AND enabled=1", id)
+		db = db.Table("wb_scale").Select("site_id").Where("id=?", id)
 	case "tasks":
 		db = db.Table("wb_transport_task").Select("site_id").Where("id=?", id)
 	case "tickets":
@@ -124,4 +127,20 @@ func (r *Repository) RecordAgentKick(ctx context.Context, e audit.Event) error {
 		}
 		return audit.RecordOn(ctx, tx, e)
 	})
+}
+
+// Serialize business writes and site disable without changing replayed commands.
+func lockWriteSite(tx *gorm.DB, ctx context.Context) error {
+	scope, ok := ctx.Value(siteScopeKey).(siteScope)
+	if !ok || scope.WriteSiteID == 0 {
+		return nil
+	}
+	site, err := lockRow[Site](tx, scope.WriteSiteID)
+	if err != nil {
+		return err
+	}
+	if site.Enabled != 1 {
+		return ErrForbidden
+	}
+	return nil
 }

@@ -281,6 +281,22 @@ try {
     await page.getByRole('link', { name: menu, exact: true }).click();
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2), `mobile ${menu} overflows horizontally`);
   }
+  // Import is a previewed connection-only draft; local print settings stay intact.
+  await page.getByRole('link', {name:'配置',exact:true}).click();
+  const beforeImport = (await (await context.request.get(`${url}/api/config`)).json()).config;
+  const envBeforeImport = await fs.readFile(path.join(data,'agent.env'),'utf8');
+  const connectionFile = path.join(temporary,'site-connection.json');
+  await fs.writeFile(connectionFile,JSON.stringify({serverUrl:beforeImport.serverUrl,siteId:1,siteCode:'SITE01',siteName:'维护测试厂区',scaleId:beforeImport.scaleId,scaleCode:'SCALE01',scaleName:'维护测试地磅',agentId:beforeImport.agentId,agentKey:dummyKey}));
+  await page.locator('#siteConfigFile').setInputFiles(connectionFile);
+  await page.getByRole('dialog').getByText('厂区：维护测试厂区（SITE01）',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'取消',exact:true}).click();
+  assert.equal((await (await context.request.get(`${url}/api/config`)).json()).config.siteName,beforeImport.siteName);
+  await page.locator('#siteConfigFile').setInputFiles(connectionFile);
+  await page.getByRole('button',{name:'确认导入',exact:true}).click();
+  await page.locator('#siteIdentity').filter({hasText:'维护测试厂区'}).waitFor();
+  const afterImport = (await (await context.request.get(`${url}/api/config`)).json()).config;
+  for(const key of ['queue','printWidthMm','offsetXmm','offsetYmm','formLengthMm'])assert.equal(afterImport[key],beforeImport[key]);
+  assert.equal(await fs.readFile(path.join(data,'agent.env'),'utf8'),envBeforeImport);
   await page.getByRole('link', { name: '设备', exact: true }).click();
   await page.getByText('暂无重量预览', { exact: true }).waitFor();
   await page.getByText('暂无视频预览', { exact: true }).waitFor();

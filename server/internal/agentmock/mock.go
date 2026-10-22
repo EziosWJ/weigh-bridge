@@ -25,6 +25,8 @@ import (
 var assets embed.FS
 
 type Config struct {
+	SiteName        string
+	ScaleName       string
 	Server, ID, Key string
 	OnKick          func()
 	ScaleID         int64
@@ -343,7 +345,7 @@ func (m *Mock) stateHTTP(w http.ResponseWriter, _ *http.Request) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"online": m.online, "error": m.err, "agentId": m.cfg.ID, "scaleId": m.cfg.ScaleID, "state": m.current, "plate": m.plate, "prints": m.prints, "history": m.history})
+	_ = json.NewEncoder(w).Encode(map[string]any{"online": m.online, "error": m.err, "agentId": m.cfg.ID, "scaleId": m.cfg.ScaleID, "siteName": m.cfg.SiteName, "scaleName": m.cfg.ScaleName, "state": m.current, "plate": m.plate, "prints": m.prints, "history": m.history})
 }
 func (m *Mock) control(w http.ResponseWriter, r *http.Request) {
 	var in struct {

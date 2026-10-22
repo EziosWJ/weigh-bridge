@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"slices"
 	"time"
 
@@ -68,6 +69,25 @@ func (r *Repository) Materials(ctx context.Context, q PageQuery) (Page[Material]
 }
 func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], error) {
 	db := masterFilter(r.db.WithContext(ctx).Model(&Party{}), q)
+	var node struct {
+		Role   string
+		SiteID int64
+	}
+	if err := r.db.WithContext(ctx).Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
+		return Page[Party]{}, err
+	}
+	if node.Role == "site" {
+		db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party WHERE site_id<>?)", node.SiteID)
+	}
+	if node.Role == "central" {
+		if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok {
+			if len(scope.Read) == 0 {
+				db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party)")
+			} else {
+				db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party WHERE site_id NOT IN ?)", scope.Read)
+			}
+		}
+	}
 	if q.Keyword != "" {
 		v := "%" + q.Keyword + "%"
 		db = db.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?) OR LOWER(short_name) LIKE LOWER(?) OR phone LIKE ?", v, v, v, v)
@@ -102,8 +122,21 @@ func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], err
 	for _, c := range contacts {
 		byParty[c.PartyID] = append(byParty[c.PartyID], c)
 	}
+	temporary := []TemporaryParty{}
+	states := map[int64]string{}
+	if len(ids) > 0 {
+		if err := r.db.WithContext(ctx).Where("party_id IN ?", ids).Find(&temporary).Error; err != nil {
+			return p, err
+		}
+	}
+	for _, v := range temporary {
+		states[v.PartyID] = v.State
+	}
 	for i := range p.Records {
 		decorateParty(&p.Records[i], byParty[p.Records[i].ID])
+		if state := states[p.Records[i].ID]; state != "" && state != "pending" {
+			p.Records[i].Enabled = 0
+		}
 	}
 	return p, nil
 }
@@ -122,6 +155,13 @@ func (r *Repository) FindMaterial(ctx context.Context, id int64) (Material, erro
 	return findOne[Material](r.db.WithContext(ctx), id)
 }
 func (r *Repository) FindParty(ctx context.Context, id int64) (Party, error) {
+	var temporary struct{ SiteID int64 }
+	if err := r.db.WithContext(ctx).Table("wb_temporary_party").Where("party_id=?", id).Find(&temporary).Error; err != nil {
+		return Party{}, err
+	}
+	if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok && temporary.SiteID > 0 && !slices.Contains(scope.Read, temporary.SiteID) {
+		return Party{}, ErrForbidden
+	}
 	v, err := findOne[Party](r.db.WithContext(ctx), id)
 	if err != nil {
 		return v, err
@@ -149,7 +189,7 @@ func decorateParty(v *Party, contacts []Contact) {
 }
 func (r *Repository) Scales(ctx context.Context) ([]Scale, error) {
 	v := []Scale{}
-	db := r.db.WithContext(ctx).Table("wb_scale").Select("wb_scale.*,s.name AS site_name").Joins("JOIN wb_site s ON s.id=wb_scale.site_id AND s.enabled=1")
+	db := r.db.WithContext(ctx).Table("wb_scale").Select("wb_scale.*,s.name AS site_name").Joins("JOIN wb_site s ON s.id=wb_scale.site_id")
 	err := siteFilter(db, PageQuery{}, "wb_scale.site_id").Order("wb_scale.id").Find(&v).Error
 	for i := range v {
 		v[i].CanOperate = mayOperate(ctx, v[i].SiteID)
@@ -172,6 +212,20 @@ func meta(old MasterMeta, id, version, actor int64) (MasterMeta, error) {
 	return old, nil
 }
 func nextNumber(tx *gorm.DB, kind, prefix string) (string, error) {
+	var node struct {
+		Role   string
+		SiteID int64
+	}
+	if err := tx.Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
+		return "", err
+	}
+	if node.Role == "site" && (kind == "task" || kind == "ticket" || kind == "party") {
+		var site Site
+		if err := tx.First(&site, node.SiteID).Error; err != nil {
+			return "", err
+		}
+		return prefix + "-" + site.Code + "-" + agentbridge.ID(), nil
+	}
 	date := time.Now().UTC().Add(8 * time.Hour).Format("20060102")
 	var number int64
 	err := tx.Raw("INSERT INTO wb_number_sequence (kind,business_date,next_value) VALUES (?,?,1) ON CONFLICT (kind,business_date) DO UPDATE SET next_value=wb_number_sequence.next_value+1 RETURNING next_value", kind, date).Scan(&number).Error

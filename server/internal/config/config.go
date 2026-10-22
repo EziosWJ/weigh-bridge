@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ const (
 // may contain deployment credentials; APP_ environment variables override YAML.
 type Config struct {
 	Environment string           `koanf:"env"`
+	Node        NodeConfig       `koanf:"node"`
 	Service     ServiceConfig    `koanf:"service"`
 	HTTP        HTTPConfig       `koanf:"http"`
 	Swagger     SwaggerConfig    `koanf:"swagger"`
@@ -34,6 +36,19 @@ type Config struct {
 	Log         LogConfig        `koanf:"log"`
 	Monitoring  MonitoringConfig `koanf:"monitoring"`
 	Weighing    WeighingConfig   `koanf:"weighing"`
+}
+
+// NodeConfig selects independent deployment ownership. Empty role retains the development topology.
+type NodeConfig struct {
+	Role       string     `koanf:"role"`
+	SiteID     int64      `koanf:"site_id"`
+	CentralURL string     `koanf:"central_url"`
+	SyncKey    string     `koanf:"sync_key"`
+	Peers      []NodePeer `koanf:"peers"`
+}
+type NodePeer struct {
+	SiteID int64  `koanf:"site_id"`
+	Key    string `koanf:"key"`
 }
 
 type AgentBinding struct {
@@ -131,6 +146,31 @@ type LogConfig struct {
 // created. This keeps configuration errors deterministic and close to startup.
 func (c Config) Validate() error {
 	var errs []error
+	if c.Node.Role != "" && c.Node.Role != "central" && c.Node.Role != "site" {
+		errs = append(errs, errors.New("node.role must be central or site"))
+	}
+	if c.Node.Role == "site" && (c.Node.SiteID < 1 || c.Node.SiteID > 255 || strings.TrimSpace(c.Node.SyncKey) == "" || !strings.HasPrefix(c.Node.CentralURL, "http")) {
+		errs = append(errs, errors.New("site node requires site_id (1..255), central_url and sync_key"))
+	}
+	if c.Node.Role == "central" && c.Node.SiteID != 0 {
+		errs = append(errs, errors.New("central node must not set site_id"))
+	}
+	if c.Node.Role == "site" {
+		u, err := url.Parse(c.Node.CentralURL)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+			errs = append(errs, errors.New("node.central_url must be an HTTP(S) server URL"))
+		}
+	}
+	seenKeys := map[string]bool{}
+	seenPeers := map[int64]bool{}
+	for _, peer := range c.Node.Peers {
+		if peer.SiteID < 1 || peer.SiteID > 255 || strings.TrimSpace(peer.Key) == "" || seenPeers[peer.SiteID] || seenKeys[peer.Key] {
+			errs = append(errs, errors.New("node.peers requires unique site_id (1..255) and unique nonempty key"))
+		}
+		seenPeers[peer.SiteID] = true
+		seenKeys[peer.Key] = true
+	}
+
 	seenScales := map[int64]bool{}
 	seenAgents := map[string]bool{}
 	for _, v := range c.Weighing.Agents {

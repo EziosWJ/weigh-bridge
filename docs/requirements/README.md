@@ -2,6 +2,7 @@
 
 | 阶段或材料 | 状态 | 入口 |
 | --- | --- | --- |
+| 厂区本地运行与中心同步 | 2026-10-22 软件实施、双数据库及浏览器验证通过；生产切换与真实设备待现场验收，见[交付记录](local-first-deployment-delivery.md) | [Issue #4](https://github.com/EziosWJ/weigh-bridge/issues/4)、[Issue Spec](local-first-deployment-issue-spec.md)、[业务修改规格](local-first-deployment-spec.md)、[需求访谈](local-first-deployment-discovery.md)、[ADR 0021](../adr/0021-local-weighing-authority-and-central-sync.md) |
 | Agent 本地维护现场反馈改版 | 2026-10-21 授权实施，代码及受控验证完成；真实工控机升级、CUPS 和实物验收待完成 | [改版需求](agent-maintenance-revision-spec.md)、[改版交付记录](agent-maintenance-revision-delivery.md)、[ADR 0017](../adr/0017-agent-maintenance-config-and-lan.md) |
 | Agent 本地打印维护 | 2026-10-20 实现、review 与受控验证完成；工控机服务／CUPS 授权／现场 TLS／纸面效果待现场验收 | [首期需求与验收](agent-maintenance-spec.md)、[交付记录](agent-maintenance-delivery.md)、[讨论记录](agent-maintenance-discovery.md)、[ADR 0016](../adr/0016-agent-local-maintenance.md) |
 | 单据查看与五联针打 | 2026-10-19 已确认；实现与验证见交付记录，真实针打待现场验收 | [需求](ticket-view-print-spec.md)、[交付记录](ticket-view-print-delivery.md) |
@@ -23,3 +24,5 @@
 后续正式称重仍要求操作员确认、设备重量、对应抓拍及 Server 校验，相关取舍见 [ADR 0013](../adr/0013-formal-weighing-evidence.md)。真实业务后端、Agent、WSS 和设备联调不作为 Phase 2A 已完成能力。
 
 2026-10-18：[操作员业务修订交付](operator-weighing-corrections-delivery.md)记录隔日续称、双向调整、单磅重称与作废关联重开的前端模拟及验证。
+
+- [Issue #4 本地独立运行与中心同步交付](local-first-deployment-delivery.md)

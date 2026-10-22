@@ -15,6 +15,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/filemgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/logmgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/monitoring"
+	"github.com/EziosWJ/weighbridge/server/internal/nodesync"
 	"github.com/EziosWJ/weighbridge/server/internal/notification"
 	platformhttp "github.com/EziosWJ/weighbridge/server/internal/platform/http"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
@@ -28,6 +29,7 @@ import (
 // Core management services are required; notification routes are enabled when
 // the optional Notification service is supplied.
 type Dependencies struct {
+	Node         *nodesync.Service
 	Auth         *auth.Service
 	RBAC         *rbac.Service
 	Department   *dept.Service
@@ -50,7 +52,8 @@ type Application struct {
 // New assembles the HTTP router. Database readiness is supplied by the caller
 // so that the application layer does not depend on a concrete database driver.
 func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Dependencies) (*Application, error) {
-	if err := deps.validate(); err != nil {
+	if cfg.Node.Role!="" && deps.Node==nil{return nil,fmt.Errorf("node service is required for independent deployment")}
+ if err := deps.validate(); err != nil {
 		return nil, err
 	}
 
@@ -75,6 +78,10 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 			MaxAge:         cfg.CORS.MaxAge,
 		}),
 	)
+	if deps.Node != nil {
+		router.Use(deps.Node.Boundary)
+		deps.Node.Register(router, deps.Auth)
+	}
 	router.NoRoute(platformhttp.NotFoundHandler)
 
 	platformhttp.RegisterSystemRoutes(router, platformhttp.SystemRoutes{
@@ -86,7 +93,8 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 	}
 	auth.RegisterRoutes(router, authHandler)
 	if deps.Weighing != nil {
-		if devices := deps.Weighing.Agent(); devices != nil {
+		deps.Weighing.SetNode(cfg.Node,cfg.Weighing.ImageDir)
+		if devices := deps.Weighing.Agent(); devices != nil && cfg.Node.Role != "central" {
 			devices.Register(router)
 		}
 		business := router.Group("/api/weighing")

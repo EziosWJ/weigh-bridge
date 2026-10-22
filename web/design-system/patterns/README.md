@@ -46,6 +46,7 @@ DataTableCard
 | 页面 | Pattern | 当前差异或说明 |
 | --- | --- | --- |
 | 称重模拟 `src/pages/weighing/` | Standard List / Form / Detail 变体 | 工作台仅当前车辆；详情、预览、资料编辑及演示设置独立；[页面覆盖说明](../pages/weighing.md) |
+| 厂区配置 `src/pages/weighing/site-config.tsx` | Standard List Page 变体 | 列表上方组合现场连接地址表单，厂区维护与配置下载由业务页面负责 |
 | 用户管理 `src/pages/system/users/index.tsx` | Standard List Page | 用户筛选、选择、行操作和用户 Dialog 由页面负责 |
 | 角色管理 `src/pages/system/roles/index.tsx` | Standard List Page | 角色筛选、权限分配和行操作是业务扩展 |
 | 菜单管理 `src/pages/system/menus/index.tsx` | Tree List Page | 层级菜单使用表格化树形数据，保留菜单专属操作 |

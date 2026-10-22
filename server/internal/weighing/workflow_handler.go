@@ -4,6 +4,8 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
 	"github.com/gin-gonic/gin"
+	"os"
+	"path/filepath"
 )
 
 func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
@@ -12,7 +14,22 @@ func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
 	confirm := rbac.RequirePermission(h.permissions, "weighing:confirm")
 	router.GET("/scales/:id/session", read, h.session)
 	router.GET("/scales/:id/device", read, h.deviceState)
-	if h.service.devices != nil {
+	if h.service.node.Role == "central" {
+		router.GET("/agent-images/:imageId", read, func(c *gin.Context) {
+			name := c.Param("imageId")
+			if !syncImageName.MatchString(name) {
+				writeResult(c, nil, ErrNotFound)
+				return
+			}
+			path := filepath.Join(h.service.imageDir, name)
+			if _, err := os.Stat(path); err != nil {
+				writeResult(c, nil, ErrNotFound)
+				return
+			}
+			c.Header("Cache-Control", "private, max-age=86400, immutable")
+			c.File(path)
+		})
+	} else if h.service.devices != nil {
 		router.GET("/agent-images/:imageId", read, h.service.devices.ServeImage)
 	}
 	for _, action := range []string{"acquire", "renew", "release", "takeover"} {

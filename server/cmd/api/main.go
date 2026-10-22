@@ -21,6 +21,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/filemgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/logmgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/monitoring"
+	"github.com/EziosWJ/weighbridge/server/internal/nodesync"
 	"github.com/EziosWJ/weighbridge/server/internal/notification"
 	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
@@ -57,6 +58,11 @@ func main() {
 		}
 	}()
 
+	nodeService, err := nodesync.New(database.GORM, cfg.Node, cfg.Weighing.ImageDir)
+	if err != nil {
+		slog.Error("bind deployment identity; run migrations first", "error", err)
+		os.Exit(1)
+	}
 	authService, err := newAuthService(database, cfg.JWT, cfg.Auth.LoginGuard)
 	if err != nil {
 		slog.Error("build authentication service", "error", err)
@@ -118,7 +124,38 @@ func main() {
 	}
 	monitoringService := monitoring.NewService(monitoring.NewRepository(database.GORM), collector, nil, monitoring.WithTimeout(cfg.Monitoring.Timeout), monitoring.WithEnabled(cfg.Monitoring.Enabled))
 
+	weighRepo := weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, TicketTitle: cfg.Weighing.TicketTitle})
+	initial := []agentbridge.Config{}
+	for _, v := range cfg.Weighing.Agents {
+		initial = append(initial, agentbridge.Config{ID: v.ID, ScaleID: v.ScaleID, Key: v.Key})
+	}
+	if len(initial) == 0 && cfg.Weighing.AgentKey != "" {
+		initial = append(initial, agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey})
+	}
+	if err := weighRepo.ImportAgentBindings(context.Background(), initial); err != nil {
+		slog.Error("import Agent bindings; run migrations first", "error", err)
+		os.Exit(1)
+	}
+	managed, err := weighRepo.AgentConfigs(context.Background(), cfg.Weighing.ImageDir)
+	if err != nil {
+		slog.Error("load Agent bindings", "error", err)
+		os.Exit(1)
+	}
+	agents := agentbridge.NewMultiple(managed)
+	agents.SetResolver(func(ctx context.Context, scale int64) (agentbridge.Config, error) {
+		if cfg.Node.Role == "central" {
+			return agentbridge.Config{}, fmt.Errorf("central has no local Agent")
+		}
+		if cfg.Node.Role == "site" {
+			site, e := weighRepo.ResourceSite(ctx, "scales", scale)
+			if e != nil || site != cfg.Node.SiteID {
+				return agentbridge.Config{}, fmt.Errorf("Agent outside local site")
+			}
+		}
+		return weighRepo.AgentConfig(ctx, scale, cfg.Weighing.ImageDir)
+	})
 	application, err := app.New(*cfg, database, app.Dependencies{
+		Node:         nodeService,
 		Auth:         authService,
 		RBAC:         rbacService,
 		Department:   deptService,
@@ -129,7 +166,7 @@ func main() {
 		Log:          logService,
 		Notification: notificationService,
 		Monitoring:   monitoringService,
-		Weighing:     weighing.NewService(weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, TicketTitle: cfg.Weighing.TicketTitle}), configuredAgents(cfg.Weighing)),
+		Weighing:     weighing.NewService(weighRepo, agents),
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)
@@ -146,6 +183,8 @@ func main() {
 		close(monitoringDone)
 	}
 	defer stopMonitoring()
+	syncDone := make(chan struct{})
+	go func() { defer close(syncDone); nodeService.Run(monitoringContext) }()
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,
@@ -170,6 +209,7 @@ func main() {
 	notificationService.Close()
 	stopMonitoring()
 	<-monitoringDone
+	<-syncDone
 
 	shutdownContext, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 	defer cancel()

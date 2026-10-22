@@ -15,14 +15,23 @@ import type { HistoryEntry, TaskInput, WeighingFilter } from '@/types/weighing';
 import { roleLabels, partyRoleLabels, partyNatureLabels } from '@/types/weighing';
 import { PlateInput } from './plate-input';
 import { WeighingLookup } from './lookup-field';
+import './list.css';
+import { NodeSyncStatus } from './node-sync-status';
 
-export function DeviceBanner() {
-  const { data, storageError } = useWeighingStore();
-  return <aside className="mb-4 rounded-control border border-border bg-neutral-background px-4 py-2 text-sm text-text-secondary" aria-label="设备连接提示">
-    <div>设备数据由 Agent 提供 · 服务端保存 · 称重须人工确认</div>
+export function ListDate({ value }: { value: string }) {
+  const formatted = beijingTime(value);
+  return <time dateTime={value} className="whitespace-nowrap tabular-nums"><span className="block">{formatted.slice(0, 10)}</span><span className="block text-text-tertiary">{formatted.slice(11)}</span></time>;
+}
+
+export function DeviceBanner({ compact = false }: { compact?: boolean }) {
+  const { data, storageError, capabilities } = useWeighingStore();
+  if(capabilities?.nodeRole==='central')return <NodeSyncStatus/>;
+  if (compact && !data.pending && !storageError) return <NodeSyncStatus/>;
+  return <><NodeSyncStatus/><aside className="mb-4 rounded-control border border-border bg-neutral-background px-4 py-2 text-sm text-text-secondary" aria-label="设备连接提示">
+    {!compact && <div>设备数据由 Agent 提供 · 服务端保存 · 称重须人工确认</div>}
     {data.pending && <p className="mt-2 text-warning">上次称重提交结果待核实。<WorkbenchLink className="ml-1 text-primary underline" to={`/weighing/workbench?task=${encodeURIComponent(data.pending.taskId)}`}>前往工作台查询原结果</WorkbenchLink></p>}
     {storageError && <p role="alert" className="mt-2 text-error">{storageError}</p>}
-  </aside>;
+  </aside></>;
 }
 
 export function BusinessFields({ value, onChange, lockDirection = false, hidePlate = false, compact = false, onPatch, help, tab, onTabChange }: { onPatch?: (patch: Partial<TaskInput>) => void; value: TaskInput; onChange: (value: TaskInput) => void; lockDirection?: boolean; hidePlate?: boolean; compact?: boolean; help?: ReactNode; tab?: string; onTabChange?: (value: string) => void }) {
@@ -91,15 +100,15 @@ export function WeighingFilters({ value, onChange, ticket = false, dateLabel, hi
   const { materials, parties } = useWeighingStore(s => s.data);
   const sites=useWeighingStore(s=>s.capabilities?.sites);
   const change = (patch: Partial<WeighingFilter>) => onChange({ ...value, ...patch });
-  return <SearchFilterBar actions={<Button variant="secondary" onClick={() => onChange({})}>清空筛选</Button>}>
+  return <SearchFilterBar compact actions={<Button variant="secondary" onClick={() => onChange({})}>清空筛选</Button>}>
     <Select aria-label="筛选厂区" value={value.siteId??''} onChange={e=>change({siteId:e.target.value})}><option value="">全部授权厂区</option>{sites?.map(site=><option key={site.id} value={site.id}>{site.name}</option>)}</Select>
     <Input aria-label="车牌或编号" placeholder={ticket ? '车牌 / 单号 / 任务号' : '车牌 / 任务号'} value={value.keyword ?? ''} onChange={e => change({ keyword: e.target.value })} />
     <Select aria-label="筛选方向" value={value.direction ?? ''} onChange={e => change({ direction: e.target.value })}><option value="">全部方向</option><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
     <Select aria-label="筛选物料" value={value.materialId ?? ''} onChange={e => change({ materialId: e.target.value })}><option value="">全部物料</option>{materials.map(m => <option key={m.id} value={m.id}>{m.name} {m.spec}</option>)}</Select>
     <Select aria-label="筛选供收方" value={value.partyId ?? ''} onChange={e => change({ partyId: e.target.value })}><option value="">全部供收方</option>{parties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</Select>
     {!hideStatus && <Select aria-label="筛选状态" value={value.status ?? ''} onChange={e => change({ status: e.target.value })}><option value="">全部状态</option>{(ticket ? [['valid', '有效'], ['void', '作废']] : [['second', '待二次称重'], ['completed', '已完成'], ['terminated', '已终止']]).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select>}
-    <Field label={`${dateLabel ?? (ticket ? '出单' : '创建')}起始日期（北京时间）`} htmlFor="filter-date-from"><Input id="filter-date-from" type="date" value={value.from ?? ''} onChange={e => change({ from: e.target.value })} /></Field>
-    <Field label={`${dateLabel ?? (ticket ? '出单' : '创建')}结束日期（北京时间）`} htmlFor="filter-date-to"><Input id="filter-date-to" type="date" value={value.to ?? ''} onChange={e => change({ to: e.target.value })} /></Field>
+    <label className="flex min-w-0 items-center gap-space-2 text-sm text-text-secondary"><span className="shrink-0">从</span><Input id="filter-date-from" className="min-w-0" type="date" aria-label={`${dateLabel ?? (ticket ? '出单' : '创建')}起始日期（北京时间）`} value={value.from ?? ''} onChange={e => change({ from: e.target.value })} /></label>
+    <label className="flex min-w-0 items-center gap-space-2 text-sm text-text-secondary"><span className="shrink-0">至</span><Input id="filter-date-to" className="min-w-0" type="date" aria-label={`${dateLabel ?? (ticket ? '出单' : '创建')}结束日期（北京时间）`} value={value.to ?? ''} onChange={e => change({ to: e.target.value })} /></label>
   </SearchFilterBar>;
 }
 

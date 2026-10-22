@@ -24,6 +24,9 @@ func NewHandler(s *Service, permissions *rbac.Service) *Handler {
 func RegisterRoutes(router gin.IRouter, h *Handler) {
 	router.Use(h.siteScope)
 	registerSiteRoutes(router, h)
+	registerTemporaryRoutes(router, h)
+	registerConfigurationApplication(router, h)
+	registerSiteConfigurationRoutes(router, h)
 	router.GET("/capabilities", h.capabilities)
 	registerWorkflowRoutes(router, h)
 	registerCorrectionRoutes(router, h)
@@ -60,7 +63,7 @@ func (h *Handler) capabilities(c *gin.Context) {
 		return
 	}
 	sites, err := h.service.Sites(c, principal.UserID)
-	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites}, err)
+	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "nodeRole": h.service.node.Role, "nodeSiteId": h.service.node.SiteID}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}

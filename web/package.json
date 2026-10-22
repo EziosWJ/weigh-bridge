@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "preview": "vite preview --host 0.0.0.0",
     "test:layout": "node tests/operation-column-layout.mjs",
+    "test:business-layout": "node tests/business-list-layout.mjs",
     "test:menu-order": "node tests/menu-order.mjs",
     "test:route-loading": "node tests/route-loading.mjs",
     "test:sidebar-scroll": "node tests/sidebar-scroll.mjs",

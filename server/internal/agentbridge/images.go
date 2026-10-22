@@ -29,8 +29,8 @@ func (h *Hub) Register(router gin.IRouter) {
 	g := router.Group("/api/agent")
 	g.Use(func(c *gin.Context) {
 		scale, _ := strconv.ParseInt(c.GetHeader("X-Scale-ID"), 10, 64)
-		child := h.forScale(scale)
-		if child == nil || child.cfg.Key == "" || subtle.ConstantTimeCompare([]byte(c.GetHeader("Authorization")), []byte("Bearer "+child.cfg.Key)) != 1 || c.GetHeader("X-Agent-ID") != child.cfg.ID {
+		child, resolveErr := h.resolve(c.Request.Context(), scale)
+		if resolveErr != nil || child == nil || child.cfg.Key == "" || subtle.ConstantTimeCompare([]byte(c.GetHeader("Authorization")), []byte("Bearer "+child.cfg.Key)) != 1 || c.GetHeader("X-Agent-ID") != child.cfg.ID {
 			ph.AbortError(c, 401, 401, "Agent 身份无效", nil)
 			return
 		}
@@ -95,7 +95,7 @@ func (h *Hub) SaveImage(view string, reader io.Reader) (p.Image, error) {
 func (h *Hub) Image(id string) (p.Image, error) {
 	if h.children != nil {
 		scale, _ := strconv.ParseInt(strings.Split(id, "_")[0], 10, 64)
-		if child := h.children[scale]; child != nil {
+		if child := h.forScale(scale); child != nil {
 			return child.Image(id)
 		}
 		return p.Image{}, fmt.Errorf("invalid image reference")

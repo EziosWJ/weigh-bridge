@@ -16,6 +16,11 @@ import (
 
 // Config is shared by the printer process and its local maintenance service.
 type Config struct {
+	SiteID       int64  `json:"siteId"`
+	SiteCode     string `json:"siteCode"`
+	SiteName     string `json:"siteName"`
+	ScaleCode    string `json:"scaleCode"`
+	ScaleName    string `json:"scaleName"`
 	ServerURL    string `json:"serverUrl"`
 	AgentID      string `json:"agentId"`
 	ScaleID      int64  `json:"scaleId"`
@@ -111,6 +116,18 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 			if err != nil {
 				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
 			}
+		}
+	}
+
+	for key, dst := range map[string]*string{"WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName} {
+		if value, ok := values[key]; ok {
+			*dst = value
+		}
+	}
+	if value := values["WEIGHBRIDGE_SITE_ID"]; value != "" {
+		cfg.SiteID, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || cfg.SiteID < 0 {
+			return cfg, errors.New("厂区编号无效")
 		}
 	}
 	return cfg, ValidateConfig(cfg)

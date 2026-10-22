@@ -75,7 +75,9 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
         if (!item.path.startsWith('/weighing')) return [item];
         if (item.children?.length) { const children=filterWeighing(item.children);return children.length ? [{ ...item, children }] : []; }
         const path=item.path;
+        if(weighingCapabilities?.nodeRole==='central'&&['/weighing/sites','/weighing/workbench'].includes(path))return [];
         const allowed=path==='/weighing/workbench' ? has('confirm')
+          : path==='/weighing/site-config' ? has('site:manage') || has('site:export')
           : path==='/weighing/settings' ? false
           : ['/weighing/materials','/weighing/parties','/weighing/categories'].includes(path) ? has('master:read') : has('read');
         return allowed ? [item] : [];

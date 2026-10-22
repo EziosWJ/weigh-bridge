@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -68,6 +69,9 @@ func validSession(v ScaleSession, actor int64, in SessionInput) bool {
 func (r *Repository) ChangeSession(ctx context.Context, scaleID int64, action string, in SessionInput, e audit.Event) (SessionResult, error) {
 	var result SessionResult
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWriteSite(tx, ctx); err != nil {
+			return err
+		}
 		scale, err := findOne[Scale](tx, scaleID)
 		if err != nil {
 			return err
@@ -155,6 +159,11 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 	if !businessPlate.MatchString(in.Plate) || (in.Direction != "inbound" && in.Direction != "outbound") || in.MaterialID < 1 || in.PartyID < 1 || !maxLength(in.ContactName, 100) || !maxLength(in.ContactPhone, 50) || !maxLength(in.Driver, 100) || !maxLength(in.DriverPhone, 50) || !maxLength(in.Remark, 2000) {
 		return BusinessInfo{}, ErrInvalid
 	}
+	if old != nil && old.MaterialID == in.MaterialID && old.PartyID == in.PartyID && ((old.CarrierID == nil && in.CarrierID == nil) || (old.CarrierID != nil && in.CarrierID != nil && *old.CarrierID == *in.CarrierID)) {
+		info := *old
+		info.BusinessInput = in
+		return info, nil
+	}
 	material, err := lockRow[Material](tx, in.MaterialID)
 	if err != nil {
 		return BusinessInfo{}, err
@@ -184,6 +193,15 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 		parties[id] = p
 	}
 	party := parties[in.PartyID]
+	for _, id := range ids {
+		var temporary struct{ State string }
+		if err := tx.Table("wb_temporary_party").Where("party_id=?", id).Find(&temporary).Error; err != nil {
+			return BusinessInfo{}, err
+		}
+		if (temporary.State == "returned" || temporary.State == "resubmitted" || temporary.State == "approved" || temporary.State == "linked") && (old == nil || (old.PartyID != id && (old.CarrierID == nil || *old.CarrierID != id))) {
+			return BusinessInfo{}, ErrInvalid
+		}
+	}
 	if party.Enabled != 1 && (old == nil || old.PartyID != party.ID) {
 		return BusinessInfo{}, ErrInvalid
 	}
@@ -218,6 +236,9 @@ func weighingKind(direction, stage string) string {
 func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event) (Sample, error) {
 	var result Sample
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWriteSite(tx, ctx); err != nil {
+			return err
+		}
 		session, err := lockSession(tx, in.ScaleID)
 		if err != nil {
 			return err
@@ -407,6 +428,9 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 			result, businessErr = replayOperation(op, requestHash)
 			return nil
 		}
+		if err := lockWriteSite(tx, ctx); err != nil {
+			return err
+		}
 		lockErr := lock(tx)
 		// Recheck before reporting an invalid sample, expired session, or old version.
 		op, found, err = findOperation(tx, e.Metadata.ActorID, key)
@@ -551,9 +575,24 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 	})
 }
 func (r *Repository) Operation(ctx context.Context, actor int64, key string) (Operation, error) {
+	requested := key
+	var node struct{ Role string }
+	if err := r.db.WithContext(ctx).Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
+		return Operation{}, err
+	}
+	if node.Role == "central" {
+		scope, ok := ctx.Value(siteScopeKey).(siteScope)
+		if !ok || scope.FilterSiteID < 1 {
+			return Operation{RequestID: requested, Status: "not_found"}, nil
+		}
+		key = fmt.Sprintf("%d:%s", scope.FilterSiteID, key)
+	}
 	op, found, err := findOperation(r.db.WithContext(ctx), actor, key)
 	if err == nil && !found {
-		op = Operation{RequestID: key, Status: "not_found"}
+		op = Operation{RequestID: requested, Status: "not_found"}
+	}
+	if op.OriginRequestID != "" {
+		op.RequestID = op.OriginRequestID
 	}
 	return op, err
 }

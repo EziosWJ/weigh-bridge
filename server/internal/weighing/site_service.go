@@ -6,9 +6,32 @@ import (
 )
 
 func (s *Service) Sites(ctx context.Context, user int64) ([]Site, error) {
-	return s.store.Sites(ctx, user)
+	rows, err := s.store.Sites(ctx, user)
+	out := []Site{}
+	for _, v := range rows {
+		if s.node.Role == "site" && v.ID != s.node.SiteID {
+			continue
+		}
+		if s.node.Role == "central" {
+			v.CanOperate = false
+		}
+		out = append(out, v)
+	}
+	return out, err
 }
-func (s *Service) SiteOptions(ctx context.Context) ([]Site, error) { return s.store.SiteOptions(ctx) }
+func (s *Service) SiteOptions(ctx context.Context) ([]Site, error) {
+	rows, err := s.store.SiteOptions(ctx)
+	if s.node.Role != "site" {
+		return rows, err
+	}
+	out := []Site{}
+	for _, row := range rows {
+		if row.ID == s.node.SiteID {
+			out = append(out, row)
+		}
+	}
+	return out, err
+}
 func (s *Service) SiteGrants(ctx context.Context, user int64) ([]SiteGrant, error) {
 	return s.store.SiteGrants(ctx, user)
 }

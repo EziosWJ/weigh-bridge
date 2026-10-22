@@ -39,6 +39,7 @@ export const defaultNavItems: NavItem[] = [
   {
     label: "基础资料", path: "/weighing/references", icon: Table2, sortOrder: -20,
     children: [
+      { label: "厂区配置", path: "/weighing/site-config", icon: Scale },
       { label: "物料资料", path: "/weighing/materials", icon: Table2 },
       { label: "往来主体", path: "/weighing/parties", icon: Network },
       { label: "物料分类", path: "/weighing/categories", icon: ListOrdered },
@@ -192,6 +193,7 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/weighing": "称重演示",
   "/weighing/workbench": "称重工作台",
   "/weighing/sites": "厂区工作台",
+  "/weighing/site-config": "厂区配置",
   "/weighing/tasks": "运输任务",
   "/weighing/tickets": "最终单据",
   "/weighing/originals": "原始称重",

@@ -39,6 +39,10 @@ DataTableCard
 
 筛选区在窄屏下堆叠，Toolbar actions 允许换行；表格通过 `DataTable` 的横向滚动和页面已有的 `minWidth` 保证可读性。不要为响应式而改变业务列定义或行高。
 
+字段较多的业务列表可选择 `compact` 缩小单元格留白，保留 14px 正文与全部字段；该密度对所有屏幕一致。`stickyHeader` 将表头固定在表格自身的滚动区域，`fixedEdges` 在宽度至少 1024px 时固定首尾两列，页面须将业务标识放在首列、操作放在末列。更窄屏幕取消固定列，保留整表横向滚动，避免固定列遮住数据。表格可通过滚动条、触控板及聚焦后的方向键滚动。内容区高度由页面负责，不能以隐藏字段或裁切文本换取适配。
+
+筛选较多时可选择 `SearchFilterBar compact`，使用至少 160px 的弹性列；工具栏操作可换行。默认 Pattern 的列宽与密度保持原样。
+
 ## 9. 对应 Demo
 
 `src/pages/examples/list-demo.tsx`，路由 `/examples/list`。它展示筛选、重置、查询、Toolbar、状态标签、行操作、空状态和分页。

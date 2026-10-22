@@ -45,8 +45,9 @@ type PriorFinalWeights struct {
 	Net   Tonnes `json:"net" swaggertype:"string"`
 }
 type TicketView struct {
-	PrintSheet    *PrintSheet        `json:"printSheet,omitempty"`
-	PreviousFinal *PriorFinalWeights `json:"previousFinal"`
+	ImagesComplete *bool              `json:"imagesComplete,omitempty"`
+	PrintSheet     *PrintSheet        `json:"printSheet,omitempty"`
+	PreviousFinal  *PriorFinalWeights `json:"previousFinal"`
 	Ticket
 	OriginalNet     Tonnes           `json:"originalNet" swaggertype:"string"`
 	FinalNet        Tonnes           `json:"finalNet" swaggertype:"string"`

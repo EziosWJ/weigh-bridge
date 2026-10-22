@@ -117,3 +117,9 @@ weighbridge-agent-maintenance --data-dir "$HOME/weighbridge-agent" --reset-passw
 ## 开发验证
 
 `task agent:maintenance:smoke` 使用真实 Chromium 浏览器与生产命令执行器，但通过临时 PATH 注入假 systemd／CUPS 工具，使用独立临时数据目录；结束后清理进程和端口，不操作真实服务。需要既有 `web/node_modules` 中的 Playwright、Python/Pillow/中文字体和 Chromium，可用 `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` 指定缓存浏览器。有私有 IPv4 网卡时同时验证通配绑定下的局域网 HTTP 登录及可选 TLS。沙箱禁止监听端口时，须在允许临时服务的执行环境运行。
+
+## 从后台导入厂区连接配置（2026-10-21）
+
+在后台“基础资料 → 厂区配置”下载目标厂区 JSON，打开本地维护台“配置 → 导入厂区启动配置”，核对 Server 地址、厂区、地磅及 Agent，确认后保存为连接草稿。导入不重启进程，不覆盖已保存的本机 CUPS 队列、打印尺寸或账本；仍需明确“应用配置”，按既有未结束作业检查流程启动。取消预览不保存。文件可重复使用，连接参数沿用既有方式，不增加一次性签发或凭据轮换流程。
+
+`agent.env` 新增可选的厂区及地磅名称／编号展示项，旧文件无需补齐即可兼容运行；本次 `fcc-com-01` 已在保留原连接和打印参数的基础上补齐归属。准确部署与验证结果见[交付记录](../requirements/site-agent-configuration-delivery.md)。

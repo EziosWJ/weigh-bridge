@@ -3,6 +3,7 @@ package weighing
 import (
 	"context"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
+	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"slices"
 	"strings"
 	"sync"
@@ -12,9 +13,11 @@ import (
 )
 
 type Service struct {
-	printMu sync.Mutex
-	store   Store
-	devices *agentbridge.Hub
+	imageDir string
+	node     config.NodeConfig
+	printMu  sync.Mutex
+	store    Store
+	devices  *agentbridge.Hub
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {
@@ -65,6 +68,17 @@ func (s *Service) SaveMaterial(ctx context.Context, id int64, in MaterialInput, 
 	return s.store.SaveMaterial(ctx, id, in, e)
 }
 func (s *Service) SaveParty(ctx context.Context, id int64, in PartyInput, e audit.Event) (Party, error) {
+	if s.node.Role == "central" && id > 0 {
+		if repo, ok := s.store.(*Repository); ok {
+			var n int64
+			if err := repo.db.WithContext(ctx).Table("wb_temporary_party").Where("party_id=?", id).Count(&n).Error; err != nil {
+				return Party{}, err
+			}
+			if n > 0 {
+				return Party{}, ErrForbidden
+			}
+		}
+	}
 	in.Name = strings.TrimSpace(in.Name)
 	if !validName(in.Name) || (id > 0 && in.Version < 1) || !slices.Contains([]string{"enterprise", "individual"}, in.Nature) || len(in.Roles) == 0 || len(in.Roles) > 3 || !maxLength(in.ShortName, 100) || !maxLength(in.Phone, 50) || !maxLength(in.Address, 500) || !maxLength(in.CreditCode, 50) || !maxLength(in.Remark, 2000) || len(in.Contacts) > 100 {
 		return Party{}, ErrInvalid
@@ -127,4 +141,9 @@ func enabled(v *bool) int {
 		return 1
 	}
 	return flag(*v)
+}
+
+func (s *Service) SetNode(cfg config.NodeConfig, imageDir string) {
+	s.node = cfg
+	s.imageDir = imageDir
 }

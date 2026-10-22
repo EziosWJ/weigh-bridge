@@ -12,12 +12,16 @@ import (
 func NewMultiple(configs []Config) *Hub {
 	h := &Hub{children: map[int64]*Hub{}}
 	for _, cfg := range configs {
-		h.children[cfg.ScaleID] = New(cfg)
+		child := New(cfg)
+		child.parent = h
+		h.children[cfg.ScaleID] = child
 	}
 	return h
 }
 func (h *Hub) forScale(scale int64) *Hub {
 	if h.children != nil {
+		h.mu.Lock()
+		defer h.mu.Unlock()
 		return h.children[scale]
 	}
 	if scale == h.cfg.ScaleID {
@@ -35,7 +39,7 @@ type KickResult struct {
 
 func (h *Hub) Kick(ctx context.Context, scale int64, connectionID string) (KickResult, error) {
 	if h.children != nil {
-		if child := h.children[scale]; child != nil {
+		if child := h.forScale(scale); child != nil {
 			return child.Kick(ctx, scale, connectionID)
 		}
 		return KickResult{}, ErrUnavailable
@@ -71,4 +75,43 @@ func (h *Hub) Kick(ctx context.Context, scale int64, connectionID string) (KickR
 	}
 	h.disconnect(c)
 	return KickResult{Disconnected: true, ExitConfirmed: confirmed}, nil
+}
+
+// SetResolver enables database-managed bindings without replacing live connections.
+func (h *Hub) SetResolver(fn func(context.Context, int64) (Config, error)) { h.resolver = fn }
+func (h *Hub) resolve(ctx context.Context, scale int64) (*Hub, error) {
+	if h.resolver == nil {
+		return h.forScale(scale), nil
+	}
+	cfg, err := h.resolver(ctx, scale)
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	child := h.children[scale]
+	if child == nil {
+		child = New(cfg)
+		child.parent = h
+		child.printResult = h.printResult
+		h.children[scale] = child
+	}
+	if child.cfg.ID != cfg.ID || child.cfg.Key != cfg.Key {
+		return nil, ErrUnavailable
+	}
+	return child, nil
+}
+func (h *Hub) WithConnectionsPaused(fn func() error) error {
+	h.gate.Lock()
+	defer h.gate.Unlock()
+	return fn()
+}
+func (h *Hub) Connected(scale int64) bool {
+	child := h.forScale(scale)
+	if child == nil {
+		return false
+	}
+	child.mu.Lock()
+	defer child.mu.Unlock()
+	return child.conn != nil
 }

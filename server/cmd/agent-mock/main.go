@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"github.com/EziosWJ/weighbridge/server/internal/agentconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/agentmock"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"log/slog"
@@ -48,8 +49,32 @@ func main() {
 	listen := flag.String("listen", "0.0.0.0:8090", "mock control page listen address")
 	id := flag.String("agent-id", agent.AgentID, "Agent identity")
 	scale := flag.Int64("scale-id", agent.ScaleID, "scale identity")
+	file := flag.String("config", "", "厂区启动配置 JSON 文件")
 	flag.Parse()
-	if os.Getenv("APP_WEIGHING__AGENT_KEY") == "" {
+	var connection agentconfig.Connection
+	if *file != "" {
+		conflict := false
+		flag.Visit(func(f *flag.Flag) {
+			if f.Name != "config" && f.Name != "listen" {
+				conflict = true
+			}
+		})
+		if conflict {
+			slog.Error("使用 --config 时连接身份统一从文件读取")
+			os.Exit(1)
+		}
+		var err error
+		connection, err = agentconfig.Read(*file)
+		if err != nil {
+			slog.Error("读取厂区配置失败", "error", err)
+			os.Exit(1)
+		}
+		*server = connection.ServerURL
+		*id = connection.AgentID
+		*scale = connection.ScaleID
+		agent.AgentKey = connection.AgentKey
+	}
+	if *file == "" && os.Getenv("APP_WEIGHING__AGENT_KEY") == "" {
 		for _, binding := range agent.Agents {
 			if binding.ID == *id && binding.ScaleID == *scale {
 				agent.AgentKey = binding.Key
@@ -62,7 +87,7 @@ func main() {
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	m := agentmock.New(agentmock.Config{Server: *server, ID: *id, ScaleID: *scale, Key: agent.AgentKey, OnKick: stop})
+	m := agentmock.New(agentmock.Config{Server: *server, ID: *id, ScaleID: *scale, Key: agent.AgentKey, SiteName: connection.SiteName, ScaleName: connection.ScaleName, OnKick: stop})
 	defer stop()
 	go m.Run(ctx)
 	srv := &http.Server{Addr: *listen, Handler: m.Handler(), ReadHeaderTimeout: 5 * time.Second}
@@ -72,7 +97,7 @@ func main() {
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
 	}()
-	slog.Info("Agent mock control page", "address", "http://"+*listen, "server", *server)
+	slog.Info("Agent mock control page", "address", "http://"+*listen, "server", *server, "site", connection.SiteName, "scale", *scale)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("mock server", "error", err)
 		os.Exit(1)

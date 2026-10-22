@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/EziosWJ/weighbridge/server/internal/agentconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
 )
 
@@ -133,6 +134,12 @@ type PartyInput struct {
 	Contacts   []ContactInput `json:"contacts"`
 }
 type Store interface {
+	SiteConfigurations(context.Context) ([]SiteConfiguration, error)
+	AgentSettings(context.Context) (AgentSetting, error)
+	SaveAgentSettings(context.Context, string, audit.Event) error
+	SaveSiteConfiguration(context.Context, int64, SiteConfigurationInput, audit.Event, func(int64) bool) (SiteConfiguration, error)
+	ExportAgentConnection(context.Context, int64, audit.Event) (agentconfig.Connection, error)
+
 	RecordAgentKick(context.Context, audit.Event) error
 	Sites(context.Context, int64) ([]Site, error)
 	SiteOptions(context.Context) ([]Site, error)

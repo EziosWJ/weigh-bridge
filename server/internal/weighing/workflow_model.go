@@ -230,17 +230,18 @@ type WeighRecord struct {
 func (WeighRecord) TableName() string { return "wb_weigh_record" }
 
 type Operation struct {
-	ID            int64     `json:"id" gorm:"primaryKey"`
-	ActorID       int64     `json:"-"`
-	RequestID     string    `json:"requestId"`
-	Command       string    `json:"command"`
-	RequestHash   string    `json:"-"`
-	Status        string    `json:"status"`
-	TaskID        *int64    `json:"taskId"`
-	TicketID      *int64    `json:"ticketId"`
-	Result        JSON      `json:"result" gorm:"column:result_snapshot" swaggertype:"object"`
-	ErrorSnapshot string    `json:"error"`
-	CommittedAt   time.Time `json:"committedAt"`
+	ID              int64     `json:"id" gorm:"primaryKey"`
+	ActorID         int64     `json:"-"`
+	RequestID       string    `json:"requestId"`
+	OriginRequestID string    `json:"originRequestId,omitempty"`
+	Command         string    `json:"command"`
+	RequestHash     string    `json:"-"`
+	Status          string    `json:"status"`
+	TaskID          *int64    `json:"taskId"`
+	TicketID        *int64    `json:"ticketId"`
+	Result          JSON      `json:"result" gorm:"column:result_snapshot" swaggertype:"object"`
+	ErrorSnapshot   string    `json:"error"`
+	CommittedAt     time.Time `json:"committedAt"`
 }
 
 func (Operation) TableName() string { return "wb_operation" }

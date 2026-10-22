@@ -7,6 +7,7 @@ import { useWeighingStore } from '@/store/weighing-store';
 import { roleLabels } from '@/types/weighing';
 import { WORKBENCH_WINDOW,workbenchWindow } from '@/lib/workbench-window';
 import './workbench.css';
+import { NodeSyncStatus } from './node-sync-status';
 
 export function WorkbenchShell() {
   const capabilities=useWeighingStore(s=>s.capabilities);
@@ -47,6 +48,6 @@ export function WorkbenchShell() {
       </nav>
     </header>
     {error && <p role="status" className="px-4 text-sm text-warning">{error}</p>}
-    <main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
+    <NodeSyncStatus/><main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
   </div>;
 }

@@ -41,7 +41,12 @@ func TestPostgresSiteIsolation(t *testing.T) {
 	checkSiteIsolation(t, db, testDependencies(t, db, t.TempDir()))
 }
 func checkSiteIsolation(t *testing.T, db *platformdatabase.Database, deps app.Dependencies) {
-	hub := agentbridge.NewMultiple([]agentbridge.Config{{ID: "site-agent-1", ScaleID: 1, Key: "site-key-1", ImageDir: t.TempDir()}, {ID: "site-agent-2", ScaleID: 2, Key: "site-key-2", ImageDir: t.TempDir()}})
+	initial := []agentbridge.Config{{ID: "site-agent-1", ScaleID: 1, Key: "site-key-1", ImageDir: t.TempDir()}, {ID: "site-agent-2", ScaleID: 2, Key: "site-key-2", ImageDir: t.TempDir()}}
+	repo := weighing.NewRepository(db.GORM)
+	if err := repo.ImportAgentBindings(context.Background(), initial); err != nil {
+		t.Fatal(err)
+	}
+	hub := agentbridge.NewMultiple(initial)
 	deps.Weighing = weighing.NewService(weighing.NewRepository(db.GORM), hub)
 	router, err := app.Build(testAPIConfig(), db, deps)
 	if err != nil {
@@ -222,4 +227,36 @@ func checkSiteIsolation(t *testing.T, db *platformdatabase.Database, deps app.De
 	if err := db.GORM.Table("sys_oper_log").Where("operation_type LIKE 'agent.kick%'").Count(&auditCount).Error; err != nil || auditCount == 0 {
 		t.Fatalf("missing kick audit: %v", err)
 	}
+	// Disabling a completed site must preserve historical reads and block writes.
+	configs := weighingData[[]weighing.SiteConfiguration](t, router, "GET", "/api/weighing/site-config", "", admin)
+	var firstConfig weighing.SiteConfiguration
+	for _, v := range configs {
+		if v.ID == 1 {
+			firstConfig = v
+		}
+	}
+	configInput := weighing.SiteConfigurationInput{Code: firstConfig.Code, Name: firstConfig.Name, ScaleCode: firstConfig.ScaleCode, ScaleName: firstConfig.ScaleName, AgentID: "site-agent-1", Enabled: 0, Version: firstConfig.Version}
+	configPath := "/api/weighing/site-config/1"
+	assertEnvelopeCode(t, serveJSON(router, "PUT", configPath, encode(configInput), admin), 200, 400, "不能停用：1 笔未决打印")
+	weighingData[weighing.CommandResult](t, router, "POST", fmt.Sprintf("/api/weighing/print-attempts/%d/result", attempts[0].ID), `{"requestId":"site-print-resolve-for-disable","status":"printed","reason":"现场已核实"}`, admin)
+	weighingData[weighing.SiteConfiguration](t, router, "PUT", configPath, encode(configInput), admin)
+	historical := weighingData[weighing.TicketView](t, router, "GET", fmt.Sprintf("/api/weighing/tickets/%d", result.TicketID), "", operator)
+	if historical.SiteID != 1 {
+		t.Fatal("disabled site history missing")
+	}
+	historicalList := weighingData[weighing.Page[weighing.Task]](t, router, "GET", "/api/weighing/tasks?siteId=1", "", operator)
+	if historicalList.Total != 1 {
+		t.Fatal("disabled site task list missing")
+	}
+	exported = serveJSON(router, "GET", "/api/weighing/tasks/export?siteId=1", "", operator)
+	if exported.Code != 200 || !strings.Contains(exported.Body.String(), "川A23456") {
+		t.Fatal("disabled history export missing")
+	}
+	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/scales/1/session/acquire", `{"clientId":"disabled-site"}`, admin), 403, 403, weighing.ErrForbidden.Error())
+	configInput.Enabled = 1
+	configInput.Version++
+	weighingData[weighing.SiteConfiguration](t, router, "PUT", configPath, encode(configInput), admin)
+	assertEnvelopeCode(t, serveJSON(router, "GET", "/api/weighing/site-config", "", operator), 403, 403, weighing.ErrForbidden.Error())
+	assertEnvelopeCode(t, serveJSON(router, "GET", "/api/weighing/site-config/1/connection", "", operator), 403, 403, weighing.ErrForbidden.Error())
+
 }

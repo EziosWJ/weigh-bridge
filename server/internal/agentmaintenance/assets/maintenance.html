@@ -35,6 +35,7 @@
 <div class="card"><div class="section-head"><h2>校准测试打印</h2><button id="testPrintButton" class="primary" onclick="testPrint()">打印一份校准样张</button></div><p id="calibrationSummary">使用已应用的打印校准参数。</p><p class="muted">每次一份固定测试样张，不改变业务单据和打印次数。</p></div>
 </section>
 <section data-page="config" hidden>
+<div class="card"><h2>导入厂区启动配置</h2><p>选择后台下载的厂区配置，核对归属后保存为草稿，再点击“应用配置”。保留本机打印队列和校准参数。</p><label for="siteConfigFile">厂区配置文件</label><input id="siteConfigFile" type="file" accept=".json,application/json" onchange="importSiteConfiguration(this)"><p id="siteIdentity" class="notice"></p></div>
 <div class="card"><div class="section-head"><h2>连接与打印配置</h2><span class="badge">保存后需应用</span></div><p id="saved" class="notice"></p><form id="configForm" onsubmit="event.preventDefault();save()"><div id="form"></div><div class="form-actions"><button class="primary" type="submit">保存草稿</button><button type="button" onclick="apply()">应用配置</button><button type="button" id="restoreConfig" onclick="restore()">恢复上一份</button><span id="draftState" class="muted"></span></div></form></div>
 <div class="card"><h2>已应用配置与待应用差异</h2><p id="activeConfig" class="muted"></p><p id="runtimeConfig" class="notice"></p><div id="configDiff" class="table-wrap"></div></div>
 <div class="card"><h2>维护访问地址</h2><p id="listenerSummary"></p><p class="muted">监听地址与可选 TLS 通过维护服务启动参数设置。调整并重启维护服务后，请用新的访问地址重新打开页面。</p></div>

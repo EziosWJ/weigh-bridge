@@ -1,0 +1,16 @@
+# Merge ONE role into the instance's ignored config.{env}.yaml.
+# Every central/site instance uses its own database, JWT secret, uploads and images.
+node:
+  role: central
+  peers:
+    - site_id: 1
+      key: REPLACE_WITH_SITE_ONE_SYNC_SECRET
+    - site_id: 2
+      key: REPLACE_WITH_SITE_TWO_SYNC_SECRET
+# Site one instead uses:
+# node:
+#   role: site
+#   site_id: 1
+#   central_url: https://central.example.invalid
+#   sync_key: REPLACE_WITH_SITE_ONE_SYNC_SECRET
+# The Agent's local connection URL is configured separately per site.

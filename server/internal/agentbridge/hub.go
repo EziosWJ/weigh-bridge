@@ -47,6 +47,9 @@ type connection struct {
 }
 type Hub struct {
 	children    map[int64]*Hub
+	gate        sync.RWMutex
+	parent      *Hub
+	resolver    func(context.Context, int64) (Config, error)
 	mu          sync.Mutex
 	cfg         Config
 	conn        *connection
@@ -60,6 +63,9 @@ func New(cfg Config) *Hub {
 func ID() string { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 func (h *Hub) SetPrintHandler(fn func(context.Context, int64, p.PrintResult) error) {
 	if h.children != nil {
+		h.mu.Lock()
+		h.printResult = fn
+		defer h.mu.Unlock()
 		for _, child := range h.children {
 			child.SetPrintHandler(fn)
 		}
@@ -83,7 +89,7 @@ func (h *Hub) readyLocked() bool {
 }
 func (h *Hub) State(scale int64) State {
 	if h.children != nil {
-		if child := h.children[scale]; child != nil {
+		if child := h.forScale(scale); child != nil {
 			return child.State(scale)
 		}
 		return State{ScaleID: scale, Images: []p.Image{}}
@@ -102,7 +108,7 @@ func (h *Hub) State(scale int64) State {
 // Guard serializes a business commit with device changes. The caller must release it.
 func (h *Hub) Guard(scale, revision int64) (State, func(), error) {
 	if h.children != nil {
-		if child := h.children[scale]; child != nil {
+		if child := h.forScale(scale); child != nil {
 			return child.Guard(scale, revision)
 		}
 		return State{}, nil, ErrUnavailable
@@ -132,10 +138,35 @@ func (h *Hub) disconnect(c *connection) {
 	_ = c.ws.Close()
 }
 func (h *Hub) Serve(ws *websocket.Conn) {
+	if h.parent != nil {
+		root := h.parent
+		root.gate.RLock()
+		if root.resolver != nil {
+			cfg, err := root.resolver(ws.Request().Context(), h.cfg.ScaleID)
+			if err != nil || cfg.ID != h.cfg.ID || cfg.Key != h.cfg.Key {
+				root.gate.RUnlock()
+				_ = ws.Close()
+				return
+			}
+		}
+		deferAdmission := true
+		defer func() {
+			if deferAdmission {
+				root.gate.RUnlock()
+			}
+		}()
+		// Admission and installing the connection run under the same gate as site disable.
+		h.serve(ws, func() { root.gate.RUnlock(); deferAdmission = false })
+		return
+	}
+	h.serve(ws, func() {})
+}
+func (h *Hub) serve(ws *websocket.Conn, admitted func()) {
 	c := &connection{id: ID(), ws: ws, seen: time.Now(), pending: map[string]chan p.Message{}, prints: map[string]int64{}}
 	h.mu.Lock()
 	if h.conn != nil {
 		h.mu.Unlock()
+		admitted()
 		_ = c.send(p.New("error", ID(), "", map[string]string{"code": "agent_conflict", "message": "该地磅已有 Agent 在线，请先在后台踢出或停止原进程"}))
 		_ = ws.Close()
 		return
@@ -143,6 +174,7 @@ func (h *Hub) Serve(ws *websocket.Conn) {
 	h.conn = c
 	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}}
 	h.mu.Unlock()
+	admitted()
 	defer h.disconnect(c)
 	ws.MaxPayloadBytes = 128 << 10
 	for {
@@ -248,7 +280,7 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 }
 func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error) {
 	if h.children != nil {
-		if child := h.children[scale]; child != nil {
+		if child := h.forScale(scale); child != nil {
 			return child.Capture(ctx, scale)
 		}
 		return p.Capture{}, 0, ErrUnavailable
@@ -301,7 +333,7 @@ func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error
 }
 func (h *Hub) Print(scale int64, id int64, ticket any) error {
 	if h.children != nil {
-		if child := h.children[scale]; child != nil {
+		if child := h.forScale(scale); child != nil {
 			return child.Print(scale, id, ticket)
 		}
 		return ErrUnavailable

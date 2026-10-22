@@ -24,7 +24,7 @@ import { beijingTime } from "@/lib/weighing/query";
 import { formatWeight } from "@/lib/weighing/weights";
 import type { DataTableColumn } from "@/types";
 import { directionLabels, emptyTaskInput, taskStatusLabels, type TaskInput, type WeighingFilter } from "@/types/weighing";
-import { BusinessFields, DeviceBanner, HistoryList, WeighingFilters } from "./shared";
+import { BusinessFields, DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
 import { BusinessSnapshot, WeighRecords } from "./record-info";
 
 const linkClass = "text-primary hover:underline";
@@ -42,26 +42,26 @@ export function WeighingTasksPage() {
   const result = useWeighingPage<WireTask>('tasks', deferred, page, pageSize);
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const columns: DataTableColumn<WireTask>[] = [
-    {title:"厂区",key:"site",width:120,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
-    { title: '任务编号 / 车牌', key: 'task', width: 230, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
-    { title: '方向', key: 'direction', width: 110, render: (_, row) => directionLabels[row.business.direction] },
-    { title: '物料 / 规格', key: 'material', width: 200, render: (_, row) => <div>{row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
-    { title: '供收方', key: 'party', width: 180, render: (_, row) => row.business.partyName },
+    { title: '任务编号 / 车牌', key: 'task', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
+    {title:"厂区",key:"site",width:100,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
+    { title: '方向', key: 'direction', width: 100, render: (_, row) => directionLabels[row.business.direction] },
+    { title: '物料 / 规格', key: 'material', width: 180, render: (_, row) => <div>{row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
+    { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '首次 / 二次重量（吨）', key: 'weights', width: 180, render: (_, row) => `${row.firstWeight ?? '—'} / ${row.secondWeight ?? '—'}` },
-    { title: '任务状态', key: 'status', width: 130, render: (_, row) => <StatusTag tone={row.status === 'completed' ? 'success' : row.status === 'terminated' ? 'neutral' : 'warning'}>{row.status === 'awaiting_second' ? '待二次称重' : row.status === 'completed' ? '已完成' : '已终止'}</StatusTag> },
-    { title: '创建时间（北京）', key: 'date', width: 190, render: (_, row) => beijingTime(row.createTime) },
-    { title: '操作', key: 'actions', width: 160, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>详情</Link>{can('confirm') && capabilities?.scales.some(s=>s.id===row.scaleId&&s.canOperate) && row.status === 'awaiting_second' && <WorkbenchLink className={linkClass} to={`/weighing/workbench?scaleId=${row.scaleId}&task=${row.id}`}>办理称重</WorkbenchLink>}</TableActions> },
+    { title: '任务状态', key: 'status', width: 120, render: (_, row) => <StatusTag tone={row.status === 'completed' ? 'success' : row.status === 'terminated' ? 'neutral' : 'warning'}>{row.status === 'awaiting_second' ? '待二次称重' : row.status === 'completed' ? '已完成' : '已终止'}</StatusTag> },
+    { title: '创建时间（北京）', key: 'date', width: 144, render: (_, row) => <ListDate value={row.createTime} /> },
+    { title: '操作', key: 'actions', width: 148, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>详情</Link>{can('confirm') && capabilities?.scales.some(s=>s.id===row.scaleId&&s.canOperate) && row.status === 'awaiting_second' && <WorkbenchLink className={linkClass} to={`/weighing/workbench?scaleId=${row.scaleId}&task=${row.id}`}>办理称重</WorkbenchLink>}</TableActions> },
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
-  return <>
-    <PageHeader title="运输任务" description="服务端运输记录；按北京时间创建日期筛选。" actions={<WorkbenchLink className={linkClass} to="/weighing/workbench">返回称重工作台</WorkbenchLink>} />
-    <DeviceBanner /><WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} />
+  return <div className="weighing-list-page">
+    <PageHeader title="运输任务" description="服务端运输记录；按北京时间创建日期筛选。" actions={capabilities?.nodeRole!=='central'&&<WorkbenchLink className={linkClass} to="/weighing/workbench">返回称重工作台</WorkbenchLink>} />
+    <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} />
     {downloadError && <p role="alert" className="text-error">{downloadError}</p>}
-    <DataTableCard><TableToolbar title="测试运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).catch(error => setDownloadError(error.message))}>导出筛选明细 CSV</Button>}</>} />
-      <DataTable columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1380} />
+    <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).catch(error => setDownloadError(error.message))}>导出筛选明细 CSV</Button>}</>} />
+      <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1352} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
-  </>;
+  </div>;
 }
 
 export function WeighingTaskDetailPage() {
@@ -82,7 +82,7 @@ export function WeighingTaskDetailPage() {
   const targetRecord = task && [...task.records].reverse().find(record => record.stage === reweighStage);
   const retainedRecord = task && [...task.records].reverse().find(record => record.stage !== reweighStage);
   const pending = !!task && data.pending?.taskId === task.id;
-  const canOperate = !!capabilities?.permissionCodes.some(code => ["weighing:correct", "weighing:terminate", "weighing:reweigh"].includes(code));
+  const canOperate = capabilities?.nodeRole!=='central'&&!!capabilities?.permissionCodes.some(code => ["weighing:correct", "weighing:terminate", "weighing:reweigh"].includes(code));
   const siteCanOperate=capabilities?.sites.some(s=>s.id===task?.siteId&&s.canOperate)??false;
   const canWeigh = siteCanOperate&&(capabilities?.permissionCodes.includes("weighing:confirm") ?? false);
   const reweighCapture = data.sampleReady && data.capture?.plate === task?.plate && data.capture?.stage === reweighStage ? data.capture : undefined;

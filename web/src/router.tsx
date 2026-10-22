@@ -31,6 +31,8 @@ export const router = createBrowserRouter([
     ),
     children: [
       { path: "weighing", element: <Navigate to="/weighing/sites" replace /> },
+      { path: "weighing/temporary-parties", lazy: () => import("@/pages/weighing/temporary-parties").then(module => ({Component:module.TemporaryPartiesPage})) },
+      { path: "weighing/site-config", lazy: () => import("@/pages/weighing/site-config").then(module => ({Component:module.SiteConfigurationPage})) },
       { path: "weighing/sites", lazy: () => import("@/pages/weighing/sites").then(module => ({Component:module.WeighingSitesPage})) },
       { path: "weighing/tasks", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTasksPage })) },
       { path: "weighing/tasks/:id", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTaskDetailPage })) },

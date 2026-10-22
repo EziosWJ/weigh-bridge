@@ -15,7 +15,13 @@ func (s *Service) Originals(ctx context.Context, q PageQuery) (Page[OriginalView
 	return s.store.Originals(ctx, q)
 }
 func (s *Service) Summary(ctx context.Context, kind string, q PageQuery) (Summary, error) {
-	return s.store.Summary(ctx, kind, q)
+	result, err := s.store.Summary(ctx, kind, q)
+	if err == nil && s.node.Role == "central" {
+		if repo, ok := s.store.(*Repository); ok {
+			result.Freshness, err = repo.SiteFreshness(ctx, q)
+		}
+	}
+	return result, err
 }
 func csvText(value string) string {
 	if value != "" && strings.ContainsRune("=+-@\t\r\n", rune(value[0])) {
@@ -86,6 +92,24 @@ func (s *Service) Export(ctx context.Context, kind string, q PageQuery, e audit.
 		count = int64(len(values.Rows))
 	default:
 		return nil, ErrInvalid
+	}
+	if s.node.Role == "central" {
+		if repo, ok := s.store.(*Repository); ok {
+			freshness, err := repo.SiteFreshness(ctx, q)
+			if err != nil {
+				return nil, err
+			}
+			bySite := map[string]string{}
+			for _, f := range freshness {
+				bySite[strconv.FormatInt(f.SiteID, 10)] = f.LastSuccess
+			}
+			if len(rows) > 0 {
+				rows[0] = append(rows[0], "厂区最近同步时间（UTC；空值为未更新）")
+				for i := 1; i < len(rows); i++ {
+					rows[i] = append(rows[i], bySite[rows[i][1]])
+				}
+			}
+		}
 	}
 	data, err := encodeCSV(rows)
 	if err != nil {

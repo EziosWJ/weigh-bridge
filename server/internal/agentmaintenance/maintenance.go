@@ -269,6 +269,7 @@ func (s *Service) Handler() http.Handler {
 	})
 	mux.HandleFunc("/api/jobs", s.jobs)
 	mux.HandleFunc("/api/config", s.configAPI)
+	mux.HandleFunc("/api/config/import", s.importConnection)
 	mux.HandleFunc("/api/action", s.action)
 	mux.HandleFunc("/api/test-print", s.testPrint)
 	mux.HandleFunc("/api/logs", s.logs)
@@ -1139,6 +1140,7 @@ func BuildAgentEnvironment(dir string, c Config) error {
 		return errors.New("Agent 连接密钥未设置或格式无效")
 	}
 	data := fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\nWEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%d\n", strconv.Quote(c.AgentKey), strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM)
+	data += fmt.Sprintf("WEIGHBRIDGE_SITE_ID=%d\nWEIGHBRIDGE_SITE_CODE=%s\nWEIGHBRIDGE_SITE_NAME=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_SCALE_NAME=%s\n", c.SiteID, strconv.Quote(c.SiteCode), strconv.Quote(c.SiteName), strconv.Quote(c.ScaleCode), strconv.Quote(c.ScaleName))
 	return writePrivate(filepath.Join(dir, "agent.env"), []byte(data))
 }
 func PortIsLoopback(addr string) bool {

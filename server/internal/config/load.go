@@ -114,7 +114,7 @@ func envKeyValue(key, value string) (string, interface{}) {
 	key = strings.ToLower(strings.ReplaceAll(key, "__", delimiter))
 
 	switch key {
-	case "weighing.agents":
+	case "weighing.agents", "node.peers":
 		var bindings []map[string]any
 		if json.Unmarshal([]byte(value), &bindings) == nil {
 			return key, bindings
