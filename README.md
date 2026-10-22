@@ -97,6 +97,10 @@ task agent:mock
 
 ## 开发与构建命令
 
+直接运行 `task`（或 `task --list`）只展示日常常用入口；`task tasks`（或 `task --list-all`）查看所有任务。设备、监控、历史同步和专项验证命令仍可按原名称直接执行，用 `task <任务名> --summary` 查看用途及执行步骤。
+
+本厂三服务打包使用 `task package VERSION=<唯一版本>`，它是 `task standalone:package` 的别名；安装与发布验证见[自治部署说明](docs/device/standalone-deployment.md)。列表精简不改变 `init`／`dev` 的初始化和启动行为。
+
 | 命令（仓库根目录） | 用途 |
 | --- | --- |
 | `task api` / `task web` | 分别运行 API / Web |

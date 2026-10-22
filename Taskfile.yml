@@ -6,15 +6,23 @@ env:
   APP_ENV: dev
   GOCACHE: '{{.ROOT_DIR}}/.task/go-build'
 
+# 有 desc 的任务出现在默认常用列表；专项任务只保留 summary，仍可直接调用。
+# task tasks（或 task --list-all）查看全部；task <任务> --summary 查看用途和步骤。
 tasks:
   default:
-    desc: Show available tasks
+    summary: Show available tasks
     cmds:
       - task --list
     silent: true
 
+  tasks:
+    desc: 查看全部任务（含设备、部署和专项验证）
+    cmds:
+      - task --list-all
+    silent: true
+
   init:
-    desc: Generate local development configuration
+    desc: 生成本地开发配置（保留已有配置）
     preconditions:
       - sh: node --version
         msg: '需要 Node.js；安装后重新运行 task init。'
@@ -22,7 +30,7 @@ tasks:
       - node scripts/dev-setup.mjs init {{.CLI_ARGS}}
 
   doctor:
-    desc: Check local tools, configuration and database readiness
+    desc: 检查开发工具、配置和数据库连接
     preconditions:
       - sh: node --version
         msg: '需要 Node.js；安装后重新运行 task doctor。'
@@ -30,54 +38,54 @@ tasks:
       - node scripts/dev-setup.mjs doctor {{.CLI_ARGS}}
 
   dev:setup:test:
-    desc: Run development setup bootstrap command tests
+    summary: Run development setup bootstrap command tests
     cmds:
       - node --test scripts/dev-setup.test.mjs
 
   db:migrate:
-    desc: Apply schema and seed migrations
+    desc: 执行 PostgreSQL schema 和 seed 迁移
     dir: server
     cmds:
       - go run ./cmd/migrate up --kind all
 
   db:migrate:schema:
-    desc: Apply schema migrations only
+    summary: Apply schema migrations only
     dir: server
     cmds:
       - go run ./cmd/migrate up --kind schema
 
   db:migrate:seed:
-    desc: Apply seed migrations only
+    summary: Apply seed migrations only
     dir: server
     cmds:
       - go run ./cmd/migrate up --kind seed
 
   api:
-    desc: Start the Go API
+    summary: Start the Go API
     dir: server
     cmds:
       - go run ./cmd/api
 
   web:
-    desc: Start the React development server
+    summary: Start the React development server
     dir: web
     cmds:
       - npm run dev
 
   agent:mock:
-    desc: Start the standalone Agent mock web console (0.0.0.0:8090)
+    desc: 启动独立设备模拟器（8090）
     dir: server
     cmds:
       - go run ./cmd/agent-mock {{.CLI_ARGS}}
 
   agent:build:
-    desc: Build the standalone Agent mock executable
+    summary: Build the standalone Agent mock executable
     dir: server
     cmds:
       - go build -trimpath -o ../bin/weighbridge-agent-mock ./cmd/agent-mock
 
   agent:printer:build:
-    desc: Build the Linux amd64 SK-820 printer Agent
+    summary: Build the Linux amd64 SK-820 printer Agent
     dir: server
     env:
       CGO_ENABLED: '0'
@@ -87,13 +95,13 @@ tasks:
       - go build -trimpath -o ../bin/weighbridge-agent-printer ./cmd/agent-printer
 
   agent:maintenance:build:
-    desc: Build the offline local Agent printer maintenance service
+    summary: Build the offline local Agent printer maintenance service
     dir: server
     cmds:
       - go build -trimpath -o ../bin/weighbridge-agent-maintenance ./cmd/agent-maintenance
 
   agent:maintenance:smoke:
-    desc: Verify local maintenance in Chromium with isolated fake CUPS/systemd commands
+    summary: Verify local maintenance in Chromium with isolated fake CUPS/systemd commands
     deps:
       - agent:maintenance:build
       - agent:printer:build
@@ -101,50 +109,50 @@ tasks:
       - node scripts/check-agent-maintenance.mjs
 
   host:collector:
-    desc: Start the Linux host resource collector; pass flags through CLI_ARGS
+    summary: Start the Linux host resource collector; pass flags through CLI_ARGS
     dir: server
     cmds:
       - go run ./cmd/host-collector {{.CLI_ARGS}}
 
   host:build:
-    desc: Build the Linux host resource collector
+    summary: Build the Linux host resource collector
     dir: server
     cmds:
       - go build -trimpath -o ../bin/weighbridge-host-collector ./cmd/host-collector
 
   host:smoke:
-    desc: Verify real Linux host samples, Unix socket and collector restart
+    summary: Verify real Linux host samples, Unix socket and collector restart
     deps:
       - host:build
     cmds:
       - python3 scripts/check-host-collector.py {{.CLI_ARGS}}
 
   monitoring:smoke:docker:
-    desc: Verify native and isolated Docker APIs using temporary data (requires task build)
+    summary: Verify native and isolated Docker APIs using temporary data (requires task build)
     cmds:
       - python3 scripts/check-monitoring-docker.py {{.CLI_ARGS}}
 
   dev:
-    desc: Migrate the database and start API and web together
+    desc: 执行迁移并启动 API 和 Web
     deps:
       - db:migrate
     cmds:
       - task --parallel api web
 
   backend:test:
-    desc: Run backend unit tests
+    summary: Run backend unit tests
     dir: server
     cmds:
       - go test ./...
 
   backend:swagger:
-    desc: Regenerate API documentation from handler contracts
+    summary: Regenerate API documentation from handler contracts
     dir: server
     cmds:
       - go run github.com/swaggo/swag/cmd/swag@v1.8.12 init -g cmd/api/main.go --parseInternal --output docs
 
   backend:windows:
-    desc: Cross-build Windows amd64 API, migrations and monitoring tests (PostgreSQL, no CGO)
+    summary: Cross-build Windows amd64 API, migrations and monitoring tests (PostgreSQL, no CGO)
     dir: server
     env:
       GOOS: windows
@@ -157,75 +165,75 @@ tasks:
       - go vet ./cmd/api ./internal/monitoring
 
   monitoring:smoke:windows:
-    desc: Run read-only native monitoring verification on Windows (or WSL with Windows interop)
+    summary: Run read-only native monitoring verification on Windows (or WSL with Windows interop)
     deps:
       - backend:windows
     cmds:
       - '"{{.ROOT_DIR}}/.task/windows-monitoring.test.exe" -test.timeout 30s -test.v -test.run "TestWindows|TestInterfaceAddressesKeepHostIPAndPrefix|TestNetworkAddressesThroughHTTP|TestDisabledMonitoringHTTPAndSampling" -windows-smoke'
 
   backend:notifications:
-    desc: Run announcement, notification, SSE and capacity integration contracts
+    summary: Run announcement, notification, SSE and capacity integration contracts
     dir: server
     cmds:
       - go test -tags=integration ./integration -run 'Notification|Announcement' -count=1
 
   backend:integration:
-    desc: Run current local PostgreSQL integration tests
+    summary: Run current local PostgreSQL integration tests
     dir: server
     cmds:
       - go test -tags=integration ./integration -count=1 -timeout=20m
 
   backend:integration:legacy-sync:
-    desc: Run historical central/site synchronization regression tests (optional)
+    summary: Run historical central/site synchronization regression tests (optional)
     dir: server
     cmds:
       - go test -tags=integration,legacy_sync ./integration -run '^TestPostgresLegacyCentralSync$' -count=1 -timeout=5m
 
   db:integration:postgres:
-    desc: Run the current local PostgreSQL database integration contract
+    summary: Run the current local PostgreSQL database integration contract
     dir: server
     cmds:
       - go test -tags=integration ./integration -count=1 -timeout=20m
 
   db:check:
-    desc: Run backend checks and the PostgreSQL integration contract
+    desc: 运行后端检查和 PostgreSQL 集成测试（需 Docker）
     deps:
       - backend:check
       - db:integration:postgres
 
   backend:check:
-    desc: Run backend tests and static checks
+    summary: Run backend tests and static checks
     dir: server
     cmds:
       - go test ./...
       - go vet ./...
 
   frontend:lint:
-    desc: Run frontend lint
+    summary: Run frontend lint
     dir: web
     cmds:
       - npm run lint
 
   frontend:build:
-    desc: Build the frontend
+    summary: Build the frontend
     dir: web
     cmds:
       - npm run build
 
   frontend:notifications:
-    desc: Run announcement and notification browser verification
+    summary: Run announcement and notification browser verification
     dir: web
     cmds:
       - npm run test:notifications
 
   frontend:monitoring:
-    desc: Run server monitoring browser verification
+    summary: Run server monitoring browser verification
     dir: web
     cmds:
       - npm run test:monitoring
 
   check:
-    desc: Run backend and frontend checks
+    desc: 运行后端检查和前端 lint/build
     deps:
       - dev:setup:test
       - backend:check
@@ -233,7 +241,7 @@ tasks:
       - frontend:build
 
   build:
-    desc: Build release binaries with the production frontend embedded in the API
+    desc: 构建内嵌 Web 的本机发布二进制
     deps:
       - frontend:build
     dir: server
@@ -247,7 +255,7 @@ tasks:
       - go build -trimpath -o ../bin/weighbridge-host-collector{{.GOEXE}} ./cmd/host-collector
 
   build:check:
-    desc: Build the release and verify tests and vet with embedded frontend assets
+    summary: Build the release and verify tests and vet with embedded frontend assets
     deps:
       - build
     dir: server
@@ -256,7 +264,8 @@ tasks:
       - go vet -tags=embedweb ./...
 
   standalone:package:
-    desc: Build a unified Linux amd64 standalone release (pass VERSION=<unique-version>)
+    aliases: [package]
+    desc: 打包本厂三服务（VERSION=<唯一版本>）
     deps:
       - frontend:build
     dir: server
@@ -275,20 +284,20 @@ tasks:
       - node ../scripts/package-standalone.mjs '{{.VERSION}}'
 
   standalone:install:smoke:
-    desc: Verify an unpacked standalone package in temporary directories (pass PACKAGE_DIR=<path>)
+    summary: Verify an unpacked standalone package in temporary directories (pass PACKAGE_DIR=<path>)
     requires:
       vars: [PACKAGE_DIR]
     cmds:
       - node scripts/check-standalone-install.mjs '{{.PACKAGE_DIR}}'
 
   standalone:release:smoke:
-    desc: Verify packaged API startup and restart with isolated PostgreSQL (pass PACKAGE_DIR=<path>)
+    summary: Verify packaged API startup and restart with isolated PostgreSQL (pass PACKAGE_DIR=<path>)
     requires:
       vars: [PACKAGE_DIR]
     cmds:
       - node scripts/check-standalone-release.mjs '{{.PACKAGE_DIR}}'
 
   test:
-    desc: Run the default test suite
+    summary: Run the default test suite
     deps:
       - backend:test
