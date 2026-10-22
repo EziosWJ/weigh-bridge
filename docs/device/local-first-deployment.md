@@ -1,5 +1,7 @@
 # 中心与厂区独立部署
 
+> **2026-10-22 效力：旧拓扑操作说明，本期不采用。** 本文中心＋两厂的启用、下发和切换步骤不用于新自治部署；新部署方式仍待实现，不能仅停中心或使用空角色绕过初始化。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 对应 [Issue #4](https://github.com/EziosWJ/weigh-bridge/issues/4)。本说明不表示已切换现有工控机。每厂目标为本机 Web、Server、PostgreSQL、Agent；SQLite 保留开发和兼容测试用途。
 
 ## 部署准备

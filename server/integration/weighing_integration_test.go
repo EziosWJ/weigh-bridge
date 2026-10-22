@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentmock"
+	"github.com/pressly/goose/v3"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -24,23 +24,21 @@ import (
 	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
-	"github.com/pressly/goose/v3"
 )
 
-func TestSQLiteWeighingFoundation(t *testing.T) {
-	directory := t.TempDir()
-	path := filepath.Join(directory, "weighing.db")
-	runSQLiteMigrations(t, path)
-	runSQLiteMigrations(t, path)
-	database := openSQLiteDatabase(t, path)
+func TestPostgresWeighingFoundation(t *testing.T) {
+	temporary := startPostgres(t)
+	runMigrations(t, projectRoot(t), temporary.dsn)
+	runMigrations(t, projectRoot(t), temporary.dsn)
+	database := openTemporaryDatabase(t, temporary.dsn)
 	defer func() { _ = database.Close() }()
-	checkWeighingFoundation(t, database, sqliteDependencies(t, database, directory))
+	checkWeighingFoundation(t, database, testDependencies(t, database, t.TempDir()))
 	// Exercise Down against populated ticket revisions, self references and print history.
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
 	goose.SetTableName("goose_schema_db_version")
-	schema := filepath.Join(projectRoot(t), "migrations/sqlite/schema")
+	schema := filepath.Join(projectRoot(t), "migrations/schema")
 	// Reapply the widening migration to populated history and verify references.
 	var ticketsBefore int64
 	if err := database.GORM.Table("wb_ticket").Count(&ticketsBefore).Error; err != nil {
@@ -56,14 +54,6 @@ func TestSQLiteWeighingFoundation(t *testing.T) {
 	if err := database.GORM.Table("wb_ticket").Count(&ticketsAfter).Error; err != nil || ticketsBefore != ticketsAfter {
 		t.Fatalf("Agent migration changed history: %d -> %d %v", ticketsBefore, ticketsAfter, err)
 	}
-	rows, err := database.SQL.Query("PRAGMA foreign_key_check")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if rows.Next() {
-		t.Error("Agent migration broke a foreign key")
-	}
-	_ = rows.Close()
 	if err := goose.DownToContext(context.Background(), database.SQL, schema, 10); err != nil {
 		t.Fatal(err)
 	}
@@ -76,10 +66,10 @@ func TestSQLiteWeighingFoundation(t *testing.T) {
 	}
 }
 
-func TestSQLiteWeighingMasterMigrationRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "master-round-trip.db")
-	runSQLiteMigrations(t, path)
-	database := openSQLiteDatabase(t, path)
+func TestPostgresWeighingMasterMigrationRoundTrip(t *testing.T) {
+	temporary := startPostgres(t)
+	runMigrations(t, projectRoot(t), temporary.dsn)
+	database := openTemporaryDatabase(t, temporary.dsn)
 	defer func() { _ = database.Close() }()
 	if err := database.GORM.Exec("INSERT INTO wb_material_category (name, create_by, update_by) VALUES ('回退分类',1,1)").Error; err != nil {
 		t.Fatal(err)
@@ -87,11 +77,11 @@ func TestSQLiteWeighingMasterMigrationRoundTrip(t *testing.T) {
 	if err := database.GORM.Exec("INSERT INTO wb_material (code,name,category_id,create_by,update_by) SELECT 'ROLLBACK','回退物料',id,1,1 FROM wb_material_category").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
-	seed := filepath.Join(projectRoot(t), "migrations/sqlite/seed")
-	schema := filepath.Join(projectRoot(t), "migrations/sqlite/schema")
+	seed := filepath.Join(projectRoot(t), "migrations/seed")
+	schema := filepath.Join(projectRoot(t), "migrations/schema")
 	goose.SetTableName("goose_seed_db_version")
 	if err := goose.DownToContext(context.Background(), database.SQL, seed, 5); err != nil {
 		t.Fatal(err)
@@ -114,17 +104,6 @@ func TestSQLiteWeighingMasterMigrationRoundTrip(t *testing.T) {
 	if err := database.GORM.Table("wb_material").Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("empty material catalog after full schema rollback: %d %v", count, err)
 	}
-}
-
-func TestPostgresWeighingFoundation(t *testing.T) {
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
-	}
-	temporary := startPostgres(t)
-	runMigrations(t, projectRoot(t), temporary.dsn)
-	database := openTemporaryDatabase(t, temporary.dsn)
-	defer func() { _ = database.Close() }()
-	checkWeighingFoundation(t, database, testDependencies(t, database, t.TempDir()))
 }
 
 func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, deps app.Dependencies) {
@@ -187,10 +166,14 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	if err := database.GORM.Exec("DELETE FROM sys_role_menu WHERE role_id IN (SELECT id FROM sys_role WHERE role_code='WEIGHING_OPERATOR') AND menu_id IN (SELECT id FROM sys_menu WHERE permission_code IN ('weighing:print','weighing:reprint','weighing:export'))").Error; err != nil {
 		t.Fatal(err)
 	}
+	var ticketID int64
+	if err := database.GORM.Table("wb_ticket").Select("id").Order("id").Limit(1).Scan(&ticketID).Error; err != nil || ticketID == 0 {
+		t.Fatalf("find generated ticket for permission check: %d %v", ticketID, err)
+	}
 	for _, request := range []struct{ method, path, body string }{
 		{"POST", "/api/weighing/tasks/first-confirmation", `{}`},
 		{"GET", "/api/weighing/tasks/export", ``},
-		{"POST", "/api/weighing/tickets/1/print-attempts", `{"requestId":"denied-print-0001","intent":"initial"}`},
+		{"POST", fmt.Sprintf("/api/weighing/tickets/%d/print-attempts", ticketID), `{"requestId":"denied-print-0001","intent":"initial"}`},
 	} {
 		assertEnvelopeCode(t, serveJSON(router, request.method, request.path, request.body, tokenResponse.Data.TokenValue), 403, 403, "无权执行此操作")
 	}
@@ -342,8 +325,8 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	secondInput["requestId"] = "second-request-0001"
 	secondInput["finalWeights"] = map[string]any{"gross": "31", "tare": "11", "remark": ""}
 
-	if database.GORM.Dialector.Name() == "sqlite" {
-		if err := database.GORM.Exec(`CREATE TRIGGER reject_weighing_audit BEFORE INSERT ON sys_oper_log WHEN NEW.operation_type='second.confirm' BEGIN SELECT RAISE(ABORT,'test audit rollback'); END`).Error; err != nil {
+	{
+		if err := database.GORM.Exec(`ALTER TABLE sys_oper_log ADD CONSTRAINT reject_weighing_audit CHECK (operation_type <> 'second.confirm') NOT VALID`).Error; err != nil {
 			t.Fatal(err)
 		}
 		failed := serveJSON(router, "POST", secondPath, encode(secondInput), token)
@@ -354,7 +337,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		if rolledBack.Status != "awaiting_second" || len(rolledBack.Records) != 1 {
 			t.Fatalf("partial second confirmation survived rollback: %+v", rolledBack)
 		}
-		if err := database.GORM.Exec("DROP TRIGGER reject_weighing_audit").Error; err != nil {
+		if err := database.GORM.Exec("ALTER TABLE sys_oper_log DROP CONSTRAINT reject_weighing_audit").Error; err != nil {
 			t.Fatal(err)
 		}
 	}

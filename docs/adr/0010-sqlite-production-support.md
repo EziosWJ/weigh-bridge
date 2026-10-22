@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR 0024](0024-postgresql-only.md)（2026-10-22）。以下为历史决定，不再构成开发或验收要求。
 
 ## Context
 

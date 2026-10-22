@@ -1,18 +1,20 @@
 # 现场 Agent 与开发 mock
 
+> 当前目标：Agent 作为每厂本地系统的内部设备进程，连接本厂业务服务；维护入口和账号将统一，独立维护服务仅作过渡。整合尚未实施，下文命令仍用于已有实现，详见[当前规格](../docs/requirements/standalone-site-spec.md)与 [ADR 0023](../docs/adr/0023-standalone-site-baseline.md)。
+
 现场 Linux Agent 已具备 SK-820 打印与柯力 D12 tF=05 重量采集：同一 `agent-printer` 进程共用一个 WSS 连接和地磅身份，串口读取与打印互不阻塞。2026-10-22 已在 `fcc-com-01` 部署并验证稳定零值、串口占用故障及恢复；真实非零带载、面板稳定灯对照、重启后串口权限及五联／连续走纸仍待现场验收。RTSP/HyperLPR3 识别与摄像头尚未实现，收到采集请求会明确失败，不会伪造图片或采集成功。见[交付记录](../docs/requirements/d12-agent-integration-delivery.md)与[打印部署记录](../docs/device/aisino-sk820-agent-test.md)。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
 
 D12 的现场依据、单位差异与验证清单见[RS232 现场实验记录／博客稿](../docs/device/keli-d12-rs232-blog.md)与[Agent 接入开发指导](../docs/device/keli-d12-agent-integration-guide.md)。驱动实现位于 `server/internal/agentscale`。本机 `tF=05` 共 868 帧带载样本验证了累加校验；现场确认数值单位为吨，因此显式配置源单位 `t`，不根据文档 kg 标志再次除以 1000。单位结论仅适用于已核对的现场仪表。
 
 ## 本机启动
 
-先运行 `task init -- --database sqlite`。初始化会在忽略的本地配置中生成独立随机 Agent 密钥，API 与 mock 自动读取同一份配置。已有开发配置也可重新运行 `task init` 补齐缺失密钥，已有 JWT、数据库设置及已配置密钥不会改写。补齐后重启 API。
+先运行 `task init`。初始化会在忽略的本地配置中生成独立随机 Agent 密钥，API 与 mock 自动读取同一份配置。已有开发配置也可重新运行 `task init` 补齐缺失密钥，已有 JWT、数据库设置及已配置密钥不会改写。补齐后重启 API。
 
 ```bash
 # 初始化或补齐已有本地配置
-task init -- --database sqlite
+task init
 # 终端一：API 与系统 Web
-task dev:sqlite
+task dev
 # 终端二：独立 mock
 task agent:mock
 ```

@@ -1,10 +1,12 @@
 # 服务器监控 ticket 拆分
 
+> 数据库范围更新（2026-10-22）：当前 Server 开发、测试、生产仅支持 PostgreSQL；本文旧 SQLite 兼容要求已由 [ADR 0024](adr/0024-postgresql-only.md) 取代。历史验收事实保留。
+
 状态：用户已确认并完成发布。正式 [Spec #64](https://github.com/EziosWJ/base-project-golang/issues/64) 和 7 个实现 tickets 已发布到本仓库 GitHub Issues，均使用 ready-for-agent。远端正文、标签与 9 条原生阻塞关系已核对。
 
 ADR-0011 已接受。正式 Spec 内容见 [服务器监控 Spec](server-monitoring-spec.md)，需求依据见 [服务器监控需求与设计](server-monitoring.md)。无需前置重构。
 
-主要测试边界为真实 HTTP 路由加可控采集输入和时间；沿用双数据库 migration/HTTP 集成测试与 Playwright 页面验证，Docker 与 NVIDIA 支持补真实部署及硬件验证。
+主要测试边界为真实 HTTP 路由加可控采集输入和时间；沿用 PostgreSQL migration/HTTP 集成测试与 Playwright 页面验证，Docker 与 NVIDIA 支持补真实部署及硬件验证。
 
 | 序号 | ticket | GitHub | Blocked by | 完成后可演示的行为 |
 | --- | --- | --- | --- | --- |

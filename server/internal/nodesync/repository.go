@@ -211,7 +211,7 @@ var columnCache sync.Map
 
 func upsert(tx *gorm.DB, table string, row Row) error {
 	m := map[string]any{}
-	cacheKey := tx.Dialector.Name() + "/" + table
+	cacheKey := table
 	cached, ok := columnCache.Load(cacheKey)
 	if !ok {
 		columns, err := tx.Migrator().ColumnTypes(table)
@@ -236,8 +236,7 @@ func upsert(tx *gorm.DB, table string, row Row) error {
 			}
 			v = i
 		}
-		// Drivers accept RFC3339 timestamps on PostgreSQL; SQLite requires time.Time
-		// to preserve comparisons with timestamps produced by GORM.
+		// Restore timestamp types after JSON transport before persisting the row.
 		if s, ok := v.(string); ok {
 			if t, e := time.Parse(time.RFC3339Nano, s); e == nil {
 				v = t

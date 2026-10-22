@@ -1,7 +1,6 @@
 package migrations_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -21,78 +20,50 @@ var (
 )
 
 func TestMigrationStreamsHaveValidGooseFiles(t *testing.T) {
-	for _, dialect := range []string{"postgres", "sqlite"} {
-		schemaFiles := migrationFiles(t, dialectPath(dialect, "schema"))
-		if len(schemaFiles) == 0 {
-			t.Fatalf("%s schema migration stream must contain a baseline", dialect)
-		}
-		assertGooseFiles(t, schemaFiles)
-		assertGooseFiles(t, migrationFiles(t, dialectPath(dialect, "seed")))
+	schemaFiles := migrationFiles(t, "schema")
+	if len(schemaFiles) == 0 {
+		t.Fatalf("PostgreSQL schema migration stream must contain a baseline")
 	}
+	assertGooseFiles(t, schemaFiles)
+	assertGooseFiles(t, migrationFiles(t, "seed"))
 }
 
 func TestAdminSeedPasswordMatchesJavaContract(t *testing.T) {
-	for _, dialect := range []string{"postgres", "sqlite"} {
-		contents := readFile(t, filepath.Join(dialectPath(dialect, "seed"), "00001_auth_seed.sql"))
-		hash := bcryptHash.Find(contents)
-		if hash == nil {
-			t.Fatalf("%s authentication seed must contain a BCrypt password hash", dialect)
-		}
-		if err := bcrypt.CompareHashAndPassword(hash, []byte("admin123")); err != nil {
-			t.Fatalf("%s administrator seed password does not match admin123: %v", dialect, err)
-		}
+	contents := readFile(t, filepath.Join("seed", "00001_auth_seed.sql"))
+	hash := bcryptHash.Find(contents)
+	if hash == nil {
+		t.Fatalf("authentication seed must contain a BCrypt password hash")
+	}
+	if err := bcrypt.CompareHashAndPassword(hash, []byte("admin123")); err != nil {
+		t.Fatalf("administrator seed password does not match admin123: %v", err)
 	}
 }
 
 func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
-	for _, dialect := range []string{"postgres", "sqlite"} {
-		for _, name := range migrationFiles(t, dialectPath(dialect, "schema")) {
-			contents := readFile(t, name)
-			// This schema evolution copies existing rows when SQLite rebuilds
-			// the source constraint; its Down maps BUSINESS back to MANUAL.
-			// Weighing workflow Down also clears cyclic FK pointers before
-			// dropping its tables. Agent contract also rebuilds CHECK constraints
-			// preserving existing rows; none of these migrations inserts seed data.
-			if filepath.Base(name) == "00009_business_notification_source.sql" || filepath.Base(name) == "00011_weighing_workflow_schema.sql" || filepath.Base(name) == "00012_agent_contract.sql" {
-				continue
-			}
-			if filepath.Base(name) == "00013_sample_without_timeout.sql" {
-				// These exact statements preserve existing samples during the table
-				// rebuild and restore the former NOT NULL constraint on rollback.
-				// Keep rejecting any other DML, including seed inserts.
-				preservation := regexp.MustCompile(`(?m)^(INSERT INTO wb_sample_no_timeout_new SELECT \* FROM wb_sample;|UPDATE wb_sample SET expires_at=datetime\(captured_at, '\+30 seconds'\) WHERE expires_at IS NULL;|UPDATE wb_sample SET expires_at = captured_at \+ INTERVAL '30 seconds' WHERE expires_at IS NULL;)\s*$`)
-				contents = preservation.ReplaceAll(contents, nil)
-			}
-			if schemaDML.Match(contents) {
-				t.Errorf("schema migration %s contains seed-data DML", name)
-			}
+	for _, name := range migrationFiles(t, "schema") {
+		contents := readFile(t, name)
+		// Notification Down maps BUSINESS back to MANUAL.
+		// Weighing workflow Down also clears cyclic FK pointers before
+		// dropping its tables. Agent contract also rebuilds CHECK constraints
+		// preserving existing rows; none of these migrations inserts seed data.
+		if filepath.Base(name) == "00009_business_notification_source.sql" || filepath.Base(name) == "00011_weighing_workflow_schema.sql" || filepath.Base(name) == "00012_agent_contract.sql" {
+			continue
 		}
-
-		for _, name := range migrationFiles(t, dialectPath(dialect, "seed")) {
-			contents := readFile(t, name)
-			if seedDDL.Match(contents) {
-				t.Errorf("seed migration %s contains schema DDL", name)
-			}
+		if filepath.Base(name) == "00013_sample_without_timeout.sql" {
+			// Restore the former NOT NULL constraint on rollback with a data backfill.
+			// Keep rejecting any other DML, including seed inserts.
+			preservation := regexp.MustCompile(`(?m)^(UPDATE wb_sample SET expires_at = captured_at \+ INTERVAL '30 seconds' WHERE expires_at IS NULL;)\s*$`)
+			contents = preservation.ReplaceAll(contents, nil)
+		}
+		if schemaDML.Match(contents) {
+			t.Errorf("schema migration %s contains seed-data DML", name)
 		}
 	}
-}
 
-func TestDialectMigrationVersionsStayInLockstep(t *testing.T) {
-	for _, kind := range []string{"schema", "seed"} {
-		postgres := migrationVersions(t, dialectPath("postgres", kind))
-		sqlite := migrationVersions(t, dialectPath("sqlite", kind))
-		if len(postgres) != len(sqlite) {
-			t.Fatalf("%s migration versions differ: postgres=%v sqlite=%v", kind, postgres, sqlite)
-		}
-		for version := range postgres {
-			if !sqlite[version] {
-				t.Errorf("SQLite %s stream is missing logical migration version %05d", kind, version)
-			}
-		}
-		for version := range sqlite {
-			if !postgres[version] {
-				t.Errorf("PostgreSQL %s stream is missing logical migration version %05d", kind, version)
-			}
+	for _, name := range migrationFiles(t, "seed") {
+		contents := readFile(t, name)
+		if seedDDL.Match(contents) {
+			t.Errorf("seed migration %s contains schema DDL", name)
 		}
 	}
 }
@@ -129,27 +100,6 @@ func migrationFiles(t *testing.T, dir string) []string {
 	}
 	sort.Strings(files)
 	return files
-}
-
-func migrationVersions(t *testing.T, dir string) map[int]bool {
-	t.Helper()
-	versions := make(map[int]bool)
-	for _, name := range migrationFiles(t, dir) {
-		base := filepath.Base(name)
-		var version int
-		if _, err := fmt.Sscanf(base, "%05d_", &version); err != nil {
-			t.Fatalf("parse migration version %s: %v", name, err)
-		}
-		versions[version] = true
-	}
-	return versions
-}
-
-func dialectPath(dialect, kind string) string {
-	if dialect == "postgres" {
-		return kind
-	}
-	return filepath.Join(dialect, kind)
 }
 
 func readFile(t *testing.T, name string) []byte {

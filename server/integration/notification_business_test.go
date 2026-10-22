@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/EziosWJ/weighbridge/server/internal/app"
@@ -16,13 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSQLiteNotificationBusinessEntry(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "business.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
-	defer db.Close()
-	businessEntryContract(t, db, sqliteDependencies(t, db, t.TempDir()))
-}
 func TestNotificationBusinessEntryPostgres(t *testing.T) {
 	temporary := startPostgres(t)
 	runMigrations(t, projectRoot(t), temporary.dsn)

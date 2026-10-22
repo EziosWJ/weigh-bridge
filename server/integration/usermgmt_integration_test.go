@@ -36,7 +36,7 @@ func (c *queryTraceCounter) Count() int {
 
 func TestUserPageLoadsDepartmentAndRolesInBatches(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)

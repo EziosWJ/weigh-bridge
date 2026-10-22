@@ -17,15 +17,13 @@ import (
 
 const delimiter = "."
 
-const sqliteConfigProfile = "sqlite"
-
 // Load reads configuration from DefaultDir.
 func Load() (*Config, error) {
 	return LoadFromDir(DefaultDir)
 }
 
 // LoadFromDir loads configuration in the fixed precedence order:
-// defaults, config.yaml, config.{APP_ENV}.yaml, an optional named profile,
+// defaults, config.yaml, config.{APP_ENV}.yaml,
 // then APP_ environment variables. Environment-specific YAML is optional;
 // config.yaml is required.
 func LoadFromDir(dir string) (*Config, error) {
@@ -49,8 +47,8 @@ func LoadFromDir(dir string) (*Config, error) {
 		return nil, err
 	}
 
-	if err := loadConfigProfile(k, dir); err != nil {
-		return nil, err
+	if strings.TrimSpace(os.Getenv("APP_CONFIG_PROFILE")) != "" {
+		return nil, errors.New("APP_CONFIG_PROFILE is no longer supported; use PostgreSQL configuration")
 	}
 
 	// APP_ENV is the authoritative environment selector. Do not allow a YAML
@@ -72,17 +70,6 @@ func LoadFromDir(dir string) (*Config, error) {
 	}
 
 	return &cfg, nil
-}
-
-func loadConfigProfile(k *koanf.Koanf, dir string) error {
-	profile := strings.TrimSpace(strings.ToLower(os.Getenv("APP_CONFIG_PROFILE")))
-	if profile == "" {
-		return nil
-	}
-	if profile != sqliteConfigProfile {
-		return fmt.Errorf("APP_CONFIG_PROFILE must be empty or %q, got %q", sqliteConfigProfile, profile)
-	}
-	return loadYAML(k, filepath.Join(dir, "config."+profile+".yaml"), true)
 }
 
 func selectedEnvironment() (string, error) {

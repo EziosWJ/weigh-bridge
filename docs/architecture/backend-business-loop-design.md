@@ -1,5 +1,9 @@
 # 服务端业务闭环：数据库与接口设计
 
+> **2026-10-22 效力：历史阶段规格，业务模型按后续规则复用。** 仅测试数据／系统内模拟／浏览器打印等为当时阶段边界；后续使用 Agent 契约、按厂区限制同车任务，本地正常时断互联网可办理。单据版本、审计、幂等和快照继续保留，数据库按 ADR 0024。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
+> 数据库范围更新（2026-10-22）：[ADR 0024](../adr/0024-postgresql-only.md) 已取代本文的 SQLite 支持、双库迁移与兼容测试条款；当前开发和验收统一使用 PostgreSQL。其余条款按当前开发基线适用。
+
 状态：2026-10-18 已按 B01–B07 实现服务端测试业务及前端接入；实际验证与环境限制见 [实施记录](../requirements/backend-business-loop-delivery.md)。真实设备及正式业务仍未实现。范围及验收见 [Spec](../requirements/backend-business-loop-spec.md)，交付顺序见 [计划](../requirements/backend-business-loop-plan.md)。
 
 ## 1. 现状与设计边界
@@ -8,20 +12,20 @@
 
 沿用 handler/service/repository/model 分层及 app 装配。新增 `internal/weighing`，内部管理资料、测试采集、运输、单据和打印用例，按职责拆文件；事务落在其 repository，避免现在就建立跨模块事务框架。复用 `internal/audit.RecordOn` 与 HTTP envelope，不调整既有 JWT、登录和用户管理契约。
 
-V1.0 部署数据库 PostgreSQL，本地和兼容验证保留 SQLite；两者逻辑表、约束和行为一致。单厂区、单地磅，任务记录地磅身份，不预建多租户、ERP、库存或现场设备协议表。
+开发、测试与部署数据库统一为 PostgreSQL。单厂区、单地磅，任务记录地磅身份，不预建多租户、ERP、库存或现场设备协议表。
 
 ## 2. 通用数据规则
 
 | 项目 | 设计 |
 | --- | --- |
-| 表与主键 | 新业务表使用 `wb_` 前缀；PG BIGINT identity、SQLite INTEGER 自增主键；API id 使用与现有接口相同的数字类型 |
+| 表与主键 | 新业务表使用 `wb_` 前缀；PostgreSQL BIGINT identity 主键；API id 使用与现有接口相同的数字类型 |
 | 时间 | 采集、确认、出单、打印分别记录；UTC 保存、RFC3339 传输；业务日期按 Asia/Shanghai 转为 UTC 半开区间过滤 |
 | 公共字段 | 资料表有 create_time、update_time、create_by、update_by、version；业务事实有 create_time、actor_id、actor_name，不物理删除 |
 | 状态 | 资料 enabled 用 0/1；业务状态使用明确字符串及 CHECK，不混用任务完成、单据有效、打印成功 |
 | 重量 | 数据库 BIGINT 保存“千分之一吨”的整数，字段后缀 `_milli_tonne`；Go int64 计算，不经 float64 四舍五入 |
 | 重量接口 | 用吨制十进制字符串，如 `"30.125"`、`"9"`；最多三位小数；拒绝非有限数、指数写法、超精度、溢出和非正毛皮重。净重、差额由服务端计算 |
-| 取舍 | 整数避免 SQLite 浮点差异；这是吨的定点编码，不改回 kg 业务录入，不等同设备原单位 |
-| 快照 | PG JSONB／SQLite TEXT，应用校验同一 schemaVersion；只存嵌套证据与历史快照，查询／过滤／汇总字段独立列出 |
+| 取舍 | 整数避免浮点精度误差；这是吨的定点编码，不改回 kg 业务录入，不等同设备原单位 |
+| 快照 | PostgreSQL JSONB，应用校验同一 schemaVersion；只存嵌套证据与历史快照，查询／过滤／汇总字段独立列出 |
 | 删除 | 资料只有从未引用时可删除；事实、单据、事件、操作结果不提供删除／清空业务接口；不对证据使用级联删除 |
 
 ### 2.1 编号
@@ -137,8 +141,8 @@ erDiagram
 - 记录：sample_id 唯一，replaces_record_id 非空唯一；`(task_id, confirmed_at, id)`；二次确认日期索引支持原始列表。
 - 单据：ticket_no、(task_id, revision) 唯一，task_id 的 valid 部分唯一；`(issued_at, id)`、`(task_id, issued_at, id)`，按实际查询增加物料／主体组合索引。
 - 样本：(scale_id, captured_at)、(owner_user_id, client_id, captured_at)；事件：(task_id, occurred_at, id)、(ticket_id, occurred_at, id)；打印：(ticket_id, attempt_no)。
-- PG／SQLite 都落唯一、CHECK 和 FK；跨行状态、资料身份、记录归属及业务证据规则仍需事务内验证。不能以只做 `SELECT exists` 代替唯一约束。
-- 新 migration 按依赖建资料、任务、采集／记录、单据及保障表；循环引用通过 PG 后置 FK，SQLite 建表声明及插入顺序处理。Goose Down 先清空任务当前记录指针，再按依赖移除单据／事件／记录／采样／任务，须验证非空测试库回退；不得修改历史 migration 或启用 AutoMigrate。
+- PostgreSQL 使用唯一、CHECK 和 FK 约束；跨行状态、资料身份、记录归属及业务证据规则仍需事务内验证。不能以只做 `SELECT exists` 代替唯一约束。
+- 新 migration 按依赖建资料、任务、采集／记录、单据及保障表；循环引用通过 PostgreSQL 后置 FK 处理。Goose Down 先清空任务当前记录指针，再按依赖移除单据／事件／记录／采样／任务，须验证非空测试库回退；不得修改历史 migration 或启用 AutoMigrate。
 
 ## 5. 状态转换
 
@@ -178,9 +182,9 @@ stateDiagram-v2
 
 Service 不依赖 GORM：Store 提供 `ConfirmFirst`、`ConfirmSecond`、`Reweigh`、`VoidTicket`、`ReopenTicket` 等业务原子方法，并承载锁内所需规则调用；不暴露 Begin／Commit，也不暴露通用 CRUD 让调用者拼事务。纯规则函数可由 service/repository 共用，避免两套业务规则。
 
-PG 用任务／会话行锁加唯一约束；SQLite 用现有有界忙等待和事务／条件更新，写冲突返回 503，不自动重放事务。锁顺序统一为会话（若需）→任务→资料→单据→编号，批量资料按 id 顺序处理。无 Redis、分布式锁或自动补偿出单 worker。
+PostgreSQL 用任务／会话行锁加唯一约束，不自动重放业务事务。锁顺序统一为会话（若需）→任务→资料→单据→编号，批量资料按 id 顺序处理。无 Redis、分布式锁或自动补偿出单 worker。
 
-同车新任务创建与旧任务重称都先占用同一地磅会话，并在事务内复查同车未结束任务；新任务唯一索引兜底。仅人工更正旧单不需要占用地磅，也不释放／抢占新任务。资料维护和任务提交都必须在事务内同步校验主体身份与引用，PG 锁同一资料行；SQLite 保持写串行，防止停用／删身份与新引用竞态。
+同车新任务创建与旧任务重称都先占用同一地磅会话，并在事务内复查同车未结束任务；新任务唯一索引兜底。仅人工更正旧单不需要占用地磅，也不释放／抢占新任务。资料维护和任务提交都必须在事务内同步校验主体身份与引用，PostgreSQL 锁同一资料行，防止停用／删身份与新引用竞态。
 
 ### 6.2 提交结果未知
 
@@ -277,7 +281,7 @@ clientId 为每个独立工作台实例生成，不把 JWT 当作操作会话；
 
 ## 9. 迁移与实现边界
 
-当前 schema 最新 00009、seed 最新 00005；实现时重新核对后新增版本，PostgreSQL 与 SQLite 各自 schema/seed 同步逻辑版本。建议首批 schema 00010 起、seed 00006 起，按计划依赖拆分；本设计不占号、不预写空迁移。
+当前 schema 最新 00009、seed 最新 00005；实现时重新核对后新增版本，仅维护 PostgreSQL schema/seed 版本。建议首批 schema 00010 起、seed 00006 起，按计划依赖拆分；本设计不占号、不预写空迁移。
 
 schema 创建业务表，seed 仅增加业务菜单／权限、操作员角色定义和唯一地磅身份，不自动建测试任务、示例单据或新账号；不自动给所有已有用户授予操作员角色。空库也不自动生成演示交易。真实设备阶段再设计独立可信采集适配器、正式单号及现场参数，测试样本与单据不能原地改成正式性质。
 

@@ -1,5 +1,7 @@
 # Spec：Linux 宿主机资源监控面板
 
+> 数据库范围更新（2026-10-22）：当前 Server 开发、测试、生产仅支持 PostgreSQL；本文旧 SQLite 兼容要求已由 [ADR 0024](adr/0024-postgresql-only.md) 取代。历史验收事实保留。
+
 范围依据：已确认的服务器监控需求与 ADR-0011。用户已确认测试边界、ticket 拆分与发布。目标 tracker 为本仓库 GitHub Issues，发布标签为 `ready-for-agent`。
 
 已发布：[Spec #64](https://github.com/EziosWJ/base-project-golang/issues/64)。实现工作项与阻塞依赖见 [ticket 索引](server-monitoring-tickets.md)。

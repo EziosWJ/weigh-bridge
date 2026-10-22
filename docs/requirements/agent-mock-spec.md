@@ -1,5 +1,9 @@
 # Agent 接口与独立 mock 方案
 
+> **2026-10-22 效力：设备协议与模拟职责继续有效。** 设备服务连接本厂业务服务，真实与 mock 互斥；远程 Server 部署和断互联网暂停前提被替代。软件测试不代表真实设备验收，数据库按 ADR 0024。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
+> 数据库范围更新（2026-10-22）：[ADR 0024](../adr/0024-postgresql-only.md) 已取代本文的 SQLite 支持、双库迁移与兼容测试条款；当前开发和验收统一使用 PostgreSQL。其余条款按当前开发基线适用。
+
 状态：2026-10-19 用户已通过 to-spec 授权发布后实施；[Issue #3](https://github.com/EziosWJ/weigh-bridge/issues/3) 已发布，实现及协议／SQLite／浏览器验证完成，PostgreSQL 受 Docker 环境限制。正式 Spec 见 [Issue 正文](agent-mock-issue-spec.md)，准确报文见 [协议 v1](../../protocol/v1.md)。
 
 ## 范围与职责
@@ -78,7 +82,7 @@ Server 先保存打印尝试再发送命令；mock 页面展示任务和内容�
 - 新单据统一走正常单据流程与编号；历史测试单号、标识、图片、原始依据和快照保留，不修改旧记录来伪装真实设备采集。
 - 移除工作台设备模拟面板、浏览器生成的识别候选、演示网络开关及旧浏览器称重模拟数据路径；不删除业务规则、单据预览或历史依据展示。
 - Web 通过现有业务 HTTP 入口读取 Server 保存的最新设备状态；本轮优先轻量轮询，不再增加一套浏览器长连接协议。离线、数据过期应清楚显示并禁止采集确认。
-- 数据库变化新增 Goose migration，保留 SQLite 开发与测试能力，生产仍为 PostgreSQL。
+- 数据库变化新增 Goose migration，开发、测试与生产统一使用 PostgreSQL。
 - 不建设设备管理后台、离线补传队列、自动离线确认或真实 Agent 的 SQLite 存储。
 
 ## 验收与实施顺序

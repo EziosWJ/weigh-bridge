@@ -1,5 +1,7 @@
 # Issue #4：本地业务权威与同步实现
 
+> **2026-10-22 效力：部分被替代，中心能力暂缓。** 本地业务权威、断互联网可运行、编号与快照继续有效；中心管理账号资料／归属及首次下发依赖被替代，双向同步、中心审批与跨厂汇总退出本期。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 日期：2026-10-22。依据：[确认规格](../requirements/local-first-deployment-spec.md)。软件验证与现场边界以[交付记录](../requirements/local-first-deployment-delivery.md)为准。
 
 ## 角色及身份

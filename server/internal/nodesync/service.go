@@ -635,10 +635,8 @@ func (s *Service) applyMasters(ctx context.Context, p Packet) error {
 			}
 		}
 		for _, table := range []string{"wb_material_category", "wb_material", "wb_party", "wb_party_contact"} {
-			if tx.Dialector.Name() == "postgres" {
-				if e := tx.Exec("SELECT setval(pg_get_serial_sequence(?, 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM "+table+"),0),1))", table).Error; e != nil {
-					return e
-				}
+			if e := tx.Exec("SELECT setval(pg_get_serial_sequence(?, 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM "+table+"),0),1))", table).Error; e != nil {
+				return e
 			}
 		}
 		// First installation must have two named, authorized shift operators.

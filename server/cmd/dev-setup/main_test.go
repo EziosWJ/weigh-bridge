@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"net"
 	"os"
 	"path/filepath"
@@ -21,7 +20,7 @@ func checkout(t *testing.T) string {
 	if err := os.MkdirAll(filepath.Join(backend, "configs"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"config.yaml", "config.dev.example.yaml", "config.sqlite.yaml"} {
+	for _, name := range []string{"config.yaml", "config.dev.example.yaml"} {
 		contents, err := os.ReadFile(filepath.Join("..", "..", "configs", name))
 		if err != nil {
 			t.Fatal(err)
@@ -56,14 +55,11 @@ func invoke(t *testing.T, args ...string) (string, error) {
 	return output.String(), err
 }
 
-func TestInitializeBothDatabasesAndPreserveConfiguration(t *testing.T) {
-	for _, driver := range []string{"postgres", "sqlite"} {
+func TestInitializePostgresAndPreserveConfiguration(t *testing.T) {
+	for _, driver := range []string{"postgres"} {
 		t.Run(driver, func(t *testing.T) {
 			root := checkout(t)
 			args := []string{"init"}
-			if driver == "sqlite" {
-				args = append(args, "--database", "sqlite")
-			}
 			output, err := invoke(t, args...)
 			if err != nil {
 				t.Fatal(err)
@@ -81,10 +77,7 @@ func TestInitializeBothDatabasesAndPreserveConfiguration(t *testing.T) {
 			if len(cfg.Weighing.AgentKey) != 64 || cfg.Weighing.AgentKey == cfg.JWT.Secret || strings.Contains(output, cfg.Weighing.AgentKey) {
 				t.Fatal("initialization must generate a separate Agent key without printing it")
 			}
-			if driver == "sqlite" && (cfg.Database.Username != "" || cfg.Database.Password != "") {
-				t.Fatal("SQLite configuration must omit credentials")
-			}
-			if !strings.Contains(output, startupTask(driver)) {
+			if !strings.Contains(output, "task dev") {
 				t.Fatal("initialization must include the matching startup task")
 			}
 			path := filepath.Join("configs", "config.dev.yaml")
@@ -96,8 +89,8 @@ func TestInitializeBothDatabasesAndPreserveConfiguration(t *testing.T) {
 			if info.Mode().Perm()&0o077 != 0 && os.PathSeparator != '\\' {
 				t.Fatal("generated credentials must have restricted file permissions")
 			}
-			// Even selecting a different database must preserve an existing file.
-			output, err = invoke(t, "init", "--database", "sqlite")
+			// Repeated initialization must preserve an existing file.
+			output, err = invoke(t, "init", "--database", "postgres")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -212,72 +205,9 @@ func TestDoctorPostgresUnresponsiveServerHonorsDeadline(t *testing.T) {
 	}
 }
 
-func TestDoctorSQLiteProfileDoesNotCreateDatabase(t *testing.T) {
-	checkout(t)
-	if _, err := invoke(t, "init"); err != nil {
-		t.Fatal(err)
-	}
-	output, err := invoke(t, "doctor", "--database", "sqlite")
-	if err != nil || !strings.Contains(output, "[待迁移]") || !strings.Contains(output, "task dev:sqlite") {
-		t.Fatalf("expected SQLite migration instructions: %s", output)
-	}
-	if _, err := os.Stat(".data"); !os.IsNotExist(err) {
-		t.Fatal("doctor created SQLite storage")
-	}
-}
-
-func TestDoctorSQLiteExistingDatabaseAndInvalidFile(t *testing.T) {
-	checkout(t)
-	if _, err := invoke(t, "init", "--database", "sqlite"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(".data", 0o700); err != nil {
-		t.Fatal(err)
-	}
-	path := ".data/weighbridge.db"
-	db, err := sql.Open("sqlite3", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("CREATE TABLE example (id INTEGER); INSERT INTO example VALUES (1)"); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	before, _ := os.ReadFile(path)
-	output, err := invoke(t, "doctor")
-	if err != nil || !strings.Contains(output, "[通过] 数据库连接") {
-		t.Fatalf("SQLite probe failed: %s", output)
-	}
-	after, _ := os.ReadFile(path)
-	if !bytes.Equal(before, after) {
-		t.Fatal("doctor modified database contents")
-	}
-	if err := os.WriteFile(path, []byte("this is not a SQLite database"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	output, err = invoke(t, "doctor")
-	if err == nil || !strings.Contains(output, "SQLite 文件不可读取") {
-		t.Fatal("doctor accepted an invalid SQLite database")
-	}
-}
-
-func TestDoctorPreservesCustomSQLitePathInStartupInstructions(t *testing.T) {
-	checkout(t)
-	if _, err := invoke(t, "init", "--database", "sqlite"); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("APP_DATABASE__URL", ".data/custom.db")
-	output, err := invoke(t, "doctor")
-	if err != nil || !strings.Contains(output, "运行 task dev ") || strings.Contains(output, "task dev:sqlite") {
-		t.Fatal("instructions must not replace a custom SQLite path with the profile default")
-	}
-}
-
 func TestInvalidArgumentsDoNotCreateConfiguration(t *testing.T) {
 	checkout(t)
-	for _, args := range [][]string{{}, {"unknown"}, {"init", "--database", "mysql"}, {"init", "unexpected"}, {"init", "--password", "private-value"}} {
+	for _, args := range [][]string{{}, {"unknown"}, {"init", "--database", "mysql"}, {"init", "--database", "sqlite"}, {"doctor", "--database", "sqlite"}, {"init", "unexpected"}, {"init", "--password", "private-value"}} {
 		output, err := invoke(t, args...)
 		if err == nil || strings.Contains(output, "private-value") {
 			t.Fatal("invalid arguments must fail without echoing values")
@@ -290,7 +220,7 @@ func TestInvalidArgumentsDoNotCreateConfiguration(t *testing.T) {
 
 func TestInitializeBackfillsAgentKeyAndPreservesExistingSettings(t *testing.T) {
 	checkout(t)
-	if _, err := invoke(t, "init", "--database", "sqlite"); err != nil {
+	if _, err := invoke(t, "init", "--database", "postgres"); err != nil {
 		t.Fatal(err)
 	}
 	original, err := config.Load()

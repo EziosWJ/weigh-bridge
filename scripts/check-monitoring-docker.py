@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify real native/Docker APIs against a host socket using temporary data only.
 Run `task build` first. Docker image golang:1.26.5-bookworm must be available.
-All processes, containers, ports and SQLite files are bounded and cleaned up.
+All processes, containers, ports and temporary PostgreSQL databases are bounded and cleaned up.
 """
 import argparse
 import datetime
@@ -95,15 +95,28 @@ def main():
             raise RuntimeError(f"Missing {path}; run task build first")
     processes = []
     container = "spec64-monitor-" + str(os.getpid())
+    database_container = container + "-postgres"
+    network = container + "-network"
     with tempfile.TemporaryDirectory(prefix="spec64-api-") as directory:
         try:
+            run(["docker", "network", "create", network])
+            run(["docker", "run", "-d", "--rm", "--name", database_container, "--network", network,
+                 "-e", "POSTGRES_DB=integration", "-e", "POSTGRES_USER=integration", "-e", "POSTGRES_PASSWORD=temporary-monitoring-password",
+                 "-p", "127.0.0.1::5432", "postgres:17-alpine"])
+            db_port = run(["docker", "port", database_container, "5432/tcp"]).rsplit(":", 1)[1]
+            def database_ready():
+                result = subprocess.run(["docker", "exec", "-e", "PGPASSWORD=temporary-monitoring-password", database_container,
+                    "psql", "-h", "127.0.0.1", "-U", "integration", "-d", "integration", "-tAc", "SELECT 1"],
+                    capture_output=True, timeout=5)
+                return result.returncode == 0
+            wait_until(database_ready, seconds=45)
             work = Path(directory)
             (work / "configs").mkdir()
             shutil.copyfile(ROOT / "server/configs/config.yaml", work / "configs/config.yaml")
             (work / "migrations").symlink_to(ROOT / "server/migrations", target_is_directory=True)
             env = {key: value for key, value in os.environ.items() if not key.startswith("APP_")}
             env["APP_MONITORING__ENABLED"] = "true"
-            env.update({"APP_ENV": "test", "APP_DATABASE__DRIVER": "sqlite", "APP_DATABASE__URL": str(work / "monitor.db"), "APP_DATABASE__USERNAME": "", "APP_DATABASE__PASSWORD": "", "APP_JWT__SECRET": "spec64-temporary-acceptance-secret-32-bytes", "APP_FILE__STORAGE_ROOT": str(work / "uploads")})
+            env.update({"APP_ENV": "test", "APP_DATABASE__DRIVER": "postgres", "APP_DATABASE__URL": f"postgres://127.0.0.1:{db_port}/integration?sslmode=disable", "APP_DATABASE__USERNAME": "integration", "APP_DATABASE__PASSWORD": "temporary-monitoring-password", "APP_JWT__SECRET": "spec64-temporary-acceptance-secret-32-bytes", "APP_FILE__STORAGE_ROOT": str(work / "uploads")})
             run([str(binaries["weighbridge-migrate"]), "up", "--kind", "all"], cwd=work, env=env)
             port = free_port()
             base = f"http://127.0.0.1:{port}"
@@ -128,8 +141,8 @@ def main():
             port = free_port()
             base = f"http://127.0.0.1:{port}"
             docker_env = dict(env)
-            docker_env.update({"APP_DATABASE__URL": "/acceptance/monitor.db", "APP_FILE__STORAGE_ROOT": "/acceptance/uploads", "APP_HTTP__ADDRESS": ":8080", "APP_MONITORING__SOURCE": "unix", "APP_MONITORING__SOCKET_PATH": "/host-monitor/collector.sock"})
-            command = ["docker", "run", "-d", "--name", container, "--user", f"{os.getuid()}:{os.getgid()}", "--hostname", "spec64-isolated-api", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "-p", f"127.0.0.1:{port}:8080", "-v", f"{work}:/acceptance", "-v", f"{socket_dir}:/host-monitor:ro", "-v", f"{binaries['weighbridge-server']}:/app/api:ro", "-w", "/acceptance"]
+            docker_env.update({"APP_DATABASE__URL": f"postgres://{database_container}:5432/integration?sslmode=disable", "APP_FILE__STORAGE_ROOT": "/acceptance/uploads", "APP_HTTP__ADDRESS": ":8080", "APP_MONITORING__SOURCE": "unix", "APP_MONITORING__SOCKET_PATH": "/host-monitor/collector.sock"})
+            command = ["docker", "run", "-d", "--name", container, "--network", network, "--user", f"{os.getuid()}:{os.getgid()}", "--hostname", "spec64-isolated-api", "--cap-drop", "ALL", "--security-opt", "no-new-privileges:true", "-p", f"127.0.0.1:{port}:8080", "-v", f"{work}:/acceptance", "-v", f"{socket_dir}:/host-monitor:ro", "-v", f"{binaries['weighbridge-server']}:/app/api:ro", "-w", "/acceptance"]
             for key, value in docker_env.items():
                 if key.startswith("APP_"):
                     command += ["-e", f"{key}={value}"]
@@ -181,7 +194,8 @@ def main():
                     if process.poll() is None:
                         host_check.stop(process)
             finally:
-                subprocess.run(["docker", "rm", "-f", container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                subprocess.run(["docker", "rm", "-f", container, database_container], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+                subprocess.run(["docker", "network", "rm", network], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
 
 
 if __name__ == "__main__":

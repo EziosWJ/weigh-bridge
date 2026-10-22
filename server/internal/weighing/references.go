@@ -21,10 +21,7 @@ func masterEvent(ctx context.Context, tx *gorm.DB, e audit.Event, before, after 
 	return audit.RecordOn(ctx, tx, e)
 }
 func jsonIDExpression(tx *gorm.DB, column, key string) string {
-	if tx.Dialector.Name() == "postgres" {
-		return "(" + column + "->>'" + key + "')"
-	}
-	return "CAST(json_extract(" + column + ",'$." + key + "') AS TEXT)"
+	return "(" + column + "->>'" + key + "')"
 }
 func usedByBusiness(tx *gorm.DB, kind string, id int64) (bool, error) {
 	fields := []string{}

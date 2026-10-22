@@ -188,72 +188,11 @@ log:
 	}
 }
 
-func TestLoadFromDirAllowsPersistentSQLiteWithoutCredentials(t *testing.T) {
-	dir := t.TempDir()
-	writeConfig(t, dir, "config.yaml", `
-database:
-  driver: sqlite
-  url: /var/lib/weighbridge/data/app.db
-jwt:
-  secret: sqlite-test-secret
-`)
-	t.Setenv("APP_ENV", "test")
-
-	cfg, err := LoadFromDir(dir)
-	if err != nil {
-		t.Fatalf("LoadFromDir() SQLite error = %v", err)
-	}
-	if cfg.Database.Driver != "sqlite" || cfg.Database.URL != "/var/lib/weighbridge/data/app.db" {
-		t.Fatalf("SQLite database config = %+v", cfg.Database)
-	}
-	if cfg.Database.Username != "" || cfg.Database.Password != "" {
-		t.Fatalf("SQLite credentials = (%q, %q), want empty", cfg.Database.Username, cfg.Database.Password)
-	}
-}
-
-func TestLoadFromDirSQLiteProfileOverridesEnvironmentDatabase(t *testing.T) {
-	dir := t.TempDir()
-	writeConfig(t, dir, "config.yaml", `
-database:
-  url: postgres://localhost:5432/base?sslmode=disable
-  username: postgres-user
-  password: postgres-password
-jwt:
-  secret: sqlite-test-secret
-`)
-	writeConfig(t, dir, "config.dev.yaml", `
-database:
-  driver: postgres
-  username: dev-user
-  password: dev-password
-`)
-	writeConfig(t, dir, "config.sqlite.yaml", `
-database:
-  driver: sqlite
-  url: .data/weighbridge.db
-  username: ""
-  password: ""
-`)
-	t.Setenv("APP_ENV", "dev")
-	t.Setenv("APP_CONFIG_PROFILE", "sqlite")
-
-	cfg, err := LoadFromDir(dir)
-	if err != nil {
-		t.Fatalf("LoadFromDir() SQLite profile error = %v", err)
-	}
-	if cfg.Database.Driver != "sqlite" || cfg.Database.URL != ".data/weighbridge.db" {
-		t.Fatalf("SQLite profile database = %+v", cfg.Database)
-	}
-	if cfg.Database.Username != "" || cfg.Database.Password != "" {
-		t.Fatalf("SQLite profile credentials = (%q, %q), want empty", cfg.Database.Username, cfg.Database.Password)
-	}
-}
-
-func TestLoadFromDirRejectsUnknownConfigProfile(t *testing.T) {
+func TestLoadFromDirRejectsRetiredConfigProfile(t *testing.T) {
 	dir := t.TempDir()
 	writeConfig(t, dir, "config.yaml", "database:\n  url: postgres://localhost:5432/base?sslmode=disable\n  username: user\n  password: password\njwt:\n  secret: secret\n")
 	t.Setenv("APP_ENV", "test")
-	t.Setenv("APP_CONFIG_PROFILE", "mysql")
+	t.Setenv("APP_CONFIG_PROFILE", "sqlite")
 
 	_, err := LoadFromDir(dir)
 	if err == nil || !strings.Contains(err.Error(), "APP_CONFIG_PROFILE") {
@@ -261,33 +200,20 @@ func TestLoadFromDirRejectsUnknownConfigProfile(t *testing.T) {
 	}
 }
 
-func TestLoadFromDirRejectsUnsupportedSQLiteConfigurations(t *testing.T) {
-	for _, test := range []struct {
-		name     string
-		database string
-		wantErr  string
-	}{
-		{name: "in memory", database: "driver: sqlite\n  url: ':memory:'\n", wantErr: "in-memory SQLite"},
-		{name: "username", database: "driver: sqlite\n  url: /tmp/app.db\n  username: user\n", wantErr: "database.username must be empty"},
-		{name: "password", database: "driver: sqlite\n  url: /tmp/app.db\n  password: secret\n", wantErr: "database.password must be empty"},
-		{name: "mysql", database: "driver: mysql\n  url: mysql://localhost/app\n  username: user\n  password: secret\n", wantErr: "mysql is not supported"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			dir := t.TempDir()
-			writeConfig(t, dir, "config.yaml", "database:\n  "+test.database+"jwt:\n  secret: sqlite-test-secret\n")
-			t.Setenv("APP_ENV", "test")
-
-			_, err := LoadFromDir(dir)
-			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
-				t.Fatalf("LoadFromDir() error = %v, want containing %q", err, test.wantErr)
-			}
-		})
-	}
-}
-
 func writeConfig(t *testing.T, dir, name, contents string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", name, err)
+	}
+}
+
+func TestLoadRejectsRetiredDatabaseDriver(t *testing.T) {
+	t.Setenv("APP_CONFIG_PROFILE", "")
+	t.Setenv("APP_DATABASE__DRIVER", "sqlite")
+	dir := t.TempDir()
+	writeConfig(t, dir, "config.yaml", "database:\n  url: postgres://localhost/base\n  username: user\n  password: password\njwt:\n  secret: secret\n")
+	_, err := LoadFromDir(dir)
+	if err == nil || !strings.Contains(err.Error(), "database.driver must be postgres") {
+		t.Fatalf("retired driver accepted: %v", err)
 	}
 }

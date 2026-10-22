@@ -5,7 +5,6 @@ package integration
 import (
 	"net/http"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,18 +14,9 @@ import (
 	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 )
 
-func TestSQLiteMonitoringMenuAndAuthorization(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "monitoring.db")
-	runSQLiteMigrations(t, path)
-	runSQLiteMigrations(t, path)
-	database := openSQLiteDatabase(t, path)
-	defer func() { _ = database.Close() }()
-	testMonitoringMenuAndAuthorization(t, database, sqliteDependencies(t, database, t.TempDir()))
-}
-
 func TestPostgresMonitoringMenuAndAuthorization(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 	temporary := startPostgres(t)
 	runMigrations(t, projectRoot(t), temporary.dsn)

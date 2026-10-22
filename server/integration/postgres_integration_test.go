@@ -41,12 +41,12 @@ const postgresImage = "postgres:17-alpine"
 
 func TestPostgresMigrationsUseEphemeralDatabase(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	root := projectRoot(t)
 	if _, err := os.Stat(filepath.Join(root, "cmd", "migrate")); errors.Is(err, os.ErrNotExist) {
-		t.Skip("cmd/migrate is not available yet")
+		t.Fatal("cmd/migrate is required for integration tests")
 	} else if err != nil {
 		t.Fatalf("inspect cmd/migrate: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestPostgresMigrationsUseEphemeralDatabase(t *testing.T) {
 
 func TestPostgresLogClearSeedDefaultsByEnvironment(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	for _, test := range []struct {
@@ -91,7 +91,7 @@ func TestPostgresLogClearSeedDefaultsByEnvironment(t *testing.T) {
 
 func TestAuthContractUsesPostgresSessions(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -150,7 +150,7 @@ func TestAuthContractUsesPostgresSessions(t *testing.T) {
 
 func TestRBACContractWritesAuditLog(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -208,7 +208,7 @@ func TestRBACContractWritesAuditLog(t *testing.T) {
 
 func TestRBACWritesAndAuditsInOneTransaction(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -260,7 +260,7 @@ func TestRBACWritesAndAuditsInOneTransaction(t *testing.T) {
 
 func TestSysConfigCreateRollsBackWhenAuditFails(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -310,7 +310,7 @@ func TestSysConfigCreateRollsBackWhenAuditFails(t *testing.T) {
 
 func TestDepartmentAndUserContractRevokesSessions(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -377,7 +377,7 @@ func TestDepartmentAndUserContractRevokesSessions(t *testing.T) {
 
 func TestDictionaryAndConfigContractUsesSeedAndAudit(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 	temporary := startPostgres(t)
 	runMigrations(t, projectRoot(t), temporary.dsn)
@@ -410,7 +410,7 @@ func TestDictionaryAndConfigContractUsesSeedAndAudit(t *testing.T) {
 
 func TestLoginAndOperLogContractServesQueriesAndDetails(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -505,7 +505,7 @@ func TestLoginAndOperLogContractServesQueriesAndDetails(t *testing.T) {
 
 func TestFileContractUploadsAndStreamsWithPostgres(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -634,7 +634,7 @@ func TestFileContractUploadsAndStreamsWithPostgres(t *testing.T) {
 
 func TestNotificationContractUsesPostgres(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 
 	temporary := startPostgres(t)
@@ -838,6 +838,7 @@ func integrationEnvironment(t *testing.T, dsn, environmentName string) []string 
 	}
 	return append(environment,
 		"APP_ENV="+environmentName,
+		"APP_DATABASE__DRIVER=postgres",
 		"APP_DATABASE__URL="+databaseConfig.URL,
 		"APP_DATABASE__USERNAME="+databaseConfig.Username,
 		"APP_DATABASE__PASSWORD="+databaseConfig.Password,
@@ -1055,4 +1056,27 @@ func projectRoot(t *testing.T) string {
 		t.Fatalf("resolve project root: %v", err)
 	}
 	return root
+}
+
+func (database temporaryPostgres) backup(t *testing.T) []byte {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, "docker", "exec", database.container, "pg_dump", "-U", "integration", "-d", "integration", "-Fc")
+	output, err := command.Output()
+	if err != nil {
+		t.Fatalf("backup temporary PostgreSQL: %v", err)
+	}
+	return output
+}
+
+func (database temporaryPostgres) restore(t *testing.T, backup []byte) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	command := exec.CommandContext(ctx, "docker", "exec", "-i", database.container, "pg_restore", "-U", "integration", "-d", "integration", "--exit-on-error", "--no-owner")
+	command.Stdin = bytes.NewReader(backup)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("restore temporary PostgreSQL: %v\n%s", err, output)
+	}
 }

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -20,12 +19,12 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/platform/database"
 )
 
-func TestSQLiteNotificationSessionExpiry(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "expiry.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
+func TestPostgresNotificationSessionExpiry(t *testing.T) {
+	temporary := startPostgres(t)
+	runMigrations(t, projectRoot(t), temporary.dsn)
+	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
-	deps := sqliteDependencies(t, db, t.TempDir())
+	deps := testDependencies(t, db, t.TempDir())
 	defer deps.Notification.Close()
 	tokens, err := auth.NewTokenManager(auth.TokenConfig{SigningKey: "integration-test-signing-key", Issuer: "base-go-api", Audience: "react-admin", TTL: 2 * time.Second})
 	if err != nil {
@@ -61,16 +60,6 @@ func awaitStreamClosed(t *testing.T, events <-chan string) {
 			t.Fatal("stream did not close")
 		}
 	}
-}
-
-func TestSQLiteNotificationRealtimeContract(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "realtime.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
-	defer db.Close()
-	deps := sqliteDependencies(t, db, t.TempDir())
-	defer deps.Notification.Close()
-	notificationRealtimeContract(t, db, deps)
 }
 
 func TestNotificationRealtimePostgresContract(t *testing.T) {
@@ -111,14 +100,9 @@ func notificationRealtimeContract(t *testing.T, db *database.Database, deps app.
 	defer stopPublic()
 	awaitChange(t, publicEvents, "ready")
 	// Audit failure must roll back the role association and its notification.
-	if db.GORM.Dialector.Name() == "sqlite" {
-		if err := db.GORM.Exec(`CREATE TRIGGER reject_notification_audit BEFORE INSERT ON sys_oper_log WHEN NEW.operation_type = 'user.roles' BEGIN SELECT RAISE(ABORT,'audit failure'); END`).Error; err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		if err := db.GORM.Exec(`ALTER TABLE sys_oper_log ADD CONSTRAINT reject_notification_audit CHECK (operation_type <> 'user.roles') NOT VALID`).Error; err != nil {
-			t.Fatal(err)
-		}
+
+	if err := db.GORM.Exec(`ALTER TABLE sys_oper_log ADD CONSTRAINT reject_notification_audit CHECK (operation_type <> 'user.roles') NOT VALID`).Error; err != nil {
+		t.Fatal(err)
 	}
 	failed := serveJSON(router, "PUT", "/api/system/user/2/roles", `{"roleIds":[1]}`, admin)
 	if failed.Code != 500 {
@@ -129,14 +113,9 @@ func notificationRealtimeContract(t *testing.T, db *database.Database, deps app.
 		t.Fatalf("rolled back notification visible: %s", otherPage.Body.String())
 	}
 	noChange(t, otherEvents)
-	if db.GORM.Dialector.Name() == "sqlite" {
-		if err := db.GORM.Exec("DROP TRIGGER reject_notification_audit").Error; err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		if err := db.GORM.Exec("ALTER TABLE sys_oper_log DROP CONSTRAINT reject_notification_audit").Error; err != nil {
-			t.Fatal(err)
-		}
+
+	if err := db.GORM.Exec("ALTER TABLE sys_oper_log DROP CONSTRAINT reject_notification_audit").Error; err != nil {
+		t.Fatal(err)
 	}
 	assertEnvelopeCode(t, serveJSON(router, "PUT", "/api/system/user/2/roles", `{"roleIds":[1]}`, admin), 200, 200, "success")
 	awaitChange(t, otherEvents, "notification")
@@ -252,19 +231,6 @@ func awaitChange(t *testing.T, events <-chan string, kind string) {
 			t.Fatalf("no %s event within 2 seconds", kind)
 		}
 	}
-}
-
-func TestSQLiteAnnouncementContract(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "announcement.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
-	defer db.Close()
-	deps := sqliteDependencies(t, db, t.TempDir())
-	router, err := app.Build(testAPIConfig(), db, deps)
-	if err != nil {
-		t.Fatal(err)
-	}
-	announcementContract(t, router)
 }
 
 func TestNotificationAnnouncementPostgresContract(t *testing.T) {

@@ -1,5 +1,7 @@
 # Agent 本地维护现场反馈改版交付记录
 
+> **2026-10-22 效力：历史交付事实保留。** 本文独立维护形态已有实现，其软件及现场验证范围仍按原记录；目标改为统一维护入口，不能将历史交付视为整合已完成。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 日期：2026-10-21。状态：用户确认范围后授权实施；改版代码及受控软件验证完成。本次没有升级真实工控机服务，没有操作真实 CUPS 或打印机；现场升级、服务权限与纸面效果仍需验收。依据为[改版需求](agent-maintenance-revision-spec.md)和 [ADR 0017](../adr/0017-agent-maintenance-config-and-lan.md)。首期历史见[首期交付记录](agent-maintenance-delivery.md)。
 
 ## 实现

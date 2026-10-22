@@ -1,5 +1,7 @@
 # Agent 本地打印维护服务部署
 
+> **2026-10-22 效力：部分被替代，过渡实现继续可用。** 最终维护入口与账号纳入本地业务服务，独立维护服务／密码仅作过渡，替代能力验收后退出；配置来源、明确应用、作业保护、结果核实与审计继续有效。维护 HTTP 取舍不自动扩大到业务服务。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 日期：2026-10-21。本文描述现场反馈改版后的部署方式；本次改版尚未部署到真实工控机。首期历史见[首期交付记录](../requirements/agent-maintenance-delivery.md)，改版实现及验证见[改版交付记录](../requirements/agent-maintenance-revision-delivery.md)。
 
 改版依据为[改版需求](../requirements/agent-maintenance-revision-spec.md)及 [ADR 0017](../adr/0017-agent-maintenance-config-and-lan.md)。默认监听、配置来源及页面布局已调整，部署前按下方升级步骤迁移旧参数。

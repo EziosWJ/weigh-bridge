@@ -1,3 +1,4 @@
+import { startTestPostgres } from '../../scripts/test-postgres.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -11,7 +12,7 @@ const root = fileURLToPath(new URL('../..', import.meta.url));
 const dir = await mkdtemp(join(tmpdir(), 'weighbridge-site-config-'));
 const api = 'http://127.0.0.1:18086', web = 'http://127.0.0.1:4186';
 const children = [];
-const env = {...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_DATABASE__DRIVER: 'sqlite', APP_DATABASE__URL: join(dir, 'app.db'), APP_DATABASE__USERNAME: '', APP_DATABASE__PASSWORD: '', APP_JWT__SECRET: 'site-config-browser-test-secret-not-deployed', APP_FILE__STORAGE_ROOT: join(dir, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18086', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'site-config-browser-key', APP_WEIGHING__AGENTS: JSON.stringify([{id:'scale-agent-1',scale_id:1,key:'site-config-browser-key'}]), APP_WEIGHING__IMAGE_DIR: join(dir, 'images')};
+const env = {...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_JWT__SECRET: 'site-config-browser-test-secret-not-deployed', APP_FILE__STORAGE_ROOT: join(dir, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18086', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'site-config-browser-key', APP_WEIGHING__AGENTS: JSON.stringify([{id:'scale-agent-1',scale_id:1,key:'site-config-browser-key'}]), APP_WEIGHING__IMAGE_DIR: join(dir, 'images')};
 function start(cmd, args, cwd, extra = {}) {
  const child = spawn(cmd, args, {cwd, env: {...env, ...extra}, detached: true, stdio: ['ignore', 'pipe', 'pipe']});
  child.output = ''; child.stdout.on('data', b => child.output += b); child.stderr.on('data', b => child.output += b); children.push(child); return child;
@@ -20,8 +21,11 @@ function stop(child) { if (child.exitCode === null) { try {process.kill(-child.p
 async function finished(child) { await new Promise((ok, fail) => {child.once('error', fail); child.once('exit', code => code === 0 ? ok() : fail(Error(child.output)));}); }
 async function ready(url, child) { for (let i = 0; i < 120; i++) { if (child.exitCode !== null) throw Error(child.output); try {if ((await fetch(url)).ok) return;} catch { /* Startup retry. */ } await delay(150); } throw Error(`Not ready: ${url}\n${child.output}`); }
 let browser;
+let postgres;
 const deadline = setTimeout(() => children.forEach(stop), 120_000);
 try {
+  postgres = await startTestPostgres();
+  Object.assign(env, postgres.env);
  await finished(start('go', ['run', './cmd/migrate', 'up', '--kind', 'all'], resolve(root, 'server')));
  const server = start('go', ['run', './cmd/api'], resolve(root, 'server'));
  const vite = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4186', '--strictPort'], resolve(root, 'web'), {VITE_API_BASE_URL: api});
@@ -50,4 +54,4 @@ try {
  await row.getByRole('button', {name: '编辑', exact: true}).click(); await page.locator('#site-enabled').selectOption('1'); await page.getByRole('dialog').getByRole('button', {name: '保存', exact: true}).click(); await page.getByRole('dialog').waitFor({state: 'hidden'}); await row.getByText('启用', {exact: true}).waitFor();
  await page.setViewportSize({width: 390, height: 844}); assert.ok(await page.getByRole('heading', {name: '厂区配置', exact: true}).isVisible()); assert.deepEqual(errors, []);
  console.log('PASS: 厂区创建、地址保存、重复下载、mock 文件启动与归属、在线阻止停用、离线停用与重启用、窄屏页面');
-} finally {clearTimeout(deadline); await browser?.close(); children.forEach(stop); await delay(500); await rm(dir, {recursive: true, force: true});}
+} finally {clearTimeout(deadline); await browser?.close(); children.forEach(stop); await delay(500); await postgres?.close(); await rm(dir, {recursive: true, force: true});}

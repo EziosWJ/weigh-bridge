@@ -1,5 +1,7 @@
 # Spec：服务器监控可选启用、Windows 原生采集与网卡 IP 展示
 
+> 数据库范围更新（2026-10-22）：当前 Server 开发、测试、生产仅支持 PostgreSQL；本文旧 SQLite 兼容要求已由 [ADR 0024](adr/0024-postgresql-only.md) 取代。历史验收事实保留。
+
 已发布：[Spec #77](https://github.com/EziosWJ/base-project-golang/issues/77)，标签：`ready-for-agent`。
 
 ## Problem Statement

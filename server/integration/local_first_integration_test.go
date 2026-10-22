@@ -24,14 +24,11 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/app"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/nodesync"
-	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
-func TestSQLiteLocalFirst(t *testing.T)   { checkLocalFirst(t, false) }
-func TestPostgresLocalFirst(t *testing.T) { checkLocalFirst(t, true) }
-func checkLocalFirst(t *testing.T, postgres bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+func TestPostgresLocalFirst(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
 	defer cancel()
 	type node struct {
 		router   http.Handler
@@ -40,33 +37,24 @@ func checkLocalFirst(t *testing.T, postgres bool) {
 		hub      *agentbridge.Hub
 		token    string
 		imageDir string
-		dbPath   string
+		database temporaryPostgres
 	}
-	makeNode := func(name string, cfg config.NodeConfig, restore ...string) *node {
+	makeNode := func(name string, cfg config.NodeConfig, restore ...[]byte) *node {
 		dir := t.TempDir()
-		path := filepath.Join(dir, name+".db")
-		var db *platformdatabase.Database
-		if postgres {
-			temporary := startPostgres(t)
-			runMigrations(t, projectRoot(t), temporary.dsn)
-			db = openTemporaryDatabase(t, temporary.dsn)
+		temporary := startPostgres(t)
+		if len(restore) > 0 {
+			temporary.restore(t, restore[0])
 		} else {
-			if len(restore) > 0 {
-				if err := platformdatabase.BackupSQLite(ctx, restore[0], path); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				runSQLiteMigrations(t, path)
-			}
-			db = openSQLiteDatabase(t, path)
+			runMigrations(t, projectRoot(t), temporary.dsn)
 		}
+		db := openTemporaryDatabase(t, temporary.dsn)
 		t.Cleanup(func() { db.Close() })
 		images := filepath.Join(dir, "images")
 		service, e := nodesync.New(db.GORM, cfg, images)
 		if e != nil {
 			t.Fatal(e)
 		}
-		deps := sqliteDependencies(t, db, dir)
+		deps := testDependencies(t, db, dir)
 		deps.Node = service
 		repo := weighing.NewRepository(db.GORM)
 		configs := []agentbridge.Config{}
@@ -98,7 +86,7 @@ func checkLocalFirst(t *testing.T, postgres bool) {
 			http.ServeFile(w, r, name)
 		}))
 		t.Cleanup(server.Close)
-		return &node{router, service, server, hub, loginAdmin(t, router), images, path}
+		return &node{router, service, server, hub, loginAdmin(t, router), images, temporary}
 	}
 	central := makeNode("central", config.NodeConfig{Role: "central", Peers: []config.NodePeer{{SiteID: 1, Key: "sync-one"}, {SiteID: 2, Key: "sync-two"}}})
 	// Only the center/site internet hop is interrupted. Local HTTP and Agent
@@ -207,12 +195,7 @@ func checkLocalFirst(t *testing.T, postgres bool) {
 		}
 		assertEnvelopeCode(t, serveJSON(n.router, "POST", "/api/weighing/materials", `{"name":"forbidden"}`, n.token), 403, 403, "当前部署角色不允许此操作")
 	}
-	restorePath := filepath.Join(t.TempDir(), "before-business.db")
-	if !postgres {
-		if err := platformdatabase.BackupSQLite(ctx, sites[0].dbPath, restorePath); err != nil {
-			t.Fatal(err)
-		}
-	}
+	backup := sites[0].database.backup(t)
 	assertEnvelopeCode(t, serveJSON(central.router, "POST", "/api/weighing/tasks/first-confirmation", `{}`, central.token), 403, 403, "当前部署角色不允许此操作")
 	mocks := []*httptest.Server{}
 	stops := []context.CancelFunc{}
@@ -256,7 +239,7 @@ func checkLocalFirst(t *testing.T, postgres bool) {
 		t.Fatal("Agent not ready")
 	}
 	connected.Store(false)
-	if os.Getenv("LOCAL_FIRST_BROWSER") == "1" && !postgres {
+	if os.Getenv("LOCAL_FIRST_BROWSER") == "1" {
 		command := exec.CommandContext(ctx, "node", filepath.Join(projectRoot(t), "..", "web", "tests", "local-first-smoke.mjs"), sites[0].server.URL, central.server.URL)
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("browser: %v\n%s", err, output)
@@ -421,8 +404,8 @@ func checkLocalFirst(t *testing.T, postgres bool) {
 	if afterVoid.TaskCount != 1 {
 		t.Fatal("voided ticket still counted")
 	}
-	if !postgres {
-		restored := makeNode("restored", config.NodeConfig{Role: "site", SiteID: 1, CentralURL: proxy.URL, SyncKey: "sync-one"}, restorePath)
+	{
+		restored := makeNode("restored", config.NodeConfig{Role: "site", SiteID: 1, CentralURL: proxy.URL, SyncKey: "sync-one"}, backup)
 		restoredCtx, stopRestored := context.WithCancel(ctx)
 		defer stopRestored()
 		mock := agentmock.New(agentmock.Config{Server: restored.server.URL, ID: "lf-agent-1", ScaleID: 1, Key: "agent-key"})

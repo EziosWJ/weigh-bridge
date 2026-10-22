@@ -38,12 +38,11 @@ test("doctor reports missing Go before compiling and diagnoses other tools", uni
   assert.doesNotMatch(result.stdout, /helper invoked/);
 });
 
-test("doctor detects disabled CGO and a missing C compiler", unixOnly, (t) => {
+test("doctor works without CGO or a C compiler", unixOnly, (t) => {
   const result = fixture(t, { tools: ["go", "task", "npm"], cgo: "0" })("doctor");
-  assert.equal(result.status, 1);
-  assert.match(result.stdout, /\[失败\] CGO/);
-  assert.match(result.stdout, /\[失败\] C 编译器/);
-  assert.doesNotMatch(result.stdout, /helper invoked/);
+  assert.equal(result.status, 0);
+  assert.doesNotMatch(result.stdout, /\[失败\]/);
+  assert.match(result.stdout, /helper invoked/);
 });
 
 test("doctor checks configuration even if frontend dependencies are missing", unixOnly, (t) => {
@@ -55,7 +54,7 @@ test("doctor checks configuration even if frontend dependencies are missing", un
 
 test("bootstrap propagates helper failure and successful initialization", unixOnly, (t) => {
   assert.equal(fixture(t, { helperStatus: 1 })("doctor").status, 1);
-  const result = fixture(t)("init", "--database", "sqlite");
+  const result = fixture(t)("init", "--database", "postgres");
   assert.equal(result.status, 0);
   assert.match(result.stdout, /helper invoked/);
 });

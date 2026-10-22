@@ -1,23 +1,23 @@
 # weighbridge AI 开发指导
 
-使用中文交流。项目为酒厂地磅管理系统；先阅读根目录 CONTEXT.md 了解领域约束，再按需读取涉及模块。AGENTS.md 是指向本文件的符号链接，更新规则时维护本文件。
+使用中文交流。项目为酒厂地磅管理系统；先阅读根目录 CONTEXT.md，再读[当前阶段规格](docs/requirements/standalone-site-spec.md)；历史材料的适用范围按[开发基线索引](docs/development-baseline.md)判断。AGENTS.md 是指向本文件的符号链接，更新规则时维护本文件。
 
 ## 目录与当前阶段
 
 - server/：Go 1.26、Gin、GORM，沿用现有 internal 模块、cmd 入口、configs、migrations、integration。
 - web/：React + TypeScript + Vite，npm 及 package-lock.json；前端开发前读取 web/AGENTS.md。
-- agent/ 和 protocol/：当前仅预留 README，未实现现场代理与通信。
+- agent/ 和 protocol/：现场设备运行与维护资料、部署资源及已实现的 v1 通信契约；设备 Go 实现沿用 server/cmd 与 server/internal，真实能力按交付记录判断。
 - docs/architecture/ 和 docs/requirements/：架构规划和阶段验收；docs/adr/ 与 record/ 包含脚手架历史，涉及既有决策时按需阅读。
 
-Phase 1 仅工程初始化。业务规划必须明确标注“计划/未实现”，不得把称重、车牌识别、打印或 Agent 通信描述为已完成。
+当前目标为每厂本地自治：业务服务（内嵌 Web）、设备服务和 PostgreSQL，中心暂缓，见 [ADR 0023](docs/adr/0023-standalone-site-baseline.md)。业务闭环、通信、打印与 D12 已有分阶段实现；本地自治改造、维护整合和完整真实设备验收仍待完成。分别标注决策、代码、软件验证和现场验收，不以历史 Phase 1／Phase 2A 限制当前开发。
 
 ## 开发约定
 
 1. 新业务模块遵守现有代码组织与命名；Go 沿用 handler/service/repository/model 分层及 app 装配，Web 复用 src/api、pages、components、store、types 与既有页面 Pattern。先理解同类模块，避免未经要求的大规模重构。
 2. 所有 API 复用现有鉴权、RBAC、错误处理、响应封装和日志审计规范；保持已有路由和响应契约。不擅自改变 JWT、权限或用户管理逻辑。
-3. 数据库结构变化必须新增 Goose migration，遵循既有 schema/seed 和 PostgreSQL/SQLite 目录方式，保留历史 migration；API 启动不执行 AutoMigrate。
+3. 数据库结构变化必须新增 Goose migration，仅维护 PostgreSQL 的 `server/migrations/schema` 与 `seed`，保留历史 migration；API 启动不执行 AutoMigrate。
 4. 新增代码提供必要的行为测试；不通过删除测试、禁用 CI 或跳过配置检查规避失败。依赖和技术栈保持当前版本，升级需明确需求。
-5. 正式称重由操作员确认；断网不得擅自生成正式电子过磅单。后续实现以 CONTEXT.md 与当期需求为准。
+5. 正式称重需设备重量、对应抓拍、操作员确认和本地业务校验。互联网断开不阻塞本地正常业务；本地服务或设备链路故障不得用缓存绕过确认。提交与打印结果未知时先核实，恢复不自动重放。
 6. 真实凭据仅写入忽略的本地配置；示例配置使用占位符。保持 AGENTS.md 链接有效。
 7. Git 操作遵守用户授权；origin 指向 https://github.com/EziosWJ/weigh-bridge.git，提交和推送须在用户授权范围内执行。历史 Issue 引用保留源仓库身份。
 
@@ -27,11 +27,11 @@ Phase 1 仅工程初始化。业务规划必须明确标注“计划/未实现�
 
 ## 开发和验证入口
 
-在仓库根目录优先使用 Taskfile.yml：task init 生成 server/configs/config.dev.yaml（随机 JWT 与本机上传目录），task doctor 检查环境，task db:migrate 显式迁移，task api 与 task web 分别启动服务，task dev 先迁移再并行启动。SQLite 本地 profile 使用 task init -- --database sqlite 和 task dev:sqlite。
+在仓库根目录优先使用 Taskfile.yml：task init 生成 server/configs/config.dev.yaml（随机 JWT 与本机上传目录），task doctor 检查环境，task db:migrate 显式迁移，task api 与 task web 分别启动服务，task dev 先迁移再并行启动。
 
 Go 改动运行 task backend:check；Web 改动运行 task frontend:lint 与 task frontend:build；工程迁移运行 task check、task build:check。数据库改动加跑 task db:check（PostgreSQL 集成需要 Docker）。按实际改动选择入口，等价检查通过后无需重复执行底层命令；纯文档改动只检查文档。Swagger 入口 task backend:swagger；依赖缺失或锁文件变化时按需运行 npm ci。
 
-长驻服务验证应有超时和清理；/health 检查存活、/ready 检查数据库就绪。保留原 SQLite 本地开发/兼容测试能力；V1.0 Server 部署数据库仍是 PostgreSQL。
+长驻服务验证应有超时和清理；/health 检查存活、/ready 检查数据库就绪。Server 开发、数据库集成测试和生产统一使用 PostgreSQL，见 [数据库决策](docs/adr/0024-postgresql-only.md)。数据库测试使用隔离的临时实例，结束清理，不连接真实业务库。
 
 ## Agent skills
 

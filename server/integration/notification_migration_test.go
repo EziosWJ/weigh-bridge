@@ -13,16 +13,16 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-func TestSQLiteNotificationUpgradePreservesHistory(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "upgrade.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
+func TestPostgresNotificationUpgradePreservesHistory(t *testing.T) {
+	temporary := startPostgres(t)
+	runMigrations(t, projectRoot(t), temporary.dsn)
+	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
-	if err := goose.SetDialect("sqlite3"); err != nil {
+	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
 	goose.SetTableName("goose_schema_db_version")
-	directory := filepath.Join(projectRoot(t), "migrations/sqlite/schema")
+	directory := filepath.Join(projectRoot(t), "migrations/schema")
 	if err := goose.DownToContext(context.Background(), db.SQL, directory, 7); err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,10 @@ func TestSQLiteNotificationUpgradePreservesHistory(t *testing.T) {
 	if err := goose.UpContext(context.Background(), db.SQL, directory); err != nil {
 		t.Fatal(err)
 	}
-	deps := sqliteDependencies(t, db, t.TempDir())
+	if err := db.GORM.Exec("SELECT setval(pg_get_serial_sequence('sys_notification', 'id'), 1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	deps := testDependencies(t, db, t.TempDir())
 	defer deps.Notification.Close()
 	router, err := app.Build(testAPIConfig(), db, deps)
 	if err != nil {

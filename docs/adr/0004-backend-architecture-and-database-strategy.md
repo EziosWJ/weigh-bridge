@@ -1,5 +1,7 @@
 # ADR-0004: Go 后端架构与数据库兼容策略
 
+> 数据库支持范围已由 [ADR 0024](0024-postgresql-only.md) 取代：当前 Server 仅支持 PostgreSQL。以下保留历史背景。
+
 ## Status
 
 Accepted

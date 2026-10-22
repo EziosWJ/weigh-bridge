@@ -1,5 +1,7 @@
 # Agent 本地打印维护首期需求
 
+> **2026-10-22 效力：部分被替代，过渡实现继续可用。** 最终维护入口与账号纳入本地业务服务，独立维护服务／密码仅作过渡，替代能力验收后退出；配置来源、明确应用、作业保护、结果核实与审计继续有效。维护 HTTP 取舍不自动扩大到业务服务。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 日期：2026-10-20。状态：需求已确认并授权实施；首期代码已实现，最终代码检查与真实设备验证状态见[交付记录](agent-maintenance-delivery.md)。
 
 来源：[需求讨论](agent-maintenance-discovery.md)、[ADR 0016](../adr/0016-agent-local-maintenance.md)。真实设备当前能力与限制以[现场记录](../device/aisino-sk820-agent-test.md)为准。

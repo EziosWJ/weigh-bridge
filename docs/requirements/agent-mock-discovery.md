@@ -1,5 +1,7 @@
 # Agent 协议与独立 mock 讨论
 
+> **2026-10-22 效力：设备协议与模拟职责继续有效。** 设备服务连接本厂业务服务，真实与 mock 互斥；远程 Server 部署和断互联网暂停前提被替代。软件测试不代表真实设备验收，数据库按 ADR 0024。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 状态：Q1～Q8 已确认；用户已授权发布 Spec 后实施，跟踪 [Issue #3](https://github.com/EziosWJ/weigh-bridge/issues/3)。实现及可执行验证完成，限制见 [交付记录](agent-mock-delivery.md)。
 
 ## 已确认

@@ -1,8 +1,0 @@
-# SQLite profile overlay used by task db:migrate:sqlite, api:sqlite and dev:sqlite.
-# APP_ENV remains dev/test/prod; this file only switches the database backend.
-# The relative path is resolved from the server directory.
-database:
-  driver: sqlite
-  url: .data/weighbridge.db
-  username: ""
-  password: ""

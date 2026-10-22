@@ -1,5 +1,7 @@
 # Agent 本地维护控制台现场反馈改版
 
+> **2026-10-22 效力：部分被替代，过渡实现继续可用。** 最终维护入口与账号纳入本地业务服务，独立维护服务／密码仅作过渡，替代能力验收后退出；配置来源、明确应用、作业保护、结果核实与审计继续有效。维护 HTTP 取舍不自动扩大到业务服务。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 日期：2026-10-21。状态：范围及决策已由用户逐轮确认，随后授权实施；代码与受控软件验证完成，真实工控机升级及实物验收待完成，见[改版交付记录](agent-maintenance-revision-delivery.md)。首期已实现行为与验证见[首期需求](agent-maintenance-spec.md)、[交付记录](agent-maintenance-delivery.md)及[部署说明](../device/agent-local-maintenance.md)。配置来源与网络访问取舍见 [ADR 0017](../adr/0017-agent-maintenance-config-and-lan.md)。
 
 ## 目标与范围

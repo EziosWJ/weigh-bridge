@@ -12,11 +12,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/pressly/goose/v3"
-
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
+	"github.com/pressly/goose/v3"
 )
 
 const (
@@ -182,9 +181,6 @@ func migrationDirectory(kind string) string {
 }
 
 func migrationDirectoryForDriver(driver, kind string) string {
-	if driver == database.DriverSQLite {
-		return filepath.Join("migrations", "sqlite", kind)
-	}
 	return migrationDirectory(kind)
 }
 

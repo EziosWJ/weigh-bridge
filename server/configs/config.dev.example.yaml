@@ -1,14 +1,12 @@
 # 开发环境配置模板。请勿手工复制：在仓库根目录运行 `task init` 生成 configs/config.dev.yaml。
 #   task init                        # 默认 PostgreSQL
-#   task init -- --database sqlite   # 无需外部数据库
-# 生成时写入随机 JWT 密钥与本机绝对上传目录，并按所选数据库调整 database 节。
+# 生成时写入随机 JWT 密钥与本机绝对上传目录。
 # config.dev.yaml 已被 Git 忽略，不会提交。
 swagger:
   enabled: true
 
 database:
-  # PostgreSQL 需要 url 加 username/password；SQLite 只需要 url（数据库文件路径），
-  # 不配置 username/password，应用会管理 WAL、外键和忙等待参数。
+  # PostgreSQL 连接地址与用户名、密码分别配置。
   driver: postgres
   url: postgres://127.0.0.1:5432/weighbridge?sslmode=disable
   username: change-me

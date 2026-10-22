@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -22,17 +21,9 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
-func TestSQLiteSiteConfiguration(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
-	defer db.Close()
-	checkSiteConfiguration(t, db, sqliteDependencies(t, db, dir))
-}
 func TestPostgresSiteConfiguration(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
-		t.Skip("Docker is required for PostgreSQL integration tests")
+		t.Fatal("Docker is required for PostgreSQL integration tests")
 	}
 	temporary := startPostgres(t)
 	runMigrations(t, projectRoot(t), temporary.dsn)

@@ -266,35 +266,17 @@ func (c Config) Validate() error {
 		errs = append(errs, errors.New("cors.allow_credentials must be false for Bearer Token authentication"))
 	}
 
-	if !oneOf(c.Database.Driver, "postgres", "sqlite") {
-		errs = append(errs, errors.New("database.driver must be one of postgres or sqlite; mysql is not supported"))
+	if c.Database.Driver != "postgres" {
+		errs = append(errs, errors.New("database.driver must be postgres"))
 	}
 	if strings.TrimSpace(c.Database.URL) == "" {
 		errs = append(errs, errors.New("database.url is required"))
 	}
-	if c.Database.Driver == "sqlite" {
-		if isSQLiteMemoryPath(c.Database.URL) {
-			errs = append(errs, errors.New("database.url must be a persistent SQLite file path; in-memory SQLite is not supported"))
-		}
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(c.Database.URL)), "file:") {
-			errs = append(errs, errors.New("database.url must be a local SQLite file path, not a URI"))
-		}
-		if strings.TrimSpace(c.Database.URL) != "" && filepath.Clean(strings.TrimSpace(c.Database.URL)) == "." {
-			errs = append(errs, errors.New("database.url must identify a SQLite database file"))
-		}
-		if strings.TrimSpace(c.Database.Username) != "" {
-			errs = append(errs, errors.New("database.username must be empty when database.driver is sqlite"))
-		}
-		if strings.TrimSpace(c.Database.Password) != "" {
-			errs = append(errs, errors.New("database.password must be empty when database.driver is sqlite"))
-		}
-	} else {
-		if strings.TrimSpace(c.Database.Username) == "" {
-			errs = append(errs, errors.New("database.username is required"))
-		}
-		if strings.TrimSpace(c.Database.Password) == "" {
-			errs = append(errs, errors.New("database.password is required"))
-		}
+	if strings.TrimSpace(c.Database.Username) == "" {
+		errs = append(errs, errors.New("database.username is required"))
+	}
+	if strings.TrimSpace(c.Database.Password) == "" {
+		errs = append(errs, errors.New("database.password is required"))
 	}
 	if c.Database.MaxOpenConns <= 0 {
 		errs = append(errs, errors.New("database.max_open_conns must be greater than zero"))
@@ -396,9 +378,4 @@ func oneOf(value string, allowed ...string) bool {
 	}
 
 	return false
-}
-
-func isSQLiteMemoryPath(value string) bool {
-	value = strings.ToLower(strings.TrimSpace(value))
-	return value == ":memory:" || strings.HasPrefix(value, "file::memory:")
 }

@@ -1,15 +1,26 @@
-# 架构边界
+# 架构入口
 
-2026-10-22 已确认调整目标：每厂本地独立办理正式业务，中心统一资料并在有网时自动同步汇总，见 [ADR 0021](../adr/0021-local-weighing-authority-and-central-sync.md)、[业务修改规格](../requirements/local-first-deployment-spec.md)与[需求访谈](../requirements/local-first-deployment-discovery.md)。Q1～Q23 及规格汇总已最终确认，业务访谈结束；中心／厂区部署角色与同步已完成软件实施及验证，生产切换仍待执行，见[交付记录](../requirements/local-first-deployment-delivery.md)。下文云端部署描述保留此前架构与阶段背景，不再作为新目标。
+当前采用[ADR 0023](../adr/0023-standalone-site-baseline.md)：两个厂区各自独立运行，本厂业务服务（内嵌 Web）、设备服务和 PostgreSQL 三个核心服务同机部署。中心暂缓，设备维护最终纳入本地业务服务。该目标已确认，自治及维护整合仍待实施。
 
-当前已存在 Go Server 与 React Web；已增加 Agent WSS 接入、独立 Web mock 及 [v1 契约](../../protocol/v1.md)，已完成协议／SQLite／浏览器验证。V1.0 为 Linux 现场 Agent → WSS → 云端 Server/PostgreSQL，Web 经业务 HTTP API 访问 Server。真实 Agent 的设备驱动及 SQLite 现场存储仍为计划。
+数据库按[ADR 0024](../adr/0024-postgresql-only.md)统一使用 PostgreSQL，单库收敛已有[交付记录](../requirements/postgresql-only-delivery.md)。
 
-Phase 2A 前端界面与流程模拟已实现，采用独立的浏览器测试数据和演示状态，不新增正式业务 API 或设备通信；实际验证见 [交付记录](../requirements/phase-2a-delivery.md)。范围见 [Spec](../requirements/business-v1-ui-scope.md)，任务顺序见 [阶段计划](../requirements/phase-2a-plan.md)；上述现场架构仍为后续目标。
+```mermaid
+flowchart TB
+  U[操作员及本厂管理员] --> W[统一 Web 入口]
+  subgraph Site[每厂工控机：目标部署]
+    W --> S[本地业务服务]
+    S --> D[PostgreSQL 与业务图片]
+    S <--> A[独立设备服务]
+    A --> E[仪表、摄像头、打印机]
+  end
+```
 
-领域与人工确认、断网约束见 [CONTEXT.md](../../CONTEXT.md)，项目运行与发布入口见 [README.md](../../README.md)。现有 host-collector 是脚手架的宿主机监控采集器，与设备 Agent 无关。
+| 材料 | 用途 |
+| --- | --- |
+| [当前规格](../requirements/standalone-site-spec.md) | 改造范围、代码差距及验收条件 |
+| [基线索引](../development-baseline.md) | 旧架构和业务规格的效力 |
+| [既有业务设计](backend-business-loop-design.md) | 复用业务模型与接口；历史阶段限制以顶部说明为准 |
+| [旧中心同步设计](local-first-sync-design.md) | 已有实现的参考资料；中心功能暂缓，不是当前施工方案 |
+| [历史与交付索引](../history/README.md) | 软件与现场验证事实 |
 
-下一阶段已确认计划为服务端测试业务闭环及现有前端接入，真实设备另行安排。当前 B01–B07 服务端测试闭环及前端接入已实现，SQLite／真实浏览器完成验证，PostgreSQL 集成受 Docker 环境限制尚未验证，真实设备与正式业务仍未实现，实际完成范围及验证见 [实施记录](../requirements/backend-business-loop-delivery.md)；设计依据见 [确认范围](../requirements/backend-business-loop-spec.md)、[数据库与接口设计](backend-business-loop-design.md)、[分批实施计划](../requirements/backend-business-loop-plan.md)。
-
-保留 docs/adr/ 的历史决策用于溯源；历史目录名和 Issue 引用不适用于当前可执行路径，当前目录以根 README 和 Taskfile 为准。
-
-- [Issue #4 本地业务权威与同步实现](local-first-sync-design.md)
+保留现有设备通信、人工确认、证据和打印核实规则。Agent 负责设备，host-collector 只负责可选宿主机监控，二者不混用。安装与维护整合完成前，现有独立维护服务作为过渡保留。

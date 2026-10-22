@@ -12,7 +12,7 @@ GitHub：[#65](https://github.com/EziosWJ/base-project-golang/issues/65)；状�
 
 ## Acceptance criteria
 
-- [ ] 新增系统监控目录与服务器监控菜单，PostgreSQL/SQLite seed 版本锁步、可重复执行，ADMIN 角色关联正确。
+- [ ] 新增系统监控目录与服务器监控菜单，PostgreSQL seed 可重复执行，ADMIN 角色关联正确。
 - [ ] ADMIN 可打开菜单、页面和版本化只读概览接口；普通角色及未登录请求通过真实路由验证为 403/401，直接访问不能绕过授权。
 - [ ] 角色授权读取当前启用且未删除的 ADMIN 关系，覆盖管理员角色撤销或禁用后的访问拒绝。
 - [ ] 返回并展示主机名、系统版本、运行时长、CPU 型号、核心数、总体/逐核占用、1/5/15 分钟负载、内存总量/已用/可用/占用率及 Swap。

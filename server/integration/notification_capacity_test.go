@@ -20,15 +20,6 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/platform/database"
 )
 
-func TestSQLiteNotificationCapacity(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "capacity.db")
-	runSQLiteMigrations(t, path)
-	db := openSQLiteDatabase(t, path)
-	defer db.Close()
-	deps := sqliteDependencies(t, db, t.TempDir())
-	defer deps.Notification.Close()
-	notificationCapacity(t, db, deps)
-}
 func TestNotificationCapacityPostgres(t *testing.T) {
 	temporary := startPostgres(t)
 	runMigrations(t, projectRoot(t), temporary.dsn)

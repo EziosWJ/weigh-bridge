@@ -1,3 +1,4 @@
+import { startTestPostgres } from '../../scripts/test-postgres.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, readFile } from 'node:fs/promises';
@@ -14,9 +15,10 @@ const web = 'http://127.0.0.1:4185';
 const mockUrl = 'http://127.0.0.1:18090';
 const children = [];
 let browser;
+let postgres;
 let page;
 const workflowResponses = [];
-const env = { ...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_DATABASE__DRIVER: 'sqlite', APP_DATABASE__URL: join(directory, 'test.db'), APP_DATABASE__USERNAME: '', APP_DATABASE__PASSWORD: '', APP_JWT__SECRET: 'isolated-browser-test-secret-never-deployed', APP_FILE__STORAGE_ROOT: join(directory, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18085', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'isolated-agent-browser-key', APP_WEIGHING__IMAGE_DIR: join(directory, 'agent-images'), APP_WEIGHING__AGENTS: JSON.stringify([{id:'scale-agent-1',scale_id:1,key:'isolated-agent-browser-key'},{id:'scale-agent-2',scale_id:2,key:'isolated-agent-browser-key-2'}]) };
+const env = { ...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_JWT__SECRET: 'isolated-browser-test-secret-never-deployed', APP_FILE__STORAGE_ROOT: join(directory, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18085', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'isolated-agent-browser-key', APP_WEIGHING__IMAGE_DIR: join(directory, 'agent-images'), APP_WEIGHING__AGENTS: JSON.stringify([{id:'scale-agent-1',scale_id:1,key:'isolated-agent-browser-key'},{id:'scale-agent-2',scale_id:2,key:'isolated-agent-browser-key-2'}]) };
 function start(command, args, cwd, extraEnv = {}) {
   const child = spawn(command, args, { cwd, env: { ...env, ...extraEnv }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   child.output = '';
@@ -43,6 +45,8 @@ async function login(page, username) {
 }
 const deadline = setTimeout(() => { for (const child of children) { try { if(child.exitCode===null) process.kill(-child.pid, 'SIGTERM'); } catch { /* Already exited. */ } } }, 180_000);
 try {
+  postgres = await startTestPostgres();
+  Object.assign(env, postgres.env);
   await finish(start('go', ['run', './cmd/migrate', 'up', '--kind', 'all'], resolve(root, 'server')));
   const server = start('go', ['run', './cmd/api'], resolve(root, 'server'));
   const vite = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4185', '--strictPort'], resolve(root, 'web'), { VITE_API_BASE_URL: api });
@@ -541,5 +545,6 @@ try {
   await browser?.close();
   for (const child of children) { try { if(child.exitCode===null) process.kill(-child.pid, 'SIGTERM'); } catch { /* Already exited. */ } }
   await delay(150);
+  await postgres?.close();
   await rm(directory, { recursive: true, force: true });
 }

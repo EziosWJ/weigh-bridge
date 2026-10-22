@@ -1,5 +1,7 @@
 # Issue #4 实施与验证记录
 
+> **2026-10-22 效力：历史交付事实保留。** 当时的同步实现、双数据库和浏览器验证仍是有效历史记录；中心范围已暂缓，本记录不代表新自治模式完成或生产切换。当前数据库范围另按 ADR 0024。当前依据见 [ADR 0023](../adr/0023-standalone-site-baseline.md)及[基线索引](../development-baseline.md)；下文历史正文保留。
+
 日期：2026-10-22。工作项：[EziosWJ/weigh-bridge #4](https://github.com/EziosWJ/weigh-bridge/issues/4)。用户已明确启动实施；本轮在已有未提交的厂区配置等改动基础上继续，保留其内容；Git 提交与推送按用户后续授权执行。
 
 ## 交付范围

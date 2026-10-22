@@ -105,7 +105,7 @@ Windows CPU 与进程 CPU 按整机总算力归一化；物理内存已用为总
 
 Linux 与 Windows 网卡均返回 `addresses`（`family`、`ip`、`prefixLength`）和可选 `addressError`。在网卡表格点击“查看 IP”，弹窗随每 5 秒快照更新全部 IPv4/IPv6 CIDR 地址。空集合显示“未分配 IP”；地址读取失败或旧采集端未提供字段时显示不可用原因；接口消失时显示已不可用。Docker 场景的地址来自宿主机采集进程，不能由 API 容器替代。
 
-执行 `task backend:windows` 生成 Windows amd64 API、迁移程序与监控测试二进制，采用 `CGO_ENABLED=0`，适用于 PostgreSQL。现有 SQLite 驱动仍需要 `CGO_ENABLED=1` 和目标平台 C 编译器；无 CGO 的 SQLite 运行及备份不受支持，不因 PostgreSQL 构建通过而宣称已验证 SQLite 的 Windows 部署。该任务仅构建 API，不包含内嵌前端资源；完整发布仍使用项目既有前端与发布流程。
+执行 `task backend:windows` 生成 Windows amd64 API、迁移程序与监控测试二进制，采用 `CGO_ENABLED=0`，适用于 PostgreSQL。Server 统一使用 PostgreSQL，不要求 CGO 或 C 编译器。该任务仅构建 API，不包含内嵌前端资源；完整发布仍使用项目既有前端与发布流程。
 
 在 Windows 或启用 Windows 互操作的 WSL 中执行 `task monitoring:smoke:windows`，运行 Windows 专属计数测试及只读真机采集。对照系统工具验收 CPU、内存、卷容量、磁盘、网卡/IP 和进程，并记录账号权限及 NVIDIA 支持字段。Windows 11 上的验证只作为额外证据，不能替代 Server 2019/2022 验收。
 
@@ -117,7 +117,7 @@ Linux 与 Windows 网卡均返回 `addresses`（`family`、`ip`、`prefixLength`
 
 执行 `task host:smoke`，使用临时 socket 验证真实宿主机身份、网卡、挂载点、首个速率样本、重复读取时间与采集进程重启后的新来源和基线。脚本自动清理进程及 socket，每次等待最多 12 秒，可用 `task host:smoke CLI_ARGS='--output /tmp/host-monitor-evidence.json'` 留存证据。
 
-执行 `task build` 后运行 `task monitoring:smoke:docker CLI_ARGS='--output /tmp/monitoring-docker-evidence.json'`，可验证真实原生 API 和使用临时 SQLite 数据、非 root 用户、独立网络及只读 socket 挂载的 Docker API。脚本依赖 `golang:1.26.5-bookworm` 镜像，验证 socket 权限失败、断开过期、重启基线、已有历史和缺口，并自动清理临时进程、容器和数据库。页面浏览器验证入口为 `task frontend:monitoring`。
+执行 `task build` 后运行 `task monitoring:smoke:docker CLI_ARGS='--output /tmp/monitoring-docker-evidence.json'`，可验证真实原生 API 和使用临时 PostgreSQL 数据、非 root 用户、独立网络及只读 socket 挂载的 Docker API。脚本依赖 `golang:1.26.5-bookworm` 和 `postgres:17-alpine` 镜像，验证 socket 权限失败、断开过期、重启基线、已有历史和缺口，并自动清理临时进程、容器和数据库。页面浏览器验证入口为 `task frontend:monitoring`。
 
 2026-10-04 在 Linux WSL 宿主机 `skyrim` 上运行该脚本通过：20 个逻辑核、10 个物理核、40 个可读取文件系统、6 个块设备，以及 `eth0/eth1/eth2/eth3/lo/loopback0` 接口均与主机范围一致。socket 权限 `0660`、重复拉取的有效时间保留、采集进程退出后 socket 清理、重启后来源身份更新和速率基线重建均通过。WSL 的 9p 挂载选项含空格，采集器按固定分隔符解析已作真实及回归验证。
 

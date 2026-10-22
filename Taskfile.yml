@@ -14,7 +14,7 @@ tasks:
     silent: true
 
   init:
-    desc: Generate local development configuration (optional --database sqlite)
+    desc: Generate local development configuration
     preconditions:
       - sh: node --version
         msg: '需要 Node.js；安装后重新运行 task init。'
@@ -40,14 +40,6 @@ tasks:
     cmds:
       - go run ./cmd/migrate up --kind all
 
-  db:migrate:sqlite:
-    desc: Apply SQLite schema and seed migrations using the SQLite profile
-    dir: server
-    env:
-      APP_CONFIG_PROFILE: sqlite
-    cmds:
-      - go run ./cmd/migrate up --kind all
-
   db:migrate:schema:
     desc: Apply schema migrations only
     dir: server
@@ -60,23 +52,9 @@ tasks:
     cmds:
       - go run ./cmd/migrate up --kind seed
 
-  db:backup:
-    desc: Create an online SQLite backup; pass CLI flags through CLI_ARGS
-    dir: server
-    cmds:
-      - go run ./cmd/backup {{.CLI_ARGS}}
-
   api:
     desc: Start the Go API
     dir: server
-    cmds:
-      - go run ./cmd/api
-
-  api:sqlite:
-    desc: Start the Go API with the SQLite profile
-    dir: server
-    env:
-      APP_CONFIG_PROFILE: sqlite
     cmds:
       - go run ./cmd/api
 
@@ -153,15 +131,6 @@ tasks:
     cmds:
       - task --parallel api web
 
-  dev:sqlite:
-    desc: Migrate SQLite and start the SQLite API and web together
-    env:
-      APP_CONFIG_PROFILE: sqlite
-    deps:
-      - db:migrate:sqlite
-    cmds:
-      - task --parallel api:sqlite web
-
   backend:test:
     desc: Run backend unit tests
     dir: server
@@ -204,26 +173,19 @@ tasks:
     desc: Run backend PostgreSQL integration tests
     dir: server
     cmds:
-      - go test -tags=integration ./integration -run 'Postgres|Auth|RBAC|SysConfig|Department|Dictionary|Login|File|Notification|UserPage|Monitor' -count=1
+      - go test -tags=integration ./integration -count=1 -timeout=20m
 
   db:integration:postgres:
     desc: Run the PostgreSQL database integration contract
     dir: server
     cmds:
-      - go test -tags=integration ./integration -run 'Postgres|Auth|RBAC|SysConfig|Department|Dictionary|Login|File|Notification|UserPage|Monitor' -count=1
-
-  db:integration:sqlite:
-    desc: Run the file-backed SQLite database integration contract
-    dir: server
-    cmds:
-      - go test -tags=integration ./integration -run 'SQLite' -count=1
+      - go test -tags=integration ./integration -count=1 -timeout=20m
 
   db:check:
-    desc: Run backend checks and both supported database integration contracts
+    desc: Run backend checks and the PostgreSQL integration contract
     deps:
       - backend:check
       - db:integration:postgres
-      - db:integration:sqlite
 
   backend:check:
     desc: Run backend tests and static checks
@@ -276,7 +238,6 @@ tasks:
       - node ../scripts/prepare-webui.mjs
       - go build -tags=embedweb -trimpath -o ../bin/weighbridge-server{{.GOEXE}} ./cmd/api
       - go build -trimpath -o ../bin/weighbridge-migrate{{.GOEXE}} ./cmd/migrate
-      - go build -trimpath -o ../bin/weighbridge-backup{{.GOEXE}} ./cmd/backup
       - go build -trimpath -o ../bin/weighbridge-host-collector{{.GOEXE}} ./cmd/host-collector
 
   build:check:

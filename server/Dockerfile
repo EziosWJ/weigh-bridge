@@ -12,19 +12,16 @@ FROM golang:1.26.5-alpine AS build
 
 WORKDIR /src
 
-RUN apk add --no-cache gcc musl-dev
-
 COPY server/go.mod server/go.sum ./
 RUN go mod download
 
 COPY server/ .
-RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
-RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/backup ./cmd/backup
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
 FROM build AS api-build
 
 COPY --from=frontend /web/dist ./internal/webui/dist
-RUN CGO_ENABLED=1 go build -tags=embedweb -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+RUN CGO_ENABLED=0 go build -tags=embedweb -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
 
 FROM alpine:3.22 AS runtime
 
@@ -47,8 +44,3 @@ FROM runtime AS migrate
 COPY --from=build /out/migrate ./migrate
 COPY server/migrations ./migrations
 ENTRYPOINT ["/app/migrate"]
-
-FROM runtime AS backup
-
-COPY --from=build /out/backup ./backup
-ENTRYPOINT ["/app/backup"]
