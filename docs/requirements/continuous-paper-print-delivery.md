@@ -1,6 +1,6 @@
 # 五联三等分连续纸打印适配交付记录
 
-范围来自 [Issue #5](https://github.com/EziosWJ/weigh-bridge/issues/5) 及已确认方案。当前为独立 worktree 中的软件实现，未部署到现场，纸面待验收。
+范围来自 [Issue #5](https://github.com/EziosWJ/weigh-bridge/issues/5) 及已确认方案。软件实现已完成，按用户授权合入本地 `main`；未部署到现场，纸面待验收。
 
 ## 实现范围
 
@@ -28,4 +28,4 @@
 
 按[校准说明](../device/sk820-continuous-paper-calibration.md)测量真实节长并完成单份、三份、逐单撕纸及最终十单验证。软件检查不能替代物理验收。
 
-原工作目录的未提交仪表接入改动未包含在本 worktree 中；后续集成须保留其配置与设备能力。升级时同时更新维护服务和打印 Agent，并在调参前备份原 A4 参数。
+本次从既有主分支创建独立 worktree 实施，其他分支的仪表接入改动不包含在此变更中；后续集成须保留双方配置与设备能力。升级时同时更新维护服务和打印 Agent，并在调参前备份原 A4 参数。
