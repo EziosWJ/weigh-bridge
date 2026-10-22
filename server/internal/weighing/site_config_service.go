@@ -15,7 +15,7 @@ var agentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`)
 
 func (s *Service) SiteConfigurations(ctx context.Context) ([]SiteConfiguration, error) {
 	rows, err := s.store.SiteConfigurations(ctx)
-	if s.node.Role != "site" {
+	if s.node.Role != "site" && s.node.Role != "standalone" {
 		return rows, err
 	}
 	out := []SiteConfiguration{}
@@ -46,6 +46,9 @@ func (s *Service) SaveSiteConfiguration(ctx context.Context, id int64, in SiteCo
 	}
 	if s.node.Role == "central" && in.ServerURL == "" {
 		return SiteConfiguration{}, RejectionError("请填写该厂工控机上的本厂 Server 地址")
+	}
+	if s.node.Role == "standalone" && (id == 0 || id != s.node.SiteID) {
+		return SiteConfiguration{}, ErrNotFound
 	}
 	in.Code = strings.TrimSpace(in.Code)
 	in.Name = strings.TrimSpace(in.Name)

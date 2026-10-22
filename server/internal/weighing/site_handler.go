@@ -57,7 +57,7 @@ func (h *Handler) siteScope(c *gin.Context) {
 	}
 	scope := siteScope{Read: []int64{}, Operate: []int64{}}
 	for _, s := range sites {
-		if h.service.node.Role == "site" && s.ID != h.service.node.SiteID {
+		if (h.service.node.Role == "site" || h.service.node.Role == "standalone") && s.ID != h.service.node.SiteID {
 			continue
 		}
 		scope.Read = append(scope.Read, s.ID)

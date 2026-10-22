@@ -66,6 +66,10 @@ export const router = createBrowserRouter([
         lazy: () => import("@/pages/system/users").then((module) => ({ Component: module.UsersPage })),
       },
       {
+        path: "system/agent-maintenance",
+        lazy: () => import("@/pages/agent-maintenance").then((module) => ({ Component: module.AgentMaintenancePage })),
+      },
+      {
         path: "forms/basic",
         lazy: () => import("@/pages/form-example").then((module) => ({ Component: module.FormExamplePage })),
       },

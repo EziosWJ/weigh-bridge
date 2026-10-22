@@ -31,6 +31,11 @@ type Config struct {
 	FormLengthMM float64 `json:"formLengthMm"`
 	PrintScale   float64 `json:"printScale"`
 
+	CameraFrontURL      string `json:"cameraFrontUrl"`
+	CameraRearURL       string `json:"cameraRearUrl"`
+	PlateRecognitionURL string `json:"plateRecognitionUrl"`
+	CameraTimeoutMS     int    `json:"cameraTimeoutMs"`
+
 	SerialEnabled    bool   `json:"serialEnabled"`
 	SerialPort       string `json:"serialPort"`
 	SerialBaud       int    `json:"serialBaud"`
@@ -42,7 +47,8 @@ type Config struct {
 func Defaults() Config {
 	return Config{
 		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99, PrintScale: 1,
-		SerialPort: "/dev/ttyS0", SerialBaud: 9600, SerialProtocol: "keli-d12-tf05", SerialWeightUnit: "t", SerialStaleMS: 1000,
+		CameraTimeoutMS: 2000,
+		SerialPort:      "/dev/ttyS0", SerialBaud: 9600, SerialProtocol: "keli-d12-tf05", SerialWeightUnit: "t", SerialStaleMS: 1000,
 	}
 }
 
@@ -66,8 +72,33 @@ func ValidateConfig(c Config) error {
 	if err := c.Calibration().Validate(); err != nil {
 		return err
 	}
+	if err := validateCamera(c); err != nil {
+		return err
+	}
 	if err := validateSerial(c); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateCamera(c Config) error {
+	for _, raw := range []string{c.CameraFrontURL, c.CameraRearURL, c.PlateRecognitionURL} {
+		if raw == "" {
+			continue
+		}
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "rtsp") || u.Fragment != "" || strings.ContainsAny(raw, "\r\n\x00") {
+			return errors.New("摄像头或识别地址无效")
+		}
+	}
+	if c.PlateRecognitionURL != "" && !strings.HasPrefix(c.PlateRecognitionURL, "http://") && !strings.HasPrefix(c.PlateRecognitionURL, "https://") {
+		return errors.New("车牌识别接口须为 HTTP(S)")
+	}
+	if (c.CameraFrontURL == "") != (c.CameraRearURL == "") {
+		return errors.New("须同时配置前后摄像头")
+	}
+	if c.CameraTimeoutMS != 0 && (c.CameraTimeoutMS < 200 || c.CameraTimeoutMS > 10000) {
+		return errors.New("摄像头超时须在 200～10000 ms 之间")
 	}
 	return nil
 }
@@ -161,12 +192,12 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 		}
 	}
 
-	for key, dst := range map[string]*string{"WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName, "WEIGHBRIDGE_SERIAL_PORT": &cfg.SerialPort, "WEIGHBRIDGE_SERIAL_PROTOCOL": &cfg.SerialProtocol, "WEIGHBRIDGE_SERIAL_WEIGHT_UNIT": &cfg.SerialWeightUnit} {
+	for key, dst := range map[string]*string{"WEIGHBRIDGE_CAMERA_FRONT_URL": &cfg.CameraFrontURL, "WEIGHBRIDGE_CAMERA_REAR_URL": &cfg.CameraRearURL, "WEIGHBRIDGE_PLATE_RECOGNITION_URL": &cfg.PlateRecognitionURL, "WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName, "WEIGHBRIDGE_SERIAL_PORT": &cfg.SerialPort, "WEIGHBRIDGE_SERIAL_PROTOCOL": &cfg.SerialProtocol, "WEIGHBRIDGE_SERIAL_WEIGHT_UNIT": &cfg.SerialWeightUnit} {
 		if value, ok := values[key]; ok {
 			*dst = value
 		}
 	}
-	for key, dst := range map[string]*int{"WEIGHBRIDGE_SERIAL_BAUD": &cfg.SerialBaud, "WEIGHBRIDGE_SERIAL_STALE_MS": &cfg.SerialStaleMS} {
+	for key, dst := range map[string]*int{"WEIGHBRIDGE_CAMERA_TIMEOUT_MS": &cfg.CameraTimeoutMS, "WEIGHBRIDGE_SERIAL_BAUD": &cfg.SerialBaud, "WEIGHBRIDGE_SERIAL_STALE_MS": &cfg.SerialStaleMS} {
 		if value, ok := values[key]; ok {
 			*dst, err = strconv.Atoi(value)
 			if err != nil {
@@ -206,6 +237,9 @@ func NormalizeConfig(c Config) Config {
 		c.PrintScale = 1
 	}
 	d := Defaults()
+	if c.CameraTimeoutMS == 0 {
+		c.CameraTimeoutMS = d.CameraTimeoutMS
+	}
 	if c.SerialPort == "" {
 		c.SerialPort = d.SerialPort
 	}

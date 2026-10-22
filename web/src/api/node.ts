@@ -1,6 +1,6 @@
 import { http } from '@/lib/http';
 export interface NodeStatus {
- role: 'central' | 'site'; siteId: number; initialized: boolean;
+ role: 'central' | 'site' | 'standalone'; siteId: number; initialized: boolean;
  sites: {siteId:number;lastSuccess:string;lastError:string;pendingImages:number;pending:number;connected:boolean}[];
 }
 export interface TemporaryParty {partyId:number;siteId:number;name:string;state:string;revision:number;formalPartyId:number|null;reason:string}

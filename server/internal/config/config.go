@@ -23,19 +23,20 @@ const (
 // Config contains all process-level configuration. Environment-specific YAML
 // may contain deployment credentials; APP_ environment variables override YAML.
 type Config struct {
-	Environment string           `koanf:"env"`
-	Node        NodeConfig       `koanf:"node"`
-	Service     ServiceConfig    `koanf:"service"`
-	HTTP        HTTPConfig       `koanf:"http"`
-	Swagger     SwaggerConfig    `koanf:"swagger"`
-	CORS        CORSConfig       `koanf:"cors"`
-	Database    DatabaseConfig   `koanf:"database"`
-	File        FileConfig       `koanf:"file"`
-	JWT         JWTConfig        `koanf:"jwt"`
-	Auth        AuthConfig       `koanf:"auth"`
-	Log         LogConfig        `koanf:"log"`
-	Monitoring  MonitoringConfig `koanf:"monitoring"`
-	Weighing    WeighingConfig   `koanf:"weighing"`
+	Environment string            `koanf:"env"`
+	Node        NodeConfig        `koanf:"node"`
+	Service     ServiceConfig     `koanf:"service"`
+	HTTP        HTTPConfig        `koanf:"http"`
+	Swagger     SwaggerConfig     `koanf:"swagger"`
+	CORS        CORSConfig        `koanf:"cors"`
+	Database    DatabaseConfig    `koanf:"database"`
+	File        FileConfig        `koanf:"file"`
+	JWT         JWTConfig         `koanf:"jwt"`
+	Auth        AuthConfig        `koanf:"auth"`
+	Log         LogConfig         `koanf:"log"`
+	Monitoring  MonitoringConfig  `koanf:"monitoring"`
+	Maintenance MaintenanceConfig `koanf:"maintenance"`
+	Weighing    WeighingConfig    `koanf:"weighing"`
 }
 
 // NodeConfig selects independent deployment ownership. Empty role retains the development topology.
@@ -45,6 +46,11 @@ type NodeConfig struct {
 	CentralURL string     `koanf:"central_url"`
 	SyncKey    string     `koanf:"sync_key"`
 	Peers      []NodePeer `koanf:"peers"`
+}
+
+// MaintenanceConfig configures the local Agent maintenance bridge.
+type MaintenanceConfig struct {
+	DataDir string `koanf:"data_dir"`
 }
 type NodePeer struct {
 	SiteID int64  `koanf:"site_id"`
@@ -146,14 +152,17 @@ type LogConfig struct {
 // created. This keeps configuration errors deterministic and close to startup.
 func (c Config) Validate() error {
 	var errs []error
-	if c.Node.Role != "" && c.Node.Role != "central" && c.Node.Role != "site" {
-		errs = append(errs, errors.New("node.role must be central or site"))
+	if c.Node.Role != "" && c.Node.Role != "central" && c.Node.Role != "site" && c.Node.Role != "standalone" {
+		errs = append(errs, errors.New("node.role must be central, site or standalone"))
 	}
 	if c.Node.Role == "site" && (c.Node.SiteID < 1 || c.Node.SiteID > 255 || strings.TrimSpace(c.Node.SyncKey) == "" || !strings.HasPrefix(c.Node.CentralURL, "http")) {
 		errs = append(errs, errors.New("site node requires site_id (1..255), central_url and sync_key"))
 	}
 	if c.Node.Role == "central" && c.Node.SiteID != 0 {
 		errs = append(errs, errors.New("central node must not set site_id"))
+	}
+	if c.Node.Role == "standalone" && (c.Node.SiteID < 1 || c.Node.SiteID > 255 || strings.TrimSpace(c.Node.CentralURL) != "" || strings.TrimSpace(c.Node.SyncKey) != "" || len(c.Node.Peers) != 0) {
+		errs = append(errs, errors.New("standalone node requires site_id (1..255) and must not configure central_url, sync_key or peers"))
 	}
 	if c.Node.Role == "site" {
 		u, err := url.Parse(c.Node.CentralURL)

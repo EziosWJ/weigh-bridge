@@ -1,8 +1,8 @@
 # 现场 Agent 与开发 mock
 
-> 当前目标：Agent 作为每厂本地系统的内部设备进程，连接本厂业务服务；维护入口和账号将统一，独立维护服务仅作过渡。整合尚未实施，下文命令仍用于已有实现，详见[当前规格](../docs/requirements/standalone-site-spec.md)与 [ADR 0023](../docs/adr/0023-standalone-site-baseline.md)。
+> 当前目标：Agent 作为每厂本地系统的内部设备进程，连接本厂业务服务；维护入口和账号将统一，独立维护服务仅作过渡。自治软件已实现统一维护入口与发布包，现场整合尚待验收；新部署见[三服务安装说明](../docs/device/standalone-deployment.md)，下文命令保留已有实现用途，详见[当前规格](../docs/requirements/standalone-site-spec.md)与 [ADR 0023](../docs/adr/0023-standalone-site-baseline.md)。
 
-现场 Linux Agent 已具备 SK-820 打印与柯力 D12 tF=05 重量采集：同一 `agent-printer` 进程共用一个 WSS 连接和地磅身份，串口读取与打印互不阻塞。2026-10-22 已在 `fcc-com-01` 部署并验证稳定零值、串口占用故障及恢复；真实非零带载、面板稳定灯对照、重启后串口权限及五联／连续走纸仍待现场验收。RTSP/HyperLPR3 识别与摄像头尚未实现，收到采集请求会明确失败，不会伪造图片或采集成功。见[交付记录](../docs/requirements/d12-agent-integration-delivery.md)与[打印部署记录](../docs/device/aisino-sk820-agent-test.md)。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
+现场 Linux Agent 已具备 SK-820 打印与柯力 D12 tF=05 重量采集：同一 `agent-printer` 进程共用一个 WSS 连接和地磅身份，串口读取与打印互不阻塞。2026-10-22 已在 `fcc-com-01` 部署并验证稳定零值、串口占用故障及恢复；真实非零带载、面板稳定灯对照、重启后串口权限及五联／连续走纸仍待现场验收。已新增 HTTP(S)/RTSP 前后抓拍与可选 HTTP 识别适配通道，现场型号、参数及实际识别引擎尚未确认或验收。未配置摄像头或无法取得新鲜证据时明确失败，不会伪造图片或采集成功。见[交付记录](../docs/requirements/d12-agent-integration-delivery.md)与[打印部署记录](../docs/device/aisino-sk820-agent-test.md)。开发和上线前测试使用独立 agent-mock，通过[同一通信契约](../protocol/v1.md)连接 Server。
 
 D12 的现场依据、单位差异与验证清单见[RS232 现场实验记录／博客稿](../docs/device/keli-d12-rs232-blog.md)与[Agent 接入开发指导](../docs/device/keli-d12-agent-integration-guide.md)。驱动实现位于 `server/internal/agentscale`。本机 `tF=05` 共 868 帧带载样本验证了累加校验；现场确认数值单位为吨，因此显式配置源单位 `t`，不根据文档 kg 标志再次除以 1000。单位结论仅适用于已核对的现场仪表。
 
@@ -41,7 +41,7 @@ Server 将抓拍保存于 `weighing.image_dir`，默认 `server/data/agent-image
 
 ## 本地打印维护
 
-SK-820 打印 Agent 的离线维护页面是独立进程，即使打印 Agent 无法启动仍可使用。维护服务默认监听 `0.0.0.0:18901`，资源随 Go 二进制嵌入；可信维护局域网可通过 HTTP 访问，TLS 可选，防火墙须限制来源且不得开放公网。打印 Agent 的受维护运行配置统一从 `agent.env` 读取，旧 unit／drop-in 的连接参数需按部署说明先迁入文件。页面通过顶部菜单提供总览、打印与队列、设备、配置和记录；设备页显示 Agent 写入的实时重量、单位、稳定状态、最后有效时间、校验与故障原因，维护服务只读状态文件、不打开串口。摄像头仍显示未接入。构建入口为 `task agent:maintenance:build`。部署、CUPS 最小授权、维护密码首次设置／恢复、队列操作边界和未现场验证项见[本地维护部署说明](../docs/device/agent-local-maintenance.md)。串口字段示例：
+SK-820 打印 Agent 的离线维护页面是独立进程，即使打印 Agent 无法启动仍可使用。维护服务默认监听 `0.0.0.0:18901`，资源随 Go 二进制嵌入；可信维护局域网可通过 HTTP 访问，TLS 可选，防火墙须限制来源且不得开放公网。打印 Agent 的受维护运行配置统一从 `agent.env` 读取，旧 unit／drop-in 的连接参数需按部署说明先迁入文件。页面通过顶部菜单提供总览、打印与队列、设备、配置和记录；设备页显示 Agent 写入的实时重量、单位、稳定状态、最后有效时间、校验与故障原因，维护服务只读状态文件、不打开串口。摄像头显示配置状态，真实连接在称重采集时确认。构建入口为 `task agent:maintenance:build`。部署、CUPS 最小授权、维护密码首次设置／恢复、队列操作边界和未现场验证项见[本地维护部署说明](../docs/device/agent-local-maintenance.md)。串口字段示例：
 
 ```dotenv
 WEIGHBRIDGE_SERIAL_ENABLED=true

@@ -9,6 +9,9 @@ import {
   PanelLeft,
   Table2,
   Upload,
+  Wrench,
+  Users,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { getMenuIcon } from "@/lib/menu-icons";
@@ -74,6 +77,16 @@ export const notificationManageNavItem: NavItem = {
   sortOrder: 0,
 };
 export const announcementManageNavItem: NavItem = { label: "公告管理", path: "/system/announcement", icon: FileText, sortOrder: 0 };
+export const agentMaintenanceNavItem: NavItem = { label: "设备维护", path: "/system/agent-maintenance", icon: Wrench, sortOrder: 5 };
+export const localManagementNavItem: NavItem = {
+  label: "本地管理", path: "/local-management", icon: Shield, sortOrder: 0,
+  children: [
+    { label: "账号管理", path: "/system/user", icon: Users },
+    { label: "角色与权限", path: "/system/role", icon: Shield },
+    { label: "厂区配置", path: "/weighing/site-config", icon: Scale },
+    agentMaintenanceNavItem,
+  ],
+};
 
 function collectNavPaths(items: NavItem[]) {
   const paths = new Set<string>();
@@ -224,6 +237,7 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/system/oper-log": "操作日志",
   "/system/file": "文件管理",
   "/system/notification": "通知管理",
+  "/system/agent-maintenance": "设备维护",
   "/monitor": "系统监控",
   "/monitor/server": "服务器监控",
   "/account/profile": "个人中心",

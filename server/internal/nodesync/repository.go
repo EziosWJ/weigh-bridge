@@ -72,11 +72,14 @@ func Bind(db *gorm.DB, cfg config.NodeConfig) error {
 	if cfg.Role == "" {
 		return nil
 	}
-	if cfg.Role != "site" && cfg.Role != "central" {
+	if cfg.Role != "site" && cfg.Role != "central" && cfg.Role != "standalone" {
 		return errors.New("invalid node role")
 	}
-	if cfg.Role == "site" && (cfg.SiteID < 1 || cfg.SiteID > 255) {
+	if (cfg.Role == "site" || cfg.Role == "standalone") && (cfg.SiteID < 1 || cfg.SiteID > 255) {
 		return errors.New("invalid node site")
+	}
+	if cfg.Role == "standalone" && (cfg.CentralURL != "" || cfg.SyncKey != "" || len(cfg.Peers) != 0) {
+		return errors.New("standalone node cannot bind central sync configuration")
 	}
 	err := db.Transaction(func(tx *gorm.DB) error {
 		var old Identity
@@ -89,6 +92,9 @@ func Bind(db *gorm.DB, cfg config.NodeConfig) error {
 		}
 		if !errors.Is(e, gorm.ErrRecordNotFound) {
 			return e
+		}
+		if cfg.Role == "standalone" {
+			return errors.New("standalone site identity must be created by standalone-init before the API starts")
 		}
 		{
 			var count int64
@@ -114,6 +120,8 @@ func Bind(db *gorm.DB, cfg config.NodeConfig) error {
 		table := tx.Statement.Table
 		tables := append(append([]string{}, businessTables...), "wb_party", "wb_party_contact")
 		if cfg.Role == "central" {
+			tables = append(tables, "wb_material", "wb_material_category")
+		} else if cfg.Role == "standalone" {
 			tables = append(tables, "wb_material", "wb_material_category")
 		}
 		if !contains(tables, table) {

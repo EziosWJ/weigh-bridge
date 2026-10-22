@@ -61,6 +61,28 @@ func (s *Service) Boundary(c *gin.Context) {
 			}
 		}
 	}
+	if s.cfg.Role == "standalone" && write && strings.HasPrefix(path, "/api/weighing/") {
+		name := strings.TrimPrefix(path, "/api/weighing/")
+		// Temporary-party review is a retired central workflow. Existing rows are
+		// retained for history; new local parties use the ordinary master API.
+		if strings.HasPrefix(name, "temporary-parties") {
+			deny = true
+		} else {
+			management := false
+			for _, prefix := range []string{"material-categories", "materials", "parties", "site-config", "agent-settings", "users/"} {
+				if strings.HasPrefix(name, prefix) {
+					management = true
+					break
+				}
+			}
+			if !management {
+				ready, err := s.RefreshInitialized(c.Request.Context())
+				if err != nil || !ready {
+					deny = true
+				}
+			}
+		}
+	}
 	if deny {
 		ph.AbortError(c, 403, 403, "当前部署角色不允许此操作", nil)
 		return
@@ -76,13 +98,15 @@ func (s *Service) Register(router *gin.Engine, a *auth.Service) {
 	node.GET("/status", func(c *gin.Context) {
 		p, _ := auth.PrincipalFromContext(c.Request.Context())
 		rows := []State{}
-		q := s.db.WithContext(c.Request.Context()).Where("site_id IN (SELECT site_id FROM wb_user_site WHERE user_id=?)", p.UserID)
-		if s.cfg.Role == "site" {
-			q = q.Where("site_id=?", s.cfg.SiteID)
-		}
-		if err := q.Find(&rows).Error; err != nil {
-			ph.WriteError(c, 500, 500, "同步状态读取失败", nil)
-			return
+		if s.cfg.Role != "standalone" {
+			q := s.db.WithContext(c.Request.Context()).Where("site_id IN (SELECT site_id FROM wb_user_site WHERE user_id=?)", p.UserID)
+			if s.cfg.Role == "site" {
+				q = q.Where("site_id=?", s.cfg.SiteID)
+			}
+			if err := q.Find(&rows).Error; err != nil {
+				ph.WriteError(c, 500, 500, "同步状态读取失败", nil)
+				return
+			}
 		}
 		type view struct {
 			State
@@ -115,8 +139,19 @@ func (s *Service) Register(router *gin.Engine, a *auth.Service) {
 			}
 			views = append(views, view{st, time.Since(last) < time.Minute && st.LastError == "", pending})
 		}
-		id, _ := loadIdentity(c.Request.Context(), s.db)
-		ph.OK(c, gin.H{"role": s.cfg.Role, "siteId": s.cfg.SiteID, "initialized": id.Initialized == 1, "sites": views})
+		initialized := false
+		if s.cfg.Role == "standalone" {
+			var err error
+			initialized, err = s.RefreshInitialized(c.Request.Context())
+			if err != nil {
+				ph.WriteError(c, 500, 500, "本地初始化状态读取失败", nil)
+				return
+			}
+		} else {
+			id, _ := loadIdentity(c.Request.Context(), s.db)
+			initialized = id.Initialized == 1
+		}
+		ph.OK(c, gin.H{"role": s.cfg.Role, "siteId": s.cfg.SiteID, "initialized": initialized, "sites": views})
 	})
 	if s.cfg.Role != "central" {
 		return
