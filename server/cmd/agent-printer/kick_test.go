@@ -12,6 +12,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
+	"github.com/EziosWJ/weighbridge/server/internal/agentscale"
 	"github.com/gin-gonic/gin"
 )
 
@@ -26,7 +27,12 @@ func TestPrinterKickEndsRunNormally(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleID: 1, AgentKey: "printer-test-key", Queue: "unused"}, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
+		scale, err := agentscale.New(agentscale.Config{Enabled: false}, nil)
+		if err != nil {
+			done <- err
+			return
+		}
+		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleID: 1, AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
 	}()
 	deadline := time.Now().Add(3 * time.Second)
 	for !hub.State(1).Online && time.Now().Before(deadline) {

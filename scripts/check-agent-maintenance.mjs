@@ -158,6 +158,8 @@ try {
   await page.getByRole('button', { name: '验证并登录' }).click();
   await page.getByRole('link', { name: '配置', exact: true }).click();
   await page.getByLabel('Server 地址', { exact: true }).waitFor();
+  await page.getByLabel('串口路径', { exact: true }).waitFor();
+  await page.getByLabel('现场源单位', { exact: true }).waitFor();
   await page.getByRole('link', { name: '记录', exact: true }).click();
   await page.getByRole('button', { name: '查询记录', exact: true }).click();
   await page.getByText('共 0 条', { exact: false }).waitFor();
@@ -295,12 +297,13 @@ try {
   await page.getByRole('button',{name:'确认导入',exact:true}).click();
   await page.locator('#siteIdentity').filter({hasText:'维护测试厂区'}).waitFor();
   const afterImport = (await (await context.request.get(`${url}/api/config`)).json()).config;
-  for(const key of ['queue','printWidthMm','offsetXmm','offsetYmm','formLengthMm'])assert.equal(afterImport[key],beforeImport[key]);
+  for(const key of ['queue','printWidthMm','offsetXmm','offsetYmm','formLengthMm','serialEnabled','serialPort','serialBaud','serialProtocol','serialWeightUnit','serialStaleMs'])assert.equal(afterImport[key],beforeImport[key]);
   assert.equal(await fs.readFile(path.join(data,'agent.env'),'utf8'),envBeforeImport);
   await page.getByRole('link', { name: '设备', exact: true }).click();
-  await page.getByText('暂无重量预览', { exact: true }).waitFor();
+  await page.locator('#scaleBadge').waitFor();
   await page.getByText('暂无视频预览', { exact: true }).waitFor();
   assert.equal(await page.locator('[data-page=devices] input').count(), 0);
+  assert.ok((await page.locator('#scaleWeight').textContent()).trim().length > 0);
   await page.reload();
   await page.getByRole('heading', { name: '现场设备', exact: true }).waitFor();
   await page.getByRole('button', { name: '退出维护登录' }).waitFor();

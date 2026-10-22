@@ -7,7 +7,7 @@ weighbridge 面向酒厂车辆进出厂称重的可追溯管理。当前已完�
 ## 职责边界
 
 - Server：此前按远程或云端部署规划，2026-10-22 已按 Issue #4 实施厂区本地业务权威、中心统一资料并同步汇总，软件验证及现场边界见[交付记录](docs/requirements/local-first-deployment-delivery.md)，真实生产部署尚未切换，见 [ADR 0021](docs/adr/0021-local-weighing-authority-and-central-sync.md) 与[业务修改规格](docs/requirements/local-first-deployment-spec.md)。中心与厂区共用当前代码、按角色独立部署及存储；各厂本地 Server、Web、PostgreSQL 与 Agent 部署在该厂工控机上。中心统一管理账号授权与资料，首期不发起现场业务处置或打印；复用认证、RBAC、系统管理与审计。业务规则及规格汇总均已最终确认，访谈结束；单盘故障保护目标保留，具体方案按用户要求暂缓讨论。
-- Agent：酒厂地磅房 Linux 工控机上的现场设备代理，计划使用 SQLite，负责 D12 重量采集、RTSP/HyperLPR3 车牌识别及 Linux 针式打印机。已实现 WSS 接入及独立 Web agent-mock，已完成协议／SQLite／浏览器验证；仪表及摄像头驱动仍未实现；最小打印 Agent 已部署，A4 单张纸版面已获现场确认，五联及连续走纸待验收。
+- Agent：酒厂地磅房 Linux 工控机上的现场设备代理，计划使用 SQLite，负责 D12 重量采集、RTSP/HyperLPR3 车牌识别及 Linux 针式打印机。已实现 WSS 接入、独立 Web agent-mock 与最小打印 Agent；2026-10-22 已将柯力 D12 tF=05 串口驱动合入同一打印 Agent，共用单一连接与身份，完成解析、保鲜、故障测试及 `fcc-com-01` 零值、故障和恢复的现场验证。摄像头、车牌识别及完整正式采集闭环仍未实现；非零带载、面板稳定灯对照及重启后串口权限仍待现场复核。A4 单张纸版面已获现场确认，五联及连续走纸待验收。
 - Web：浏览器管理界面，提供系统管理、称重业务及 Agent 数据展示，由操作员核对后确认；设备模拟控制已移至独立 mock。Web 不直接驱动串口或打印机。
 - protocol：约定 Agent 与 Server 的设备状态、采集、图片与打印通信契约；v1 契约及通信接入已实现，真实设备尚未验收。
 - host-collector：脚手架保留的宿主机资源监控进程，与现场设备 Agent 职责不同。
@@ -103,6 +103,8 @@ Phase 2A 已完成前端界面与流程模拟：车牌录入及人工核对、�
 2026-10-21 用户根据现场反馈确认并授权实施 Agent 本地维护控制台改版，代码及受控软件验证已完成：统一打印运行配置来源，默认支持可信维护局域网的 HTTP 访问，采用顶部菜单及列表式服务／队列操作。配置来源与网络访问取舍见 [ADR 0017](docs/adr/0017-agent-maintenance-config-and-lan.md)，范围见[改版需求](docs/requirements/agent-maintenance-revision-spec.md)，准确验证结果及升级边界见[改版交付记录](docs/requirements/agent-maintenance-revision-delivery.md)。本次未升级真实工控机，CUPS 权限、旧队列恢复与实物纸张仍待现场验收。仪表和摄像头只提供未接入状态页，实际配置、重量及视频预览仍未实现，延至驱动阶段。
 
 2026-10-21 用户确认并启动厂区配置与 Agent 启动配置补充开发：后台厂区／地磅管理、动态 Agent 绑定、可重复下载的现场连接配置、真实 Agent 本地导入与 mock 文件启动已实现，PostgreSQL／SQLite 和浏览器验证通过；已备份升级当前本机开发 API，并将打印 Agent 及维护服务部署至 `fcc-com-01`，原身份、打印设置和账本保留。第二厂区真实工控机尚未指定，本轮未发起实物打印，仪表、摄像头及真实称重验收仍按原边界处理。范围见[需求讨论](docs/requirements/site-agent-configuration-discovery.md)，准确检查及部署结果见[交付记录](docs/requirements/site-agent-configuration-delivery.md)。
+
+2026-10-22 用户授权并完成柯力 D12 仪表与真实现场 Agent 对接：新增 `server/internal/agentscale`，实现 tF=05 固定帧解析、本机带载验证的累加校验、字节流拆包、精确吨制换算、串口独占读取、保鲜／故障／恢复和本地状态文件；合入现有打印 Agent，保留单一 WSS 身份、打印账本、配置应用与 kick。现场单位按 `fcc-com-01` 用户确认显式配置为吨，不依文档 kg 标志再次换算。`fcc-com-01` 已部署并验证稳定零值、串口占用故障及恢复，Server 与维护页均收到对应状态；打印账本未变化，未发起打印或正式称重。真实非零带载、面板稳定灯对照、重启后串口权限及负值／净重／非零皮重仍待现场验证，摄像头未接入时采集请求明确失败。见[交付记录](docs/requirements/d12-agent-integration-delivery.md)、[接入指导](docs/device/keli-d12-agent-integration-guide.md)与 [ADR 0022](docs/adr/0022-keli-d12-serial-integration.md)。
 
 ## 脚手架复用
 

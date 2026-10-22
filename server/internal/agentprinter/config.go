@@ -30,10 +30,42 @@ type Config struct {
 	OffsetXMM    int    `json:"offsetXmm"`
 	OffsetYMM    int    `json:"offsetYmm"`
 	FormLengthMM int    `json:"formLengthMm"`
+
+	SerialEnabled    bool   `json:"serialEnabled"`
+	SerialPort       string `json:"serialPort"`
+	SerialBaud       int    `json:"serialBaud"`
+	SerialProtocol   string `json:"serialProtocol"`
+	SerialWeightUnit string `json:"serialWeightUnit"`
+	SerialStaleMS    int    `json:"serialStaleMs"`
 }
 
 func Defaults() Config {
-	return Config{ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99}
+	return Config{
+		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99,
+		SerialPort: "/dev/ttyS0", SerialBaud: 9600, SerialProtocol: "keli-d12-tf05", SerialWeightUnit: "t", SerialStaleMS: 1000,
+	}
+}
+
+// NormalizeConfig fills serial fields absent from older maintenance drafts.
+// SerialEnabled itself is not defaulted: an old file means "printing only".
+func NormalizeConfig(c Config) Config {
+	d := Defaults()
+	if c.SerialPort == "" {
+		c.SerialPort = d.SerialPort
+	}
+	if c.SerialBaud == 0 {
+		c.SerialBaud = d.SerialBaud
+	}
+	if c.SerialProtocol == "" {
+		c.SerialProtocol = d.SerialProtocol
+	}
+	if c.SerialWeightUnit == "" {
+		c.SerialWeightUnit = d.SerialWeightUnit
+	}
+	if c.SerialStaleMS == 0 {
+		c.SerialStaleMS = d.SerialStaleMS
+	}
+	return c
 }
 
 func ValidateConfig(c Config) error {
@@ -56,6 +88,30 @@ func ValidateConfig(c Config) error {
 	feedDots := (600 + int(math.Round(float64(c.OffsetYMM)*180/25.4)) + 23) / 24 * 24
 	if c.PrintWidthMM < 100 || c.PrintWidthMM > 210 || c.OffsetXMM < 0 || c.OffsetXMM > 30 || c.OffsetYMM < 0 || c.OffsetYMM > 30 || c.FormLengthMM < 85 || c.FormLengthMM > 300 || c.PrintWidthMM+c.OffsetXMM > 210 || feedDots > int(math.Round(float64(c.FormLengthMM)*180/25.4)) {
 		return errors.New("打印尺寸或偏移超出允许范围")
+	}
+	if err := validateSerial(c); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateSerial(c Config) error {
+	if c.SerialPort == "" || !strings.HasPrefix(c.SerialPort, "/dev/") || strings.Contains(c.SerialPort, "..") || strings.ContainsAny(c.SerialPort, "\r\n\x00") {
+		return errors.New("称重仪表串口路径无效，须为 /dev 下的设备路径")
+	}
+	switch c.SerialBaud {
+	case 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200:
+	default:
+		return errors.New("称重仪表波特率无效")
+	}
+	if c.SerialProtocol != "keli-d12-tf05" {
+		return errors.New("称重仪表协议无效，当前仅支持 keli-d12-tf05")
+	}
+	if c.SerialWeightUnit != "t" && c.SerialWeightUnit != "kg" {
+		return errors.New("称重仪表现场源单位须为 t 或 kg，并按实际仪表核对")
+	}
+	if c.SerialStaleMS < 200 || c.SerialStaleMS >= 3000 {
+		return errors.New("称重仪表陈旧阈值须在 200～2999 ms 之间，并早于 Server 的 3000 ms 门限")
 	}
 	return nil
 }
@@ -119,9 +175,23 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 		}
 	}
 
-	for key, dst := range map[string]*string{"WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName} {
+	for key, dst := range map[string]*string{"WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName, "WEIGHBRIDGE_SERIAL_PORT": &cfg.SerialPort, "WEIGHBRIDGE_SERIAL_PROTOCOL": &cfg.SerialProtocol, "WEIGHBRIDGE_SERIAL_WEIGHT_UNIT": &cfg.SerialWeightUnit} {
 		if value, ok := values[key]; ok {
 			*dst = value
+		}
+	}
+	for key, dst := range map[string]*int{"WEIGHBRIDGE_SERIAL_BAUD": &cfg.SerialBaud, "WEIGHBRIDGE_SERIAL_STALE_MS": &cfg.SerialStaleMS} {
+		if value, ok := values[key]; ok {
+			*dst, err = strconv.Atoi(value)
+			if err != nil {
+				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
+			}
+		}
+	}
+	if value, ok := values["WEIGHBRIDGE_SERIAL_ENABLED"]; ok {
+		cfg.SerialEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return cfg, errors.New("agent.env 参数 WEIGHBRIDGE_SERIAL_ENABLED 无效")
 		}
 	}
 	if value := values["WEIGHBRIDGE_SITE_ID"]; value != "" {

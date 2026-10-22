@@ -1,6 +1,6 @@
 # 多厂区与 Agent 配置、切换
 
-适用范围：[多厂区与 Agent 互斥需求](../requirements/multi-site-discovery.md)。每个厂区当前一台地磅及独立工控机、打印机；使用一套 Server。真实仪表和摄像头尚未接入，当前真实 Agent 仅支持打印。
+适用范围：[多厂区与 Agent 互斥需求](../requirements/multi-site-discovery.md)。每个厂区当前一台地磅及独立工控机、打印机；使用一套 Server。真实 Agent 已接入柯力 D12 重量采集与打印，摄像头尚未接入；完整正式采集闭环仍未完成，见[D12 交付记录](../requirements/d12-agent-integration-delivery.md)。
 
 ## 厂区配置页面与下载（2026-10-21 新增）
 

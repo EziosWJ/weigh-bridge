@@ -5,8 +5,8 @@ const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({
 const pages = {
   overview: ['运行总览', '查看现场服务状态，定位连接与打印异常。'],
   printing: ['打印与队列', '检查本机队列与未结束作业，按影响范围执行维护操作。'],
-  devices: ['现场设备', '查看仪表与摄像头接入能力。'],
-  config: ['连接与打印配置', '核对运行参数，保存草稿并明确应用。'],
+  devices: ['现场设备', '查看仪表实时状态与摄像头接入能力。'],
+  config: ['连接、仪表与打印配置', '核对运行参数，保存草稿并明确应用。'],
   records: ['维护记录与日志', '按时间和操作查询本机维护记录，查看运行日志。'],
 };
 const fields = [
@@ -19,9 +19,23 @@ const fields = [
   ['offsetXmm', '向右偏移 (mm)', 'number', 0, 30, '允许 0～30 mm'],
   ['offsetYmm', '向下偏移 (mm)', 'number', 0, 30, '允许 0～30 mm'],
   ['formLengthMm', '连续纸表长 (mm)', 'number', 85, 300, '允许 85～300 mm；需核对实际走纸'],
+  ['serialEnabled', '启用柯力 D12 仪表', 'checkbox', null, null, '关闭时保持原打印能力；启用后由打印 Agent 独占串口'],
+  ['serialPort', '串口路径', 'text', null, null, '例如 /dev/ttyS0；不得与诊断工具同时占用'],
+  ['serialBaud', '仪表波特率', 'number', 1200, 115200, '必须与仪表 bt 一致；现场为 9600'],
+  ['serialProtocol', '仪表协议', 'select', null, null, '当前仅支持 D12 tF=05 连续输出', ['keli-d12-tf05']],
+  ['serialWeightUnit', '现场源单位', 'select', null, null, '按现场核对结果选择；本机已确认 t，不得依据单位位自动换算', ['t', 'kg']],
+  ['serialStaleMs', '无有效帧故障阈值 (ms)', 'number', 200, 2999, '须早于 Server 的 3000 ms 采集保鲜门限'],
 ];
 let cfg = {};
 let configData;
+function displayField(key, value) {
+  const field = fields.find(([name]) => name === key);
+  return field?.[2] === 'checkbox' ? (value ? '启用' : '停用') : String(value ?? '');
+}
+function scaleSummary(c) {
+  return c.serialEnabled ? `D12 ${c.serialProtocol}，${c.serialPort}，${c.serialBaud} 8N1，源单位 ${c.serialWeightUnit}，陈旧阈值 ${c.serialStaleMs} ms` : '称重仪表未启用（仅打印）';
+}
+
 let lastState;
 let auditOffset = 0;
 let auditTotal = 0;
@@ -107,6 +121,27 @@ function renderQueues(state) {
   $('queues').innerHTML = !state.queueKnown ? '<p class="bad">无法读取打印队列，请检查 CUPS 服务后刷新。</p>'
     : `<table><thead><tr><th>队列</th><th>状态</th><th>用途</th><th>操作</th></tr></thead><tbody>${queues.map((queue) => `<tr><td>${esc(queue.name)}</td><td>${badge(queue.state)}</td><td>${queue.name === state.queue ? '<span class="badge">当前打印目标</span>' : '其他本机队列'}</td><td>${queue.name === state.queue ? `<button data-unavailable="${queue.state === '已启用'}" onclick="guarded('enable-queue')">恢复目标队列</button>` : '<span class="muted">只读查看</span>'}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">本机尚无打印队列，请先在系统中安装打印机。</td></tr>'}</tbody></table>`;
 }
+function renderScale(state) {
+  const scale = state.scale || {};
+  const live = scale.known && (scale.state === '稳定' || scale.state === '动态');
+  const bad = /故障|过期|未运行/.test(scale.state || '');
+  $('scaleBadge').textContent = scale.state || '未知';
+  $('scaleBadge').className = `badge ${live ? 'ok' : bad ? 'bad' : ''}`;
+  if (!scale.known) {
+    $('scaleSummary').textContent = '暂无仪表状态';
+    $('scaleWeight').innerHTML = '<strong>暂无仪表状态</strong><span>等待打印 Agent 写入状态</span>';
+    $('scaleMeta').textContent = '';
+    $('scaleFault').textContent = scale.fault || '';
+    return;
+  }
+  const stamp = (value) => value && !String(value).startsWith('0001-') ? new Date(value).toLocaleString() : '尚无';
+  $('scaleSummary').textContent = scale.enabled ? `源单位 ${scale.unit || '未知'}；最后有效帧：${stamp(scale.lastValidAt)}` : '称重仪表未启用（仅打印）';
+  $('scaleWeight').innerHTML = `<strong>${esc(scale.weight || '—')} t</strong><span>${scale.stable ? '仪表稳定' : scale.instrumentStable ? '仪表动态' : '当前不可采集'}</span>`;
+  const flags = [`文档单位位 ${scale.unitFlag || '未知'}`, scale.negative ? '负值' : '', scale.anomaly ? '异常位' : '', scale.tareIssue ? `皮重：${scale.tareIssue}` : ''].filter(Boolean).join('；');
+  $('scaleMeta').textContent = `串口 ${scale.port}，${scale.baud} 8N1，${scale.protocol}；源读数 ${scale.sourceWeight || '—'}，皮重 ${scale.sourceTare || '—'}，${scale.weightType === 'net' ? '净重' : '毛重'}；校验 ${scale.checksum === 'ok' ? '通过' : '最近失败'}（连续 ${scale.checksumFailures || 0} 帧）；有效 ${scale.framesValid || 0} 帧，无效 ${scale.framesInvalid || 0} 帧，垃圾字节 ${scale.discardedBytes || 0}。${flags ? ' ' + flags + '。' : ''}`;
+  $('scaleFault').textContent = scale.fault || '';
+}
+
 async function refresh() {
   const version = ++refreshVersion;
   try {
@@ -120,6 +155,7 @@ async function refresh() {
     $('statusJobs').textContent = !state.jobsKnown ? '未结束作业：未知／不可读取' : state.jobs?.length ? `未结束作业摘要：${state.jobs.map((job) => `${job.id}（纸面结果未知）`).join('、')}` : '未发现未结束作业';
     renderServices(state);
     renderQueues(state);
+    renderScale(state);
     updateControls();
   } catch (error) {
     if (version !== refreshVersion) return;
@@ -131,6 +167,7 @@ async function refresh() {
     $('services').innerHTML = '<p class="bad">服务状态不可读取，请恢复连接后刷新。</p>';
     $('queues').innerHTML = '<p class="bad">队列状态不可读取，请恢复连接后刷新。</p>';
     $('queueCount').textContent = '状态未知';
+    renderScale({ scale: { known: false, state: '未知', fault: '状态不可读取，请恢复连接后刷新。' } });
   }
 }
 async function login() {
@@ -149,7 +186,7 @@ async function logout() {
 }
 function calibration(c) { return `打印队列 ${c.queue}，宽 ${c.printWidthMm} mm，右移 ${c.offsetXmm} mm，下移 ${c.offsetYmm} mm，表长 ${c.formLengthMm} mm`; }
 function configDifferences(data) {
-  return `<table><thead><tr><th>参数</th><th>agent.env 中的配置</th><th>已保存的草稿</th></tr></thead><tbody>${fields.map(([key, name]) => key === 'agentKey' ? `<tr class="${data.keyChanged ? 'changed' : ''}"><td>连接密钥</td><td>${data.hasActiveAgentKey ? '已设置（不回显）' : '未设置'}</td><td>${data.keyChanged ? '待替换（不回显）' : data.hasAgentKey ? '已设置（不回显）' : '未设置'}</td></tr>` : `<tr class="${data.active[key] !== data.config[key] ? 'changed' : ''}"><td>${name}</td><td>${esc(data.active[key])}</td><td>${esc(data.config[key])}${data.active[key] !== data.config[key] ? ' <span class="badge">待应用</span>' : ''}</td></tr>`).join('')}</tbody></table>`;
+  return `<table><thead><tr><th>参数</th><th>agent.env 中的配置</th><th>已保存的草稿</th></tr></thead><tbody>${fields.map(([key, name]) => key === 'agentKey' ? `<tr class="${data.keyChanged ? 'changed' : ''}"><td>连接密钥</td><td>${data.hasActiveAgentKey ? '已设置（不回显）' : '未设置'}</td><td>${data.keyChanged ? '待替换（不回显）' : data.hasAgentKey ? '已设置（不回显）' : '未设置'}</td></tr>` : `<tr class="${data.active[key] !== data.config[key] ? 'changed' : ''}"><td>${name}</td><td>${esc(displayField(key, data.active[key]))}</td><td>${esc(displayField(key, data.config[key]))}${data.active[key] !== data.config[key] ? ' <span class="badge">待应用</span>' : ''}</td></tr>`).join('')}</tbody></table>`;
 }
 async function loadConfig() {
   const data = await api('/api/config');
@@ -157,10 +194,18 @@ async function loadConfig() {
  $('siteIdentity').textContent = cfg.siteName ? `草稿归属：${cfg.siteName}（${cfg.siteCode}） · ${cfg.scaleName || cfg.scaleId}` : '现有配置未记录厂区名称，可导入后台下载的厂区配置。';
   configData = data;
   const queues = lastState?.queues || (await api('/api/status')).queues || [];
-  const fieldHTML = ([key, name, type, min, max, help]) => `<div><label for="f-${key}">${name}</label>${key === 'queue' ? `<select id="f-${key}">${[...new Set([cfg[key], ...queues])].map((value) => `<option>${esc(value)}</option>`).join('')}</select>` : `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="1" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' ? '' : 'required'} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`}<p class="field-help" id="hint-${key}">${help}</p></div>`;
-  $('form').innerHTML = `<fieldset><legend>云端连接与身份</legend><div class="fields-grid">${fields.slice(0, 4).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>打印目标与校准</legend><div class="fields-grid">${fields.slice(4).map(fieldHTML).join('')}</div></fieldset>`;
-  $('saved').textContent = `${data.hasAgentKey ? '连接密钥已设置。' : '连接密钥尚未设置。'}${data.saved ? '当前无未应用草稿。' : '存在未应用草稿，尚未影响运行配置。'}打印运行参数需要应用并重启打印 Agent。`;
-  $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.siteName || "厂区名称未配置"}，${data.active.scaleName || "地磅 " + data.active.scaleId}\n${data.active.serverUrl}，${data.active.agentId}\n${calibration(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
+  const fieldHTML = ([key, name, type, min, max, help, options]) => {
+    let control;
+    if (key === 'queue') control = `<select id="f-${key}">${[...new Set([cfg[key], ...queues])].map((value) => `<option>${esc(value)}</option>`).join('')}</select>`;
+    else if (type === 'checkbox') control = `<input id="f-${key}" type="checkbox" ${cfg[key] ? 'checked' : ''} aria-describedby="hint-${key}">`;
+    else if (type === 'select') control = `<select id="f-${key}" aria-describedby="hint-${key}">${(options || []).map((value) => `<option value="${esc(value)}" ${cfg[key] === value ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select>`;
+    else control = `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="1" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' ? '' : 'required'} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`;
+    if (type === 'checkbox') return `<div><label class="check" for="f-${key}"><span>${control} ${name}</span></label><p class="field-help" id="hint-${key}">${help}</p></div>`;
+    return `<div><label for="f-${key}">${name}</label>${control}<p class="field-help" id="hint-${key}">${help}</p></div>`;
+  };
+  $('form').innerHTML = `<fieldset><legend>云端连接与身份</legend><div class="fields-grid">${fields.slice(0, 4).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>打印目标与校准</legend><div class="fields-grid">${fields.slice(4, 9).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>称重仪表（柯力 D12）</legend><div class="fields-grid">${fields.slice(9).map(fieldHTML).join('')}</div></fieldset>`;
+  $('saved').textContent = `${data.hasAgentKey ? '连接密钥已设置。' : '连接密钥尚未设置。'}${data.saved ? '当前无未应用草稿。' : '存在未应用草稿，尚未影响运行配置。'}打印及仪表参数需要应用并重启打印 Agent。`;
+  $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.siteName || "厂区名称未配置"}，${data.active.scaleName || "地磅 " + data.active.scaleId}\n${data.active.serverUrl}，${data.active.agentId}\n${calibration(data.active)}。\n仪表：${scaleSummary(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
   $('runtimeConfig').textContent = data.runtimeState;
   $('configDiff').innerHTML = configDifferences(data);
   $('calibrationSummary').textContent = calibration(data.active);
@@ -175,7 +220,7 @@ async function save() {
   setBusy(true);
   try {
     const draft = { ...cfg };
-    for (const [key, , type] of fields) draft[key] = type === 'number' ? Number($(`f-${key}`).value) : $(`f-${key}`).value;
+    for (const [key, , type] of fields) draft[key] = type === 'checkbox' ? $(`f-${key}`).checked : type === 'number' ? Number($(`f-${key}`).value) : $(`f-${key}`).value;
     await api('/api/config', { method: 'PUT', body: JSON.stringify(draft) });
     showMessage('草稿已保存。点击“应用配置”并确认重启打印 Agent 后生效。');
     await loadConfig();
@@ -255,7 +300,7 @@ async function startAgent() {
 async function apply() {
   if (busy) return;
   if (formDirty) { showMessage('请先保存表单中的修改，再应用配置。', true); return; }
-  if (await confirmAction('应用配置并重启打印 Agent', `<p>将已保存的草稿写入 agent.env，并重启打印 Agent。维护页面保持可用。</p><p>${esc(calibration(cfg))}</p><p>执行前会检查当前及新目标队列的未结束作业；有作业时需先处理。</p>`, '确认应用并重启')) await act('apply');
+  if (await confirmAction('应用配置并重启打印 Agent', `<p>将已保存的草稿写入 agent.env，并重启打印 Agent。维护页面保持可用。</p><p>${esc(calibration(cfg))}</p><p>仪表：${esc(scaleSummary(cfg))}。</p><p>执行前会检查当前及新目标队列的未结束作业；有作业时需先处理。</p>`, '确认应用并重启')) await act('apply');
 }
 async function restore() {
   if (busy) return;
