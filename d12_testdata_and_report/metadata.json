@@ -1,0 +1,18 @@
+{
+  "startedAt": "2026-10-22T07:30:08.435836+00:00",
+  "pid": 2701,
+  "device": "/dev/ttyS0",
+  "baud": 9600,
+  "format": "8N1",
+  "flow": "none",
+  "protocol": "D12 TF05",
+  "durationSeconds": 1200,
+  "receiveOnly": true,
+  "uartStart": {
+    "rx": 499,
+    "tx": 39,
+    "frame": 0,
+    "overrun": 0,
+    "parity": 0
+  }
+}

@@ -1,0 +1,234 @@
+{
+  "startedAt": "2026-10-22T07:30:08.435836+00:00",
+  "endedAt": "2026-10-22T07:33:02.126087+00:00",
+  "durationSeconds": 173.691,
+  "frameCount": 868,
+  "rawBytes": 15624,
+  "chunkCount": 2604,
+  "distinctFrames": 61,
+  "decodedWeightMin": "0.000",
+  "decodedWeightMax": "1.560",
+  "distinctDecodedWeights": 52,
+  "unitFlags": {
+    "kg": 868
+  },
+  "statusAValues": {
+    "0x2d": 868
+  },
+  "statusBValues": {
+    "0x30": 787,
+    "0x38": 81
+  },
+  "stableFrames": 787,
+  "dynamicFrames": 81,
+  "nonzeroFrames": 409,
+  "nonzeroStableFrames": 332,
+  "anomalyFrames": 0,
+  "netFrames": 0,
+  "tareValues": [
+    "0.000"
+  ],
+  "averageIntervalMs": 200.108,
+  "minIntervalMs": 199.451,
+  "maxIntervalMs": 200.618,
+  "checksumAlgorithmMatches": {
+    "sum_stx_through_tare_excluding_cr": 868,
+    "sum_stx_through_cr": 0,
+    "twos_complement7_including_cr": 0,
+    "twos_complement8_including_cr": 0
+  },
+  "stableTransitions": [
+    {
+      "index": 173,
+      "receivedAt": "2026-10-22T07:30:43.028363+00:00",
+      "displayWeight": "0.020",
+      "stable": false,
+      "statusB": 56,
+      "rawHex": "02 2d 38 20 30 30 30 30 32 30 30 30 30 30 30 30 0d c9"
+    },
+    {
+      "index": 190,
+      "receivedAt": "2026-10-22T07:30:46.430156+00:00",
+      "displayWeight": "1.560",
+      "stable": true,
+      "statusB": 48,
+      "rawHex": "02 2d 30 20 30 30 31 35 36 30 30 30 30 30 30 30 0d cb"
+    },
+    {
+      "index": 277,
+      "receivedAt": "2026-10-22T07:31:03.839484+00:00",
+      "displayWeight": "1.500",
+      "stable": false,
+      "statusB": 56,
+      "rawHex": "02 2d 38 20 30 30 31 35 30 30 30 30 30 30 30 30 0d cd"
+    },
+    {
+      "index": 282,
+      "receivedAt": "2026-10-22T07:31:04.839814+00:00",
+      "displayWeight": "1.480",
+      "stable": true,
+      "statusB": 48,
+      "rawHex": "02 2d 30 20 30 30 31 34 38 30 30 30 30 30 30 30 0d cc"
+    },
+    {
+      "index": 388,
+      "receivedAt": "2026-10-22T07:31:26.051663+00:00",
+      "displayWeight": "1.510",
+      "stable": false,
+      "statusB": 56,
+      "rawHex": "02 2d 38 20 30 30 31 35 31 30 30 30 30 30 30 30 0d ce"
+    },
+    {
+      "index": 393,
+      "receivedAt": "2026-10-22T07:31:27.052254+00:00",
+      "displayWeight": "1.550",
+      "stable": true,
+      "statusB": 48,
+      "rawHex": "02 2d 30 20 30 30 31 35 35 30 30 30 30 30 30 30 0d ca"
+    },
+    {
+      "index": 484,
+      "receivedAt": "2026-10-22T07:31:45.262147+00:00",
+      "displayWeight": "1.530",
+      "stable": false,
+      "statusB": 56,
+      "rawHex": "02 2d 38 20 30 30 31 35 33 30 30 30 30 30 30 30 0d d0"
+    },
+    {
+      "index": 500,
+      "receivedAt": "2026-10-22T07:31:48.463877+00:00",
+      "displayWeight": "0.000",
+      "stable": true,
+      "statusB": 48,
+      "rawHex": "02 2d 30 20 30 30 30 30 30 30 30 30 30 30 30 30 0d bf"
+    },
+    {
+      "index": 581,
+      "receivedAt": "2026-10-22T07:32:04.672668+00:00",
+      "displayWeight": "0.040",
+      "stable": false,
+      "statusB": 56,
+      "rawHex": "02 2d 38 20 30 30 30 30 34 30 30 30 30 30 30 30 0d cb"
+    },
+    {
+      "index": 597,
+      "receivedAt": "2026-10-22T07:32:07.874268+00:00",
+      "displayWeight": "1.530",
+      "stable": true,
+      "statusB": 48,
+      "rawHex": "02 2d 30 20 30 30 31 35 33 30 30 30 30 30 30 30 0d c8"
+    },
+    {
+      "index": 643,
+      "receivedAt": "2026-10-22T07:32:17.079583+00:00",
+      "displayWeight": "1.520",
+      "stable": false,
+      "statusB": 56,
+      "rawHex": "02 2d 38 20 30 30 31 35 32 30 30 30 30 30 30 30 0d cf"
+    },
+    {
+      "index": 665,
+      "receivedAt": "2026-10-22T07:32:21.481820+00:00",
+      "displayWeight": "0.000",
+      "stable": true,
+      "statusB": 48,
+      "rawHex": "02 2d 30 20 30 30 30 30 30 30 30 30 30 30 30 30 0d bf"
+    }
+  ],
+  "mostCommonStableNonzeroDecodedWeights": [
+    [
+      "1.550",
+      192
+    ],
+    [
+      "1.480",
+      102
+    ],
+    [
+      "1.560",
+      18
+    ],
+    [
+      "1.540",
+      11
+    ],
+    [
+      "1.490",
+      4
+    ],
+    [
+      "1.530",
+      3
+    ],
+    [
+      "0.010",
+      1
+    ],
+    [
+      "0.020",
+      1
+    ]
+  ],
+  "maximumWeightFrame": {
+    "receivedAt": "2026-10-22T07:30:45.629732+00:00",
+    "index": 186,
+    "rawHex": "02 2d 38 20 30 30 31 35 36 30 30 30 30 30 30 30 0d d3",
+    "statusA": 45,
+    "statusB": 56,
+    "statusC": 32,
+    "displayWeight": "1.560",
+    "tare": "0.000",
+    "unitFlag": "kg",
+    "weightType": "gross",
+    "negative": false,
+    "dynamic": true,
+    "stable": false,
+    "overloadOrBelowZero": false,
+    "checksumByte": 211,
+    "candidateSumNoCR": 211,
+    "candidateMatches": true,
+    "checksumStatus": "unconfirmed_algorithm"
+  },
+  "firstNonzeroFrame": {
+    "receivedAt": "2026-10-22T07:30:42.828033+00:00",
+    "index": 172,
+    "rawHex": "02 2d 30 20 30 30 30 30 31 30 30 30 30 30 30 30 0d c0",
+    "statusA": 45,
+    "statusB": 48,
+    "statusC": 32,
+    "displayWeight": "0.010",
+    "tare": "0.000",
+    "unitFlag": "kg",
+    "weightType": "gross",
+    "negative": false,
+    "dynamic": false,
+    "stable": true,
+    "overloadOrBelowZero": false,
+    "checksumByte": 192,
+    "candidateSumNoCR": 192,
+    "candidateMatches": true,
+    "checksumStatus": "unconfirmed_algorithm"
+  },
+  "uartDelta": {
+    "rx": 15624,
+    "tx": 0,
+    "frame": 0,
+    "overrun": 0,
+    "parity": 0
+  },
+  "rawSha256": "911c2231b35436751d7258ceda2fe0bcb2d9e684101baf06d42337a4b5f4eff5",
+  "interpretationCaution": "现场确认本机数值实际按吨表达，B bit4 置位的文档 kg 含义与现场不一致。保留原始标志，以明确现场配置 t 解释；其他设备不得自动套用。",
+  "siteConfirmation": {
+    "source": "现场用户确认",
+    "vehicle": "小轿车",
+    "confirmedWeightUnit": "t",
+    "confirmedStableWeights": [
+      "1.55",
+      "1.48"
+    ],
+    "userStatement": "1.55和1.48 实际是吨。开的小轿车",
+    "mapping": "按小数位置解码的数值直接以吨解释；不根据文档 kg 标志再次除以 1000",
+    "scope": "仅限本次已对照的现场仪表；其他型号或固件另行确认"
+  },
+  "checksumConclusion": "本机本批868帧均符合 sum(frame[:16]) & 0xff，覆盖零值、正值毛重和动态/非动态；负值、非零皮重、净重及其他固件未覆盖。"
+}

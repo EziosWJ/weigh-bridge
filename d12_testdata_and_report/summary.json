@@ -1,0 +1,29 @@
+{
+  "endedAt": "2026-10-22T07:33:02.126087+00:00",
+  "reason": "SystemExit: signal 15",
+  "durationSeconds": 173.691,
+  "bytes": 15624,
+  "frames": 868,
+  "discardedBytes": 0,
+  "uniqueWeights": 52,
+  "states": [
+    [
+      false,
+      false,
+      false
+    ],
+    [
+      true,
+      false,
+      false
+    ]
+  ],
+  "candidateMatches": 868,
+  "uartEnd": {
+    "rx": 16123,
+    "tx": 39,
+    "frame": 0,
+    "overrun": 0,
+    "parity": 0
+  }
+}

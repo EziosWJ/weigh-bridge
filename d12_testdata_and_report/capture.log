@@ -1,0 +1,20 @@
+READY /tmp/weighbridge-d12-capture-20261022-153008-607c67
+{"at": "2026-10-22T07:30:18.599459+00:00", "bytes": 908, "frames": 50, "uniqueWeights": 1, "states": [[false, false, false]], "candidateMatches": 50}
+{"at": "2026-10-22T07:30:28.604745+00:00", "bytes": 1808, "frames": 100, "uniqueWeights": 1, "states": [[false, false, false]], "candidateMatches": 100}
+{"at": "2026-10-22T07:30:38.610434+00:00", "bytes": 2708, "frames": 150, "uniqueWeights": 1, "states": [[false, false, false]], "candidateMatches": 150}
+{"at": "2026-10-22T07:30:48.615381+00:00", "bytes": 3608, "frames": 200, "uniqueWeights": 16, "states": [[false, false, false], [true, false, false]], "candidateMatches": 200}
+{"at": "2026-10-22T07:30:58.620984+00:00", "bytes": 4508, "frames": 250, "uniqueWeights": 16, "states": [[false, false, false], [true, false, false]], "candidateMatches": 250}
+{"at": "2026-10-22T07:31:08.626474+00:00", "bytes": 5408, "frames": 300, "uniqueWeights": 19, "states": [[false, false, false], [true, false, false]], "candidateMatches": 300}
+{"at": "2026-10-22T07:31:18.632075+00:00", "bytes": 6308, "frames": 350, "uniqueWeights": 19, "states": [[false, false, false], [true, false, false]], "candidateMatches": 350}
+{"at": "2026-10-22T07:31:28.637587+00:00", "bytes": 7208, "frames": 400, "uniqueWeights": 20, "states": [[false, false, false], [true, false, false]], "candidateMatches": 400}
+{"at": "2026-10-22T07:31:38.642749+00:00", "bytes": 8108, "frames": 450, "uniqueWeights": 20, "states": [[false, false, false], [true, false, false]], "candidateMatches": 450}
+{"at": "2026-10-22T07:31:48.648199+00:00", "bytes": 9008, "frames": 500, "uniqueWeights": 30, "states": [[false, false, false], [true, false, false]], "candidateMatches": 500}
+{"at": "2026-10-22T07:31:58.653618+00:00", "bytes": 9908, "frames": 550, "uniqueWeights": 30, "states": [[false, false, false], [true, false, false]], "candidateMatches": 550}
+{"at": "2026-10-22T07:32:08.659281+00:00", "bytes": 10808, "frames": 600, "uniqueWeights": 38, "states": [[false, false, false], [true, false, false]], "candidateMatches": 600}
+{"at": "2026-10-22T07:32:18.664537+00:00", "bytes": 11708, "frames": 650, "uniqueWeights": 45, "states": [[false, false, false], [true, false, false]], "candidateMatches": 650}
+{"at": "2026-10-22T07:32:28.669928+00:00", "bytes": 12608, "frames": 700, "uniqueWeights": 52, "states": [[false, false, false], [true, false, false]], "candidateMatches": 700}
+{"at": "2026-10-22T07:32:38.675410+00:00", "bytes": 13508, "frames": 750, "uniqueWeights": 52, "states": [[false, false, false], [true, false, false]], "candidateMatches": 750}
+{"at": "2026-10-22T07:32:48.680807+00:00", "bytes": 14408, "frames": 800, "uniqueWeights": 52, "states": [[false, false, false], [true, false, false]], "candidateMatches": 800}
+{"at": "2026-10-22T07:32:58.686251+00:00", "bytes": 15308, "frames": 850, "uniqueWeights": 52, "states": [[false, false, false], [true, false, false]], "candidateMatches": 850}
+STOP SystemExit: signal 15
+FINISHED {"endedAt": "2026-10-22T07:33:02.126087+00:00", "reason": "SystemExit: signal 15", "durationSeconds": 173.691, "bytes": 15624, "frames": 868, "discardedBytes": 0, "uniqueWeights": 52, "states": [[false, false, false], [true, false, false]], "candidateMatches": 868, "uartEnd": {"rx": 16123, "tx": 39, "frame": 0, "overrun": 0, "parity": 0}}
