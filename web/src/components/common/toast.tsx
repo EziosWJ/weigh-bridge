@@ -85,7 +85,7 @@ function ToastViewport({
 
   return createPortal(
     <div
-      className="fixed right-space-4 top-space-4 z-50 flex w-[min(360px,calc(100vw-32px))] flex-col gap-space-2"
+      className="fixed right-space-4 top-32 z-50 flex w-[min(360px,calc(100vw-32px))] flex-col gap-space-2 sm:top-20"
       role="region"
       aria-label="消息通知"
     >

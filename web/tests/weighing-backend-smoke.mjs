@@ -293,9 +293,10 @@ try {
   const reopenDialog = page.getByRole('dialog', { name: '关联更正重开', exact: true });
   await reopenDialog.locator('#final-gross').fill('31');
   await reopenDialog.locator('#final-tare').fill('11');
-  await reopenDialog.getByRole('checkbox', { name: /已核验本次采用的两磅依据仍有效/ }).check();
   await reopenDialog.locator('#ticket-operation-reason').fill('人工最终值更正');
   await reopenDialog.getByRole('button', { name: '确认保存', exact: true }).click();
+  const basisDialog = page.getByRole('dialog', { name: '确认两磅依据有效', exact: true });
+  await basisDialog.getByRole('button', { name: '确认保存', exact: true }).click();
   await page.waitForURL(url => url.pathname.startsWith('/weighing/tickets/') && !url.pathname.endsWith(`/${inboundTicket.id}`));
   const versions = (await call(`/api/weighing/tickets?taskId=${inboundTask.id}&pageSize=500`)).records;
   assert.equal(versions.length, 2);

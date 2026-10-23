@@ -7,6 +7,7 @@ import { DetailItem } from '@/components/common/detail-item';
 import { PageHeader } from '@/components/common/page-header';
 import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/common/toast-store';
 import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogBody, DialogFooter } from '@/components/ui/dialog';
 import { PlateInput } from './plate-input';
 import { normalizePlate, plateError } from '@/lib/weighing/plate';
@@ -53,6 +54,9 @@ function WorkbenchContent() {
   const [plate, setPlate] = useState(linkedTask?.plate ?? data.draft.plate);
   const [searchedPlate, setSearchedPlate] = useState(normalizeLegacy(linkedTask?.plate ?? (data.firstRequests[data.draftRequestId] && !draftTask ? '' : data.draftPlateEvidence?.confirmedPlate ?? '')));
   const [feedback, setFeedback] = useState('');
+  const [lookingUp, setLookingUp] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reviewError, setReviewError] = useState('');
   const [takeoverReason, setTakeoverReason] = useState('');
   const [cameraSize, setCameraSize] = useState<CameraSize>('standard');
   const [review, setReview] = useState<{ data: WeighingState; title: string; value: WeighingReviewValue } | null>(null);
@@ -100,67 +104,160 @@ function WorkbenchContent() {
   }, [success]);
   const phaseLabel = awaitingResult ? '提交待核实' : successfulTask ? '办理完成' : !located ? '等待查找车辆' : stage === 'second' ? '回磅' : '首磅';
 
-  async function run(command: WeighingCommand, message = '', expected?: WeighingState) {
-    setReview(null);
+  async function run(command: WeighingCommand, message = '', expected?: WeighingState, errorTitle = '') {
     try {
       await dispatch(command, expected);
       setFeedback(message);
       return true;
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : '操作未完成，请核对输入和设备状态');
+      const text = error instanceof Error ? error.message : '操作未完成，请核对输入和设备状态';
+      setFeedback(text);
+      if (errorTitle) toast.error({ title: errorTitle, description: text, duration: 5000 });
       return false;
     }
   }
 
+  function warn(title: string, description?: string) {
+    setFeedback(description ? `${title}：${description}` : title);
+    toast.warning({ title, description, duration: 4500 });
+  }
+
   async function lookup(event: FormEvent) {
     event.preventDefault();
+    if (lookingUp) return;
     const normalized = normalizeLegacy(plate);
-    if (!normalized) { setFeedback('请先填写车牌'); return; }
+    if (!normalized) {
+      warn('请先填写车牌', '输入普通或新能源车牌后再查找运输。');
+      plateInput.current?.focus();
+      return;
+    }
     const legacy = data.tasks.some(task => task.plate === normalized) || data.tickets.some(ticket => ticket.plate === normalized);
-    if (!legacy && plateError(normalized)) { setFeedback(plateError(normalized)); return; }
-    if (data.pending) { setFeedback('上次提交结果待核实，请先查询原结果'); return; }
-    let existing;
-    try { existing = await useWeighingStore.getState().locate(normalized); } catch (error) { setFeedback(error instanceof Error ? error.message : '服务端任务查找失败'); return; }
-    setPlate(normalized); setSuccess(null); setReview(null); setBusinessTab('basic');
-    if (data.firstRequests[data.draftRequestId] && !existing && !await run({ type: 'clearDraft' })) return;
-    if (!await run({ type: 'draft', patch: { plate: normalized } })) return;
-    const evidence: PlateEvidence = { source: recognition?.candidate ? 'agent' : 'manual', scenePlate: recognition?.scenePlate, candidate: recognition?.candidate, confirmedPlate: normalized, at: new Date().toISOString() };
-    if (!await run({ type: 'verifyPlate', evidence })) return;
-    setSearchedPlate(normalized); editing.current = true;
-    if (existing) {
-      setParams({ task: existing.id });
-      setFeedback('');
-    } else {
-      setParams({});
+    if (!legacy && plateError(normalized)) {
+      warn('车牌格式不正确', plateError(normalized));
+      plateInput.current?.focus();
+      return;
+    }
+    if (data.pending) {
+      warn('上次提交结果待核实', '请先查询原结果，避免重复称重或出单。');
+      return;
+    }
+    setLookingUp(true);
+    try {
+      let existing;
+      try {
+        existing = await useWeighingStore.getState().locate(normalized);
+      } catch (error) {
+        const text = error instanceof Error ? error.message : '服务端任务查找失败';
+        setFeedback(text);
+        toast.error({ title: '查找运输失败', description: text, duration: 5000 });
+        return;
+      }
+      setPlate(normalized); setSuccess(null); setReview(null); setBusinessTab('basic');
+      if (data.firstRequests[data.draftRequestId] && !existing && !await run({ type: 'clearDraft' }, '', undefined, '车牌核对失败')) return;
+      if (!await run({ type: 'draft', patch: { plate: normalized } }, '', undefined, '车牌核对失败')) return;
+      const evidence: PlateEvidence = { source: recognition?.candidate ? 'agent' : 'manual', scenePlate: recognition?.scenePlate, candidate: recognition?.candidate, confirmedPlate: normalized, at: new Date().toISOString() };
+      if (!await run({ type: 'verifyPlate', evidence }, '', undefined, '车牌核对失败')) return;
+      setSearchedPlate(normalized); editing.current = true;
+      if (existing) {
+        setParams({ task: existing.id });
+        setFeedback(`已找到运输任务 ${existing.taskNo}，请核对本趟资料。`);
+        toast.success({ title: '已找到运输任务', description: `${existing.taskNo} · ${existing.plate}` });
+      } else {
+        setParams({});
+        setFeedback('未找到已有运输任务，请录入本趟资料。');
+        toast.success({ title: '车牌已核对', description: '暂无历史任务，请继续录入本趟资料。' });
+      }
+    } finally {
+      setLookingUp(false);
     }
   }
 
+  async function capture(repeat = false) {
+    const ok = await run({
+      type: 'capture',
+      taskId: selected?.id,
+      plate: summaryPlate,
+      plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() },
+    }, '', undefined, repeat ? '重新采集失败' : '采集失败');
+    if (ok) toast.success({
+      title: repeat ? '已重新采集' : '重量已采集',
+      description: '请核对重量与现场图片后继续确认。',
+    });
+  }
+
   async function confirm(reviewed: WeighingState, finalWeights: FinalWeightInput) {
-    setReview(null);
-    if (reviewed !== useWeighingStore.getState().data) { setFeedback('数据已变化，请重新采集并核对。'); return; }
+    if (reviewed !== useWeighingStore.getState().data) {
+      setReview(null);
+      setReviewError('');
+      warn('数据已变化', '请重新采集并核对后再提交。');
+      return;
+    }
     const checked = true;
     const command: WeighingCommand = selected
       ? { type: 'confirm', taskId: selected.id, stage, checked, finalWeights }
       : { type: 'firstWeigh', input: data.draft, checked, requestId: data.draftRequestId };
-    if (!await run(command, '', reviewed)) return;
+    setReviewError('');
+    setSubmitting(true);
+    try {
+      await dispatch(command, reviewed);
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '称重保存失败，请核对输入和设备状态';
+      const pending = useWeighingStore.getState().data.pending;
+      if (pending) {
+        // A network/server failure can leave the request in an unknown state.
+        // Close the review so the operator can reach "查询原结果" instead of
+        // retrying a submission that the store will reject as pending.
+        setReview(null);
+        setReviewError('');
+        setFeedback('');
+        toast.warning({ title: '提交结果待核实', description: '保存结果未知，请先查询原结果，避免重复称重或出单。', duration: 6000 });
+        return;
+      }
+      setFeedback(text);
+      setReviewError(text);
+      toast.error({ title: '称重保存失败', description: text, duration: 5000 });
+      return;
+    } finally {
+      setSubmitting(false);
+    }
     const next = useWeighingStore.getState().data;
     const taskId = selected?.id ?? next.firstRequests[data.draftRequestId];
+    setReview(null);
+    setReviewError('');
     if (taskId) setParams({ task: taskId });
     if (next.pending) {
       setFeedback('');
+      toast.warning({ title: '提交结果待核实', description: '请求已发出但结果未知，请先查询原结果，避免重复称重或出单。', duration: 6000 });
     } else if (taskId) {
       setSuccess({ taskId, stage }); setRecognition(null); setRecognitionHint('');
       setFeedback('');
+      const savedTicket = next.tickets.find(item => item.taskId === taskId && item.status === 'valid');
+      toast.success({
+        title: stage === 'first' ? '首磅已保存' : '回磅已保存',
+        description: savedTicket ? `本趟净重 ${formatWeight(savedTicket.net)}，单据已生成。` : '首次称重已保存，装卸完成后按车牌办理回磅。',
+      });
+    } else {
+      setFeedback('称重已提交，请查看当前状态。');
+      toast.success('称重已提交');
     }
   }
 
   async function resolve() {
     const pending = data.pending;
-    if (!pending || !await run({ type: 'resolveSubmission' })) return;
+    if (!pending) return;
+    try {
+      await dispatch({ type: 'resolveSubmission' });
+    } catch (error) {
+      const text = error instanceof Error ? error.message : '查询原结果失败';
+      setFeedback(text);
+      toast.error({ title: '查询原结果失败', description: '请稍后重试；不要新建请求重复办理。', duration: 5000 });
+      return;
+    }
     const next = useWeighingStore.getState().data;
     const resolved = useWeighingStore.getState().lastResolution;
     const taskId = resolved?.taskId || pending.taskId || (pending.requestId ? next.firstRequests[pending.requestId] : '');
     if (pending.operation) {
+      toast.success({ title: '已查询原结果', description: resolved?.committed ? '沿用原提交结果，无需重复办理。' : '未查到成功结果，请按页面指引继续。' });
       const current = (pending.operation === 'print' || (pending.operation === 'reopen' && resolved?.committed)) ? next.tickets.find(ticket => ticket.taskId === taskId && ticket.status === 'valid') : undefined;
       navigate(current ? `/weighing/tickets/${encodeURIComponent(current.id)}` : `/weighing/tasks/${encodeURIComponent(taskId)}`);
       return;
@@ -169,26 +266,43 @@ function WorkbenchContent() {
       setParams({ task: taskId });
       setSuccess({ taskId, stage: pending.stage });
       setFeedback('已查询到原成功结果，沿用原记录。');
+      toast.success({ title: '已查询到原成功结果', description: '沿用原记录，无需重复提交。' });
     } else {
       setSuccess(null);
       setFeedback('此前提交未成功，草稿已保留。请重新采集并人工核对后确认。');
+      toast.warning({ title: '原提交未成功', description: '草稿已保留，请重新采集并核对后提交。', duration: 5500 });
     }
   }
 
   async function retry() {
     const pending = data.pending;
-    if (!pending || !await run({ type: 'retrySubmission' })) return;
+    if (!pending || !await run({ type: 'retrySubmission' }, '', undefined, '重试失败')) return;
     const result=useWeighingStore.getState().lastResolution;
-    if (!result?.committed || !result.taskId) return;
-    if (pending.operation) { navigate(pending.operation==='print' ? `/weighing/tickets/${useWeighingStore.getState().data.tickets.find(t=>t.taskId===result.taskId&&t.status==='valid')?.id}` : `/weighing/tasks/${result.taskId}`);return; }
+    if (!result?.committed || !result.taskId) {
+      toast.warning({ title: '仍未确认成功', description: '请勿重复提交，按页面提示继续核实原请求。', duration: 5500 });
+      return;
+    }
+    if (pending.operation) {
+      toast.success({ title: '已按原请求恢复', description: '沿用服务端记录，无需重复办理。' });
+      navigate(pending.operation==='print' ? `/weighing/tickets/${useWeighingStore.getState().data.tickets.find(t=>t.taskId===result.taskId&&t.status==='valid')?.id}` : `/weighing/tasks/${result.taskId}`);
+      return;
+    }
     setParams({task:result.taskId});setSuccess({taskId:result.taskId,stage:pending.stage});setFeedback('已按原请求恢复，沿用服务端记录。');
+    toast.success({ title: '已按原请求恢复', description: '沿用服务端记录，无需重复称重。' });
   }
 
   async function nextVehicle() {
-    if (!await run({ type: 'clearDraft' })) return;
+    if (!await run({ type: 'clearDraft' }, '', undefined, '结束当前车辆失败')) return;
     setRecognition(null); setRecognitionHint(''); editing.current = false;
     setParams({}); setPlate(''); setSearchedPlate(''); setSuccess(null);
     requestAnimationFrame(() => plateInput.current?.focus());
+    toast.success('已结束当前车辆，可继续办理下一辆。');
+  }
+
+  async function takeover() {
+    if (!await run({ type: 'takeover', reason: takeoverReason }, '操作员已接管，记录已保留。', undefined, '接管失败')) return;
+    setTakeoverReason('');
+    toast.success({ title: '操作员已接管', description: '当前地磅已由本会话接管。' });
   }
 
   async function changePlate(value: string) {
@@ -248,7 +362,7 @@ function WorkbenchContent() {
           <form className="flex flex-wrap items-center gap-3" onSubmit={lookup}>
             <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span></label>
             <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} onChange={changePlate} />
-            <Button type="submit" size="lg" variant="primary" disabled={awaitingResult}>核对车牌并查找运输</Button>
+            <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在查找…' : '核对车牌并查找运输'}</Button>
           </form>
           <div className="workbench-phase" aria-label="当前作业状态" aria-live="polite"><strong>{phaseLabel}</strong>{hasWeighingContext && <span>{directionLabels[summaryDirection]}</span>}</div>
           <p role="status" className={`plate-recognition mt-3 text-sm ${recognitionHint ? 'text-warning' : 'text-text-secondary'}`}>{recognitionHint ? <><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{recognitionHint}</> : located ? '车牌已人工核对；请继续核对现场车辆。' : '等待识别候选，可手工录入普通或新能源车牌后核对。'}</p>
@@ -275,11 +389,11 @@ function WorkbenchContent() {
           <div className="space-y-3" aria-label="当前称重操作">
             {awaitingResult ? <><h2 className="font-semibold text-warning">提交结果待核实</h2><p className="text-sm text-text-secondary">先查询原结果，避免重复称重或出单。</p><><Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={resolve}>查询上次提交结果</Button><Button size="lg" className="w-full" disabled={busy} onClick={retry}>按原请求重试</Button></></>
             : successfulTask ? <><h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成' : '回磅已完成'}</h2><p className="text-sm text-text-secondary">{ticket ? `本趟净重 ${formatWeight(ticket.net)}` : '已保存首次称重，装卸后按车牌办理回磅。'}</p><Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button><div className="flex flex-wrap gap-3 text-sm"><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tasks/${successfulTask.id}`}>查看任务详情</Link>{ticket && <><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link></>}</div>{ticket && <TicketPrintActions ticketId={ticket.id} />}</>
-            : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : '请等待设备就绪后继续'}</span><Button size="lg" className="w-full" disabled>采集重量</Button>{data.owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <div className="space-y-2"><label htmlFor="takeover-reason" className="text-sm">接管原因</label><input id="takeover-reason" className="w-full rounded-control border border-border px-3 py-2" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /><Button disabled={!takeoverReason.trim() || busy} onClick={() => run({type:'takeover',reason:takeoverReason}, '操作员已接管，记录已保留。')}>接管操作权</Button></div>}</>
+            : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : '请等待设备就绪后继续'}</span><Button size="lg" className="w-full" disabled>采集重量</Button>{data.owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <div className="space-y-2"><label htmlFor="takeover-reason" className="text-sm">接管原因</label><input id="takeover-reason" className="w-full rounded-control border border-border px-3 py-2" placeholder="请输入接管原因，便于后续追溯" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /><Button disabled={!takeoverReason.trim() || busy} onClick={() => void takeover()}>接管操作权</Button></div>}</>
             : !located ? <><p className="text-sm text-text-secondary">先核对车牌并查找运输，再为当前车辆采集。</p><Button size="lg" className="w-full" disabled>采集重量</Button></>
             : !canWeigh ? <><p className="text-sm text-warning">当前任务不能继续称重，请查看任务详情。</p><Button size="lg" className="w-full" disabled>当前不可称重</Button></>
-            : !sampleReady ? <><p className="text-sm text-text-secondary">车辆完全上磅、重量稳定后即可采集，资料可随后补齐。</p><Button size="lg" variant="primary" className="w-full" disabled={busy} aria-busy={busy} onClick={() => run({ type: 'capture', taskId: selected?.id, plate: summaryPlate, plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() } })}>{busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <Scale className="h-5 w-5" aria-hidden />}{busy ? '正在采集…' : '采集重量'}</Button></>
-            : <><p className="text-sm text-text-secondary">{requiredHint ? `重量已采集，确认前${requiredHint}。` : '重量与图片已就绪，请集中核对后确认。'}</p><div className="flex flex-wrap gap-2"><Button size="lg" variant="primary" className="flex-1" onClick={openReview}><ClipboardCheck className="h-4 w-4" aria-hidden />{requiredHint ? '补齐资料后核对' : `开始核对${stage === 'first' ? '首磅' : '回磅'}（${kind}）`}</Button><Button size="lg" disabled={busy} aria-busy={busy} onClick={() => run({ type: 'capture', taskId: selected?.id, plate: summaryPlate, plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() } })}>重新采集重量</Button></div></>}
+            : !sampleReady ? <><p className="text-sm text-text-secondary">车辆完全上磅、重量稳定后即可采集，资料可随后补齐。</p><Button size="lg" variant="primary" className="w-full" disabled={busy} aria-busy={busy} onClick={() => void capture()}>{busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <Scale className="h-5 w-5" aria-hidden />}{busy ? '正在采集…' : '采集重量'}</Button></>
+            : <><p className="text-sm text-text-secondary">{requiredHint ? `重量已采集，确认前${requiredHint}。` : '重量与图片已就绪，请集中核对后确认。'}</p><div className="flex flex-wrap gap-2"><Button size="lg" variant="primary" className="flex-1" onClick={openReview}><ClipboardCheck className="h-4 w-4" aria-hidden />{requiredHint ? '补齐资料后核对' : `开始核对${stage === 'first' ? '首磅' : '回磅'}（${kind}）`}</Button><Button size="lg" disabled={busy} aria-busy={busy} onClick={() => void capture(true)}>重新采集重量</Button></div></>}
           </div>
         </ContentCard>
       </div>
@@ -315,8 +429,14 @@ function WorkbenchContent() {
       title={review.title}
       invalidReason={review.data !== data || !canWeigh || !!blocked || !!requiredHint || !sampleReady ? syncNotice || blocked || '数据或采集条件已变化，请返回重新采集并核对。' : ''}
       value={review.value}
-      onCancel={() => setReview(null)}
-      onMismatch={() => { setReview(null); setFeedback(selected ? '请核对本趟车辆、重量与图片；业务资料有误可前往任务详情办理纠错。' : '请修改本趟资料后重新核对；车牌或现场情况有变化时重新采集。'); }}
+      submitting={submitting}
+      submitError={reviewError}
+      onCancel={() => { setReview(null); setReviewError(''); }}
+      onMismatch={() => {
+        setReview(null); setReviewError('');
+        setFeedback(selected ? '请核对本趟车辆、重量与图片；业务资料有误可前往任务详情办理纠错。' : '请修改本趟资料后重新核对；车牌或现场情况有变化时重新采集。');
+        toast.info({ title: '已返回修改', description: '调整后请重新打开核对并确认。' });
+      }}
       onConfirm={finalWeights => confirm(review.data, finalWeights)}
     />}
   </div>;

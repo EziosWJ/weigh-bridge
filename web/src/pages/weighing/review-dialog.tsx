@@ -25,10 +25,12 @@ export interface WeighingReviewValue {
 }
 
 /** 集中核对保留本次快照；失效后保留内容供查看，同时禁止提交。 */
-export function WeighingReviewDialog({ value, title, invalidReason = '', onCancel, onMismatch, onConfirm }: {
+export function WeighingReviewDialog({ value, title, invalidReason = '', submitting = false, submitError = '', onCancel, onMismatch, onConfirm }: {
   value: WeighingReviewValue;
   title: string;
   invalidReason?: string;
+  submitting?: boolean;
+  submitError?: string;
   onCancel: () => void;
   onMismatch: () => void;
   onConfirm: (finalWeights: FinalWeightInput) => void;
@@ -44,12 +46,12 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', onCance
   const calculatedDeduction = value.original && calculatedWeights ? weightDeduction(value.original, calculatedWeights) : undefined;
   const ready = !!value.capture && imageReady && !deductionError && !invalidReason;
 
-  return <Dialog open onOpenChange={open => { if (!open) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen} restoreFocus lockScroll closeOnOverlayClick={false}>
+  return <Dialog open onOpenChange={open => { if (!open && !submitting) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen && !submitting} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay />
     <DialogContent className="weighing-review flex max-h-[calc(100dvh-32px)] max-w-[1080px] flex-col">
       <DialogHeader className="shrink-0">
         <div className="min-w-0"><DialogTitle>核对{title}</DialogTitle><DialogDescription>请对照现场车辆核对以下信息，确认后保存本次称重。</DialogDescription></div>
-        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap"><StatusTag tone="warning">人工核对</StatusTag><DialogClose aria-label="关闭核对"><X className="h-4 w-4" aria-hidden /></DialogClose></div>
+        <div className="flex shrink-0 items-center gap-2 whitespace-nowrap"><StatusTag tone="warning">人工核对</StatusTag><DialogClose aria-label="关闭核对" disabled={submitting}><X className="h-4 w-4" aria-hidden /></DialogClose></div>
       </DialogHeader>
       <DialogBody className="grid items-start gap-6 md:grid-cols-[minmax(0,0.85fr)_minmax(0,1.4fr)]">
         <section aria-label="本趟运输核对依据" className="min-w-0 space-y-4">
@@ -83,6 +85,8 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', onCance
       <DialogFooter className="shrink-0 flex-wrap items-center justify-between">
         {invalidReason && <p role="alert" className="w-full text-sm text-warning">{invalidReason} 当前显示的是原核对内容，不能提交；关闭窗口后重新采集。</p>}
         {deductionError && <p role="alert" className="w-full text-xs text-error">无法出单：{deductionError}</p>}
+        {submitError && <p role="alert" className="w-full text-sm text-error">保存失败：{submitError}</p>}
+        {submitting && <p role="status" className="w-full text-sm text-text-secondary">正在保存称重，请勿关闭窗口…</p>}
         {!imageReady && <p className="w-full text-xs text-warning">请等待本次抓拍图片加载；加载失败时返回重新采集。</p>}
         {calculatedWeights && calculatedDeduction && <div className="w-full space-y-2" aria-live="polite">
           <div className="grid grid-cols-3 gap-3 rounded-control bg-neutral-background px-3 py-2 text-xs text-text-secondary">
@@ -92,8 +96,8 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', onCance
           </div>
           <p className="text-xs tabular-nums text-text-secondary">系统计算调整差额：毛重 {formatWeight(calculatedDeduction.grossDeduction)} · 皮重 {formatWeight(calculatedDeduction.tareDeduction)}</p>
         </div>}
-        <Button size="lg" onClick={invalidReason ? onCancel : onMismatch}>{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
-        <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!ready} onClick={() => { if (ready) onConfirm(finalInput); }}>{value.original ? '确认称重并出单' : `确认${title}`}</Button>
+        <Button size="lg" disabled={submitting} onClick={invalidReason ? onCancel : onMismatch}>{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
+        <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!ready || submitting} aria-busy={submitting} onClick={() => { if (ready && !submitting) onConfirm(finalInput); }}>{submitting ? '正在保存…' : value.original ? '确认称重并出单' : `确认${title}`}</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>;
