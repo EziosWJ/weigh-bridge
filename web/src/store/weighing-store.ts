@@ -111,15 +111,21 @@ async function send(request: PendingRequest, explicitRetry = false) {
     const result = await workflowApi.post<CommandResult>(request.path, request.body);
     await finishResult(result, request);
   } catch (error) {
-    if (useWeighingStore.getState().capabilities?.userId !== request.actorId) throw error;
-    if (error instanceof ApiError && error.type !== 'network' && (error.status ?? 0) < 500) {
+    // A deterministic rejection means the server did not apply the command.
+    // Clear the pending marker before surfacing the error, otherwise detail and
+    // list pages keep showing an "unverified submission" banner for a request
+    // that was simply rejected (for example an unconfirmed weigh basis).
+    const certain = error instanceof ApiError && error.type !== 'network' && error.type !== 'server';
+    if (certain) {
       if(explicitRetry){
         const original=await workflowApi.operation(request.requestId);
         if(original.status==='committed'&&original.result){await finishResult(original.result,request);return;}
         if(original.status!=='rejected')throw new Error(`原请求结果仍未确认：${error.message}。请保留原请求并查询，勿新建请求重复办理。`);
       }
 
-      pendingRequest = null; clearSample(); updateData({ pending: undefined, draftRequestId: crypto.randomUUID() }); persist();
+      pendingRequest = null;
+      if (useWeighingStore.getState().capabilities?.userId === request.actorId) clearSample();
+      updateData({ pending: undefined, draftRequestId: crypto.randomUUID() }); persist();
     }
     throw error;
   }

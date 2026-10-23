@@ -1,9 +1,8 @@
 import { useWeighingPage, useWeighingSummary, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireTicket } from '@/api/weighing-workflow';
 import { WorkbenchLink } from "@/components/common/workbench-link";
-import { plateError } from '@/lib/weighing/plate';
-import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useDeferredValue, useEffect, useState } from "react";
+import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { ContentCard } from "@/components/common/content-card";
 import { DataTable } from "@/components/common/data-table";
 import { DataTableCard } from "@/components/common/data-table-card";
@@ -20,19 +19,20 @@ import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
 import type { DataTableColumn } from "@/types";
-import { directionLabels, emptyTaskInput, printStatusLabels, type FinalWeightInput, type TaskInput, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
-import { BusinessFields, DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
+import { directionLabels, printStatusLabels, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
+import { DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
 import { BusinessSnapshot, WeighRecords } from "./record-info";
 import { TicketPrintActions } from "./ticket-print-actions";
 import { TicketSheet } from "./ticket-sheet";
+import { TicketReopenDialog } from "./ticket-reopen-dialog";
 
 import { originalWeights } from "@/lib/weighing/weights";
-import { WeightAdjustmentDetails, WeightDeductionFields } from "./deduction-fields";
+import { WeightAdjustmentDetails } from "./deduction-fields";
 import { formatWeight, needsAdjustmentReview } from "@/lib/weighing/weights";
 
 const linkClass = "text-primary hover:underline";
 type TicketOperation = "void" | "reopen";
-const operationTitles: Record<TicketOperation, string> = { void: "作废单据", reopen: "关联更正重开" };
+const operationTitles: Record<"void", string> = { void: "作废单据" };
 
 function TicketWeights({ ticket }: { ticket: WeighingTicket }) {
   const original = ticket.adjustment?.original ?? originalWeights(ticket.records);
@@ -48,9 +48,14 @@ export function WeighingTicketsPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [downloadError, setDownloadError] = useState('');
+  const [reopenTicketId, setReopenTicketId] = useState<string | null>(null);
   const result = useWeighingPage<WireTicket>('tickets', deferred, page, pageSize);
   const summary = useWeighingSummary('tickets', deferred, result.revision);
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
+  const canReopenTicket = (row: WireTicket) => row.status === 'void'
+    && capabilities?.nodeRole !== 'central'
+    && can('reopen')
+    && (capabilities?.sites.some(site => site.id === row.siteId && site.canOperate) ?? false);
   const download = (kind: string) => void downloadWeighingCsv(kind, filter).catch(error => setDownloadError(error.message));
   const columns: DataTableColumn<WireTicket>[] = [
     { title: '单号 / 车牌', key: 'ticket', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>{row.ticketNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
@@ -60,7 +65,7 @@ export function WeighingTicketsPage() {
     { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span> },
     { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag>{row.imagesComplete===false&&<span className="ml-2 text-warning">图片待同步</span>}<div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
     { title: '出单时间（北京）', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
-    { title: '操作', key: 'actions', width: 120, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{capabilities?.nodeRole!=='central'&&can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}</TableActions> },
+    { title: '操作', key: 'actions', width: 168, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{capabilities?.nodeRole!=='central'&&can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
   ];
   if (params.get('ticket')) return <Navigate replace to={`/weighing/tickets/${encodeURIComponent(params.get('ticket')!)}`} />;
   return <div className="weighing-list-page"><PageHeader title="最终单据" description="各版单据分别保留；按北京时间出单日期筛选。" /><DeviceBanner compact />
@@ -69,55 +74,43 @@ export function WeighingTicketsPage() {
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="单据" description={`筛选 ${result.total} 张；当前有效 ${summary.result?.taskCount ?? '—'} 趟，最终净重合计 ${summary.result?.net ?? '—'} 吨`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <><Button size="sm" onClick={() => download('tickets')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('tickets-summary')}>导出净重汇总 CSV</Button></>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="最终单据列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1304} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
-    </DataTableCard></div>;
+    </DataTableCard>
+    <TicketReopenDialog ticketId={reopenTicketId} onClose={() => setReopenTicketId(null)} />
+  </div>;
 }
 
 export function WeighingTicketDetailPage() {
   const { id } = useParams();
-  const navigate = useNavigate();
   const { data, dispatch, capabilities, loadTask, loadTicket } = useWeighingStore();
-  const [operation, setOperation] = useState<TicketOperation | null>(null);
-  const [input, setInput] = useState<TaskInput>(emptyTaskInput);
+  const [operation, setOperation] = useState<"void" | null>(null);
+  const [reopenOpen, setReopenOpen] = useState(false);
   const [reason, setReason] = useState("");
-  const [evidenceValid, setEvidenceValid] = useState(false);
-  const [finalWeights, setFinalWeights] = useState<FinalWeightInput>({ gross: 0, tare: 0 });
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const ticket = data.tickets.find((item) => item.id === id);
   const canOperate = capabilities?.nodeRole!=='central'&&!!capabilities?.permissionCodes.some(code => ["weighing:void","weighing:reopen","weighing:print","weighing:reprint"].includes(code));
   const canPrint = capabilities?.nodeRole!=='central' && (capabilities?.permissionCodes.includes("weighing:print") ?? false);
-  const task = data.tasks.find(item => item.id === ticket?.taskId);
-  const currentOriginal = task && originalWeights(task.records);
 
   useEffect(() => {
     if (!id) return;
     void (async () => { await loadTicket(id); const found=useWeighingStore.getState().data.tickets.find(t=>t.id===id);if(found) await loadTask(found.taskId); })().catch(failure=>setError(failure instanceof Error?failure.message:'详情加载失败'));
   }, [id, loadTicket, loadTask]);
   const can = (code: string) => (capabilities?.nodeRole!=='central'&&(code==='print'||!!capabilities?.sites.some(s=>s.id===ticket?.siteId&&s.canOperate)))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
-  const operationBasis = useRef(data);
 
   function startOperation(next: TicketOperation) {
     if (!ticket) return;
-    operationBasis.current = data;
-    setInput({ plate: ticket.plate, direction: ticket.direction, materialId: ticket.materialId, partyId: ticket.partyId, carrierId: ticket.carrierId ?? "", contactName: ticket.contactName ?? "", contactPhone: ticket.contactPhone ?? "", driver: ticket.driver, driverPhone: ticket.driverPhone ?? "", remark: ticket.remark });
-    const changed = task && JSON.stringify(task.records) !== JSON.stringify(ticket.records);
-    setFinalWeights({ gross: changed && currentOriginal ? currentOriginal.gross : ticket.gross, tare: changed && currentOriginal ? currentOriginal.tare : ticket.tare, reason: "" });
-    setReason(""); setEvidenceValid(false); setError(""); setOperation(next);
+    if (next === "reopen") {
+      setReopenOpen(true);
+      return;
+    }
+    setReason(""); setError(""); setOperation(next);
   }
 
   async function submitOperation() {
-    if (!ticket || !operation) return;
+    if (!ticket || operation !== "void") return;
     try {
-      if (operation === 'reopen' && input.plate !== ticket.plate && plateError(input.plate)) throw new Error(plateError(input.plate));
-      if (operation === "void") await dispatch({ type: "voidTicket", ticketId: ticket.id, reason });
-      if (operation === "reopen") await dispatch({ type: "reopenTicket", ticketId: ticket.id, input, reason, evidenceValid, finalWeights }, operationBasis.current);
+      await dispatch({ type: "voidTicket", ticketId: ticket.id, reason });
       setOperation(null); setNotice("操作已保存；原单据及其历史记录保留。");
-      if (operation === "reopen") {
-        const latest = useWeighingStore.getState().data;
-        if (latest.pending) { navigate(`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`); return; }
-        const reopened = latest.tickets.find((item) => item.previousId === ticket.id);
-        if (reopened) navigate(`/weighing/tickets/${encodeURIComponent(reopened.id)}`);
-      }
     } catch (failure) { setError(failure instanceof Error ? failure.message : "操作失败"); }
   }
 
@@ -150,11 +143,11 @@ export function WeighingTicketDetailPage() {
     <FormDialog open={!!operation} title={operation ? operationTitles[operation] : ""} onCancel={() => setOperation(null)} onSubmit={submitOperation} submitText="确认保存">
       <div className="space-y-space-4">
         {operation === "void" && <p className="text-error">作废保留原单及称重依据，不恢复任务待称重状态。更正业务信息或人工调整应在作废后关联重开。</p>}
-        {operation === "reopen" && <><p>对照原始称重录入更正后的最终毛皮重，系统计算调整差额；原单及采集依据保留，并关联原单，同任务最多一张有效单据。</p><BusinessFields value={input} onChange={setInput} lockDirection /><p className="text-sm">上版最终毛／皮／净重：{formatWeight(ticket.gross)} / {formatWeight(ticket.tare)} / {formatWeight(ticket.net)}</p><Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(ticket.taskId)}`}>需要实际单磅重称：前往原任务采集，完成后返回本单重开</Link>{currentOriginal && <WeightDeductionFields original={currentOriginal} value={finalWeights} onChange={setFinalWeights} />}<label className="flex items-center gap-space-2"><input type="checkbox" checked={evidenceValid} onChange={(event) => setEvidenceValid(event.target.checked)} />已核验本次采用的两磅依据仍有效（包含单磅重称时沿用的另一磅）</label></>}
         <Field label="操作原因 / 核实说明" htmlFor="ticket-operation-reason" required><Input id="ticket-operation-reason" required value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
         {error && <p role="alert" className="text-error">{error}</p>}
       </div>
     </FormDialog>
+    <TicketReopenDialog ticketId={reopenOpen ? ticket.id : null} onClose={() => setReopenOpen(false)} />
   </>;
 }
 
