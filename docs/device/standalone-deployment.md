@@ -46,6 +46,8 @@
 
 ## 摄像头与识别
 
+开发联调可使用已部署的双路 RTSP 模拟源，地址、维护命令和接入步骤见[开发备忘](camera-simulation-dev-memo.md)，复现过程见[部署博客](ffmpeg-rtsp-camera-simulation-blog.md)。模拟源截帧验证不代表 Agent 图片上传或真实摄像头已验收。
+
 Agent 的 `agent.env` 支持以下本地字段，维护页面不回显敏感 URL：
 
 | 字段 | 含义 |

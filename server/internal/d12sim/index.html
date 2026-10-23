@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>D12 仪表模拟器</title>
+  <style>
+    :root { font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2937; background: #f5f7fa; font-size: 14px; line-height: 1.6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 20px 24px; }
+    .header-inner { max-width: 1120px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    h1 { margin: 0; font-size: 24px; font-weight: 600; }
+    h2 { margin: 0 0 16px; font-size: 18px; font-weight: 600; }
+    p { margin: 8px 0; color: #4b5563; }
+    main { max-width: 1168px; margin: auto; padding: 24px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+    section { min-width: 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; }
+    .wide { grid-column: 1 / -1; }
+    .status { display: inline-block; padding: 4px 10px; border-radius: 6px; background: #f5f7fa; color: #4b5563; }
+    .status[data-tone="ok"] { color: #16a34a; }
+    .status[data-tone="warning"] { color: #d97706; }
+    .status[data-tone="error"] { color: #dc2626; }
+    .readout { font-size: 56px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.4; margin: 8px 0 16px; }
+    .readout small { font-size: 18px; font-weight: 400; color: #4b5563; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+    label { display: block; margin: 16px 0 6px; font-weight: 500; }
+    input, button { font: inherit; min-height: 36px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 12px; }
+    input { width: 100%; color: #1f2937; background: #fff; font-variant-numeric: tabular-nums; }
+    button { background: #fff; color: #1f2937; cursor: pointer; }
+    button:hover { background: #f5f7fa; }
+    button.primary { background: #1677ff; color: #fff; border-color: #1677ff; }
+    button.primary:hover { background: #155eef; }
+    button.danger { color: #dc2626; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+    hr { border: 0; border-top: 1px solid #e5e7eb; margin: 20px 0; }
+    dl { margin: 0; }
+    .detail { display: grid; grid-template-columns: 108px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+    .detail:last-child { border-bottom: 0; }
+    dt { color: #6b7280; }
+    dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+    code, pre { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; }
+    pre { margin: 8px 0 0; padding: 12px; background: #f5f7fa; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .frame { font-size: 16px; line-height: 1.8; }
+    .muted { color: #6b7280; font-size: 13px; }
+    #notice, #error { min-height: 22px; margin: 0; }
+    #error, #write-error { color: #dc2626; }
+    .feedback { grid-column: 1 / -1; }
+    summary { cursor: pointer; margin-top: 16px; }
+    @media (max-width: 720px) {
+      header { padding: 16px; }
+      .header-inner { align-items: flex-start; flex-direction: column; }
+      main { padding: 16px; gap: 16px; grid-template-columns: 1fr; }
+      section { padding: 16px; }
+      .readout { font-size: 44px; }
+      .detail { grid-template-columns: 96px 1fr; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div><h1>D12 仪表模拟器</h1><p>向虚拟串口持续输出仪表报文，供同机 Agent 联调。</p></div>
+      <span id="connection" class="status" role="status">正在连接控制台…</span>
+    </div>
+  </header>
+  <main>
+    <section aria-labelledby="instrument-title">
+      <h2 id="instrument-title">称重仪表</h2>
+      <div class="row"><span id="motion" class="status">等待状态</span><span id="transport" class="status">等待状态</span></div>
+      <div class="readout"><span id="weight">0</span> <small>吨</small></div>
+      <form id="weight-form">
+        <label for="target">目标重量（吨）</label>
+        <input id="target" name="weight" type="number" min="0" max="999.999" step="0.001" value="30" required>
+        <div class="row"><button class="primary" type="submit">设置稳定重量</button><button type="button" id="up">模拟上磅</button><button type="button" data-action="down">下磅归零</button></div>
+      </form>
+      <p class="muted">设置后立即稳定；模拟上磅会波动约 4 秒，再保持目标重量。</p>
+      <div class="row"><button data-action="unstable">强制失稳</button><button data-action="stable">恢复稳定</button></div>
+      <hr>
+      <h2>发送与校验</h2>
+      <div class="row"><button data-action="pause">暂停发送</button><button data-action="resume">恢复发送</button></div>
+      <p class="muted">暂停会保留重量和状态，让 Agent 自行判定数据过期。</p>
+      <div class="row"><button class="danger" data-action="bad_once">发送一个坏帧</button><button class="danger" data-action="bad_start">连续坏帧</button><button data-action="bad_stop">恢复正常校验</button></div>
+      <p id="checksum" role="status">正常校验</p>
+      <p class="muted">坏帧仅破坏校验字节。重量操作、发送暂停和校验故障分别控制。</p>
+    </section>
+    <section aria-labelledby="serial-title">
+      <h2 id="serial-title">虚拟串口</h2>
+      <dl>
+        <div class="detail"><dt>设备路径</dt><dd><code id="port">—</code></dd></div>
+        <div class="detail"><dt>读取端</dt><dd id="reader">等待状态</dd></div>
+        <div class="detail"><dt>协议参数</dt><dd>tF=05 / 9600 8N1 / 源单位 t</dd></div>
+        <div class="detail"><dt>发送间隔</dt><dd>200 ms</dd></div>
+        <div class="detail"><dt>目标重量</dt><dd id="target-weight">0 吨</dd></div>
+        <div class="detail"><dt>已发送</dt><dd><span id="sent">0</span> 帧，其中坏帧 <span id="bad-sent">0</span> 帧</dd></div>
+        <div class="detail"><dt>未送出</dt><dd><span id="skipped">0</span> 帧</dd></div>
+        <div class="detail"><dt>最近发送</dt><dd id="last-sent">尚未发送</dd></div>
+      </dl>
+      <p class="muted">读取端未打开时丢弃报文，不积压数据。页面显示模拟器输出，不代表 Agent 已接受该重量。</p>
+      <details open>
+        <summary>Agent 串口配置</summary>
+        <pre id="config">正在读取串口路径…</pre>
+        <p class="muted">写入实际使用的 agent.env，再按既有方式应用配置。模拟器重启后核对新路径；重启默认回到稳定零值。</p>
+      </details>
+    </section>
+    <div class="feedback"><p id="notice" role="status"></p><p id="error" role="alert"></p><p id="write-error" role="alert"></p></div>
+    <section class="wide" aria-labelledby="frame-title">
+      <h2 id="frame-title">最近发出的报文</h2>
+      <p id="frame-type">尚未发送报文</p>
+      <pre id="frame" class="frame">—</pre>
+      <p class="muted">共 18 字节：STX、状态字 A/B/C、六位重量、六位皮重、CR、CKS。状态字 B 的动态位控制失稳；皮重固定为零。</p>
+    </section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    let latest = null;
+    let pending = false;
+    let online = false;
+    let sequence = 0;
+    let polling = false;
+    const buttons = [...document.querySelectorAll('button')];
+    const labels = {
+      set_weight: '已设置稳定重量', up: '已开始模拟上磅', down: '已下磅归零',
+      unstable: '已强制失稳', stable: '已恢复稳定', pause: '已暂停发送', resume: '已恢复发送',
+      bad_once: '已安排一个坏帧，读取端打开后随下一帧发送', bad_start: '已开启连续坏帧', bad_stop: '已恢复正常校验'
+    };
+    function updateButtons() {
+      for (const b of buttons) {
+        const a = b.dataset.action;
+        b.disabled = pending || !online || !latest || latest.closed;
+        if (!b.disabled) {
+          if (a === 'pause') b.disabled = latest.paused;
+          if (a === 'resume') b.disabled = !latest.paused;
+          if (a === 'bad_once') b.disabled = latest.paused || latest.continuousBad || latest.badOncePending;
+          if (a === 'bad_start') b.disabled = latest.continuousBad;
+          if (a === 'bad_stop') b.disabled = !latest.continuousBad && !latest.badOncePending;
+        }
+      }
+    }
+    function render(s) {
+      latest = s;
+      $('connection').textContent = '控制台在线';
+      $('connection').dataset.tone = 'ok';
+      $('weight').textContent = s.weight;
+      $('motion').textContent = s.dynamic ? (s.ramping ? '上磅波动中' : '动态 / 未稳定') : '稳定';
+      $('motion').dataset.tone = s.dynamic ? 'warning' : 'ok';
+      $('transport').textContent = s.paused ? '已暂停发送' : '持续发送';
+      $('transport').dataset.tone = s.paused ? 'warning' : 'ok';
+      $('checksum').textContent = s.continuousBad ? '连续坏帧已开启' : s.badOncePending ? '一个坏帧等待发送' : '正常校验';
+      $('port').textContent = s.port;
+      $('reader').textContent = s.readerPresent ? '已打开' : '未打开，等待 Agent';
+      $('target-weight').textContent = s.targetWeight + ' 吨';
+      $('sent').textContent = s.framesSent;
+      $('bad-sent').textContent = s.badFramesSent;
+      $('skipped').textContent = s.framesSkipped;
+      $('last-sent').textContent = s.framesSent ? new Date(s.lastSentAt).toLocaleTimeString('zh-CN', { hour12: false }) : '尚未发送';
+      $('frame').textContent = s.lastFrame || '—';
+      $('frame-type').textContent = s.framesSent ? (s.lastFrameBad ? '错误校验帧' : '正常校验帧') : '尚未发送报文';
+      $('config').textContent = [
+        'WEIGHBRIDGE_SERIAL_ENABLED=true',
+        `WEIGHBRIDGE_SERIAL_PORT="${s.port}"`,
+        'WEIGHBRIDGE_SERIAL_BAUD=9600',
+        'WEIGHBRIDGE_SERIAL_PROTOCOL="keli-d12-tf05"',
+        'WEIGHBRIDGE_SERIAL_WEIGHT_UNIT="t"',
+        'WEIGHBRIDGE_SERIAL_STALE_MS=1000'
+      ].join('\n');
+      $('write-error').textContent = s.writeError ? '串口发送失败：' + s.writeError : '';
+      updateButtons();
+    }
+    async function refresh() {
+      if (polling || pending) return;
+      polling = true;
+      const request = ++sequence;
+      try {
+        const r = await fetch('/api/state', { signal: AbortSignal.timeout(3000) });
+        if (!r.ok) throw new Error('读取状态失败');
+        const s = await r.json();
+        if (request === sequence) { online = true; render(s); }
+      } catch (e) {
+        if (request === sequence) {
+          online = false;
+          $('connection').textContent = '控制台连接中断，正在重试';
+          $('connection').dataset.tone = 'error';
+          updateButtons();
+        }
+      } finally { polling = false; }
+    }
+    async function control(action, weight) {
+      if (pending) return;
+      pending = true;
+      const request = ++sequence;
+      updateButtons();
+      $('notice').textContent = '正在执行…';
+      $('error').textContent = '';
+      try {
+        const body = { action };
+        if (weight !== undefined) body.weight = weight;
+        const r = await fetch('/api/control', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body), signal: AbortSignal.timeout(3000)
+        });
+        if (!r.ok) throw new Error(await r.text());
+        const s = await r.json();
+        if (request === sequence) { online = true; render(s); }
+        $('notice').textContent = labels[action];
+      } catch (e) {
+        $('notice').textContent = '';
+        $('error').textContent = '操作未确认：' + e.message + '；请查看当前状态后再操作。';
+      } finally { pending = false; updateButtons(); }
+    }
+    $('weight-form').addEventListener('submit', event => {
+      event.preventDefault();
+      control('set_weight', $('target').value);
+    });
+    $('up').addEventListener('click', () => {
+      if ($('weight-form').reportValidity()) control('up', $('target').value);
+    });
+    for (const button of document.querySelectorAll('[data-action]')) {
+      button.addEventListener('click', () => control(button.dataset.action));
+    }
+    updateButtons();
+    refresh();
+    setInterval(refresh, 500);
+  </script>
+</body>
+</html>

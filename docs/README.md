@@ -11,6 +11,8 @@
 | 架构和既有设计 | [架构索引](architecture/README.md) |
 | 开发与运行 | [根 README](../README.md)、[开发指导](../CLAUDE.md)、[Server 说明](../server/README.md) |
 | 设备与契约 | [Agent 说明](../agent/README.md)、[协议 v1](../protocol/v1.md)、[D12 接入](device/keli-d12-agent-integration-guide.md) |
+| 模拟摄像头部署与接入 | [FFmpeg／RTSP 博客稿](device/ffmpeg-rtsp-camera-simulation-blog.md)、[开发维护备忘](device/camera-simulation-dev-memo.md) |
+| D12 虚拟串口与可控报文 | [模拟器使用说明](device/d12-simulator.md)、[交付及软件验证](requirements/d12-simulator-delivery.md) |
 
 原有初始化、通知与监控文档保留脚手架背景，其验收不代替地磅业务验收。adr/、server-monitoring-tickets/ 与 record/ 中历史 Issue 属于原仓库，保留来源身份；旧目录名不作为当前可执行路径。
 

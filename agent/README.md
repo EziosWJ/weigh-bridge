@@ -6,7 +6,34 @@
 
 D12 的现场依据、单位差异与验证清单见[RS232 现场实验记录／博客稿](../docs/device/keli-d12-rs232-blog.md)与[Agent 接入开发指导](../docs/device/keli-d12-agent-integration-guide.md)。驱动实现位于 `server/internal/agentscale`。本机 `tF=05` 共 868 帧带载样本验证了累加校验；现场确认数值单位为吨，因此显式配置源单位 `t`，不根据文档 kg 标志再次除以 1000。单位结论仅适用于已核对的现场仪表。
 
-## 本机启动
+## 本地启动真实 Agent
+
+首次使用可复制[开发配置示例](agent.env.example)，填写本地业务服务地址、匹配的身份／密钥、实际串口路径及需要的设备参数：
+
+```bash
+# 仅首次创建；不覆盖已有配置
+cp -n agent/agent.env.example agent.env
+# 编辑根目录 agent.env 后启动
+task agent
+```
+
+`task agent` 自动编译并运行真实 `agent-printer`，显式读取仓库根目录 `agent.env`，开发状态及打印账本默认保存在忽略的 `.task/agent/state`。修改配置后重启任务。根目录 `agent.env` 已被 Git 忽略，示例中的密钥占位符须替换成本地业务服务的实际 Agent 密钥。
+
+可透传现有启动参数覆盖配置和状态目录，建议使用绝对路径；已有账本继续指定原状态目录：
+
+```bash
+task agent -- --env-file /绝对路径/agent.env --state-dir /绝对路径/agent-state
+```
+
+使用配置文件时，连接和队列参数写入文件，不与 `--server` 等兼容参数混用。
+
+## 真实 Agent 的仪表输入模拟
+
+日常仪表联调可运行 `task device:d12`，通过 <http://127.0.0.1:8091> 操控 D12 重量、动态位、停发和坏帧，把显示的 `/dev/pts/...` 写入根目录 `agent.env`，再在另一终端运行 `task agent`。无需新增 Agent 身份，也不与真实 Agent 抢占地磅连接。启动、配置和故障语义见 [D12 模拟器说明](../docs/device/d12-simulator.md)，软件验证见[交付记录](../docs/requirements/d12-simulator-delivery.md)。
+
+摄像头输入可使用[两路模拟 RTSP](../docs/device/camera-simulation-dev-memo.md)。仪表与摄像头均在 Agent 的设备输入端模拟；完整 Agent 采集与业务闭环需另行联调。下文 `agent-mock` 保留为轻量业务联调与自动化测试入口，同磅不能与真实 Agent 同时连接。
+
+## mock 本机启动
 
 先运行 `task init`。初始化会在忽略的本地配置中生成独立随机 Agent 密钥，API 与 mock 自动读取同一份配置。已有开发配置也可重新运行 `task init` 补齐缺失密钥，已有 JWT、数据库设置及已配置密钥不会改写。补齐后重启 API。
 

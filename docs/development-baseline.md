@@ -23,7 +23,7 @@
 | [ADR 0020](adr/0020-managed-agent-bindings-and-local-activation.md)、[厂区配置需求](requirements/site-agent-configuration-discovery.md) | 部分被替代 | 中心归属管理及同机常规下载导入流程调整；本地身份、明确应用、停用检查、账本保护保留 |
 | [ADR 0013](adr/0013-formal-weighing-evidence.md)、[ADR 0014](adr/0014-manual-weight-adjustment.md)、[操作员处置规格](requirements/operator-weighing-corrections-spec.md) | 业务规则继续有效，含后续修订 | 设备证据、人工确认、原始／最终重量、双向调整、隔日续称、单磅重称、作废重开；断网按互联网与本地链路区分 |
 | [服务端业务规格](requirements/backend-business-loop-spec.md)、[业务设计](architecture/backend-business-loop-design.md) | 业务模型可复用，阶段限制属历史 | 单据版本、幂等、审计、资料快照保留；全局车牌占用、浏览器测试打印、系统内模拟等以之后的厂区／Agent 规则为准 |
-| [ADR 0015](adr/0015-agent-owned-simulation.md)、[ADR 0019](adr/0019-one-agent-per-scale.md)、[协议 v1](../protocol/v1.md) | 继续有效 | 模拟在独立 mock，真实与 mock 互斥；设备接本厂业务服务，不赋予用户确认权 |
+| [ADR 0015](adr/0015-agent-owned-simulation.md)、[ADR 0019](adr/0019-one-agent-per-scale.md)、[协议 v1](../protocol/v1.md) | 继续有效，设备输入模拟按 2026-10-23 补充 | 独立 mock 可替代 Agent，独立 D12／摄像头模拟器也可向真实 Agent 提供输入；真实 Agent 与同磅 mock 互斥；设备接本厂业务服务，不赋予用户确认权 |
 | [ADR 0022](adr/0022-keli-d12-serial-integration.md)、[D12 交付](requirements/d12-agent-integration-delivery.md)、[接入指导](device/keli-d12-agent-integration-guide.md) | 驱动细则与现场事实继续有效 | 保留参数、单位、独占与保鲜规则；非零、稳定灯、重启权限等未验收项继续跟踪 |
 | [单据打印规格](requirements/ticket-view-print-spec.md)、[连续纸校准](device/sk820-continuous-paper-calibration.md) | 继续有效 | 不因部署收缩改变单据内容、打印未知核实或实物验收要求 |
 | Phase 1／Phase 2A、早期访谈、脚手架 ADR 与 record/ | 历史阶段材料 | 当时的实现限制与“尚未实现”不表示现在；业务条款按后续有效规格应用 |

@@ -72,11 +72,36 @@ tasks:
     cmds:
       - npm run dev
 
+  agent:
+    desc: 启动真实设备 Agent（读取根目录 agent.env）
+    dir: server
+    cmds:
+      - go run ./cmd/agent-printer --env-file '{{.ROOT_DIR}}/agent.env' --state-dir '{{.ROOT_DIR}}/.task/agent/state' {{.CLI_ARGS}}
+
   agent:mock:
     desc: 启动独立设备模拟器（8090）
     dir: server
     cmds:
       - go run ./cmd/agent-mock {{.CLI_ARGS}}
+
+  device:d12:
+    desc: 启动 D12 虚拟串口与控制页（8091，Linux）
+    dir: server
+    cmds:
+      - go run ./cmd/d12-simulator {{.CLI_ARGS}}
+
+  device:d12:build:
+    summary: Build the standalone D12 serial simulator (Linux)
+    dir: server
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-d12-simulator ./cmd/d12-simulator
+
+  device:d12:smoke:
+    summary: Verify the D12 control page and process cleanup in Chromium (Linux)
+    deps:
+      - device:d12:build
+    cmds:
+      - node scripts/check-d12-simulator.mjs
 
   agent:build:
     summary: Build the standalone Agent mock executable

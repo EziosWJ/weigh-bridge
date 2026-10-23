@@ -80,7 +80,7 @@ function WorkbenchContent() {
   const party = data.parties.find(item => item.id === data.draft.partyId);
   const requiredHint = !located ? '请先核对车牌并查找运输' : !selected && !material?.enabled ? '请选择物料' : !selected && (!party?.enabled || !party.roles.includes(direction === 'inbound' ? 'supplier' : 'customer')) ? `请选择${direction === 'inbound' ? '供货方' : '收货方'}` : '';
   const needsDayVerification = !!selected?.crossDayDoubt;
-  const conditionIssue = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : !data.config.online ? 'Agent 离线或重量数据已过期' : data.config.deviceError ? '设备异常，请恢复后重新采集' : !data.config.stable ? '重量未稳定，请等待设备稳定' : !data.config.evidence ? '等待 Agent 提供前后视角图片' : !Number.isFinite(data.config.weight) || data.config.weight <= 0 ? '等待有效上磅重量' : '';
+  const conditionIssue = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : !data.config.online ? 'Agent 离线或重量数据已过期' : data.config.deviceError ? '设备异常，请恢复后重新采集' : !data.config.stable ? '重量未稳定，请等待设备稳定' : !Number.isFinite(data.config.weight) || data.config.weight <= 0 ? '等待有效上磅重量' : '';
   const shouldVerifyDay = !conditionIssue && needsDayVerification;
   const blocked = conditionIssue || (needsDayVerification ? '请先核实跨天运输，再继续称重' : '');
   const taskInfo = successfulTask || selected;

@@ -57,7 +57,7 @@ export type CameraSize = 'small' | 'standard' | 'large';
 export function DeviceCameraPanel({ scenePlate, capture, saved = false, size, onSizeChange }: { scenePlate?: string; capture?: CaptureSnapshot; saved?: boolean; size: CameraSize; onSizeChange: (size: CameraSize) => void }) {
   const device = useWeighingStore(s => s.device);
   const [view, setView] = useState<'front' | 'rear'>('front');
-  const camera = { src: device?.images.find(i => i.view === view)?.url ?? '', title: view === 'front' ? '车头视角' : '车尾视角' };
+  const camera = { src: device?.images.find(i => i.view === view)?.url ?? capture?.images?.find(i => i.view === view)?.url ?? '', title: view === 'front' ? '车头视角' : '车尾视角' };
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   return <ContentCard className="weighing-camera shadow-none" bodyClassName="p-0">
@@ -73,7 +73,7 @@ export function DeviceCameraPanel({ scenePlate, capture, saved = false, size, on
       <span className="ml-auto text-xs text-text-secondary">{device?.online ? 'Agent 已连接' : 'Agent 未连接'} · 非实时视频</span>
     </div>
     <button type="button" disabled={!camera.src} aria-label="查看摄像头大图" onClick={() => setOpen(true)} className="workbench-camera-feed relative block w-full bg-neutral-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2">
-      {camera.src ? <AgentImage key={camera.src} src={camera.src} alt={`${camera.title}预览`} className="aspect-video w-full object-contain" onLoad={() => setFailed(false)} onError={() => setFailed(true)} /> : <span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>等待 Agent 上传现场图片</strong><span>{camera.title}尚无图片，请检查摄像头与 Agent 连接。</span><span>实时视频暂未接入</span></span>}
+      {camera.src ? <AgentImage key={camera.src} src={camera.src} alt={`${camera.title}预览`} className="aspect-video w-full object-contain" onLoad={() => setFailed(false)} onError={() => setFailed(true)} /> : <span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>尚未取得现场图片</strong><span>{device?.online ? '点击“采集重量”，由 Agent 同步获取前后抓拍。' : '请先连接 Agent 并等待设备重量就绪。'}</span><span>实时视频暂未接入</span></span>}
       <span className="absolute left-3 top-3 rounded bg-black/70 px-2 py-1 text-xs text-white">最近图片 · {camera.title}</span>
       <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-xs text-white"><Maximize2 className="h-3 w-3" aria-hidden />点击放大</span>
     </button>
