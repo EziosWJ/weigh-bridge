@@ -42,7 +42,7 @@ export function WeighingSitesPage() {
  const canKick=capabilities?.permissionCodes.includes('weighing:agent:kick')??false;
  if(capabilities?.nodeRole==='central')return <Navigate to="/weighing/tickets" replace/>;
  return <>
-  <PageHeader title="厂区工作台" description="选择已授权厂区，进入对应地磅的独立称重工作台。" actions={<Button onClick={()=>void refresh()} disabled={busy}><RefreshCw className="h-4 w-4" aria-hidden />刷新状态</Button>}/>
+  <PageHeader title="厂区工作台" description="" actions={<Button onClick={()=>void refresh()} disabled={busy}><RefreshCw className="h-4 w-4" aria-hidden />刷新状态</Button>}/>
   {error&&<p role="alert" className="mb-4 text-sm text-error">{error}</p>}
   {notice&&<p role="status" className="mb-4 text-sm text-text-secondary">{notice}</p>}
   {loading?<p role="status">正在加载厂区…</p>:capabilities?.sites.length===0?<EmptyState title="暂无已授权厂区" description="请联系管理员分配厂区查询或操作权限。"/>:

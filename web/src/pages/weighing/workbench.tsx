@@ -341,7 +341,7 @@ function WorkbenchContent() {
     setBusinessOpen(false);
     setReview({ data, title: `${stage === 'first' ? '首磅' : '回磅'}（${kind}）`, value: { plate: summaryPlate, direction: directionLabels[summaryDirection], material: summaryMaterial, partyLabel: summaryDirection === 'inbound' ? '供货方' : '收货方', party: summaryParty, weight: data.config.weight, kind, capture: data.capture,
         original: stage === 'second' && firstRecord ? weightValues(firstRecord.kind === 'gross' ? firstRecord.weight : data.config.weight, firstRecord.kind === 'tare' ? firstRecord.weight : data.config.weight) : undefined,
-        firstWeight: firstRecord ? `${firstRecord.kind === 'gross' ? '毛重' : '皮重'} ${formatWeight(firstRecord.weight)} · ${beijingTime(firstRecord.at)}（北京时间）` : undefined,
+        firstWeight: firstRecord ? `${firstRecord.kind === 'gross' ? '毛重' : '皮重'} ${formatWeight(firstRecord.weight)} · ${beijingTime(firstRecord.at)}` : undefined,
         supplementary: [
           { label: '承运方', value: selected ? selected.carrierName ?? '' : data.parties.find(item => item.id === data.draft.carrierId)?.name ?? '' },
           { label: '本趟联系人', value: [selected ? selected.contactName : data.draft.contactName, selected ? selected.contactPhone : data.draft.contactPhone].filter(Boolean).join(' / ') },
@@ -406,7 +406,7 @@ function WorkbenchContent() {
           <SectionTabs key={taskInfo.id} label="本趟运输信息" items={[
             { value: 'basic', label: '基本信息', content: <>
               <div className="grid gap-4 sm:grid-cols-2"><DetailItem label="车牌" value={taskInfo.plate} /><DetailItem label="运输方向" value={directionLabels[taskInfo.direction]} /><DetailItem label="物料" value={summaryMaterial} /><DetailItem label={taskInfo.direction === 'inbound' ? '供货方' : '收货方'} value={summaryParty} /></div>
-              {firstRecord && <div className="mt-4 space-y-1 rounded-control border border-border bg-neutral-background p-3 text-sm"><p className="font-medium">首次当前依据：{firstRecord.kind === 'gross' ? '毛重' : '皮重'} {formatWeight(firstRecord.weight)}</p><p className="text-text-secondary">{beijingTime(firstRecord.at)}（北京时间）</p>{beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) && <p className="text-warning">隔日回磅：沿用原任务和首次称重，无需额外说明。</p>}{firstRecord.replaces && <p>已重称替代原记录，原因：{firstRecord.reason}</p>}</div>}
+              {firstRecord && <div className="mt-4 space-y-1 rounded-control border border-border bg-neutral-background p-3 text-sm"><p className="font-medium">首次当前依据：{firstRecord.kind === 'gross' ? '毛重' : '皮重'} {formatWeight(firstRecord.weight)}</p><p className="text-text-secondary">{beijingTime(firstRecord.at)}</p>{beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) && <p className="text-warning">隔日回磅：沿用原任务和首次称重，无需额外说明。</p>}{firstRecord.replaces && <p>已重称替代原记录，原因：{firstRecord.reason}</p>}</div>}
             </> },
             { value: 'supplementary', label: '补充运输信息', content: <div className="grid gap-4 sm:grid-cols-2"><DetailItem label="承运方" value={[taskInfo.carrierName, taskInfo.carrierCode].filter(Boolean).join(' · ')} /><DetailItem label="本趟联系人 / 电话" value={[taskInfo.contactName, taskInfo.contactPhone].filter(Boolean).join(' / ')} /><DetailItem label="司机 / 电话" value={[taskInfo.driver, taskInfo.driverPhone].filter(Boolean).join(' / ')} /><DetailItem label="备注" value={taskInfo.remark} /></div> },
           ]} />

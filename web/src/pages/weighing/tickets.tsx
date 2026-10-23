@@ -64,11 +64,11 @@ export function WeighingTicketsPage() {
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span> },
     { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag>{row.imagesComplete===false&&<span className="ml-2 text-warning">图片待同步</span>}<div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
-    { title: '出单时间（北京）', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
+    { title: '出单时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
     { title: '操作', key: 'actions', width: 168, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{capabilities?.nodeRole!=='central'&&can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
   ];
   if (params.get('ticket')) return <Navigate replace to={`/weighing/tickets/${encodeURIComponent(params.get('ticket')!)}`} />;
-  return <div className="weighing-list-page"><PageHeader title="最终单据" description="各版单据分别保留；按北京时间出单日期筛选。" /><DeviceBanner compact />
+  return <div className="weighing-list-page"><PageHeader title="最终单据" description="" /><DeviceBanner compact />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} ticket />
     {(downloadError || summary.error) && <p role="alert" className="text-error">{downloadError || summary.error}</p>}
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="单据" description={`筛选 ${result.total} 张；当前有效 ${summary.result?.taskCount ?? '—'} 趟，最终净重合计 ${summary.result?.net ?? '—'} 吨`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <><Button size="sm" onClick={() => download('tickets')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('tickets-summary')}>导出净重汇总 CSV</Button></>}</>} />
@@ -128,7 +128,7 @@ export function WeighingTicketDetailPage() {
         {pending && <p className="mb-space-4 text-warning">提交结果尚未核实，请<WorkbenchLink className={linkClass} to={`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`}>前往工作台查询结果</WorkbenchLink>。</p>}
         <div className="mb-space-4 grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4"><DetailItem label="车牌" value={ticket.plate} /><DetailItem label="业务" value={directionLabels[ticket.direction]} /><DetailItem label={ticket.direction === 'inbound' ? '供货方' : '收货方'} value={ticket.partyName} /><DetailItem label="物料" value={[ticket.materialName, ticket.materialSpec].filter(Boolean).join(' / ')} /></div>
         <TicketWeights ticket={ticket} />
-        <div className="mt-space-4 grid gap-space-4 border-t border-border pt-space-4 sm:grid-cols-3"><DetailItem label="出单时间（北京）" value={beijingTime(ticket.issuedAt)} /><DetailItem label="打印状态" value={printStatusLabels[ticket.printStatus]} /><DetailItem label="补打次数" value={ticket.reprintCount} /></div>
+        <div className="mt-space-4 grid gap-space-4 border-t border-border pt-space-4 sm:grid-cols-3"><DetailItem label="出单时间" value={beijingTime(ticket.issuedAt)} /><DetailItem label="打印状态" value={printStatusLabels[ticket.printStatus]} /><DetailItem label="补打次数" value={ticket.reprintCount} /></div>
         {canOperate && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? can("void") && <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废单据</Button> : canReopen && can("reopen") ? <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.reprintAuthorized && <StatusTag tone="warning">已登记一次补打</StatusTag>}</div>}
         {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">打印结果待核实，不能自动重打。请由操作员先核实是否已出纸。</p>}
       </ContentCard>

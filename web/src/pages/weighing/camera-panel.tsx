@@ -35,7 +35,7 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
   const cameraLabel = image ? (image.view === 'front' ? '车头视角' : '车尾视角') : capture.cameraLabel;
   const [failed, setFailed] = useState(false);
   const preview = (next: boolean) => { setOpen(next); onPreviewChange?.(next); };
-  const metadata = <div className="space-y-1 text-xs text-text-secondary"><p>关联人工确认车牌：{capture.plate || '待确认时关联'}</p><p>{!hideWeight && <>{formatWeight(capture.weight)} · </>}{beijingTime(capture.at)}（北京时间）</p></div>;
+  const metadata = <div className="space-y-1 text-xs text-text-secondary"><p>关联人工确认车牌：{capture.plate || '待确认时关联'}</p><p>{!hideWeight && <>{formatWeight(capture.weight)} · </>}{beijingTime(capture.at)}</p></div>;
   return <div className={compact ? 'grid grid-cols-[120px_minmax(0,1fr)] items-center gap-3' : 'space-y-2'}>
     <button type="button" className="relative block w-full overflow-hidden rounded-control border border-border bg-neutral-background text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label={`放大抓拍 ${cameraLabel}`} onClick={() => preview(true)}>
       <AgentImage src={imageSrc} alt={`${cameraLabel}抓拍`} className="aspect-video w-full object-contain" onLoad={() => { setFailed(false); onReady?.(true); }} onError={() => { setFailed(true); onReady?.(false); }} />

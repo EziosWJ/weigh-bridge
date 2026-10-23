@@ -38,7 +38,7 @@ export function WeighRecords({ records, onPreviewChange }: { records: WeighRecor
   return <div className="space-y-space-3">
     {records.length === 0 && <p className="text-text-tertiary">尚未确认称重。</p>}
     {records.map((record) => <div key={record.id} className="rounded-control border border-border p-space-3 text-sm">
-      <div className="flex flex-wrap justify-between gap-space-2"><strong>{record.stage === "first" ? "首次" : "二次"} · {record.kind === "gross" ? "毛重" : "皮重"} {formatWeight(record.weight)}</strong><span>{beijingTime(record.at)}（北京时间）</span></div>
+      <div className="flex flex-wrap justify-between gap-space-2"><strong>{record.stage === "first" ? "首次" : "二次"} · {record.kind === "gross" ? "毛重" : "皮重"} {formatWeight(record.weight)}</strong><span>{beijingTime(record.at)}</span></div>
       <p className="mt-space-2 break-all text-text-secondary">记录 {record.id} · 采集依据{records.some((next) => next.replaces === record.id) ? " · 已被后续记录替代" : " · 当前记录"}</p>
       <p className="mt-1 text-text-secondary">操作人：{record.actor || '历史未记录'} · 岗位：{record.role ? roleLabels[record.role] : '历史未记录'} · 采集时间：{record.capture ? beijingTime(record.capture.at) : '历史未记录'}</p>
       {record.retainedRecordId && <p className="mt-1">沿用另一有效磅：{record.retainedRecordId}</p>}

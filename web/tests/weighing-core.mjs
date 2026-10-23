@@ -218,7 +218,7 @@ test('重置恢复示例状态，仅返回本模块新数据', () => {
   assert.match(crossDay.remark, /过夜车/);
 });
 
-test('查询按北京时间分别使用创建与出单日期，CSV 保留测试单位并正确转义', () => {
+test('查询按时间分别使用创建与出单日期，CSV 保留测试单位并正确转义', () => {
   const state = completed();
   const task = { ...state.tasks[0], createdAt: '2026-10-15T15:59:00Z', remark: '逗号,双引号"\n第二行' };
   const ticket = { ...state.tickets[0], issuedAt: '2026-10-15T16:01:00Z', remark: task.remark };
