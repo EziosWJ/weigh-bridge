@@ -291,7 +291,7 @@ export function SystemFilesPage() {
     <>
       <PageHeader
         title="文件管理"
-        description="维护文件元数据，支持上传、预览、下载、编辑和启停管理。"
+        description=""
         actions={
           <Button variant="primary" onClick={() => setUploadOpen(true)}>
             <Plus className="h-4 w-4" aria-hidden />

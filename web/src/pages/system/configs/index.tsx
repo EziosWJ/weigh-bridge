@@ -633,7 +633,7 @@ export function SystemConfigsPage() {
     <>
       <PageHeader
         title="配置管理"
-        description="维护系统级和自定义配置项，支持分页查询、配置值类型校验和启停管理。"
+        description=""
         actions={
           <Button variant="primary" onClick={openCreateForm}>
             <Plus className="h-4 w-4" aria-hidden />

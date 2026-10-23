@@ -28,7 +28,7 @@ export function DashboardPage() {
     <>
       <PageHeader
         title="工作台"
-        description="系统运行概览及待处理事项"
+        description=""
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

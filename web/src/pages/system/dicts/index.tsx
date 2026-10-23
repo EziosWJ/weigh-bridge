@@ -541,7 +541,7 @@ export function SystemDictsPage() {
     <>
       <PageHeader
         title="字典管理"
-        description="维护系统字典类型和字典项，数据来自后端接口。"
+        description=""
         actions={
           <Button variant="primary" onClick={openCreateTypeForm}>
             <Plus className="h-4 w-4" aria-hidden />

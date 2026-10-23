@@ -415,7 +415,7 @@ export function UsersPage() {
     <>
       <PageHeader
         title="用户管理"
-        description="管理后台用户、状态、角色和密码重置。"
+        description=""
         actions={
           <Button variant="primary" onClick={openCreateForm}>
             <Plus className="h-4 w-4" aria-hidden />

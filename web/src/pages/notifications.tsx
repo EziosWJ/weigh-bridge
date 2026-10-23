@@ -39,7 +39,7 @@ export function NotificationsPage() {
   ];
   return (
     <div>
-      <PageHeader title="我的通知" description="查看发给你的站内通知" actions={<><Button variant="secondary" size="sm" onClick={() => void load()}><RefreshCw className="h-4 w-4" />刷新</Button><Button variant="secondary" size="sm" onClick={() => void readAll()}><CheckCheck className="h-4 w-4" />全部已读</Button></>} />
+      <PageHeader title="我的通知" description="" actions={<><Button variant="secondary" size="sm" onClick={() => void load()}><RefreshCw className="h-4 w-4" />刷新</Button><Button variant="secondary" size="sm" onClick={() => void readAll()}><CheckCheck className="h-4 w-4" />全部已读</Button></>} />
       {status !== "connected" && <p role="status" className="mb-3 text-sm text-text-tertiary">{status === "reconnecting" ? "消息连接中断，正在重新连接；也可手动刷新。" : "正在同步消息…"}</p>}
       <DataTableCard className="overflow-hidden shadow-none">
         <DataTable columns={columns} dataSource={records} rowKey="id" loading={loading} empty={<EmptyState title="暂无通知" description="你还没有收到站内通知。" />} />

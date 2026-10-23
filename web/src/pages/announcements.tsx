@@ -60,7 +60,7 @@ export function AnnouncementsPage() {
     { title: "到期时间", key: "expiry", render: (_, item) => item.expiresAt ? formatDateTime(item.expiresAt) : "长期有效" },
     { title: "操作", key: "actions", nowrap: true, align: "center", render: (_, item) => <Button variant="ghost" size="sm" onClick={() => { setDetail(null); setInvalid(false); setDetailError(false); setSelected({ id: item.id, scope: item.scope }); }}>查看</Button> },
   ];
-  return <div><PageHeader title="公告" description="查看当前有效的公开公告和站内公告" actions={<Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>刷新</Button>} />
+  return <div><PageHeader title="公告" description="" actions={<Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>刷新</Button>} />
     <div className="mb-4 flex gap-2" role="group" aria-label="公告范围"><Button variant={scope === "PUBLIC" ? "primary" : "secondary"} onClick={() => { setScope("PUBLIC"); setPage(1); }}>公开公告</Button><Button variant={scope === "INTERNAL" ? "primary" : "secondary"} onClick={() => { setScope("INTERNAL"); setPage(1); }}>站内公告</Button></div>
     {error && <p role="alert" className="mb-4 text-sm text-error">公告加载失败，请点击刷新重试。</p>}
     <DataTableCard><DataTable columns={columns} dataSource={items} rowKey="id" loading={loading} /><Pagination page={page} pageSize={10} total={total} onPageChange={setPage} /></DataTableCard>

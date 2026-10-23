@@ -75,7 +75,7 @@ export function SiteConfigurationPage() {
   </TableActions>},
  ];
  return <div className="weighing-list-page">
-  <PageHeader title="厂区配置" description={nodeRole==='standalone'?'维护本厂厂区、地磅和现场 Agent 身份。':'维护厂区、地磅及对应 Agent，下载各现场使用的启动配置。'} actions={<Button onClick={() => void refresh()} disabled={busy || loading}>刷新</Button>} />
+  <PageHeader title="厂区配置" description={nodeRole==='standalone'?'':''} actions={<Button onClick={() => void refresh()} disabled={busy || loading}>刷新</Button>} />
   {nodeRole==='site'&&pending&&pending.revision>pending.appliedRevision&&<ContentCard className="mb-space-4" title="待应用的中心配置"><p>{pending.configuration.name} · {pending.configuration.scaleName} · {pending.configuration.enabled?'启用':'停用'} · {pending.configuration.serverUrl}</p><Button disabled={busy} onClick={()=>void run(async()=>{await nodeApi.applyConfiguration(pending.revision);await refresh();setNotice('配置已在本厂应用，等待同步中心。');})}>在本厂明确应用</Button></ContentCard>}
   {!nodeRole&&<ContentCard className="mb-space-4" bodyClassName="!p-space-4">
    <form className="flex flex-wrap items-end gap-space-3" onSubmit={e => { e.preventDefault(); void run(async () => { await siteConfigurationApi.saveSettings(serverUrl); setNotice('现场连接地址已保存，下载配置时会使用此地址。'); }); }}>

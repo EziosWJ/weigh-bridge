@@ -138,7 +138,7 @@ export function AgentMaintenancePage() {
 
   if (!initialLoaded) return <p role="status">正在检查本机维护状态…</p>;
   return <div className="space-y-space-4">
-    <PageHeader title="设备维护" description="使用本地账号查看现场设备，按权限保存配置和执行维护操作。设备停止时仍可查看配置并启动 Agent。" actions={<><StatusTag tone="info">本机设备维护</StatusTag><Button variant="secondary" disabled={busy} onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" aria-hidden />刷新状态</Button></>} />
+    <PageHeader title="设备维护" description="" actions={<><StatusTag tone="info">本机设备维护</StatusTag><Button variant="secondary" disabled={busy} onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" aria-hidden />刷新状态</Button></>} />
     {maintenanceEnabled === false && <ContentCard title="设备维护未启用"><p>当前业务服务未启用设备维护，请联系管理员检查本机维护配置。</p></ContentCard>}
     {maintenanceEnabled === true && !canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
     {canView && <>

@@ -253,7 +253,7 @@ export function SystemOperLogsPage() {
     <>
       <PageHeader
         title="操作日志"
-        description="查看系统操作记录，支持按模块、类型、操作人和状态筛选。"
+        description=""
       />
 
       <form onSubmit={(event) => { event.preventDefault(); submitFilters(); }}>

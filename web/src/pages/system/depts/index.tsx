@@ -305,7 +305,7 @@ export function SystemDeptsPage() {
     <>
       <PageHeader
         title="部门管理"
-        description="维护组织部门、负责人、状态和排序。"
+        description=""
         actions={
           <Button variant="primary" onClick={openCreateForm}>
             <Plus className="h-4 w-4" aria-hidden />

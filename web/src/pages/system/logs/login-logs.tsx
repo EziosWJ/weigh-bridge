@@ -224,7 +224,7 @@ export function SystemLoginLogsPage() {
     <>
       <PageHeader
         title="登录日志"
-        description="查看系统用户登录记录，支持按用户、状态和 IP 筛选。"
+        description=""
       />
 
       <form onSubmit={(event) => { event.preventDefault(); submitFilters(); }}>

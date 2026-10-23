@@ -363,7 +363,7 @@ export function SystemMenusPage() {
     <>
       <PageHeader
         title="菜单管理"
-        description="维护系统菜单结构、路由、外链、权限标识和展示状态。"
+        description=""
         actions={
           <Button variant="primary" onClick={() => void openCreateForm()}>
             <Plus className="h-4 w-4" aria-hidden />

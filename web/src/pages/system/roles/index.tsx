@@ -353,7 +353,7 @@ export function SystemRolesPage() {
     <>
       <PageHeader
         title="角色管理"
-        description="维护系统角色、状态和菜单权限分配。"
+        description=""
         actions={
           <Button variant="primary" onClick={openCreateForm}>
             <Plus className="h-4 w-4" aria-hidden />
