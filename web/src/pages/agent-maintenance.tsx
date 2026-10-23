@@ -1,51 +1,24 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, FileClock, Printer, RefreshCw, Settings2 } from 'lucide-react';
+import { useCallback, useEffect, useState, type SetStateAction } from 'react';
+import { Activity, AlertTriangle, Camera, CheckCircle2, CircleHelp, Play, Printer, RefreshCw, RotateCw, Square } from 'lucide-react';
 import { agentMaintenanceApi, type MaintenanceConfig, type CameraTestResult } from '@/api/agent-maintenance';
 import { weighingApi } from '@/api/weighing';
 import { PageHeader } from '@/components/common/page-header';
 import { ContentCard } from '@/components/common/content-card';
-import { FormSection } from '@/components/common/form-section';
-import { Field } from '@/components/common/field';
+import { DetailItem } from '@/components/common/detail-item';
+import { SectionTabs } from '@/components/common/section-tabs';
+import { DataTableCard } from '@/components/common/data-table-card';
+import { TableToolbar } from '@/components/common/table-toolbar';
 import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
+import { MaintenanceConfigPanel } from './agent-maintenance/config-panel';
+import { safeDraft } from './agent-maintenance/config-draft';
+import { formatDateTime } from '@/lib/datetime';
+import { formatWeightValue } from '@/lib/weighing/weights';
 import { useCameraConfiguration } from '@/lib/weighing/camera-preview';
 import { CameraLive } from '@/pages/weighing/camera-live';
 import { getErrorMessage } from '@/lib/api-error';
 
 type ServiceStatus = Record<string, unknown>;
-type ConfigField = { key: string; label: string; kind?: 'number' | 'boolean' | 'select' | 'secret'; min?: number; max?: number; options?: string[]; help?: string };
-const fields: ConfigField[] = [
-  { key: 'serverUrl', label: '业务服务地址', help: 'Agent 连接的本机业务服务地址' },
-  { key: 'agentId', label: 'Agent 编号' },
-  { key: 'scaleId', label: '地磅编号', kind: 'number', min: 1 },
-  { key: 'agentKey', label: '连接密钥', kind: 'secret', help: '已设置的密钥不会回显；留空表示保持原值' },
-  { key: 'queue', label: 'CUPS 打印队列' },
-  { key: 'printWidthMm', label: '打印宽度（mm）', kind: 'number', min: 100, max: 210 },
-  { key: 'printScale', label: '整体缩放（倍）', kind: 'number', min: 0.5, max: 1.5 },
-  { key: 'offsetXmm', label: '向右偏移（mm）', kind: 'number', min: 0, max: 30 },
-  { key: 'offsetYmm', label: '向下偏移（mm）', kind: 'number', min: 0, max: 30 },
-  { key: 'formLengthMm', label: '连续纸表长（mm）', kind: 'number', min: 85, max: 300 },
-  { key: 'serialEnabled', label: '启用柯力 D12 仪表', kind: 'boolean' },
-  { key: 'serialPort', label: '串口路径' },
-  { key: 'serialBaud', label: '仪表波特率', kind: 'number', min: 1200, max: 115200 },
-  { key: 'serialProtocol', label: '仪表协议', kind: 'select', options: ['keli-d12-tf05'] },
-  { key: 'serialWeightUnit', label: '现场源单位', kind: 'select', options: ['t', 'kg'] },
-  { key: 'serialStaleMs', label: '无有效帧故障阈值（ms）', kind: 'number', min: 200, max: 2999 },
-
-  { key: 'plateRecognitionUrl', label: '车牌识别服务地址', kind: 'secret', help: '留空保持已保存值；不提供独立连通性测试' },
-
-];
-const cameraFields: ConfigField[] = [
-  { key: 'cameraEnabled', label: '前后摄像头', kind: 'boolean' },
-  { key: 'cameraRtspBase', label: 'RTSP 服务入口', help: '例如 rtsp://192.168.1.10:8554；不要填写密码或流名称' },
-  { key: 'cameraWhepBase', label: '实时预览服务入口', help: '例如 http://192.168.1.10:8889；也可使用 HTTPS 入口' },
-  { key: 'cameraFrontPath', label: '车前流名称', help: '例如 front，与 MediaMTX 中配置的名称一致' },
-  { key: 'cameraRearPath', label: '车后流名称', help: '例如 rear，与车前流名称不同' },
-  { key: 'cameraTimeoutMs', label: '抓拍超时（ms）', kind: 'number', min: 200, max: 10000 },
-];
-
 function CameraDiagnostics({ scaleId }: { scaleId: number }) {
   const preview = useCameraConfiguration(scaleId, true);
   const [view, setView] = useState<'front' | 'rear'>('front');
@@ -62,16 +35,24 @@ function CameraDiagnostics({ scaleId }: { scaleId: number }) {
   </div>;
 }
 
-const secretConfigKeys = ['agentKey', 'cameraFrontUrl', 'cameraRearUrl', 'plateRecognitionUrl'];
-function safeDraft(config: Record<string, unknown>) {
-  return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, secretConfigKeys.includes(key) ? '' : value]));
+function stateValue(value: unknown) {
+  if (value === true) return '启用';
+  if (value === false) return '停用';
+  return (typeof value === 'string' && value) || (typeof value === 'number' && Number.isFinite(value)) ? String(value) : '未知';
 }
 
-function stateValue(value: unknown) {
-  if (value === true || value === 1) return '启用';
-  if (value === false || value === 0) return '停用';
-  return typeof value === 'string' && value ? value : '未知';
+function StatusValue({ value }: { value: unknown }) {
+  const label = stateValue(value);
+  const tone = /未知|不可读取/.test(label) ? 'neutral' : /故障|离线|失败/.test(label) ? 'error' : /^(运行中|已启用|已连接|稳定)$/.test(label) ? 'success' : 'warning';
+  return <StatusTag tone={tone}>{label}</StatusTag>;
 }
+
+const actionLabels: Record<string, string> = {
+  'start-agent': '启动设备', 'stop-agent': '停止设备', 'restart-agent': '重载设备',
+  'restart-cups': '重启 CUPS', 'enable-queue': '恢复目标队列',
+  apply: '应用配置', restore: '恢复上一份配置', 'test-print': '打印校准样张',
+  'test-camera': '摄像头测试',
+};
 
 export function AgentMaintenancePage() {
   const [maintenanceEnabled, setMaintenanceEnabled] = useState<boolean | null>(null);
@@ -86,13 +67,13 @@ export function AgentMaintenancePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [diagnostics, setDiagnostics] = useState(false);
-  const feedbackRef = useRef<HTMLDivElement>(null);
+  const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [tab, setTab] = useState<'overview' | 'devices' | 'config' | 'records'>('overview');
-  const deviceOffline = status?.agentProcessOnline === false || status?.maintenanceAvailable === false;
+  const deviceOffline = !status || status?.agentProcessOnline === false || status?.maintenanceAvailable === false;
   const canManage = maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:manage');
   const canView = canManage || (maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:view'));
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (reloadDraft = false) => {
     setError('');
     try {
       const caps = await weighingApi.capabilities();
@@ -103,17 +84,17 @@ export function AgentMaintenancePage() {
       const state = await agentMaintenanceApi.status(); setStatus(state);
       if (caps.permissionCodes.includes('agent:maintenance:manage')) {
         const data = await agentMaintenanceApi.config();
-        setConfigData(data); setDraft(safeDraft(data.config));
+        setConfigData(data); setDraft(current => reloadDraft || !Object.keys(current).length ? safeDraft(data.config) : current);
       }
     } catch (failure) { setError(getErrorMessage(failure, 'Agent 维护状态读取失败')); }
     finally { setInitialLoaded(true); }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
-  useEffect(() => { if (tab === 'config' && (error || notice)) feedbackRef.current?.scrollIntoView({ block: 'nearest' }); }, [error, notice, tab]);
 
   async function runAction(action: string, extra: Record<string, unknown> = {}) {
     setBusy(true); setError(''); setNotice('');
+    const actionLabel = actionLabels[action] ?? action;
     let savedCurrentDraft = false;
     try {
       if (action === 'apply') {
@@ -124,20 +105,20 @@ export function AgentMaintenancePage() {
       if (action !== 'start-agent' && action !== 'apply') {
         preflight = await agentMaintenanceApi.jobs();
         if (preflight.unknown) {
-          if (!window.confirm(`无法读取未结束打印作业。继续“${action}”后，请现场核实打印结果。是否继续？`)) { setNotice('操作已取消，设备状态未改变。'); return; }
+          if (!window.confirm(`无法读取未结束打印作业。继续“${actionLabel}”后，请现场核实打印结果。是否继续？`)) { setNotice('操作已取消，设备状态未改变。'); return; }
         } else if (preflight.jobs?.length) {
           const items = preflight.jobs.map((job) => `${job.id}（${job.queue}）`).join('、');
           if (action === 'apply' || action === 'restore') {
             setNotice(`发现未结束作业：${items}。配置草稿已保留，完成现场核实后再应用。`); return;
           }
-          if (!window.confirm(`发现未结束作业：${items}。继续后仍需现场核实纸面结果。是否继续“${action}”？`)) { setNotice('操作已取消，设备状态未改变。'); return; }
+          if (!window.confirm(`发现未结束作业：${items}。继续后仍需现场核实纸面结果。是否继续“${actionLabel}”？`)) { setNotice('操作已取消，设备状态未改变。'); return; }
         }
       }
       const result = await agentMaintenanceApi.action({ action, ...extra, ...(preflight ? { previewToken: preflight.previewToken, disposition: preflight.unknown ? 'unknown-confirmed' : 'keep', jobIds: [] } : {}) });
       setNotice(result.needsDisposition ? '当前表单已保存；Agent 发现未结束打印作业，尚未应用。请先核实打印，再应用配置。' : result.output || '维护操作已完成；请检查设备实际状态及纸面结果。');
-      await refresh();
+      await refresh(action === 'apply' || action === 'restore');
     } catch (failure) {
-      setError(`${savedCurrentDraft ? '当前表单已保存为草稿；' : ''}${getErrorMessage(failure, '维护操作失败')}。请核对下方运行状态。`);
+      setError(`${savedCurrentDraft ? '当前表单已保存为草稿；' : ''}${getErrorMessage(failure, '维护操作失败')}。请刷新状态核实设备执行结果。`);
       try { setStatus(await agentMaintenanceApi.status()); } catch { setStatus(null); }
       if (savedCurrentDraft) {
         try { setConfigData(await agentMaintenanceApi.config()); } catch { /* Keep the entered values when status cannot be reread. */ }
@@ -162,76 +143,164 @@ export function AgentMaintenancePage() {
         agentMaintenanceApi.logs(),
         agentMaintenanceApi.audit(new URLSearchParams({ offset: '0', limit: '100' })),
       ]);
-      setLogs(logText); setAudit(auditData.records ?? []);
+      setLogs(logText); setAudit(auditData.records ?? []); setRecordsLoaded(true);
     } catch (failure) { setError(getErrorMessage(failure, '维护记录读取失败')); }
     finally { setBusy(false); }
   }
 
-  const serviceCards = useMemo(() => [
-    ['业务接口', status?.maintenance], ['设备执行', status?.agentKnown ? status?.agent : '未知'],
-    ['CUPS 服务', status?.cupsKnown ? status?.cups : '未知'], ['打印队列', status?.queueKnown ? `${status?.queue ?? '未知'}（${status?.queueState ?? '未知'}）` : '未知'],
-  ], [status]);
-  const statusJobs = Array.isArray(status?.jobs) ? status.jobs as { id: string; queue?: string }[] : [];
-  const camera = (status?.camera && typeof status.camera === 'object' ? status.camera : {}) as Record<string, unknown>;
+  async function refreshStatus() {
+    setBusy(true);
+    try { await refresh(); } finally { setBusy(false); }
+  }
 
-  if (!initialLoaded) return <p role="status">正在检查Agent 维护状态…</p>;
-  return <div className="space-y-space-4">
-    <PageHeader title="设备维护" description="使用本地账号查看现场设备，按权限保存配置和执行维护操作。Agent 常驻时可读写设备配置并启停设备执行；支持局域网分机部署。" actions={<><StatusTag tone="info">现场设备维护</StatusTag><Button variant="secondary" disabled={busy} onClick={() => void refresh()}><RefreshCw className="mr-2 h-4 w-4" aria-hidden />刷新状态</Button></>} />
-    {maintenanceEnabled === false && <ContentCard title="设备维护未启用"><p>当前业务服务未启用设备维护，请联系管理员检查本机维护配置。</p></ContentCard>}
-    {maintenanceEnabled === true && !canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
-    {canView && <>
-      <nav aria-label="设备维护页面" className="flex flex-wrap gap-2 border-b border-border pb-3">
-        {([['overview', '运行总览', Activity], ['devices', '设备与打印', Printer], ['config', '配置', Settings2], ['records', '维护记录', FileClock]] as const).map(([key, label, Icon]) => <Button key={key} variant={tab === key ? 'primary' : 'secondary'} onClick={() => { setTab(key); if (key === 'records') void loadRecords(); }}>{<Icon className="mr-2 h-4 w-4" aria-hidden />}{label}</Button>)}
-      </nav>
-      {tab !== 'config' && <>{error && <p role="alert" className="rounded-control border border-error/30 bg-error/5 p-3 text-sm text-error">{error}</p>}{notice && <p role="status" className="rounded-control border border-border bg-neutral-background p-3 text-sm">{notice}</p>}</>}
-      {tab === 'overview' && <>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{serviceCards.map(([label, value]) => <ContentCard key={String(label)} title={String(label)}><StatusTag tone={/运行中|已启用|已连接/.test(String(value ?? '')) ? 'success' : 'warning'}>{stateValue(value)}</StatusTag></ContentCard>)}</div>
-        <ContentCard title="本机诊断" description={`检查时间：${String(status?.checkedAt ?? '未知')}`}>
-          <p>{String(status?.lastError ?? '未报告本机错误')}</p>
-          <p className="mt-2 text-sm text-text-secondary">未结束打印作业：{status?.jobsKnown === false ? '状态未知' : statusJobs.length ? statusJobs.map((job) => `${job.id}（${job.queue ?? '队列未知'}，纸面结果需核实）`).join('、') : '未发现'}</p>
-          {canManage && <div className="mt-4 flex flex-wrap gap-2"><Button disabled={busy || deviceOffline || status?.agent === '运行中'} onClick={() => void runAction('start-agent')}>启动设备</Button><Button variant="secondary" disabled={busy || deviceOffline || status?.agent !== '运行中'} onClick={() => void runAction('stop-agent')}>停止设备</Button><Button variant="secondary" disabled={busy || deviceOffline} onClick={() => void runAction('restart-agent')}>重载设备</Button><Button variant="secondary" disabled={busy || deviceOffline} onClick={() => void runAction('restart-cups')}>重启 CUPS</Button></div>}
-        </ContentCard>
-      </>}
-      {tab === 'devices' && <>
-        <ContentCard title="称重仪表" description="串口由现场 Agent 独占；维护页仅查看状态，不直接驱动设备。"><p>{stateValue((status?.scale as Record<string, unknown> | undefined)?.state)} · 重量 {stateValue((status?.scale as Record<string, unknown> | undefined)?.weight)} t</p><p className="mt-2 text-sm text-text-secondary">{String((status?.scale as Record<string, unknown> | undefined)?.fault ?? '暂无仪表故障信息')}</p></ContentCard>
-        <ContentCard title="打印队列与校准" description="取消作业不代表此前没有出纸；操作后核实设备状态和纸面结果。"><p>目标队列：{stateValue(status?.queue)} · {stateValue(status?.queueState)}</p><div className="mt-3 flex flex-wrap gap-2">{canManage && <><Button variant="secondary" disabled={busy} onClick={() => void runAction('enable-queue')}>恢复目标队列</Button><Button disabled={busy} onClick={async () => { if (window.confirm('将提交一份固定校准样张，不会重打业务单据。是否继续？')) { setBusy(true); try { const result = await agentMaintenanceApi.testPrint(); setNotice(result.message || '校准样张请求已提交，请核对纸面效果。'); await refresh(); } catch (failure) { setError(`${getErrorMessage(failure, '测试打印失败')}。结果可能未知，请先核实是否出纸。`); } finally { setBusy(false); } } }}>打印校准样张</Button></>}</div></ContentCard>
-        <ContentCard title="摄像头" description="配置是否生效与摄像头是否可连接分别核实。">
-          <p>车前抓拍：{camera.frontConfigured ? '已配置' : '未配置'} · 车后抓拍：{camera.rearConfigured ? '已配置' : '未配置'}</p>
-          <p className="mt-2 text-sm text-text-secondary">{String(camera.state ?? '请按需执行维护测试')}</p>
-          {canManage && <div className="mt-3 space-y-3"><Button variant="secondary" onClick={() => setDiagnostics(value => !value)}>{diagnostics ? '关闭摄像头测试' : '打开摄像头测试'}</Button>{diagnostics && <CameraDiagnostics scaleId={Number(configData?.active.scaleId ?? status?.scaleId ?? 1)} />}</div>}
-        </ContentCard>
-      </>}
-      {tab === 'config' && <>
-        {!canManage && <ContentCard title="只读维护权限"><p>当前账号可以查看运行状态，配置和维护操作需要 agent:maintenance:manage。</p></ContentCard>}
-        {canManage && deviceOffline && <ContentCard title="Agent 维护暂不可用"><p>配置保存在 Agent 主机，当前无法读取或修改。请检查该主机的 Agent 运行状态和版本后刷新；页面启动设备只对支持维护的在线 Agent 生效。</p></ContentCard>}
-        {canManage && !deviceOffline && <>
-          <FormSection title="连接与设备参数" description="保存仅形成草稿。保存写入 Agent 主机，应用后在 Agent 内重载设备；切换后需重新采集。已有打印作业仍须核实处理。">
-            {fields.map((field) => {
-              const value = draft[field.key];
-              const id = `maintenance-${field.key}`;
-              if (field.kind === 'boolean') return <Field key={field.key} label={field.label} htmlFor={id}><Select id={id} value={String(Boolean(value))} disabled={busy} onChange={(event) => setDraft((current) => ({ ...current, [field.key]: event.target.value === 'true' }))}><option value="true">启用</option><option value="false">停用</option></Select></Field>;
-              if (field.kind === 'select') return <Field key={field.key} label={field.label} htmlFor={id}><Select id={id} value={String(value ?? field.options?.[0] ?? '')} disabled={busy} onChange={(event) => setDraft((current) => ({ ...current, [field.key]: event.target.value }))}>{field.options?.map((option) => <option key={option}>{option}</option>)}</Select></Field>;
-              return <Field key={field.key} label={field.label} htmlFor={id} help={field.help}><Input id={id} type={field.kind === 'number' ? 'number' : field.kind === 'secret' ? 'password' : 'text'} min={field.min} max={field.max} step={field.key === 'printScale' || field.key === 'formLengthMm' ? 'any' : undefined} autoComplete="new-password" disabled={busy} value={field.kind === 'secret' ? '' : String(value ?? '')} onChange={(event) => setDraft((current) => ({ ...current, [field.key]: field.kind === 'number' ? Number(event.target.value) : event.target.value }))} /></Field>;
-            })}
-          </FormSection>
-          <FormSection title="摄像头共享配置" description="前后流名称同时用于实时预览和称重抓拍。旧配置保留，明确切换并应用后才替换。">
-            {draft.cameraMode !== 'mediamtx' ? <div className="space-y-3"><p className="text-sm text-text-secondary">当前沿用旧抓拍配置，地址不回显。切换后仍须保存并应用。</p><Button variant="secondary" disabled={busy} onClick={() => setDraft(current => ({ ...current, cameraMode: 'mediamtx', cameraEnabled: true, cameraRtspBase: 'rtsp://127.0.0.1:8554', cameraWhepBase: `${location.protocol}//${location.hostname}:8889`, cameraFrontPath: 'front', cameraRearPath: 'rear', cameraTimeoutMs: 6000 }))}>切换为 MediaMTX 配置</Button></div> : <>
-              {cameraFields.map(field => <Field key={field.key} label={field.label} htmlFor={`maintenance-${field.key}`} help={field.help}>{field.kind === 'boolean' ? <Select id={`maintenance-${field.key}`} value={String(Boolean(draft[field.key]))} disabled={busy} onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value === 'true' }))}><option value="true">启用</option><option value="false">停用</option></Select> : <Input id={`maintenance-${field.key}`} type={field.kind === 'number' ? 'number' : 'text'} min={field.min} max={field.max} disabled={busy} value={String(draft[field.key] ?? '')} onChange={event => setDraft(current => ({ ...current, [field.key]: field.kind === 'number' ? Number(event.target.value) : event.target.value }))} />}</Field>)}
-              <div className="break-all text-sm text-text-secondary"><p>车前抓拍：{String(draft.cameraRtspBase ?? '').replace(/\/$/, '')}/{String(draft.cameraFrontPath ?? '')}</p><p>车前预览：{String(draft.cameraWhepBase ?? '').replace(/\/$/, '')}/{String(draft.cameraFrontPath ?? '')}/whep</p><p>车后抓拍：{String(draft.cameraRtspBase ?? '').replace(/\/$/, '')}/{String(draft.cameraRearPath ?? '')}</p><p>车后预览：{String(draft.cameraWhepBase ?? '').replace(/\/$/, '')}/{String(draft.cameraRearPath ?? '')}/whep</p><p className="mt-2">以上为草稿地址；凭据由服务管理，不在页面显示。停用后不能进行新的正式称重采集。</p></div>
-            </>}
-          </FormSection>
-          <div ref={feedbackRef} className="space-y-2" aria-live="polite">
-            {error && <p role="alert" className="rounded-control border border-error/30 bg-error/5 p-3 text-sm text-error">{error}</p>}
-            {notice && <p role="status" className="rounded-control border border-border bg-neutral-background p-3 text-sm">{notice}</p>}
+  function editDraft(update: SetStateAction<Record<string, unknown>>) {
+    setNotice('');
+    setDraft(update);
+  }
+
+  async function printSample() {
+    if (!window.confirm('将提交一份固定校准样张，不会重打业务单据。是否继续？')) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await agentMaintenanceApi.testPrint();
+      setNotice(result.message || '校准样张请求已提交，请核对纸面效果。');
+      await refresh();
+    } catch (failure) {
+      setError(`${getErrorMessage(failure, '测试打印失败')}。结果可能未知，请先核实是否出纸。`);
+    } finally { setBusy(false); }
+  }
+
+  const statusJobs = Array.isArray(status?.jobs) ? status.jobs as { id: string; queue?: string }[] : [];
+  const camera = (status?.camera && typeof status.camera === 'object' ? status.camera : {}) as ServiceStatus;
+  const scale = (status?.scale && typeof status.scale === 'object' ? status.scale : {}) as ServiceStatus;
+  const serviceCards = [
+    { label: '业务接口', value: status?.maintenance, detail: '本厂业务服务', icon: Activity },
+    { label: '设备执行', value: status?.agentKnown ? status.agent : '未知', detail: '重量采集与打印执行', icon: Play },
+    { label: 'CUPS 服务', value: status?.cupsKnown ? status.cups : '未知', detail: '本机打印服务', icon: Printer },
+    { label: '打印队列', value: status?.queueKnown ? status.queueState : '未知', detail: status?.queueKnown ? stateValue(status.queue) : '暂未读取到队列', icon: Printer },
+  ];
+  const weight = typeof scale.weight === 'string' && scale.weight.trim() !== '' || typeof scale.weight === 'number' ? Number(scale.weight) : NaN;
+  const weightAvailable = !deviceOffline && status?.agent === '运行中' && scale.known === true && scale.deviceOk === true && scale.stale === false && Number.isFinite(weight);
+  const lastError = typeof status?.lastError === 'string' ? status.lastError : '';
+  const statusIncomplete = !status || status.agentKnown !== true || status.cupsKnown !== true || status.queueKnown !== true;
+  const DiagnosisIcon = lastError ? AlertTriangle : statusIncomplete ? CircleHelp : CheckCircle2;
+  const feedback = <>
+    {error && <p role="alert" className="rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{error}</p>}
+    {notice && <p role="status" className="rounded-control border border-info-border bg-info-background p-space-3 text-sm text-text-primary">{notice}</p>}
+  </>;
+
+  const overview = <div className="space-y-space-4">
+    <ContentCard bodyClassName="p-0">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-4">
+        {serviceCards.map(({ label, value, detail, icon: Icon }) => <div key={label} className="min-w-0 space-y-space-3 border-b border-border p-space-4 last:border-b-0 sm:[&:nth-last-child(-n+2)]:border-b-0 sm:odd:border-r xl:border-b-0 xl:[&:not(:last-child)]:border-r">
+          <div className="flex items-center gap-space-2 text-sm font-medium"><Icon className="h-4 w-4 text-text-tertiary" aria-hidden />{label}</div>
+          <StatusValue value={value} />
+          <p className="break-all text-body-secondary text-text-tertiary">{detail}</p>
+        </div>)}
+      </div>
+    </ContentCard>
+    <div className="grid items-start gap-space-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <ContentCard title="现场诊断" description="查看异常和未结束作业，再执行相应维护操作。">
+        <div className="flex items-start gap-space-3">
+          <DiagnosisIcon className={`mt-0.5 h-5 w-5 shrink-0 ${lastError ? 'text-warning' : statusIncomplete ? 'text-text-tertiary' : 'text-success'}`} aria-hidden />
+          <div className="min-w-0"><p className="break-words text-sm font-medium">{!status ? '尚未读取设备状态' : lastError || (statusIncomplete ? '部分运行状态尚未确认' : '未报告设备错误')}</p><p className="mt-space-1 text-body-secondary text-text-tertiary">{deviceOffline ? '请检查 Agent 主机上的服务运行状态，恢复连接后刷新。' : '状态来自最近一次检查；需要时刷新以核实现场变化。'}</p></div>
+        </div>
+        <div className="mt-space-5 border-t border-border pt-space-4">
+          <div className="flex flex-wrap items-center justify-between gap-space-2"><h3 className="text-sm font-medium">未结束打印作业</h3><StatusTag tone={status?.jobsKnown !== true || statusJobs.length ? 'warning' : 'neutral'}>{status?.jobsKnown !== true ? '状态未知' : statusJobs.length ? `${statusJobs.length} 项待核实` : '未发现'}</StatusTag></div>
+          {status?.jobsKnown !== true ? <p className="mt-space-2 text-body-secondary text-text-secondary">未能确认作业状态，请先检查队列和现场纸面结果。</p> : statusJobs.length ? <ul className="mt-space-3 divide-y divide-border">{statusJobs.map(job => <li key={job.id} className="flex flex-wrap justify-between gap-space-2 py-space-2 text-sm"><span className="break-all font-medium">{job.id}</span><span className="break-all text-text-secondary">{job.queue ?? '队列未知'}，纸面结果需核实</span></li>)}</ul> : <p className="mt-space-2 text-body-secondary text-text-tertiary">本次检查未发现未结束的打印作业。</p>}
+        </div>
+      </ContentCard>
+      <ContentCard title="设备执行控制" description="控制重量采集与打印执行，Agent 维护连接保留。" className="min-w-0">
+        <DetailItem label="当前执行状态" value={<StatusValue value={status?.agentKnown ? status.agent : '未知'} />} />
+        {canManage ? <>
+          <div className="mt-space-4 flex flex-wrap gap-space-2">
+            <Button variant="primary" disabled={busy || deviceOffline || status?.agent === '运行中'} onClick={() => void runAction('start-agent')}><Play className="h-4 w-4" aria-hidden />启动设备</Button>
+            <Button disabled={busy || deviceOffline || status?.agent !== '运行中'} onClick={() => void runAction('stop-agent')}><Square className="h-4 w-4" aria-hidden />停止设备</Button>
+            <Button disabled={busy || deviceOffline} onClick={() => void runAction('restart-agent')}><RotateCw className="h-4 w-4" aria-hidden />重载设备</Button>
           </div>
-          <div className="flex flex-wrap gap-2"><Button disabled={busy} onClick={() => void saveDraft()}>保存草稿</Button><Button variant="secondary" disabled={busy || !configData} onClick={() => void runAction('apply')}>保存并应用配置</Button><Button variant="secondary" disabled={busy || !configData?.hasPrevious} onClick={() => void runAction('restore')}>恢复上一份配置</Button></div>
-          <ContentCard title="配置状态"><p>{configData?.saved ? '没有待应用草稿' : '存在未应用草稿'} · Agent 密钥{configData?.hasAgentKey ? '已设置（不回显）' : '未设置'}{configData?.keyChanged ? configData?.hasActiveAgentKey ? ' · 密钥待替换（不回显）' : ' · 待首次应用' : ''}</p><p className="mt-2 text-sm text-text-secondary">{String(configData?.runtimeState ?? '运行配置状态未知')}</p></ContentCard>
-        </>}
-      </>}
-      {tab === 'records' && <>
-        <ContentCard title="维护记录" extra={<Button variant="secondary" disabled={busy} onClick={() => void loadRecords()}>刷新记录</Button>}><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b border-border"><th className="p-2">时间</th><th className="p-2">操作</th><th className="p-2">目标</th><th className="p-2">结果</th></tr></thead><tbody>{audit.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border"><td className="p-2">{String(row.at ?? '')}</td><td className="p-2">{String(row.action ?? '')}</td><td className="p-2">{String(row.target ?? '')}</td><td className="p-2">{String(row.result ?? '')}</td></tr>)}</tbody></table>{!audit.length && <p className="p-3 text-text-tertiary">暂无已读取的维护记录</p>}</div></ContentCard>
-        <ContentCard title="运行日志" extra={<Button variant="secondary" disabled={busy} onClick={async () => { setBusy(true); try { setLogs(await agentMaintenanceApi.logs()); } catch (failure) { setLogs(getErrorMessage(failure, '日志读取失败')); } finally { setBusy(false); } }}>读取最近日志</Button>}><pre className="max-h-96 overflow-auto whitespace-pre-wrap break-words text-xs">{logs}</pre></ContentCard>
-      </>}
+          <p className="mt-space-3 text-body-secondary text-text-tertiary">{deviceOffline ? 'Agent 维护连接不可用，请在其主机恢复服务后刷新。' : '停止设备后暂停采集和打印，可在此重新启动。'}</p>
+        </> : <p className="mt-space-4 text-body-secondary text-text-tertiary">当前为只读维护权限；设备控制需由维护管理员操作。</p>}
+      </ContentCard>
+    </div>
+  </div>;
+
+  const devices = <div className="space-y-space-4">
+    <div className="grid items-start gap-space-4 xl:grid-cols-2">
+      <ContentCard title="称重仪表" description="查看仪表上报数据；维护页不直接操作串口。" className="min-w-0">
+        <div className="rounded-control bg-neutral-background p-space-4">
+          <div className="flex flex-wrap items-center justify-between gap-space-2"><p className="text-body-secondary text-text-secondary">最近检查重量</p><StatusValue value={scale.state} /></div>
+          <p className="mt-space-1 text-2xl font-semibold tabular-nums">{weightAvailable ? formatWeightValue(weight) : '—'}<span className="ml-space-2 text-sm font-normal text-text-secondary">吨</span></p>
+          <p className="mt-space-2 text-body-secondary text-text-tertiary">{weightAvailable ? '仅供维护诊断，以称重工作台的当次采集为准。' : '暂无可用重量，请检查设备执行状态和仪表连接。'}</p>
+        </div>
+        <div className="mt-space-4 grid grid-cols-2 gap-space-4"><DetailItem label="串口" value={stateValue(scale.port)} /><DetailItem label="波特率" value={stateValue(scale.baud)} /></div>
+        <p className={`mt-space-4 break-words border-t border-border pt-space-3 text-body-secondary ${scale.fault ? 'text-warning' : 'text-text-tertiary'}`}>{String(scale.fault || '暂无仪表故障信息')}</p>
+      </ContentCard>
+      <ContentCard title="打印队列与校准" description="检查队列后打印样张，核对纸张尺寸和位置。" className="min-w-0">
+        <div className="grid grid-cols-2 gap-space-4">
+          <DetailItem label="目标队列" value={status?.queueKnown ? stateValue(status.queue) : '未知'} />
+          <DetailItem label="队列状态" value={<StatusValue value={status?.queueKnown ? status.queueState : '未知'} />} />
+          <DetailItem label="CUPS 服务" value={<StatusValue value={status?.cupsKnown ? status.cups : '未知'} />} />
+          <DetailItem label="未结束作业" value={status?.jobsKnown === true ? `${statusJobs.length} 项` : '状态未知'} />
+        </div>
+        {canManage && <div className="mt-space-5 flex flex-wrap gap-space-2 border-t border-border pt-space-4">
+          <Button variant="primary" disabled={busy || deviceOffline} onClick={() => void printSample()}><Printer className="h-4 w-4" aria-hidden />打印校准样张</Button>
+          <Button disabled={busy || deviceOffline} onClick={() => void runAction('enable-queue')}>恢复目标队列</Button>
+          <Button disabled={busy || deviceOffline} onClick={() => void runAction('restart-cups')}>重启 CUPS</Button>
+        </div>}
+        <p className="mt-space-3 text-body-secondary text-text-tertiary">样张不属于业务单据。打印结果未知时先核实是否出纸；取消作业不代表此前没有出纸。</p>
+      </ContentCard>
+    </div>
+    <ContentCard title="摄像头" description="配置状态与连接状态分别核实；测试使用当前已生效参数。" extra={<Camera className="h-5 w-5 shrink-0 text-text-tertiary" aria-hidden />}>
+      <div className="grid gap-space-4 sm:grid-cols-2">
+        {(['front', 'rear'] as const).map(view => <div key={view} className="flex items-center justify-between gap-space-3 rounded-control border border-border p-space-3"><span className="text-sm font-medium">{view === 'front' ? '车前抓拍' : '车后抓拍'}</span><StatusTag tone={camera[`${view}Configured`] ? 'info' : 'neutral'}>{camera[`${view}Configured`] === true ? '已配置' : camera[`${view}Configured`] === false ? '未配置' : '未知'}</StatusTag></div>)}
+      </div>
+      <p className="mt-space-3 text-body-secondary text-text-secondary">{String(camera.state ?? '尚未读取摄像头状态，请刷新后核实。')}</p>
+      {canManage && <div className="mt-space-4 border-t border-border pt-space-4">
+        <Button disabled={busy || deviceOffline} aria-expanded={diagnostics} aria-controls="maintenance-camera-diagnostics" onClick={() => setDiagnostics(value => !value)}><Camera className="h-4 w-4" aria-hidden />{diagnostics ? '关闭摄像头测试' : '打开摄像头测试'}</Button>
+        {diagnostics && !deviceOffline && <div id="maintenance-camera-diagnostics" className="mt-space-4"><CameraDiagnostics scaleId={Number(configData?.active.scaleId ?? status?.scaleId ?? 1)} /></div>}
+      </div>}
+    </ContentCard>
+  </div>;
+
+  const configuration = !canManage ? <ContentCard title="只读维护权限"><p className="text-sm text-text-secondary">当前账号可以查看运行状态，配置和维护操作需要 agent:maintenance:manage。</p></ContentCard>
+    : deviceOffline ? <ContentCard title="Agent 维护暂不可用"><p className="text-sm text-text-secondary">配置保存在 Agent 主机，当前无法读取或修改。请检查该主机的 Agent 运行状态和版本后刷新；页面启动设备只对支持维护的在线 Agent 生效。</p></ContentCard>
+    : !configData ? <ContentCard title="配置尚未读取"><p className="text-sm text-text-secondary">请刷新状态重试；读取成功后可编辑设备参数。</p></ContentCard>
+    : <MaintenanceConfigPanel config={configData} draft={draft} setDraft={editDraft} busy={busy} feedback={feedback} onSave={() => void saveDraft()} onApply={() => void runAction('apply')} onRestore={() => void runAction('restore')} />;
+
+  const records = <div className="space-y-space-4">
+    <DataTableCard toolbar={<TableToolbar title="维护记录" description="最近 100 条维护操作，按时间核对操作目标及执行结果。" actions={<Button disabled={busy} onClick={() => void loadRecords()}><RefreshCw className="h-4 w-4" aria-hidden />刷新记录</Button>} />}>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] text-left text-sm"><caption className="sr-only">设备维护操作记录</caption>
+          <thead className="bg-neutral-background text-text-secondary"><tr className="border-b border-border">{['时间', '操作', '目标', '结果'].map(label => <th key={label} scope="col" className="px-space-4 py-space-3 font-medium">{label}</th>)}</tr></thead>
+          <tbody>{audit.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border last:border-b-0 hover:bg-neutral-background">
+            <td className="whitespace-nowrap px-space-4 py-space-3 tabular-nums text-text-secondary">{formatDateTime(typeof row.at === 'string' ? row.at : undefined)}</td>
+            <td className="px-space-4 py-space-3 font-medium">{actionLabels[String(row.action)] ?? String(row.action ?? '—')}</td>
+            <td className="max-w-xs break-words px-space-4 py-space-3 text-text-secondary">{String(row.target || '—')}</td>
+            <td className="max-w-sm break-words px-space-4 py-space-3">{String(row.result || '—')}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      {!audit.length && <div className="px-space-4 py-space-8 text-center text-sm text-text-tertiary">{busy ? '正在读取维护记录…' : recordsLoaded ? '暂无维护记录' : '尚未读取记录，请点击刷新记录。'}</div>}
+    </DataTableCard>
+    <ContentCard title="运行日志" description="最近的设备运行输出，用于排查连接与执行问题。" extra={<Button disabled={busy} onClick={async () => { setBusy(true); try { setLogs(await agentMaintenanceApi.logs()); } catch (failure) { setLogs(getErrorMessage(failure, '日志读取失败')); } finally { setBusy(false); } }}>读取最近日志</Button>} className="min-w-0">
+      <pre aria-label="运行日志内容" className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-neutral-background p-space-4 text-body-secondary leading-relaxed text-text-secondary">{logs || '本次未读取到日志内容。'}</pre>
+    </ContentCard>
+  </div>;
+
+  return <div className="min-w-0 space-y-space-4">
+    <PageHeader title="设备维护" description="查看现场设备、调整运行参数并排查维护问题。" actions={<Button disabled={busy} onClick={() => void refreshStatus()}><RefreshCw className={`h-4 w-4 ${busy ? 'motion-safe:animate-spin' : ''}`} aria-hidden />刷新状态</Button>} />
+    {!initialLoaded && <ContentCard><p role="status" className="text-sm text-text-secondary">正在检查 Agent 维护状态…</p></ContentCard>}
+    {initialLoaded && maintenanceEnabled === false && <ContentCard title="设备维护未启用"><p>当前业务服务未启用设备维护，请联系管理员检查本机维护配置。</p></ContentCard>}
+    {initialLoaded && maintenanceEnabled === true && !canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
+    {(tab !== 'config' || !canManage || deviceOffline || !configData) && feedback}
+    {canView && <>
+      <div className="flex flex-wrap items-center justify-between gap-space-2 text-body-secondary text-text-tertiary"><p>最近检查：<span className="tabular-nums">{formatDateTime(typeof status?.checkedAt === 'string' ? status.checkedAt : undefined)}</span></p><span>{canManage ? '设备维护管理' : '只读维护'}</span></div>
+      <SectionTabs label="设备维护页面" value={tab} onValueChange={value => { setTab(value as typeof tab); if (value === 'records' && !recordsLoaded && !busy) void loadRecords(); }} items={[
+        { value: 'overview', label: '运行总览', content: tab === 'overview' ? overview : null },
+        { value: 'devices', label: '设备与打印', content: tab === 'devices' ? devices : null },
+        { value: 'config', label: '配置', content: tab === 'config' ? configuration : null },
+        { value: 'records', label: '维护记录', content: tab === 'records' ? records : null },
+      ]} />
     </>}
   </div>;
 }

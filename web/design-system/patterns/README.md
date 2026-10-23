@@ -60,6 +60,7 @@ DataTableCard
 | 通知管理 `src/pages/system/notifications/index.tsx` | Standard Form Page + Standard List Page | 发布表单与历史列表组合在同一页面 |
 | 修改密码 `src/pages/change-password.tsx` | Standard Form Page | 左侧安全提示是表单页的业务辅助区块 |
 | 个人中心 `src/pages/account-profile.tsx` | Detail Page + Upload Section | 只读账号信息与头像上传组合 |
+| 设备维护 `src/pages/agent-maintenance.tsx` | Detail / Standard Form / Standard List 变体 | 按运行总览、设备与打印、配置和维护记录分区；[页面覆盖说明](../pages/agent-maintenance.md) |
 
 字典管理的双列表和通知管理的复合页面目前没有形成第三种稳定的外围结构，因此作为变体记录，不为单个页面新增 Pattern。
 

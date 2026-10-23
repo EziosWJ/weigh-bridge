@@ -107,11 +107,11 @@ try {
   releaseCapabilities();
   await pending.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
   assert.equal(await pending.page.getByRole('link', { name: '临时主体登记与确认' }).count(), 0, 'standalone mode must hide the legacy approval entry');
-  await pending.page.getByRole('button', { name: '设备与打印' }).click();
+  await pending.page.getByRole('tab', { name: '设备与打印' }).click();
   for (const actionName of ['启动设备', '停止设备', '重载设备', '重启 CUPS', '恢复目标队列', '打印校准样张']) {
     assert.equal(await pending.page.getByRole('button', { name: actionName, exact: true }).count(), 0, `view-only user must not see ${actionName}`);
   }
-  await pending.page.getByRole('button', { name: '配置', exact: true }).click();
+  await pending.page.getByRole('tab', { name: '配置', exact: true }).click();
   assert.equal(await pending.page.getByRole('button', { name: '保存草稿', exact: true }).count(), 0);
   assert.equal(await pending.page.getByRole('button', { name: '保存并应用配置', exact: true }).count(), 0);
   await pending.context.close();
@@ -121,6 +121,11 @@ try {
   let storedDraft;
   let actionPayload;
   let configRead = 0;
+  let agentRunning = false;
+  let emptyAudit = false;
+  let auditReads = 0;
+  const maintenanceErrors = [];
+  managed.page.on('pageerror', error => maintenanceErrors.push(error.message));
   await managed.context.unroute(managed.apiRoute);
   await managed.context.route(managed.apiRoute, async (route) => {
     const request = route.request();
@@ -129,10 +134,16 @@ try {
     if (path === '/api/weighing/capabilities') return route.fulfill({ json: { code: 200, message: 'ok', data: { nodeRole: 'standalone', maintenanceEnabled: true, nodeSiteId: 1, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 } } });
     if (path.endsWith('/camera-preview')) return route.fulfill({ json: { code: 200, data: { mode: 'mediamtx', enabled: true, ready: false, message: '测试：预览未连接' } } });
     if (path.endsWith('/test-camera')) return route.fulfill({ json: { at: new Date().toISOString(), views: [{ view: 'front', success: false, error: '车前测试连接失败' }, { view: 'rear', success: false, error: '车后测试连接失败' }] } });
+    if (path.endsWith('/logs')) return route.fulfill({ contentType: 'text/plain', body: '设备维护日志：已读取状态，等待现场核实。' });
+    if (path.endsWith('/audit')) {
+      auditReads += 1;
+      const records = emptyAudit ? [] : [{ id: 1, at: '2026-10-23T10:20:30+08:00', action: 'apply', target: 'local-agent', result: '配置已应用' }];
+      return route.fulfill({ json: { records, total: records.length, offset: 0 } });
+    }
     if (path.endsWith('/status')) return route.fulfill({ json: {
-      checkedAt: new Date().toISOString(), maintenance: '运行中', agent: '已停止', agentKnown: true,
+      checkedAt: new Date().toISOString(), maintenance: '运行中', agent: agentRunning ? '运行中' : '已停止', agentKnown: true,
       cups: '未知', cupsKnown: false, queue: 'unknown', queueState: '未知', queueKnown: false,
-      jobsKnown: false, jobs: [], lastError: '', scale: { known: false, state: '未知' },
+      jobsKnown: false, jobs: [], lastError: '', scale: agentRunning ? { known: true, deviceOk: true, stale: false, state: '稳定', weight: '0.000', port: '/dev/ttyS0', baud: 9600 } : { known: false, state: '未知' },
       camera: { frontConfigured: true, rearConfigured: false, recognitionConfigured: false, state: '状态仅在称重采集时确认' },
     } });
     if (path.endsWith('/config') && request.method() === 'GET') {
@@ -165,12 +176,24 @@ try {
   await managed.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
   await managed.page.getByRole('button', { name: '启动设备', exact: true }).waitFor();
   assert.ok(await managed.page.getByText('未知', { exact: true }).count() > 0, 'unknown runtime fields should render as unknown');
-  await managed.page.getByRole('button', { name: '配置', exact: true }).click();
+  await managed.page.screenshot({ path: '/tmp/weighbridge-maintenance-overview-desktop.png', fullPage: true });
+  await managed.page.getByRole('tab', { name: '运行总览', exact: true }).press('ArrowRight');
+  assert.equal(await managed.page.getByRole('tab', { name: '设备与打印', exact: true }).getAttribute('aria-selected'), 'true');
+  await managed.page.getByRole('tab', { name: '设备与打印', exact: true }).press('Home');
+  assert.equal(await managed.page.getByRole('tabpanel').count(), 1, 'only the active maintenance panel should be visible');
+  await managed.page.getByRole('tab', { name: '配置', exact: true }).click();
   await managed.page.getByText('存在未应用草稿').waitFor();
   assert.equal(await managed.page.getByLabel('业务服务地址').inputValue(), 'http://127.0.0.1:8900', `config response should populate the local form (reads=${configRead})`);
   for (const label of ['连接密钥', '车牌识别服务地址']) {
     assert.equal(await managed.page.getByLabel(label).inputValue(), '', `${label} must never be echoed into the form`);
   }
+  await managed.page.getByLabel('业务服务地址').fill('http://192.168.1.20:8900');
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await managed.page.waitForFunction(() => ![...document.querySelectorAll('button')].find(button => button.textContent === '刷新状态')?.disabled);
+  assert.equal(await managed.page.getByLabel('业务服务地址').inputValue(), 'http://192.168.1.20:8900', 'refreshing status must preserve unsaved form edits');
+  await managed.page.getByRole('tab', { name: '设备与打印', exact: true }).click();
+  await managed.page.getByRole('tab', { name: '配置', exact: true }).click();
+  assert.equal(await managed.page.getByLabel('业务服务地址').inputValue(), 'http://192.168.1.20:8900', 'switching tabs must preserve unsaved form edits');
   await managed.page.getByRole('button', { name: '保存草稿', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '配置草稿已保存' }).waitFor();
   for (const key of ['agentKey', 'cameraFrontUrl', 'cameraRearUrl', 'plateRecognitionUrl']) assert.equal(storedDraft?.[key], '', `${key} must be blank in frontend draft state: ${JSON.stringify(storedDraft)}`);
@@ -180,6 +203,7 @@ try {
   await managed.page.getByLabel('车前流名称').fill('scale/front');
   await managed.page.getByLabel('车后流名称').fill('scale/rear');
   await managed.page.getByLabel('前后摄像头', { exact: true }).selectOption('false');
+  await managed.page.getByText('查看草稿中的抓拍与预览地址', { exact: true }).click();
   await managed.page.getByText('车前预览：http://192.168.1.10:8889/scale/front/whep', { exact: true }).waitFor();
   await managed.page.evaluate(() => window.scrollTo(0, 0));
   await managed.page.screenshot({ path: '/tmp/weighbridge-camera-maintenance-config.png', fullPage: true });
@@ -192,12 +216,17 @@ try {
   assert.equal(storedDraft?.cameraFrontPath, 'scale/front');
   assert.equal(storedDraft?.cameraRearPath, 'scale/rear');
   await managed.page.reload();
-  await managed.page.getByRole('button', { name: '配置', exact: true }).click();
+  await managed.page.getByRole('tab', { name: '配置', exact: true }).click();
   assert.equal(await managed.page.getByLabel('RTSP 服务入口').inputValue(), 'rtsp://192.168.1.10:8554', '刷新必须保留已应用的表单值');
   assert.equal(actionPayload?.action, 'apply');
   assert.equal(actionPayload?.previewToken, undefined, '应用前的设备检查由 Agent 执行，不在页面阻塞摄像头配置');
   assert.ok(configRead >= 2, 'config must be reread after saving and applying');
-  await managed.page.getByRole('button', { name: '设备与打印', exact: true }).click();
+  await managed.page.getByRole('tab', { name: '设备与打印', exact: true }).click();
+  agentRunning = true;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await managed.page.getByText('稳定', { exact: true }).waitFor();
+  assert.match(await managed.page.getByText('最近检查重量', { exact: true }).locator('..').locator('..').innerText(), /0\s*吨/, 'zero instrument weight must display as a numeric zero');
+  await managed.page.screenshot({ path: '/tmp/weighbridge-maintenance-devices-desktop.png', fullPage: true });
   await managed.page.getByRole('button', { name: '打开摄像头测试', exact: true }).click();
   await managed.page.getByText('测试：预览未连接', { exact: true }).first().waitFor();
   await managed.page.getByRole('button', { name: '测试前后抓拍', exact: true }).click();
@@ -210,6 +239,23 @@ try {
   await managed.page.screenshot({ path: '/tmp/weighbridge-camera-maintenance-diagnostic.png', fullPage: true });
   const overflow = await managed.page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('main *')].filter(element => element.getBoundingClientRect().right > innerWidth + 1).slice(0, 15).map(element => ({ tag: element.tagName, className: element.className, width: element.getBoundingClientRect().width, right: element.getBoundingClientRect().right })) }));
   assert.ok(overflow.scroll <= overflow.width, `维护诊断窄屏不得横向溢出: ${JSON.stringify(overflow)}`);
+  await managed.page.getByRole('tab', { name: '维护记录', exact: true }).click();
+  await managed.page.getByRole('cell', { name: '应用配置', exact: true }).waitFor();
+  await managed.page.getByLabel('运行日志内容', { exact: true }).getByText('设备维护日志：已读取状态，等待现场核实。', { exact: true }).waitFor();
+  const readsAfterLoad = auditReads;
+  for (const label of ['运行总览', '设备与打印', '配置', '维护记录']) {
+    await managed.page.getByRole('tab', { name: label, exact: true }).click();
+    await managed.page.evaluate(() => window.scrollTo(0, 0));
+    assert.equal(await managed.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${label} must fit a 390px viewport`);
+    await managed.page.screenshot({ path: `/tmp/weighbridge-maintenance-${label}-mobile.png`, fullPage: true });
+  }
+  assert.equal(auditReads, readsAfterLoad, 'switching back to records should retain the loaded records');
+  await managed.page.setViewportSize({ width: 1366, height: 900 });
+  await managed.page.screenshot({ path: '/tmp/weighbridge-maintenance-records-desktop.png', fullPage: true, animations: 'disabled' });
+  emptyAudit = true;
+  await managed.page.getByRole('button', { name: '刷新记录', exact: true }).click();
+  await managed.page.getByText('暂无维护记录', { exact: true }).waitFor();
+  assert.deepEqual(maintenanceErrors, [], 'maintenance tabs must not produce browser runtime errors');
   await managed.context.close();
   console.log('standalone management browser smoke passed');
 } finally {
