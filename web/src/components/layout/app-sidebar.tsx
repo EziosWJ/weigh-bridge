@@ -4,13 +4,7 @@ import { Boxes, ChevronDown } from "lucide-react";
 import { WorkbenchLink } from "@/components/common/workbench-link";
 import { toast } from "@/components/common/toast-store";
 import {
-  convertUserMenusToNavItems,
-  defaultNavItems,
-  mergeNavItems,
-  notificationManageNavItem,
-  announcementManageNavItem,
-  agentMaintenanceNavItem,
-  localManagementNavItem,
+  buildAppNavigation,
   type NavItem,
 } from "@/config/navigation";
 import { isApiError } from "@/lib/api-error";
@@ -69,43 +63,12 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
   );
 
   const sidebarNavItems = useMemo(
-    () => {
-      const messageAdmin = user?.roles?.some((role) => role.roleCode === "ADMIN");
-      const base = defaultNavItems.map((item) => item.path === "/messages" && messageAdmin
-        ? { ...item, children: [...(item.children ?? []), notificationManageNavItem, announcementManageNavItem] }
-        : item);
-      const has = (code: string) => weighingCapabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
-      const maintenanceItem = weighingCapabilities?.maintenanceEnabled &&
-        (weighingCapabilities.permissionCodes.includes('agent:maintenance:view') || weighingCapabilities.permissionCodes.includes('agent:maintenance:manage'))
-        ? agentMaintenanceNavItem : undefined;
-      const localChildren = [
-        weighingCapabilities?.permissionCodes.includes('system:user') ? localManagementNavItem.children?.[0] : undefined,
-        weighingCapabilities?.permissionCodes.includes('system:role') ? localManagementNavItem.children?.[1] : undefined,
-        weighingCapabilities?.permissionCodes.includes('weighing:site:manage') ? localManagementNavItem.children?.[2] : undefined,
-        maintenanceItem,
-      ].filter((item): item is NavItem => Boolean(item));
-      const localItems = weighingCapabilities?.nodeRole === 'standalone' && localChildren.length
-        ? [...base, { ...localManagementNavItem, children: localChildren }]
-        : maintenanceItem
-          ? [...base, { label: '系统管理', path: '/system', icon: localManagementNavItem.icon, children: [maintenanceItem] }]
-          : base;
-      const filterWeighing = (items: NavItem[]): NavItem[] => items.flatMap(item => {
-        const isLocalNodeStatus = item.path === '/weighing/node-sync' || item.path === '/weighing/node-status';
-        const isCenterWorkflow = !isLocalNodeStatus && /temporary-parties|sync|center|central|中心|审批|下发/i.test(`${item.path} ${item.label}`);
-        if (!nodeContextLoaded && isCenterWorkflow) return [];
-        if (weighingCapabilities?.nodeRole === 'standalone' && isCenterWorkflow) return [];
-        if (!item.path.startsWith('/weighing')) return [item];
-        if (item.children?.length) { const children=filterWeighing(item.children);return children.length ? [{ ...item, children }] : []; }
-        const path=item.path;
-        if(weighingCapabilities?.nodeRole==='central'&&['/weighing/sites','/weighing/workbench'].includes(path))return [];
-        const allowed=path==='/weighing/workbench' ? has('confirm')
-          : path==='/weighing/site-config' ? has('site:manage') || has('site:export')
-          : path==='/weighing/settings' ? false
-          : ['/weighing/materials','/weighing/parties','/weighing/categories'].includes(path) ? has('master:read') : has('read');
-        return allowed ? [item] : [];
-      });
-      return mergeNavItems(filterWeighing(localItems), filterWeighing(convertUserMenusToNavItems(menus)));
-    },
+    () => buildAppNavigation({
+      menus,
+      isAdmin: user?.roles?.some((role) => role.roleCode === "ADMIN") ?? false,
+      capabilities: weighingCapabilities,
+      nodeContextLoaded,
+    }),
     [menus, user, weighingCapabilities, nodeContextLoaded],
   );
 

@@ -183,6 +183,148 @@ export function mergeNavItems(
     .map(({ item }) => item);
 }
 
+type NavigationCapabilities = {
+  nodeRole?: string;
+  maintenanceEnabled?: boolean;
+  permissionCodes: string[];
+};
+
+type BuildAppNavigationOptions = {
+  menus: CurrentUserMenu[];
+  isAdmin: boolean;
+  capabilities?: NavigationCapabilities | null;
+  nodeContextLoaded?: boolean;
+};
+
+function addNavChild(items: NavItem[], parentPath: string, child: NavItem) {
+  let inserted = false;
+
+  const walk = (nodes: NavItem[]): NavItem[] =>
+    nodes.map((item) => {
+      if (item.path === parentPath) {
+        inserted = true;
+        const childPath = child.externalUrl ?? child.path;
+        if (item.children?.some((entry) => (entry.externalUrl ?? entry.path) === childPath)) {
+          return item;
+        }
+        const children = [...(item.children ?? []), child]
+          .map((entry, index) => ({ entry, index }))
+          .sort((a, b) => {
+            const orderA = a.entry.sortOrder ?? Number.MAX_SAFE_INTEGER;
+            const orderB = b.entry.sortOrder ?? Number.MAX_SAFE_INTEGER;
+            return orderA - orderB || a.index - b.index;
+          })
+          .map(({ entry }) => entry);
+        return { ...item, children };
+      }
+
+      if (item.children?.length) {
+        return { ...item, children: walk(item.children) };
+      }
+
+      return item;
+    });
+
+  const nextItems = walk(items);
+  if (inserted) return nextItems;
+
+  return [
+    ...items,
+    {
+      label: "系统管理",
+      path: parentPath,
+      icon: localManagementNavItem.icon,
+      sortOrder: 1,
+      children: [child],
+    },
+  ];
+}
+
+function filterWeighingNavItems(
+  items: NavItem[],
+  capabilities: NavigationCapabilities | null | undefined,
+  nodeContextLoaded: boolean,
+): NavItem[] {
+  const permissionCodes = capabilities?.permissionCodes ?? [];
+  const has = (code: string) => permissionCodes.includes(`weighing:${code}`);
+
+  return items.flatMap((item) => {
+    const isLocalNodeStatus =
+      item.path === "/weighing/node-sync" || item.path === "/weighing/node-status";
+    const isCenterWorkflow =
+      !isLocalNodeStatus &&
+      /temporary-parties|sync|center|central|中心|审批|下发/i.test(`${item.path} ${item.label}`);
+    if (!nodeContextLoaded && isCenterWorkflow) return [];
+    if (capabilities?.nodeRole === "standalone" && isCenterWorkflow) return [];
+    if (!item.path.startsWith("/weighing")) return [item];
+    if (item.children?.length) {
+      const children = filterWeighingNavItems(item.children, capabilities, nodeContextLoaded);
+      return children.length ? [{ ...item, children }] : [];
+    }
+    const path = item.path;
+    if (capabilities?.nodeRole === "central" && ["/weighing/sites", "/weighing/workbench"].includes(path)) return [];
+    const allowed = path === "/weighing/workbench" ? has("confirm")
+      : path === "/weighing/site-config" ? has("site:manage") || has("site:export")
+      : path === "/weighing/settings" ? false
+      : ["/weighing/materials", "/weighing/parties", "/weighing/categories"].includes(path) ? has("master:read")
+      : has("read");
+    return allowed ? [item] : [];
+  });
+}
+
+/**
+ * Builds the single navigation tree used by both the sidebar and menu search.
+ * The backend menu tree stays the source of truth for 系统管理; local-only
+ * entries are merged into it instead of replacing the group.
+ */
+export function buildAppNavigation({
+  menus,
+  isAdmin,
+  capabilities,
+  nodeContextLoaded = false,
+}: BuildAppNavigationOptions): NavItem[] {
+  const base = defaultNavItems.map((item) =>
+    item.path === "/messages" && isAdmin
+      ? {
+          ...item,
+          children: [
+            ...(item.children ?? []),
+            notificationManageNavItem,
+            announcementManageNavItem,
+          ],
+        }
+      : item,
+  );
+  const permissionCodes = capabilities?.permissionCodes ?? [];
+  const maintenanceItem = capabilities?.maintenanceEnabled &&
+    (permissionCodes.includes("agent:maintenance:view") ||
+      permissionCodes.includes("agent:maintenance:manage"))
+    ? agentMaintenanceNavItem
+    : undefined;
+  const localChildren = [
+    permissionCodes.includes("system:user") ? localManagementNavItem.children?.[0] : undefined,
+    permissionCodes.includes("system:role") ? localManagementNavItem.children?.[1] : undefined,
+    permissionCodes.includes("weighing:site:manage") ? localManagementNavItem.children?.[2] : undefined,
+    maintenanceItem,
+  ].filter((item): item is NavItem => Boolean(item));
+  const localItems =
+    capabilities?.nodeRole === "standalone" && localChildren.length
+      ? [...base, { ...localManagementNavItem, children: localChildren }]
+      : base;
+  const userItems = convertUserMenusToNavItems(menus);
+  // Default development keeps the backend 系统管理 group and adds maintenance
+  // to it. Standalone deployments keep the dedicated 本地管理 group instead.
+  const userItemsWithMaintenance =
+    maintenanceItem && capabilities?.nodeRole !== "standalone"
+      ? addNavChild(userItems, "/system", maintenanceItem)
+      : userItems;
+
+  return mergeNavItems(
+    filterWeighingNavItems(localItems, capabilities, nodeContextLoaded),
+    filterWeighingNavItems(userItemsWithMaintenance, capabilities, nodeContextLoaded),
+  );
+}
+
 export function createUserMenuTitleMap(
   menus: CurrentUserMenu[],
 ): Record<string, string> {

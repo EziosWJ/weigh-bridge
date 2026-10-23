@@ -14,16 +14,19 @@ import {
 } from "@/components/ui/dialog";
 import { openWorkbench } from "@/lib/workbench-window";
 import { Input } from "@/components/ui/input";
-import { convertUserMenusToNavItems, defaultNavItems, mergeNavItems } from "@/config/navigation";
+import { buildAppNavigation } from "@/config/navigation";
 import { buildMenuSearchIndex, searchMenus, type MenuSearchItem } from "@/lib/menu-search";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+import { useWeighingStore } from "@/store/weighing-store";
 
 export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
   const location = useLocation();
   const menus = useAuthStore((state) => state.menus);
+  const user = useAuthStore((state) => state.user);
   const loading = useAuthStore((state) => state.isLoadingMenus);
+  const capabilities = useWeighingStore((state) => state.capabilities);
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [activePath, setActivePath] = useState<string | null>(null);
@@ -31,8 +34,13 @@ export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
   const composingRef = useRef(false);
   const id = useId();
   const index = useMemo(() => buildMenuSearchIndex(
-    mergeNavItems(defaultNavItems, convertUserMenusToNavItems(menus)),
-  ), [menus]);
+    buildAppNavigation({
+      menus,
+      isAdmin: user?.roles?.some((role) => role.roleCode === "ADMIN") ?? false,
+      capabilities,
+      nodeContextLoaded: Boolean(capabilities),
+    }),
+  ), [menus, user, capabilities]);
   const results = useMemo(() => searchMenus(index, deferredQuery), [index, deferredQuery]);
   const activeIndex = Math.max(0, results.findIndex((item) => item.path === activePath));
   const activeItem = results[activeIndex];

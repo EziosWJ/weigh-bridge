@@ -1,6 +1,7 @@
 import { LayoutDashboard } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import {
+  buildAppNavigation,
   convertUserMenusToNavItems,
   defaultNavItems,
   mergeNavItems,
@@ -25,6 +26,37 @@ function menu(id: number, menuName: string, path: string, sortOrder: number): Cu
   };
 }
 
+const systemMenus: CurrentUserMenu[] = [{
+  id: 1,
+  parentId: 0,
+  menuName: "系统管理",
+  menuType: "DIR",
+  path: "/system",
+  component: null,
+  externalUrl: null,
+  icon: "Settings",
+  permissionCode: "system",
+  sortOrder: 1,
+  visible: 1,
+  children: [
+    menu(2, "用户管理", "/system/user", 1),
+    menu(3, "角色管理", "/system/role", 2),
+    menu(4, "菜单管理", "/system/menu", 3),
+  ],
+}];
+
+const systemNavigation = buildAppNavigation({
+  menus: systemMenus,
+  isAdmin: false,
+  capabilities: {
+    nodeRole: "",
+    maintenanceEnabled: true,
+    permissionCodes: ["agent:maintenance:view"],
+  },
+  nodeContextLoaded: true,
+});
+const systemGroup = systemNavigation.find((item) => item.path === "/system");
+
 const scenarios: Record<string, NavItem[]> = {
   // 本地入口与业务菜单 sortOrder 相同时，本地入口保持在前
   tie: mergeNavItems(
@@ -47,5 +79,13 @@ createRoot(document.getElementById("root")!).render(
         ))}
       </ul>
     ))}
+    <p data-testid="system-group-count">
+      {systemNavigation.filter((item) => item.path === "/system").length}
+    </p>
+    <ul data-testid="scenario-system">
+      {systemGroup?.children?.map((item) => (
+        <li key={item.path}>{item.label}</li>
+      ))}
+    </ul>
   </div>,
 );
