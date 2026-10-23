@@ -320,7 +320,7 @@ func writeResult(c *gin.Context, value any, err error) {
 		platformhttp.WriteError(c, 403, 403, err.Error(), nil)
 	case errors.Is(err, ErrNotFound):
 		platformhttp.WriteError(c, 404, 404, err.Error(), nil)
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrConflict), errors.Is(err, ErrReferenced), errors.Is(err, ErrConditions), errors.Is(err, ErrOccupied), errors.Is(err, ErrSession), errors.Is(err, ErrRequestKey), errors.Is(err, ErrWeight), isRejection(err):
+	case errors.Is(err, ErrInvalid), errors.Is(err, ErrConflict), errors.Is(err, ErrReferenced), errors.Is(err, ErrCapturePolicyChanged), errors.Is(err, ErrConditions), errors.Is(err, ErrOccupied), errors.Is(err, ErrSession), errors.Is(err, ErrRequestKey), errors.Is(err, ErrWeight), isRejection(err):
 		platformhttp.WriteError(c, 200, 400, err.Error(), nil)
 	default:
 		platformhttp.WriteError(c, 500, 500, "业务处理失败", nil)

@@ -3,6 +3,7 @@ package sysconfig
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
@@ -192,5 +193,30 @@ func TestBatchDeleteWritesOneAuditEvent(t *testing.T) {
 	}
 	if _, ok := store.configs[3]; ok {
 		t.Fatal("config 3 must be deleted")
+	}
+}
+
+func TestCaptureRequiredBuiltinValueAndAudit(t *testing.T) {
+	store := newMemoryStore()
+	store.configs[7] = Config{ID: 7, ConfigName: "称重强制抓拍", ConfigKey: CaptureRequiredKey, ConfigValue: "true", ValueType: "BOOLEAN", Status: 1, IsBuiltin: 1}
+	service := NewService(store)
+	ctx := context.Background()
+	if err := service.Update(ctx, audit.Metadata{}, 7, Input{ConfigValue: "false", ConfigKey: "changed", ConfigName: "changed"}); err != nil {
+		t.Fatal(err)
+	}
+	row := store.configs[7]
+	if row.ConfigKey != CaptureRequiredKey || row.ConfigName != "称重强制抓拍" || row.ConfigValue != "false" || row.UpdateTime.IsZero() {
+		t.Fatalf("updated=%+v", row)
+	}
+	if len(store.auditEvents) != 1 || !strings.Contains(store.auditEvents[0].Summary, `"before":"true"`) || !strings.Contains(store.auditEvents[0].Summary, `"after":"false"`) {
+		t.Fatalf("audit=%+v", store.auditEvents)
+	}
+	for _, err := range []error{service.Status(ctx, audit.Metadata{}, 7, 0), service.Delete(ctx, audit.Metadata{}, 7), service.DeleteBatch(ctx, audit.Metadata{}, []int64{7})} {
+		if !errors.Is(err, ErrBuiltin) {
+			t.Fatalf("builtin protection=%v", err)
+		}
+	}
+	if err := service.Update(ctx, audit.Metadata{}, 7, Input{ConfigValue: "yes"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid value=%v", err)
 	}
 }

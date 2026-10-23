@@ -59,13 +59,16 @@ func (s *Service) BeginMaintenance(ctx context.Context) (func(), error) {
 func (s *Service) SetCameraAvailability(fn func(int64) bool) { s.cameraAvailable = fn }
 
 func (s *Service) captureBlockedReason(scale int64) string {
+	return s.captureBlockedReasonWithPolicy(scale, true)
+}
+func (s *Service) captureBlockedReasonWithPolicy(scale int64, required bool) string {
 	s.maintenance.mu.Lock()
 	paused := s.maintenance.paused
 	s.maintenance.mu.Unlock()
 	if paused {
 		return "设备维护中，暂停采集和确认"
 	}
-	if s.cameraAvailable != nil && !s.cameraAvailable(scale) {
+	if required && s.cameraAvailable != nil && !s.cameraAvailable(scale) {
 		return "摄像头已停用或当前配置尚未核实，请检查设备维护"
 	}
 	return ""

@@ -44,7 +44,8 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
   let calculatedWeights: WeightValues | undefined;
   if (value.original) { try { calculatedWeights = adjustedWeights(value.original, finalInput); } catch (error) { deductionError = error instanceof Error ? error.message : '请核对最终重量'; } }
   const calculatedDeduction = value.original && calculatedWeights ? weightDeduction(value.original, calculatedWeights) : undefined;
-  const ready = !!value.capture && imageReady && !deductionError && !invalidReason;
+  const requiresImage = value.capture?.captureRequired !== false;
+  const ready = !!value.capture && (!requiresImage || imageReady) && !deductionError && !invalidReason;
 
   return <Dialog open onOpenChange={open => { if (!open && !submitting) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen && !submitting} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay />
@@ -70,7 +71,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
           <div className="space-y-2 border-t border-border pt-3">
             <h4 className="text-sm font-medium">本次抓拍</h4>
             {value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次抓拍图片，请返回重新采集。</p>}
-            <p className="text-xs text-text-tertiary">静态示例，非现场抓拍；摄像头未接入。</p>
+            {!requiresImage && <p className="text-sm text-warning">本次未强制抓拍，允许无图确认；请对照现场车辆核对。</p>}
           </div>
 
         </section>
@@ -79,7 +80,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
             <div><p className="text-sm text-text-secondary">本次采集{value.kind}</p><p className="mt-1 text-xs text-text-tertiary">请核对车辆完全上磅及装载状态</p></div>
             <strong className="shrink-0 text-3xl tabular-nums">{formatWeight(value.weight)}</strong>
           </div>
-          {value.original ? <WeightDeductionFields original={value.original} value={finalInput} onChange={setFinalInput} showError={false} /> : <div className="space-y-3 text-sm leading-relaxed text-text-secondary"><h4 className="font-medium text-text-primary">确认本次称重</h4><p>请核对车牌、运输方向、物料、供收方及本次重量，并对照图片检查车辆位置。</p><p>确认后保存首次称重，装卸完成后按车牌办理回磅。</p></div>}
+          {value.original ? <WeightDeductionFields original={value.original} value={finalInput} onChange={setFinalInput} showError={false} /> : <div className="space-y-3 text-sm leading-relaxed text-text-secondary"><h4 className="font-medium text-text-primary">确认本次称重</h4><p>请核对车牌、运输方向、物料、供收方及本次重量，并检查车辆位置。</p><p>确认后保存首次称重，装卸完成后按车牌办理回磅。</p></div>}
         </section>
       </DialogBody>
       <DialogFooter className="shrink-0 flex-wrap items-center justify-between">
@@ -87,7 +88,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
         {deductionError && <p role="alert" className="w-full text-xs text-error">无法出单：{deductionError}</p>}
         {submitError && <p role="alert" className="w-full text-sm text-error">保存失败：{submitError}</p>}
         {submitting && <p role="status" className="w-full text-sm text-text-secondary">正在保存称重，请勿关闭窗口…</p>}
-        {!imageReady && <p className="w-full text-xs text-warning">请等待本次抓拍图片加载；加载失败时返回重新采集。</p>}
+        {requiresImage && !imageReady && <p className="w-full text-xs text-warning">请等待本次抓拍图片加载；加载失败时返回重新采集。</p>}
         {calculatedWeights && calculatedDeduction && <div className="w-full space-y-2" aria-live="polite">
           <div className="grid grid-cols-3 gap-3 rounded-control bg-neutral-background px-3 py-2 text-xs text-text-secondary">
             <div>最终毛重<strong className="mt-1 block text-base font-semibold text-text-primary">{formatWeight(calculatedWeights.gross)}</strong></div>

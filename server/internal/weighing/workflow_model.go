@@ -11,11 +11,12 @@ import (
 )
 
 var (
-	ErrConditions = errors.New("采集条件已失效，请重新采集并核对")
-	ErrOccupied   = errors.New("地磅已被其他工作台占用")
-	ErrSession    = errors.New("地磅操作会话已失效，请重新取得操作权")
-	ErrRequestKey = errors.New("同一请求编号不能用于不同操作或内容")
-	ErrWeight     = errors.New("毛重必须大于皮重，原始与最终净重均须大于零")
+	ErrCapturePolicyChanged = errors.New("强制抓拍配置已变更，请重新采集")
+	ErrConditions           = errors.New("采集条件已失效，请重新采集并核对")
+	ErrOccupied             = errors.New("地磅已被其他工作台占用")
+	ErrSession              = errors.New("地磅操作会话已失效，请重新取得操作权")
+	ErrRequestKey           = errors.New("同一请求编号不能用于不同操作或内容")
+	ErrWeight               = errors.New("毛重必须大于皮重，原始与最终净重均须大于零")
 )
 
 // Tonnes is an exact thousandth of a tonne shared with the Agent contract.

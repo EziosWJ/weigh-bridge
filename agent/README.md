@@ -84,3 +84,9 @@ WEIGHBRIDGE_SERIAL_STALE_MS=1000
 ## 五联三等分连续纸
 
 小数毫米表长、统一缩放及校准样张的参数含义与现场验收顺序见[SK-820 连续纸校准](../docs/device/sk820-continuous-paper-calibration.md)。本次软件实现与验证记录见[交付记录](../docs/requirements/continuous-paper-print-delivery.md)；真实走纸、撕纸停靠和第五联清晰度仍需现场验收。
+
+### 可选抓拍联调（2026-10-23）
+
+业务配置管理的“称重强制抓拍”默认开启，关闭后的正式称重规则见 [功能规格](../docs/requirements/optional-weighing-capture-spec.md)。真实 Agent 也须升级至支持 `captureRequired` 的版本；未施工厂区可关闭设备摄像头及业务强制抓拍，重量和人工确认仍必需。
+
+独立 mock 的 `POST /api/control` 新增动作 `camera-disabled`、`camera-failure`、`upload-failure` 和 `camera-ready`，分别模拟无摄像头、抓拍失败、上传失败和恢复抓拍；仅影响下一次采集返回，不修改业务策略。业务强制时图片异常仍失败，关闭时保留相应状态。

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"regexp"
 	"strings"
 	"time"
@@ -312,6 +313,10 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 		}
 		now := time.Now().UTC()
 		captured := device.Capture
+		policy, err := capturePolicyMatches(ctx, tx)
+		if err != nil {
+			return err
+		}
 		source, candidate, observedAt := "manual", "", ""
 		if in.PlateEvidence != nil && in.PlateEvidence.Source == "agent" {
 			source = "agent"
@@ -319,11 +324,17 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 			observedAt = captured.Plate.At.Format(time.RFC3339Nano)
 		}
 		plateEvidence := snapshot(map[string]any{"source": source, "candidate": candidate, "confirmedPlate": business.Plate, "at": now, "observedAt": observedAt})
-		front := captured.Images[0]
-		if front.View != "front" {
-			front = captured.Images[1]
+		var primaryImage p.Image
+		for _, image := range captured.Images {
+			if primaryImage.ID == "" || image.View == "front" {
+				primaryImage = image
+			}
 		}
-		evidence := snapshot(map[string]any{"source": "agent", "agentId": device.State.AgentID, "imageSrc": front.URL, "sha256": front.SHA256, "images": captured.Images, "preset": "front", "cameraLabel": "车头视角", "at": captured.CapturedAt, "receivedAt": now, "weight": captured.Weight, "plate": business.Plate, "plateEvidence": json.RawMessage(plateEvidence)})
+		cameraLabel := "车头视角"
+		if primaryImage.View == "rear" {
+			cameraLabel = "车尾视角"
+		}
+		evidence := snapshot(map[string]any{"captureRequired": policy.Required, "capturePolicyRevision": policy.Revision, "imageStatus": captured.ImageStatus, "imageError": captured.ImageError, "source": "agent", "agentId": device.State.AgentID, "imageSrc": primaryImage.URL, "sha256": primaryImage.SHA256, "images": captured.Images, "preset": primaryImage.View, "cameraLabel": cameraLabel, "at": captured.CapturedAt, "receivedAt": now, "weight": captured.Weight, "plate": business.Plate, "plateEvidence": json.RawMessage(plateEvidence)})
 		result = Sample{ScaleID: in.ScaleID, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: "agent", Weight: captured.Weight, CapturedAt: now, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision}
 		// Recapture invalidates earlier unconfirmed samples in this session.
 		if err := tx.Model(&Sample{}).Where("scale_id=? AND session_generation=? AND invalidated_at IS NULL AND id NOT IN (SELECT sample_id FROM wb_weigh_record)", in.ScaleID, session.Generation).Update("invalidated_at", now).Error; err != nil {
@@ -355,6 +366,9 @@ func (r *Repository) InvalidateSample(ctx context.Context, id int64, in SessionI
 func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, actor int64, session ScaleSession) (Sample, error) {
 	sample, err := findOne[Sample](tx, in.SampleID)
 	if err != nil {
+		return sample, err
+	}
+	if err := validateSamplePolicy(ctx, tx, sample); err != nil {
 		return sample, err
 	}
 	if !in.Checks.Valid() {
@@ -410,7 +424,7 @@ func replayOperation(op Operation, requestHash string) (CommandResult, error) {
 	return result, nil
 }
 func domainError(err error) bool {
-	return errors.Is(err, ErrForbidden) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrConflict) || errors.Is(err, ErrReferenced) || errors.Is(err, ErrConditions) || errors.Is(err, ErrSession) || errors.Is(err, ErrWeight) || errors.Is(err, ErrNotFound)
+	return errors.Is(err, ErrForbidden) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrConflict) || errors.Is(err, ErrReferenced) || errors.Is(err, ErrConditions) || errors.Is(err, ErrCapturePolicyChanged) || errors.Is(err, ErrSession) || errors.Is(err, ErrWeight) || errors.Is(err, ErrNotFound)
 }
 func (r *Repository) command(ctx context.Context, key, action string, payload any, e audit.Event, lock func(*gorm.DB) error, perform func(*gorm.DB, string) (commandOutcome, error)) (CommandResult, error) {
 	var result CommandResult

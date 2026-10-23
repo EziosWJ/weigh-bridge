@@ -65,8 +65,8 @@ func testMonitoringMenuAndAuthorization(t *testing.T, database *platformdatabase
 	if err := database.GORM.Table("goose_seed_db_version").Select("MAX(version_id)").Where("is_applied = ?", true).Scan(&version).Error; err != nil {
 		t.Fatal(err)
 	}
-	if version != 11 {
-		t.Fatalf("seed version = %d; want shared version 11 including local maintenance permissions", version)
+	if version != 12 {
+		t.Fatalf("seed version = %d; want shared version 12 including optional weighing capture", version)
 	}
 	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
 	service := monitoring.NewService(monitoring.NewRepository(database.GORM), nil, func() time.Time { return now })

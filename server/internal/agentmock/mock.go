@@ -51,6 +51,7 @@ type Mock struct {
 	onScale, unstable, fault bool
 	plate                    p.Plate
 	images                   map[string][]byte
+	imageStatus              string
 	prints                   []Print
 	history                  []p.DeviceState
 	http                     *http.Client
@@ -186,7 +187,10 @@ func (m *Mock) runConnection(ctx context.Context) {
 				}
 				return
 			case "capture.request":
-				go m.capture(msg.RequestID)
+				var request p.CaptureRequest
+				if json.Unmarshal(msg.Payload, &request) == nil {
+					go m.captureWithPolicy(msg.RequestID, request.RequiresImages())
+				}
 			case "print.request":
 				var value p.PrintRequest
 				if json.Unmarshal(msg.Payload, &value) == nil {
@@ -322,19 +326,33 @@ func (m *Mock) publishImages() {
 	}
 	_ = m.send("camera.updated", "", p.Camera{Images: images})
 }
-func (m *Mock) capture(request string) {
+func (m *Mock) capture(request string) { m.captureWithPolicy(request, true) }
+func (m *Mock) captureWithPolicy(request string, required bool) {
 	m.mu.Lock()
 	state := m.current
 	plate := m.plate
+	imageStatus := m.imageStatus
 	m.mu.Unlock()
 	result := p.Capture{DeviceState: state, CapturedAt: time.Now().UTC(), Plate: plate}
 	if !state.Stable || !state.DeviceOK || state.Weight <= 0 {
 		result.Error = "设备未稳定或故障"
+	} else if imageStatus != "" {
+		result.ImageStatus, result.ImageError = imageStatus, "模拟摄像头未就绪"
+		result.Success = !required
+		if required {
+			result.Error = result.ImageError
+		}
 	} else {
 		images, err := m.uploadImages()
 		if err != nil {
 			result.Error = err.Error()
+			result.ImageStatus, result.ImageError = "upload_failed", result.Error
+			if !required {
+				result.Success = true
+				result.Error = ""
+			}
 		} else {
+			result.ImageStatus = "complete"
 			result.Images = images
 			result.Success = true
 		}
@@ -370,6 +388,14 @@ func (m *Mock) control(w http.ResponseWriter, r *http.Request) {
 		m.onScale = true
 		m.upAt = time.Now()
 		m.unstable = false
+	case "camera-disabled":
+		m.imageStatus = "disabled"
+	case "camera-failure":
+		m.imageStatus = "capture_failed"
+	case "upload-failure":
+		m.imageStatus = "upload_failed"
+	case "camera-ready":
+		m.imageStatus = ""
 	case "down":
 		m.onScale = false
 	case "unstable":

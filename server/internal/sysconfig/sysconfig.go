@@ -2,6 +2,7 @@ package sysconfig
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -19,6 +20,7 @@ const (
 	enabled            = 1
 	builtin            = 1
 	LogClearEnabledKey = "system.log-clear-enabled"
+	CaptureRequiredKey = "weighing.capture-required"
 )
 
 var (
@@ -224,7 +226,7 @@ func (s *Service) Update(c context.Context, m audit.Metadata, id int64, in Input
 }
 
 func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config, in Input) error {
-	if old.ConfigKey != LogClearEnabledKey {
+	if old.ConfigKey != LogClearEnabledKey && old.ConfigKey != CaptureRequiredKey {
 		return ErrBuiltin
 	}
 	if old.ValueType != "BOOLEAN" {
@@ -234,8 +236,13 @@ func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config,
 	if !ok {
 		return ErrInvalid
 	}
+	before := old.ConfigValue
 	old.ConfigValue = value
-	return s.store.Update(c, old, event(m, "config.update", "config", old.ID, "更新配置"))
+	old.UpdateTime = time.Now().UTC()
+	e := event(m, "config.update", "config", old.ID, "更新配置")
+	data, _ := json.Marshal(map[string]any{"configKey": old.ConfigKey, "before": before, "after": value})
+	e.Summary = string(data)
+	return s.store.Update(c, old, e)
 }
 
 func normalizeBooleanValue(value string) (string, bool) {
@@ -275,8 +282,12 @@ func (s *Service) Status(c context.Context, m audit.Metadata, id, st int64) erro
 	if st < 0 || st > 1 {
 		return ErrInvalid
 	}
-	if _, e := s.store.Find(c, id); e != nil {
+	old, e := s.store.Find(c, id)
+	if e != nil {
 		return e
+	}
+	if old.ConfigKey == CaptureRequiredKey {
+		return ErrBuiltin
 	}
 	return s.store.SetStatus(c, id, int(st), event(m, "config.status", "config", id, "更新配置状态"))
 }

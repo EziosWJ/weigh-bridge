@@ -304,8 +304,16 @@ func (h *Handler) deviceState(c *gin.Context) {
 		writeResult(c, nil, ErrConditions)
 		return
 	}
+	policy, err := h.service.CapturePolicy(c.Request.Context())
+	if err != nil {
+		writeResult(c, nil, err)
+		return
+	}
+	reason := h.service.captureBlockedReasonWithPolicy(id, policy.Required)
 	writeResult(c, struct {
 		agentbridge.State
-		CaptureBlockedReason string `json:"captureBlockedReason,omitempty"`
-	}{h.service.devices.State(id), h.service.captureBlockedReason(id)}, nil)
+		CaptureRequired       bool   `json:"captureRequired"`
+		CapturePolicyRevision string `json:"capturePolicyRevision"`
+		CaptureBlockedReason  string `json:"captureBlockedReason,omitempty"`
+	}{h.service.devices.State(id), policy.Required, policy.Revision, reason}, nil)
 }

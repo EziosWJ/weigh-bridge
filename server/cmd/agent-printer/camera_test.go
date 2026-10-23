@@ -67,3 +67,75 @@ func TestCapturePersistsBothViewsAndRejectsWeightChange(t *testing.T) {
 		})
 	}
 }
+
+func TestOptionalCaptureKeepsWeightChecksAndActualImageStatus(t *testing.T) {
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"disabled", "capture_failed", "upload_failed", "partial", "unstable"} {
+		t.Run(mode, func(t *testing.T) {
+			scale, writer, stop := startTestScale(t)
+			defer stop()
+			if _, err := writer.Write(makeD12Frame(0x30, "001550")); err != nil {
+				t.Fatal(err)
+			}
+			waitScale(t, scale, func(s agentscale.Snapshot) bool { return s.DeviceOK && s.Stable })
+			hub := agentbridge.New(agentbridge.Config{ID: "optional", Key: "key", ScaleID: 1, ImageDir: t.TempDir()})
+			router := gin.New()
+			hub.Register(router)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if mode == "upload_failed" {
+					http.Error(w, "upload failed", 503)
+					return
+				}
+				router.ServeHTTP(w, r)
+			}))
+			defer server.Close()
+			camera := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if mode == "capture_failed" || (mode == "partial" && r.URL.Path == "/rear") {
+					http.Error(w, "camera failed", 503)
+					return
+				}
+				if mode == "unstable" {
+					_, _ = writer.Write(makeD12Frame(0x38, "001560"))
+					time.Sleep(60 * time.Millisecond)
+				}
+				_, _ = w.Write(pixels.Bytes())
+			}))
+			defer camera.Close()
+			cfg := agentprinter.Defaults()
+			cfg.AgentID, cfg.AgentKey, cfg.ServerURL = "optional", "key", server.URL
+			if mode != "disabled" {
+				cfg.CameraFrontURL, cfg.CameraRearURL = camera.URL+"/front", camera.URL+"/rear"
+			}
+			result := captureEvidenceWithPolicy(context.Background(), cfg, scale, false)
+			if mode == "unstable" {
+				if result.Success {
+					t.Fatalf("unstable accepted=%+v", result)
+				}
+				return
+			}
+			want := mode
+			if mode == "partial" {
+				want = "capture_failed"
+			}
+			if !result.Success || result.Weight.String() != "1.55" || result.ImageStatus != want || result.ImageError == "" {
+				t.Fatalf("result=%+v", result)
+			}
+			if mode == "partial" && len(result.Images) != 1 {
+				t.Fatalf("valid front image lost=%+v", result)
+			}
+			if mode == "disabled" {
+				canceled, cancel := context.WithCancel(context.Background())
+				cancel()
+				if captureEvidenceWithPolicy(canceled, cfg, scale, false).Success {
+					t.Fatal("canceled capture succeeded")
+				}
+				if captureEvidenceWithPolicy(context.Background(), cfg, scale, true).Success {
+					t.Fatal("mandatory camera was bypassed")
+				}
+			}
+		})
+	}
+}

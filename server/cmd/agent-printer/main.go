@@ -271,20 +271,25 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 					}
 				}
 			case "capture.request":
+				var request p.CaptureRequest
+				if err := json.Unmarshal(m.Payload, &request); err != nil {
+					_ = sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), m.RequestID, p.Capture{Error: "采集参数无效"}))
+					continue
+				}
 				select {
 				case captureBusy <- struct{}{}:
-					go func(requestID string) {
+					go func(requestID string, request p.CaptureRequest) {
 						defer func() { <-captureBusy }()
 						result := p.Capture{}
 						if control == nil {
-							result = captureEvidence(ctx, cfg, scale)
+							result = captureEvidenceWithPolicy(ctx, cfg, scale, request.RequiresImages())
 						} else {
-							result = control.capture(ctx)
+							result = control.captureWithPolicy(ctx, request.RequiresImages())
 						}
 						if err := sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), requestID, result)); err != nil {
 							cancelRun(err)
 						}
-					}(m.RequestID)
+					}(m.RequestID, request)
 				default:
 					result := p.Capture{Success: false, Error: "正在采集，请核实前次请求结果", CapturedAt: time.Now().UTC()}
 					if err := sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), m.RequestID, result)); err != nil {
@@ -353,8 +358,15 @@ func captureFailure(scale *agentscale.Monitor, now time.Time) p.Capture {
 // captureEvidence keeps camera acquisition off the WSS event loop. Every new
 // attempt uses fresh images and rechecks the live instrument throughout capture.
 func captureEvidence(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor) p.Capture {
+	return captureEvidenceWithPolicy(parent, cfg, scale, true)
+}
+func captureEvidenceWithPolicy(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, required bool) p.Capture {
 	if cfg.CameraFrontURL == "" || cfg.CameraRearURL == "" {
-		return captureFailure(scale, time.Now())
+		if required {
+			return captureFailure(scale, time.Now())
+		}
+		state := currentDeviceState(scale, time.Now())
+		return p.Capture{Success: parent.Err() == nil && state.DeviceOK && state.Stable && state.Weight > 0, DeviceState: state, CapturedAt: time.Now().UTC(), Images: []p.Image{}, ImageStatus: "disabled", ImageError: "未启用抓拍"}
 	}
 	initial := currentDeviceState(scale, time.Now())
 	if !initial.DeviceOK || !initial.Stable {
@@ -386,15 +398,24 @@ func captureEvidence(parent context.Context, cfg agentprinter.Config, scale *age
 	now := time.Now().UTC()
 	final := currentDeviceState(scale, now)
 	result := p.Capture{DeviceState: final, CapturedAt: now, Images: []p.Image{}, Plate: plate}
+	if parent.Err() != nil || (ctx.Err() != nil && (required || !errors.Is(ctx.Err(), context.DeadlineExceeded))) || !final.DeviceOK || !final.Stable || final.Weight != initial.Weight {
+		result.Error = "采集期间仪表失稳、重量变化或采集超时，请重新采集"
+		return result
+	}
+	result.Images = images
 	if err != nil {
-		result.Error = err.Error()
-		return result
+		result.ImageStatus, result.ImageError = "capture_failed", err.Error()
+		if errors.Is(err, agentcamera.ErrUpload) {
+			result.ImageStatus = "upload_failed"
+		}
+		if required {
+			result.Error = err.Error()
+			return result
+		}
+	} else {
+		result.ImageStatus = "complete"
 	}
-	if ctx.Err() != nil || !final.DeviceOK || !final.Stable || final.Weight != initial.Weight {
-		result.Error = "抓拍期间仪表失稳、重量变化或采集超时，请重新采集"
-		return result
-	}
-	result.Success, result.Images = true, images
+	result.Success = true
 	return result
 }
 

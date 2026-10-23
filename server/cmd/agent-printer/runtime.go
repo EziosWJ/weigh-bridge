@@ -118,13 +118,14 @@ func (r *deviceRuntime) deviceState() p.DeviceState {
 	}
 	return currentDeviceState(scale, time.Now())
 }
-func (r *deviceRuntime) capture(ctx context.Context) p.Capture {
+func (r *deviceRuntime) capture(ctx context.Context) p.Capture { return r.captureWithPolicy(ctx, true) }
+func (r *deviceRuntime) captureWithPolicy(ctx context.Context, required bool) p.Capture {
 	child, cfg, scale, done, err := r.acquire(ctx, false)
 	if err != nil {
 		return p.Capture{Error: err.Error(), CapturedAt: time.Now().UTC()}
 	}
 	defer done()
-	return captureEvidence(child, cfg, scale)
+	return captureEvidenceWithPolicy(child, cfg, scale, required)
 }
 func (r *deviceRuntime) testCameras(ctx context.Context, _ int64) (p.CameraTest, error) {
 	child, cfg, _, done, err := r.acquire(ctx, false)

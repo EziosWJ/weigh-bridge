@@ -22,7 +22,11 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 		return Sample{}, gateErr
 	}
 	defer release()
-	if s.cameraAvailable != nil && !s.cameraAvailable(in.ScaleID) {
+	policy, err := s.CapturePolicy(ctx)
+	if err != nil {
+		return Sample{}, err
+	}
+	if policy.Required && s.cameraAvailable != nil && !s.cameraAvailable(in.ScaleID) {
 		return Sample{}, ErrConditions
 	}
 	if s.devices == nil {
@@ -45,7 +49,7 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 	if !validSession(current, e.Metadata.ActorID, in.SessionInput) {
 		return Sample{}, ErrSession
 	}
-	captured, revision, err := s.devices.Capture(ctx, in.ScaleID)
+	captured, revision, err := s.devices.CaptureWithPolicy(ctx, in.ScaleID, policy.Required)
 	if err != nil {
 		return Sample{}, ErrConditions
 	}
@@ -54,7 +58,7 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 		return Sample{}, ErrConditions
 	}
 	defer unlock()
-	return s.store.Capture(withDevice(ctx, state, &captured), in, e)
+	return s.store.Capture(withCapturePolicy(withDevice(ctx, state, &captured), policy), in, e)
 }
 func (s *Service) InvalidateSample(ctx context.Context, id int64, in SessionInput, actor int64) error {
 	return s.store.InvalidateSample(ctx, id, in, actor)

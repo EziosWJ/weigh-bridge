@@ -19,6 +19,7 @@ try {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   let failCapture = false;
+  let optionalCapture = false;
   let captures = 0;
   let confirmations = 0;
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jKxoAAAAASUVORK5CYII=', 'base64');
@@ -31,9 +32,9 @@ try {
     if (path.endsWith('/samples')) {
       captures++;
       if (failCapture) return route.fulfill({ status: 409, json: { code: 409, message: '后摄像头抓拍失败' } });
-      const images = ['front', 'rear'].map(view => ({ id: view, view, url: `/api/weighing/agent-images/${view}`, sha256: 'test-digest' }));
+      const images = optionalCapture ? [] : ['front', 'rear'].map(view => ({ id: view, view, url: `/api/weighing/agent-images/${view}`, sha256: 'test-digest' }));
       return ok({ id: 901, taskId: null, stage: 'first', weight: '18.665', expiresAt: null,
-        evidence: { id: '901', preset: 'front', source: 'agent', imageSrc: images[0].url, images, cameraLabel: '车头视角', at: new Date().toISOString(), weight: '18.665', plate: '晋A12345' },
+        evidence: { id: '901', preset: 'front', source: 'agent', captureRequired: !optionalCapture, capturePolicyRevision: 'policy-1', imageStatus: optionalCapture ? 'disabled' : 'complete', imageSrc: images[0]?.url ?? '', images, cameraLabel: '车头视角', at: new Date().toISOString(), weight: '18.665', plate: '晋A12345' },
         plateEvidence: { source: 'manual', confirmedPlate: '晋A12345', at: new Date().toISOString() },
       });
     }
@@ -67,8 +68,28 @@ try {
     await capture.waitFor();
     assert.equal(await capture.isDisabled(), true, `${scenario} 必须继续阻止采集`);
   }
+  failCapture = false;
+  optionalCapture = true;
+  await open('optional');
+  await capture.click();
+  await page.waitForFunction(() => JSON.parse(document.querySelector('output').textContent).sampleReady);
+  assert.equal(JSON.parse(await page.locator('output').textContent()).images, 0);
+  await page.getByText('本次无抓拍图片，请核对现场车辆和重量。', { exact: true }).waitFor();
+  assert.equal(confirmations, 0, '无图采集仍不能自动确认');
+  await open('optional-review');
+  const confirm = page.getByRole('button', { name: '确认首磅（毛重）', exact: true });
+  await confirm.waitFor();
+  assert.equal(await confirm.isEnabled(), true, '关闭强制抓拍后不能等待不存在的图片');
+  await confirm.click();
+  await page.waitForFunction(() => document.querySelector('output').textContent === 'confirmed');
+  await open('required-review');
+  await confirm.waitFor();
+  assert.equal(await confirm.isDisabled(), true, '强制抓拍无图仍须阻止确认');
+  await open('changed-review');
+  await confirm.waitFor();
+  assert.equal(await confirm.isDisabled(), true, '策略变更后旧核对窗口必须失效');
   assert.deepEqual(errors, []);
-  console.log('首次抓拍回归通过：无预览可请求采集、双视角展示、失败不生成采样、不自动确认、设备与权限限制保留。');
+  console.log('首次抓拍回归通过：无预览可请求采集、双视角展示、失败不生成采样、不自动确认、设备与权限限制保留；可选无图采集及人工确认可用，强制和策略失效仍阻断。');
 } finally {
   clearTimeout(deadline);
   await browser?.close();

@@ -82,6 +82,7 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 const LOG_CLEAR_ENABLED_KEY = "system.log-clear-enabled";
+const CAPTURE_REQUIRED_KEY = "weighing.capture-required";
 
 const statusMeta: Record<ApiStatus, { label: string; tone: "success" | "neutral" }> = {
   1: { label: "启用", tone: "success" },
@@ -160,7 +161,7 @@ function isBuiltinConfig(config: SystemConfigRecord) {
 function isEditableBuiltinConfig(config: SystemConfigRecord) {
   return (
     isBuiltinConfig(config) &&
-    config.configKey === LOG_CLEAR_ENABLED_KEY &&
+    [LOG_CLEAR_ENABLED_KEY, CAPTURE_REQUIRED_KEY].includes(config.configKey ?? "") &&
     config.valueType === "BOOLEAN"
   );
 }
@@ -589,7 +590,7 @@ export function SystemConfigsPage() {
               title={
                 builtin
                   ? editableBuiltin
-                    ? "内置日志清空开关仅允许修改布尔值"
+                    ? "内置开关仅允许修改布尔值"
                     : "内置配置不允许编辑"
                   : undefined
               }
@@ -601,7 +602,8 @@ export function SystemConfigsPage() {
             <Button
               size="sm"
               variant="ghost"
-              title={builtin ? "内置配置允许修改启停状态" : undefined}
+              disabled={record.configKey === CAPTURE_REQUIRED_KEY}
+              title={record.configKey === CAPTURE_REQUIRED_KEY ? "请通过编辑布尔值切换强制抓拍" : builtin ? "内置配置允许修改启停状态" : undefined}
               onClick={() =>
                 setConfirmAction({
                   type: "status",
@@ -979,7 +981,7 @@ function ConfigFormDialog({
           {mode === "edit" && editingConfig?.isBuiltin === 1 && (
             <div className="mt-space-4 rounded-admin border border-border bg-neutral-background px-space-4 py-space-3 text-sm text-text-secondary">
               {builtinValueOnly
-                ? "内置日志清空开关仅允许修改布尔值。"
+                ? editingConfig.configKey === CAPTURE_REQUIRED_KEY ? "开启后须完成车前车后抓拍及上传；关闭后允许无图确认称重，缺少图片追溯依据。保存后生效，未确认采样须重新采集。" : "内置开关仅允许修改布尔值。"
                 : "内置配置由系统维护，不允许编辑或删除。"}
             </div>
           )}

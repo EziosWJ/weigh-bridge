@@ -8,6 +8,8 @@
 
 两个厂区分别运行本厂业务服务、设备服务与 PostgreSQL；按 2026-10-23 [ADR 0026](../adr/0026-agent-owned-device-maintenance.md)，业务服务／数据库与设备 Agent 可同机，也可在同厂局域网分开部署。无需中心即可从首次初始化到日常管理、称重、打印、查询完成本厂闭环。Web 随业务服务发布，设备维护最终使用同一地址及账号体系；CUPS 为系统配套。2026-10-23 补充：正式视频接入增加本厂 MediaMTX 配套服务，浏览器 WHEP 与 Agent RTSP 共用维护配置；边界见 [ADR 0025](../adr/0025-camera-stream-maintenance.md)及[接入说明](../device/camera-live-preview.md)。
 
+2026-10-23 抓拍条件补充：按 [ADR 0027](../adr/0027-optional-weighing-capture.md) 和[功能规格](optional-weighing-capture-spec.md)，默认强制抓拍，本厂管理员可关闭并办理无图正式称重；设备重量、人工确认及其他校验保留。现场完整抓拍能力的验收仍单独执行。
+
 本规格定义本阶段改造和验收依据，不重新定义已确认的称重规则。业务规则以 [CONTEXT](../../CONTEXT.md) 和基线索引列出的有效规格为准；现场设备验收与软件验证分别记录。
 
 ## 本地管理与初始化

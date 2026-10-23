@@ -292,9 +292,12 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 	return nil
 }
 func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error) {
+	return h.CaptureWithPolicy(ctx, scale, true)
+}
+func (h *Hub) CaptureWithPolicy(ctx context.Context, scale int64, required bool) (p.Capture, int64, error) {
 	if h.children != nil {
 		if child := h.forScale(scale); child != nil {
-			return child.Capture(ctx, scale)
+			return child.CaptureWithPolicy(ctx, scale, required)
 		}
 		return p.Capture{}, 0, ErrUnavailable
 	}
@@ -310,7 +313,7 @@ func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error
 	c.pending[request] = ch
 	h.mu.Unlock()
 	defer func() { h.mu.Lock(); delete(c.pending, request); h.mu.Unlock() }()
-	if err := c.send(p.New("capture.request", ID(), request, struct{}{})); err != nil {
+	if err := c.send(p.New("capture.request", ID(), request, p.CaptureRequest{CaptureRequired: &required})); err != nil {
 		return p.Capture{}, 0, err
 	}
 	timer := time.NewTimer(10 * time.Second)
@@ -339,11 +342,14 @@ func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error
 	if h.conn != c || !h.readyLocked() || h.state.Revision != revision || !result.Success || !result.Stable || !result.DeviceOK || result.Unit != "t" || result.Weight != h.state.Weight || result.CapturedAt.IsZero() {
 		return result, 0, ErrUnavailable
 	}
-	images, err := h.resolveImages(result.Images)
+	images, err := h.resolveCaptureImages(result, required)
 	if err != nil {
 		return result, 0, err
 	}
 	result.Images = images
+	if result.ImageStatus == "" {
+		result.ImageStatus = "complete"
+	}
 	result.Plate = h.state.Plate
 	return result, revision, nil
 }

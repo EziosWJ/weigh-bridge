@@ -346,12 +346,16 @@ setInterval(() => {
  void workflowApi.get<DeviceState>(`/scales/${scale.id}/device`).then(device => {
   if (useAuthStore.getState().token !== token) return;
   const previous = useWeighingStore.getState().device;
-  const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.captureBlockedReason !== device.captureBlockedReason || JSON.stringify(previous.images) !== JSON.stringify(device.images);
+  const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.capturePolicyRevision !== device.capturePolicyRevision || previous.captureRequired !== device.captureRequired || previous.captureBlockedReason !== device.captureBlockedReason || JSON.stringify(previous.images) !== JSON.stringify(device.images);
   useWeighingStore.setState({ device });
+  const policyChanged = !!sample && sample.evidence.capturePolicyRevision !== device.capturePolicyRevision;
+  if (sample && (device.captureBlockedReason || !device.online || !device.stable || !device.deviceOk || (previous && previous.revision !== device.revision) || policyChanged)) {
+    clearSample();
+    if (policyChanged) useWeighingStore.setState({ syncNotice: '强制抓拍配置已变更，请重新采集并核对。' });
+  }
   if (!meaningful) return;
-  if (sample && (device.captureBlockedReason || !device.online || !device.stable || !device.deviceOk || (previous && previous.revision !== device.revision))) clearSample();
   const config = useWeighingStore.getState().data.config;
-  updateData({ config: { ...config, weight: Number(device.weight), stable: device.stable, online: device.online, timedOut: !device.online, deviceError: !device.deviceOk, evidence: device.images.length === 2 } });
+  updateData({ config: { ...config, weight: Number(device.weight), stable: device.stable, online: device.online, timedOut: !device.online, deviceError: !device.deviceOk, evidence: device.captureRequired === false || device.images.length === 2 } });
  }).catch(() => {
   if (useAuthStore.getState().token !== token) return;
   clearSample(); const config = useWeighingStore.getState().data.config;

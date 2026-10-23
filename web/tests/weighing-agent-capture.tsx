@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { WeighingReviewDialog } from '@/pages/weighing/review-dialog';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { WeighingWorkbenchPage } from '@/pages/weighing/workbench';
@@ -28,10 +30,16 @@ useWeighingStore.setState({
   },
   device: {
     agentId: 'real-agent', scaleId: 1, weight: '18.665', stable: true, deviceOk: true,
-    online: true, revision: '1', receivedAt: new Date().toISOString(),
+    captureRequired: scenario !== 'optional', capturePolicyRevision: 'policy-1', online: true, revision: '1', receivedAt: new Date().toISOString(),
     plate: { candidate: '', failed: false, at: '' }, images: [],
   },
 });
+
+function ReviewFixture() {
+ const [confirmed, setConfirmed] = useState(false);
+ const required = scenario === 'required-review';
+ return <><WeighingReviewDialog title="首磅（毛重）" value={{ plate: '晋A12345', direction: '入厂卸货', material: '高粱', partyLabel: '供货方', party: '测试供货方', weight: 18.665, kind: '毛重', supplementary: [], capture: { id: 'optional-review', preset: 'front', imageSrc: '', images: [], cameraLabel: '车头视角', at: new Date().toISOString(), weight: 18.665, captureRequired: required, imageStatus: 'disabled' } }} invalidReason={scenario === 'changed-review' ? '强制抓拍配置已变更，请重新采集' : ''} onCancel={() => {}} onMismatch={() => {}} onConfirm={() => setConfirmed(true)} /><output hidden>{confirmed ? 'confirmed' : 'waiting'}</output></>;
+}
 
 export function Fixture() {
   const data = useWeighingStore(s => s.data);
@@ -41,4 +49,4 @@ export function Fixture() {
   </MemoryRouter>;
 }
 
-createRoot(document.getElementById('root')!).render(<Fixture />);
+createRoot(document.getElementById('root')!).render(scenario?.endsWith('-review') ? <ReviewFixture /> : <Fixture />);

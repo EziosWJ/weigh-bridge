@@ -110,13 +110,23 @@ type CameraTestView struct {
 	Error   string `json:"error,omitempty"`
 	JPEG    []byte `json:"jpeg,omitempty"`
 }
+
+// An omitted captureRequired preserves the v1 mandatory-camera behavior.
+type CaptureRequest struct {
+	CaptureRequired *bool `json:"captureRequired,omitempty"`
+}
+
+func (r CaptureRequest) RequiresImages() bool { return r.CaptureRequired == nil || *r.CaptureRequired }
+
 type Capture struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
 	DeviceState
-	CapturedAt time.Time `json:"capturedAt"`
-	Images     []Image   `json:"images"`
-	Plate      Plate     `json:"plate"`
+	ImageStatus string    `json:"imageStatus,omitempty"`
+	ImageError  string    `json:"imageError,omitempty"`
+	CapturedAt  time.Time `json:"capturedAt"`
+	Images      []Image   `json:"images"`
+	Plate       Plate     `json:"plate"`
 }
 type PrintRequest struct {
 	AttemptID int64 `json:"attemptId"`

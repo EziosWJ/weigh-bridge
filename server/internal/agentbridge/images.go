@@ -148,3 +148,38 @@ func (h *Hub) resolveImages(input []p.Image) ([]p.Image, error) {
 	}
 	return out, nil
 }
+
+// Optional capture still validates every supplied reference; only absence is permitted.
+func (h *Hub) resolveCaptureImages(result p.Capture, required bool) ([]p.Image, error) {
+	if required {
+		if result.ImageStatus != "" && result.ImageStatus != "complete" {
+			return nil, fmt.Errorf("强制抓拍要求完整图片状态")
+		}
+		return h.resolveImages(result.Images)
+	}
+	switch result.ImageStatus {
+	case "complete", "":
+		return h.resolveImages(result.Images)
+	case "disabled":
+		if len(result.Images) != 0 {
+			return nil, fmt.Errorf("停用抓拍不能提供图片")
+		}
+	case "capture_failed", "upload_failed":
+	default:
+		return nil, fmt.Errorf("图片状态无效")
+	}
+	if len(result.Images) > 2 {
+		return nil, fmt.Errorf("图片数量无效")
+	}
+	out := make([]p.Image, 0, len(result.Images))
+	views := map[string]bool{}
+	for _, v := range result.Images {
+		stored, err := h.Image(v.ID)
+		if err != nil || views[stored.View] {
+			return nil, fmt.Errorf("图片引用或视角无效")
+		}
+		views[stored.View] = true
+		out = append(out, stored)
+	}
+	return out, nil
+}

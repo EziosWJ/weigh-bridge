@@ -29,6 +29,8 @@ import (
 
 const maxImage = 10 << 20
 
+var ErrUpload = errors.New("抓拍上传失败")
+
 // Client uses the existing authenticated Agent image upload contract. URLs may
 // contain device credentials; errors deliberately omit URLs and device bodies.
 type Client struct {
@@ -63,18 +65,24 @@ func (c Client) Capture(ctx context.Context) ([]p.Image, p.Plate, error) {
 		go func(i int, endpoint string) { defer wg.Done(); data[i], errs[i] = c.snapshot(ctx, endpoint) }(i, endpoint)
 	}
 	wg.Wait()
-	for i, err := range errs {
-		if err != nil {
-			return nil, p.Plate{}, fmt.Errorf("%s摄像头抓拍失败", []string{"前", "后"}[i])
-		}
-	}
 	images := make([]p.Image, 0, 2)
+	var captureErr error
 	for i, view := range []string{"front", "rear"} {
+		if errs[i] != nil {
+			if captureErr == nil {
+				captureErr = fmt.Errorf("%s摄像头抓拍失败", []string{"前", "后"}[i])
+			}
+			continue
+		}
 		v, err := c.upload(ctx, view, data[i])
 		if err != nil {
-			return nil, p.Plate{}, err
+			captureErr = fmt.Errorf("%w：%s", ErrUpload, err)
+			continue
 		}
 		images = append(images, v)
+	}
+	if captureErr != nil {
+		return images, p.Plate{Failed: true, At: time.Now().UTC()}, captureErr
 	}
 	plate := p.Plate{Failed: true, At: time.Now().UTC()}
 	if c.Config.PlateRecognitionURL != "" {

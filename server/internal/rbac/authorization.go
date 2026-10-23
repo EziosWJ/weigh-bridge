@@ -68,6 +68,8 @@ func ProtectManagementWrites(checker PermissionChecker) gin.HandlerFunc {
 		path := c.FullPath()
 		code := ""
 		switch {
+		case path == "/api/system/config" || strings.HasPrefix(path, "/api/system/config/"):
+			code = "system:config"
 		case strings.HasPrefix(path, "/api/system/role"):
 			code = "system:role"
 		case strings.HasPrefix(path, "/api/system/menu"):
