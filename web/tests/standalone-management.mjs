@@ -108,12 +108,12 @@ try {
   await pending.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
   assert.equal(await pending.page.getByRole('link', { name: '临时主体登记与确认' }).count(), 0, 'standalone mode must hide the legacy approval entry');
   await pending.page.getByRole('button', { name: '设备与打印' }).click();
-  for (const actionName of ['启动打印 Agent', '停止打印 Agent', '重启打印 Agent', '重启 CUPS', '恢复目标队列', '打印校准样张']) {
+  for (const actionName of ['启动设备', '停止设备', '重载设备', '重启 CUPS', '恢复目标队列', '打印校准样张']) {
     assert.equal(await pending.page.getByRole('button', { name: actionName, exact: true }).count(), 0, `view-only user must not see ${actionName}`);
   }
   await pending.page.getByRole('button', { name: '配置', exact: true }).click();
   assert.equal(await pending.page.getByRole('button', { name: '保存草稿', exact: true }).count(), 0);
-  assert.equal(await pending.page.getByRole('button', { name: '应用配置并重启 Agent', exact: true }).count(), 0);
+  assert.equal(await pending.page.getByRole('button', { name: '保存并应用配置', exact: true }).count(), 0);
   await pending.context.close();
 
   // Unknown runtime and job status are explicit; a stopped Agent remains startable.
@@ -127,6 +127,8 @@ try {
     const path = new URL(request.url()).pathname;
     if (path === '/api/auth/menus') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
     if (path === '/api/weighing/capabilities') return route.fulfill({ json: { code: 200, message: 'ok', data: { nodeRole: 'standalone', maintenanceEnabled: true, nodeSiteId: 1, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 } } });
+    if (path.endsWith('/camera-preview')) return route.fulfill({ json: { code: 200, data: { mode: 'mediamtx', enabled: true, ready: false, message: '测试：预览未连接' } } });
+    if (path.endsWith('/test-camera')) return route.fulfill({ json: { at: new Date().toISOString(), views: [{ view: 'front', success: false, error: '车前测试连接失败' }, { view: 'rear', success: false, error: '车后测试连接失败' }] } });
     if (path.endsWith('/status')) return route.fulfill({ json: {
       checkedAt: new Date().toISOString(), maintenance: '运行中', agent: '已停止', agentKnown: true,
       cups: '未知', cupsKnown: false, queue: 'unknown', queueState: '未知', queueKnown: false,
@@ -136,7 +138,7 @@ try {
     if (path.endsWith('/config') && request.method() === 'GET') {
       configRead += 1;
       return route.fulfill({ json: {
-        config: { serverUrl: 'http://127.0.0.1:8900', agentId: 'local-agent', scaleId: 1, queue: 'scale',
+        config: storedDraft ?? { serverUrl: 'http://127.0.0.1:8900', agentId: 'local-agent', scaleId: 1, queue: 'scale',
           printWidthMm: 210, printScale: 1, offsetXmm: 0, offsetYmm: 0, formLengthMm: 99,
           serialEnabled: false, serialPort: '/dev/ttyS0', serialBaud: 9600, serialProtocol: 'keli-d12-tf05',
           serialWeightUnit: 't', serialStaleMs: 800, cameraTimeoutMs: 3000,
@@ -161,23 +163,53 @@ try {
   managed.page.on('dialog', (dialog) => dialog.accept());
   await managed.page.goto(`${webUrl}/system/agent-maintenance`);
   await managed.page.getByRole('heading', { name: '设备维护', exact: true }).waitFor();
-  await managed.page.getByRole('button', { name: '启动打印 Agent', exact: true }).waitFor();
+  await managed.page.getByRole('button', { name: '启动设备', exact: true }).waitFor();
   assert.ok(await managed.page.getByText('未知', { exact: true }).count() > 0, 'unknown runtime fields should render as unknown');
   await managed.page.getByRole('button', { name: '配置', exact: true }).click();
   await managed.page.getByText('存在未应用草稿').waitFor();
   assert.equal(await managed.page.getByLabel('业务服务地址').inputValue(), 'http://127.0.0.1:8900', `config response should populate the local form (reads=${configRead})`);
-  for (const label of ['连接密钥', '车前抓拍地址', '车后抓拍地址', '车牌识别服务地址']) {
+  for (const label of ['连接密钥', '车牌识别服务地址']) {
     assert.equal(await managed.page.getByLabel(label).inputValue(), '', `${label} must never be echoed into the form`);
   }
   await managed.page.getByRole('button', { name: '保存草稿', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '配置草稿已保存' }).waitFor();
   for (const key of ['agentKey', 'cameraFrontUrl', 'cameraRearUrl', 'plateRecognitionUrl']) assert.equal(storedDraft?.[key], '', `${key} must be blank in frontend draft state: ${JSON.stringify(storedDraft)}`);
-  await managed.page.getByRole('button', { name: '应用配置并重启 Agent', exact: true }).click();
+  await managed.page.getByRole('button', { name: '切换为 MediaMTX 配置', exact: true }).click();
+  await managed.page.getByLabel('RTSP 服务入口').fill('rtsp://192.168.1.10:8554');
+  await managed.page.getByLabel('实时预览服务入口').fill('http://192.168.1.10:8889');
+  await managed.page.getByLabel('车前流名称').fill('scale/front');
+  await managed.page.getByLabel('车后流名称').fill('scale/rear');
+  await managed.page.getByLabel('前后摄像头', { exact: true }).selectOption('false');
+  await managed.page.getByText('车前预览：http://192.168.1.10:8889/scale/front/whep', { exact: true }).waitFor();
+  await managed.page.evaluate(() => window.scrollTo(0, 0));
+  await managed.page.screenshot({ path: '/tmp/weighbridge-camera-maintenance-config.png', fullPage: true });
+  // Applying must include the values currently visible in the form, even
+  // when the operator has not separately saved this edit as a draft.
+  await managed.page.getByRole('button', { name: '保存并应用配置', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '操作已执行' }).waitFor();
+  assert.equal(storedDraft?.cameraMode, 'mediamtx', '应用当前表单后刷新，不能退回旧摄像头配置');
+  assert.equal(storedDraft?.cameraEnabled, false);
+  assert.equal(storedDraft?.cameraFrontPath, 'scale/front');
+  assert.equal(storedDraft?.cameraRearPath, 'scale/rear');
+  await managed.page.reload();
+  await managed.page.getByRole('button', { name: '配置', exact: true }).click();
+  assert.equal(await managed.page.getByLabel('RTSP 服务入口').inputValue(), 'rtsp://192.168.1.10:8554', '刷新必须保留已应用的表单值');
   assert.equal(actionPayload?.action, 'apply');
-  assert.equal(actionPayload?.previewToken, 'unknown-jobs-preview', 'unknown job disposition must be bound to its preflight token');
-  assert.equal(actionPayload?.disposition, 'unknown-confirmed');
+  assert.equal(actionPayload?.previewToken, undefined, '应用前的设备检查由 Agent 执行，不在页面阻塞摄像头配置');
   assert.ok(configRead >= 2, 'config must be reread after saving and applying');
+  await managed.page.getByRole('button', { name: '设备与打印', exact: true }).click();
+  await managed.page.getByRole('button', { name: '打开摄像头测试', exact: true }).click();
+  await managed.page.getByText('测试：预览未连接', { exact: true }).first().waitFor();
+  await managed.page.getByRole('button', { name: '测试前后抓拍', exact: true }).click();
+  await managed.page.getByText(/维护测试 · 车前 · 车前测试连接失败/).waitFor();
+  await managed.page.getByText(/维护测试 · 车后 · 车后测试连接失败/).waitFor();
+  await managed.page.setViewportSize({ width: 390, height: 844 });
+  // AppShell animates its desktop sidebar padding; inspect the settled layout.
+  await managed.page.waitForFunction(() => getComputedStyle(document.querySelector('main').parentElement).paddingLeft === '0px');
+  await managed.page.evaluate(() => window.scrollTo(0, 0));
+  await managed.page.screenshot({ path: '/tmp/weighbridge-camera-maintenance-diagnostic.png', fullPage: true });
+  const overflow = await managed.page.evaluate(() => ({ width: innerWidth, scroll: document.documentElement.scrollWidth, elements: [...document.querySelectorAll('main *')].filter(element => element.getBoundingClientRect().right > innerWidth + 1).slice(0, 15).map(element => ({ tag: element.tagName, className: element.className, width: element.getBoundingClientRect().width, right: element.getBoundingClientRect().right })) }));
+  assert.ok(overflow.scroll <= overflow.width, `维护诊断窄屏不得横向溢出: ${JSON.stringify(overflow)}`);
   await managed.context.close();
   console.log('standalone management browser smoke passed');
 } finally {

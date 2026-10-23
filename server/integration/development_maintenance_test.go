@@ -155,32 +155,30 @@ func TestPostgresDevelopmentMaintenanceProcessStartup(t *testing.T) {
 	if !caps.Data.Enabled || caps.Data.Role != "" {
 		t.Fatal("actual default-development API did not expose maintenance")
 	}
-	var state struct {
-		Config           agentmaintenance.Config `json:"config"`
-		EnvironmentKnown bool                    `json:"environmentKnown"`
+	var status struct {
+		Online bool `json:"agentProcessOnline"`
+		Remote bool `json:"remote"`
 	}
-	if err := json.Unmarshal(get("/api/system/agent-maintenance/config"), &state); err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(get("/api/system/agent-maintenance/status"), &status); err != nil || status.Online || !status.Remote {
+		t.Fatal("offline Agent status missing", err)
 	}
-	if state.Config.AgentID != "runtime-dev-agent" || state.Config.ServerURL != baseURL || state.EnvironmentKnown {
-		t.Fatal("actual runtime did not prepare the current local identity as an unapplied draft")
-	}
-	state.Config.OffsetXMM = 2
-	body, _ := json.Marshal(state.Config)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, baseURL+"/api/system/agent-maintenance/config", strings.NewReader(string(body)))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/system/agent-maintenance/config", nil)
 	req.Header.Set("Authorization", login.Data.Token)
-	req.Header.Set("Content-Type", "application/json")
 	response, err = client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = response.Body.Close()
-	if response.StatusCode != 200 {
-		t.Fatalf("actual development validator did not permit saving local draft: %d", response.StatusCode)
+	if response.StatusCode != 503 {
+		t.Fatalf("offline API invented a local config: %d", response.StatusCode)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "agent", "maintenance.json")); !os.IsNotExist(err) {
+		t.Fatal("API must not create Agent-owned drafts")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "agent", "agent.env")); !os.IsNotExist(err) {
-		t.Fatal("runtime must not apply device environment automatically")
+		t.Fatal("API must not create device environment files")
 	}
+
 }
 
 func TestPostgresDevelopmentMaintenanceUsesExistingBindingWithoutChangingNodeIdentity(t *testing.T) {

@@ -1,10 +1,10 @@
 # 本厂三服务安装、升级与恢复
 
-适用 [Issue #6](https://github.com/EziosWJ/weigh-bridge/issues/6)、[当前规格](../requirements/standalone-site-spec.md)与 ADR 0023／0024。软件交付与真实现场验收分别见[本次交付记录](../requirements/standalone-site-delivery.md)。本文命令供目标 Linux amd64 工控机的专用普通用户执行，不表示已部署到现场。
+适用 [Issue #6](https://github.com/EziosWJ/weigh-bridge/issues/6)、[当前规格](../requirements/standalone-site-spec.md)与 ADR 0023／0024／[0025](../adr/0025-camera-stream-maintenance.md)／[0026](../adr/0026-agent-owned-device-maintenance.md)。软件交付与真实现场验收分别见[本次交付记录](../requirements/standalone-site-delivery.md)。本文命令供目标 Linux amd64 工控机的专用普通用户执行，不表示已部署到现场。首次安装命令以同机为例；分机时分别安装业务及设备二进制、unit 和对应持久目录，设备侧地址与准备见[Agent 维护部署](agent-remote-maintenance.md)。
 
 ## 组件与准备
 
-常驻核心为 PostgreSQL、本地业务服务（含 Web 和维护 API）、设备 Agent。CUPS 为系统配套；不启动中心、Vite、Node 或独立维护服务。数据库与 CUPS 由系统服务管理，两个 Go 进程由同一专用用户的 systemd user manager 管理，便于业务服务在 Agent 停止时读取有效配置、检查队列和启动设备。业务进程不打开串口。
+常驻核心为 PostgreSQL、本地业务服务（含 Web 和维护 API）、设备 Agent。CUPS 和本厂 MediaMTX 为配套服务；API／数据库与 Agent 可在同厂局域网分机，见[Agent 维护部署](agent-remote-maintenance.md)；不启动中心、Vite、Node 或独立维护服务。数据库与 CUPS 由系统服务管理，两个 Go 进程由各自主机的专用用户 systemd user manager 管理；API 通过设备通道维护，配置和 CUPS 位于 Agent 主机。业务进程不打开串口。
 
 系统管理员先准备 PostgreSQL 数据库及独立账号、CUPS 队列、Python 3/Pillow/中文字体（现有打印渲染要求）、`flock`、systemd 用户会话及开机 linger。RTSP 抓拍另需 FFmpeg；HTTP 抓拍不依赖 FFmpeg。按实机赋予串口组和 CUPS 必需权限。维护功能中的系统 CUPS restart 如需 polkit，只授予专用用户重启 `cups.service`，不授予通用 sudo/systemctl；参考[原维护说明](agent-local-maintenance.md#cups-与服务权限)。
 
@@ -42,7 +42,7 @@
    ```
 
    `/health` 只证明存活，`/ready` 检查数据库。访问本厂地址登录 admin，通过既有账号、角色和厂区授权入口准备至少两名实名、有 `weighing:confirm` 权限及本厂操作授权的用户；准备不足时可做管理，但正式业务受阻。日常不使用共享管理员账号称重。
-6. 使用统一设备维护页检查有效 Agent 连接、CUPS 队列和校准；配置仪表的串口、波特率、现场源单位和陈旧门限。D12 已确认现场源单位为吨的设备使用 `t`，其他设备须重新核对。草稿保存后需明确应用并核对运行摘要，不能把“已保存”当作“已生效”。之后启用 `systemctl --user enable --now weighbridge-agent-printer.service`。
+6. 在 Agent 主机执行 `systemctl --user enable --now weighbridge-agent-printer.service`，使维护连接上线，再使用统一设备维护页检查有效 Agent 连接、CUPS 队列和校准；配置仪表的串口、波特率、现场源单位和陈旧门限。D12 已确认现场源单位为吨的设备使用 `t`，其他设备须重新核对。草稿保存后需明确应用并核对运行摘要，不能把“已保存”当作“已生效”。
 
 ## 摄像头与识别
 
@@ -61,6 +61,10 @@ HTTP 抓拍请求禁用缓存；RTSP 通过 FFmpeg 每次读取新帧。两视�
 
 真实密码只保存在受限本机配置。界面“已配置”只表示存在参数，在线能力在真实采集时验证。摄像头修改也须显式应用并检查运行状态。
 
+2026-10-23 共享配置补充：正式现场在统一维护页配置 MediaMTX 的 RTSP／WHEP 服务入口和前后流名称，Agent 保留 RTSP 抓拍；以上独立地址仅用于既有配置过渡。安装 MediaMTX v1.21.2、配置摄像头 source 及 RTSP／WHEP 后，再明确切换共享配置。发布包附 `agent/deploy/mediamtx.yml.example`，具体字段和验收见[摄像头维护说明](camera-live-preview.md)。MediaMTX 二进制与私有配置由部署准备，当前安装器不自动下载或启动它。
+
+日常维护只改服务入口和流名称；不为 MediaMTX 增加业务鉴权回调或额外密钥。跨容器或跨主机时，核对 RTSP、WHEP 和媒体 UDP 连通；升级和恢复保留摄像头 source 配置。
+
 ## 升级、维护退出与回退
 
 升级前停止接单并查询未决称重／打印，核实结果；保留未知状态，不自动重打。停止两个用户服务，备份数据库、整个持久 `configs`、`data` 和 `agent`（包括 `agent.env`、维护 JSON、审计、暂停标志、身份文件及 `state` 下全部账本）。打印账本不清空、不重建。
@@ -69,7 +73,7 @@ HTTP 抓拍请求禁用缓存；RTSP 通过 FFmpeg 每次读取新帧。两视�
 
 确认数据库兼容后在停机窗口更换 `current` 符号链接，重新加载 unit 并启动业务，检查 health、ready、页面及数据库身份，再启动 Agent 并检查配置摘要和设备链路。旧版本目录保留；回退时停止两个服务，切回旧链接。数据库有不兼容变化时，须同时恢复匹配的数据库、图片、配置及账本快照，不仅替换二进制。回退与重启均不重放物理打印。
 
-统一维护页以业务账号授权 `agent:maintenance:view`／`agent:maintenance:manage`；维护操作记录实际账号并进入业务审计。分别测试 Agent 停止时检查/配置/启动，以及旧 `weighbridge-agent-maintenance.service` 停止时完整维护。现场通过后才 disable 旧服务与独立密码入口，且核对旧 drop-in 不再指向历史目录。旧维护服务软件保留作兼容，不属于最终常驻产品。
+当前配置在 Agent 主机，页面启停设备执行，Agent 主进程常驻。统一维护页以业务账号授权 `agent:maintenance:view`／`agent:maintenance:manage`；维护操作记录实际账号并进入业务审计。分别测试设备执行停止时检查／配置／启动、Agent 进程离线时显示无法远程维护，以及旧 `weighbridge-agent-maintenance.service` 停止时完整维护。现场通过后才 disable 旧服务与独立密码入口，且核对旧 drop-in 不再指向历史目录。旧维护服务软件保留作兼容，不属于最终常驻产品。
 
 现有 center/site 数据库有不可变部署身份，不能通过改 YAML、直接 SQL 改身份或重跑初始化转换。转换前单独制定迁移、遗留临时主体逐项处置与回退方案；当前路径仅支持显式新建自治库。历史临时主体不会静默转正式，关联与单据快照保留。
 

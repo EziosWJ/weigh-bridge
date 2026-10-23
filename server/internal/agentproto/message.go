@@ -4,6 +4,7 @@ package agentproto
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	"strconv"
 	"strings"
 	"time"
@@ -96,6 +97,19 @@ type Image struct {
 type Camera struct {
 	Images []Image `json:"images"`
 }
+
+// CameraTest is diagnostic-only; its thumbnails have no evidence IDs and
+// cannot be passed to a formal capture result.
+type CameraTest struct {
+	At    time.Time        `json:"at"`
+	Views []CameraTestView `json:"views"`
+}
+type CameraTestView struct {
+	View    string `json:"view"`
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+	JPEG    []byte `json:"jpeg,omitempty"`
+}
 type Capture struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
@@ -112,4 +126,24 @@ type PrintResult struct {
 	AttemptID int64  `json:"attemptId"`
 	Status    string `json:"status"`
 	Reason    string `json:"reason"`
+}
+
+// Maintenance commands use the existing authenticated device connection.
+type MaintenanceRequest struct {
+	Method   string          `json:"method"`
+	Path     string          `json:"path"`
+	Query    string          `json:"query,omitempty"`
+	Body     json.RawMessage `json:"body,omitempty"`
+	ActorID  int64           `json:"actorId"`
+	ClientIP string          `json:"clientIp,omitempty"`
+}
+type MaintenanceResponse struct {
+	Status int             `json:"status"`
+	JSON   json.RawMessage `json:"json,omitempty"`
+	Text   string          `json:"text,omitempty"`
+}
+
+type MaintenanceState struct {
+	Config  agentprinter.Config `json:"config"`
+	Running bool                `json:"running"`
 }

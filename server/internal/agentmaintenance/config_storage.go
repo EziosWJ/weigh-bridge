@@ -51,7 +51,7 @@ func importEnvironment(path string, cfg Config) (Config, error) {
 // Preserve an edited draft when an administrator updates agent.env.
 // Callers serialize this with opMu after startup.
 func (s *Service) reloadEnvironment() (bool, error) {
-	path := filepath.Join(s.dir, "agent.env")
+	path := s.environmentPath()
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -82,6 +82,9 @@ func (s *Service) reloadEnvironment() (bool, error) {
 func (s *Service) runtimeConfigState(c Config) string {
 	running := s.runner.Run([]string{"systemctl", "--user", "is-active", "weighbridge-agent-printer.service"})
 	if running.Err != nil || strings.TrimSpace(running.Output) != "active" {
+		if s.deviceOwned && strings.TrimSpace(running.Output) == "inactive" {
+			return "设备执行已停止；Agent 维护连接保留"
+		}
 		return "未知／打印 Agent 未运行或状态不可读取"
 	}
 	b, err := os.ReadFile(filepath.Join(s.dir, "maintenance-status.json"))
@@ -107,7 +110,7 @@ func (s *Service) activateConfig(cfg Config, restore bool) (Result, bool) {
 	if cfg.AgentKey == "" || strings.ContainsAny(cfg.AgentKey, "\r\n\x00") {
 		return Result{Err: errors.New("Agent 连接密钥未设置或格式无效")}, true
 	}
-	path := filepath.Join(s.dir, "agent.env")
+	path := s.environmentPath()
 	oldEnv, err := os.ReadFile(path)
 	hadEnv := err == nil
 	if err != nil && !os.IsNotExist(err) {
@@ -124,7 +127,7 @@ func (s *Service) activateConfig(cfg Config, restore bool) (Result, bool) {
 		s.mu.Unlock()
 		return Result{Err: err}, true
 	}
-	result := Result{Err: BuildAgentEnvironment(s.dir, cfg)}
+	result := Result{Err: BuildAgentEnvironmentAt(s.environmentPath(), cfg)}
 	started := false
 	if result.Err == nil {
 		started = true
@@ -132,6 +135,9 @@ func (s *Service) activateConfig(cfg Config, restore bool) (Result, bool) {
 	}
 	if result.Err == nil {
 		result.Err = s.verifyAgent()
+	}
+	if result.Err == nil && cfg.CameraMode == "mediamtx" {
+		result.Err = s.verifyCameraRuntime(cfg)
 	}
 	if result.Err == nil {
 		s.mu.Lock()

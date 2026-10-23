@@ -107,3 +107,37 @@ func TestMissingCameraConfigurationFails(t *testing.T) {
 		t.Fatal("missing cameras accepted")
 	}
 }
+
+// Diagnostic frames never use the image upload or recognition endpoints.
+func TestCameraDiagnosticDoesNotUploadEvidence(t *testing.T) {
+	var pixels bytes.Buffer
+	if err := png.Encode(&pixels, image.NewRGBA(image.Rect(0, 0, 640, 480))); err != nil {
+		t.Fatal(err)
+	}
+	uploads := 0
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			uploads++
+			w.WriteHeader(500)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(pixels.Bytes())
+	}))
+	defer source.Close()
+	cfg := agentprinter.Defaults()
+	cfg.CameraFrontURL = source.URL + "/front"
+	cfg.CameraRearURL = source.URL + "/rear"
+	cfg.ServerURL = source.URL
+	cfg.PlateRecognitionURL = source.URL + "/recognize"
+	result := (Client{Config: cfg}).Test(context.Background())
+	if len(result.Views) != 2 || uploads != 0 {
+		t.Fatal("diagnostic used evidence upload or recognition")
+	}
+	for _, view := range result.Views {
+		info, format, err := image.DecodeConfig(bytes.NewReader(view.JPEG))
+		if !view.Success || err != nil || format != "jpeg" || info.Width > 320 || info.Height > 180 {
+			t.Fatalf("invalid diagnostic %s", view.View)
+		}
+	}
+}

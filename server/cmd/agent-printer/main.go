@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentcamera"
+	"github.com/EziosWJ/weighbridge/server/internal/agentmaintenance"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"github.com/EziosWJ/weighbridge/server/internal/agentscale"
@@ -36,15 +37,6 @@ func main() {
 		slog.Error("invalid printer configuration", "error", err)
 		os.Exit(1)
 	}
-	scale, err := agentscale.New(agentscale.Config{
-		Enabled: cfg.SerialEnabled, Port: cfg.SerialPort, Baud: cfg.SerialBaud,
-		Protocol: cfg.SerialProtocol, Unit: agentscale.Unit(cfg.SerialWeightUnit),
-		Stale: time.Duration(cfg.SerialStaleMS) * time.Millisecond,
-	}, nil)
-	if err != nil {
-		slog.Error("invalid weighing scale configuration", "error", err)
-		os.Exit(1)
-	}
 	digest := agentprinter.ConfigDigest(cfg)
 	identityDir, identityErr := agentprinter.IdentityDirectory(state, cfg.ServerURL, cfg.AgentID, cfg.ScaleID)
 	if identityErr != nil {
@@ -53,13 +45,29 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	scaleStatusPath := filepath.Join(filepath.Dir(state), "scale-status.json")
-	go scale.Run(ctx)
-	go writeScaleStatus(ctx, scaleStatusPath, scale)
+	dir := filepath.Dir(state)
+	environment := environmentArgument(os.Args[1:])
+	if environment == "" {
+		environment = filepath.Join(dir, "agent.env")
+	}
+	runtime := &deviceRuntime{parent: ctx, dir: dir, environment: environment, cfg: cfg}
+	maintenance, err := agentmaintenance.OpenDevice(dir, environment, cfg, deviceRunner{runtime: runtime})
+	if err != nil {
+		slog.Error("open Agent configuration", "error", err)
+		return
+	}
+	runtime.maintenance = maintenance
+	maintenance.SetCameraTester(runtime.testCameras)
+	if err = runtime.start(cfg); err != nil {
+		slog.Error("start devices", "error", err)
+		return
+	}
+	defer runtime.stop()
 	for ctx.Err() == nil {
 		statusPath := filepath.Join(filepath.Dir(state), "maintenance-status.json")
 		pausePath := filepath.Join(filepath.Dir(state), "maintenance.pause")
-		if err := run(ctx, cfg, scale, identityDir, statusPath, pausePath); errors.Is(err, p.ErrKicked) {
+		current, scale, _ := runtime.snapshot()
+		if err := runManaged(ctx, current, scale, identityDir, statusPath, pausePath, runtime); errors.Is(err, p.ErrKicked) {
 			writeAgentStatus(statusPath, false, digest)
 			slog.Info("Agent 已被后台踢出，停止运行")
 			return
@@ -75,7 +83,10 @@ func main() {
 	}
 }
 
-func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, state, statusPath, pausePath string) (resultErr error) {
+func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, state, statusPath, pausePath string) error {
+	return runManaged(parent, cfg, scale, state, statusPath, pausePath, nil)
+}
+func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, state, statusPath, pausePath string, control *deviceRuntime) (resultErr error) {
 	ctx, cancelRun := context.WithCancelCause(parent)
 	defer cancelRun(nil)
 	defer func() {
@@ -136,9 +147,19 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		return sendMessage(p.New(kind, fmt.Sprintf("printer-%d", time.Now().UnixNano()), "", payload))
 	}
-	sendState := func() error { return send("device.state", currentDeviceState(scale, time.Now())) }
+	sendState := func() error {
+		if control != nil {
+			return send("device.state", control.deviceState())
+		}
+		return send("device.state", currentDeviceState(scale, time.Now()))
+	}
 	if err = sendState(); err != nil {
 		return err
+	}
+	if control != nil {
+		if err = send("maintenance.state", control.report()); err != nil {
+			return err
+		}
 	}
 	incoming := make(chan p.Message, 32)
 	readErr := make(chan error, 1)
@@ -167,7 +188,14 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 	// Printing is serialized in its own worker. A long render/lp call or a
 	// maintenance pause must not stop serial sampling, device.state or kick.
 	prints := make(chan agentprinter.Request, 16)
-	go printWorker(ctx, cfg, state, queue, pausePath, prints)
+	managedPrints := make(chan devicePrint, 16)
+	if control == nil {
+		go printWorker(ctx, cfg, state, queue, pausePath, prints)
+	} else {
+		go control.printWorker(ctx, state, pausePath, managedPrints, func(request agentprinter.Request) {
+			_ = send("print.result", p.PrintResult{AttemptID: request.AttemptID, Status: "failed", Reason: "设备执行已停止，未提交打印"})
+		})
+	}
 
 	captureBusy := make(chan struct{}, 1)
 
@@ -186,7 +214,15 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 				return err
 			}
 		case <-stateTicker.C:
-			writeAgentStatus(statusPath, true, digest)
+			if control == nil {
+				writeAgentStatus(statusPath, true, digest)
+			} else {
+				current, _, _ := control.snapshot()
+				writeAgentStatus(statusPath, true, agentprinter.ConfigDigest(current))
+				if err := send("maintenance.state", control.report()); err != nil {
+					return err
+				}
+			}
 			if err := sendState(); err != nil {
 				return err
 			}
@@ -196,12 +232,55 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 			}
 		case m := <-incoming:
 			switch m.Type {
+			case "maintenance.request":
+				if control == nil {
+					continue
+				}
+				var request p.MaintenanceRequest
+				if json.Unmarshal(m.Payload, &request) != nil {
+					continue
+				}
+				go func(id string, in p.MaintenanceRequest) {
+					result := control.maintenance.DeviceRequest(ctx, in)
+					if err := send("maintenance.state", control.report()); err != nil {
+						cancelRun(err)
+						return
+					}
+					if err := sendMessage(p.New("maintenance.result", fmt.Sprintf("maintenance-%d", time.Now().UnixNano()), id, result)); err != nil {
+						cancelRun(err)
+					}
+				}(m.RequestID, request)
+			case "camera.test.request":
+				select {
+				case captureBusy <- struct{}{}:
+					go func(requestID string) {
+						defer func() { <-captureBusy }()
+						result := p.CameraTest{}
+						if control == nil {
+							result = (agentcamera.Client{Config: cfg}).Test(ctx)
+						} else {
+							result, _ = control.testCameras(ctx, cfg.ScaleID)
+						}
+						if err := sendMessage(p.New("camera.test.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), requestID, result)); err != nil {
+							cancelRun(err)
+						}
+					}(m.RequestID)
+				default:
+					if err := sendMessage(p.New("camera.test.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), m.RequestID, p.CameraTest{At: time.Now().UTC()})); err != nil {
+						return err
+					}
+				}
 			case "capture.request":
 				select {
 				case captureBusy <- struct{}{}:
 					go func(requestID string) {
 						defer func() { <-captureBusy }()
-						result := captureEvidence(ctx, cfg, scale)
+						result := p.Capture{}
+						if control == nil {
+							result = captureEvidence(ctx, cfg, scale)
+						} else {
+							result = control.capture(ctx)
+						}
 						if err := sendMessage(p.New("capture.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), requestID, result)); err != nil {
 							cancelRun(err)
 						}
@@ -220,6 +299,14 @@ func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Moni
 				}
 				if m.RequestID != fmt.Sprintf("print-%d", req.AttemptID) {
 					slog.Error("print identity mismatch")
+					continue
+				}
+				if control != nil {
+					select {
+					case managedPrints <- devicePrint{request: req, generation: control.printGeneration()}:
+					default:
+						slog.Error("print worker queue full", "attempt", req.AttemptID)
+					}
 					continue
 				}
 				select {

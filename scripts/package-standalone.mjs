@@ -25,6 +25,8 @@ for (const binary of binaries) {
 await cp(join(root, 'server/migrations'), join(stage, 'migrations'), { recursive: true })
 await copyFile(join(root, 'server/configs/config.yaml'), join(stage, 'configs/config.yaml'))
 await copyFile(join(root, 'agent/deploy/install-standalone.sh'), join(stage, 'install.sh'))
+await mkdir(join(stage, 'agent/deploy'), { recursive: true })
+await copyFile(join(root, 'agent/deploy/mediamtx.yml.example'), join(stage, 'agent/deploy/mediamtx.yml.example'))
 await cp(join(root, 'docs'), join(stage, 'docs'), { recursive: true })
 await copyFile(join(root, 'CONTEXT.md'), join(stage, 'CONTEXT.md'))
 await writeFile(join(stage, 'DEPLOYMENT.md'), '# 本厂三服务部署\n\n安装、迁移、初始化、启停、升级、备份和回退见 [离线部署说明](docs/device/standalone-deployment.md)。软件与现场验收状态见 [Issue #6 交付记录](docs/requirements/standalone-site-delivery.md)。\n')

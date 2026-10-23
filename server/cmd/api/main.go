@@ -9,12 +9,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 
 	_ "github.com/EziosWJ/weighbridge/server/docs"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentmaintenance"
+	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	"github.com/EziosWJ/weighbridge/server/internal/app"
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
@@ -176,35 +176,32 @@ func main() {
 		}
 		return weighRepo.AgentConfig(ctx, scale, cfg.Weighing.ImageDir)
 	})
-	var maintenanceService *agentmaintenance.Service
-	var maintenanceValidator agentmaintenance.BusinessConfigValidator
-	if cfg.Node.Role == "standalone" || cfg.Maintenance.DataDir != "" {
-		maintenanceDir := cfg.Maintenance.DataDir
-		if maintenanceDir == "" {
-			maintenanceDir = filepath.Join(filepath.Dir(cfg.File.StorageRoot), "agent")
-		}
-		maintenanceService, maintenanceValidator, err = openMaintenance(*cfg, weighRepo, maintenanceDir)
-		if err != nil {
-			slog.Error("open Agent maintenance service", "error", err)
-			os.Exit(1)
-		}
+	weighService := weighing.NewService(weighRepo, agents)
+	var remoteMaintenance *agentmaintenance.Remote
+	if cfg.Node.Role != "central" && cfg.Maintenance.IsEnabled(cfg.Node.Role == "standalone") {
+		remoteMaintenance = agentmaintenance.NewRemote(agents, func(ctx context.Context) (agentprinter.Config, error) {
+			scaleID := cfg.Weighing.ScaleID
+			if len(cfg.Weighing.Agents) > 0 {
+				scaleID = cfg.Weighing.Agents[0].ScaleID
+			}
+			return weighRepo.BoundMaintenanceConfig(ctx, cfg.Node.SiteID, scaleID, "http://127.0.0.1"+apiPort(cfg.HTTP.Address))
+		}, weighService.BeginMaintenance)
 	}
 	application, err := app.New(*cfg, database, app.Dependencies{
-		Node:                         nodeService,
-		Auth:                         authService,
-		RBAC:                         rbacService,
-		Department:                   deptService,
-		User:                         userService,
-		Dictionary:                   dictionaryService,
-		SysConfig:                    configService,
-		File:                         fileService,
-		Log:                          logService,
-		Notification:                 notificationService,
-		Monitoring:                   monitoringService,
-		Maintenance:                  maintenanceService,
-		MaintenanceBusinessValidator: maintenanceValidator,
-		AuditRecorder:                audit.NewRecorder(database.GORM),
-		Weighing:                     weighing.NewService(weighRepo, agents),
+		Node:              nodeService,
+		Auth:              authService,
+		RBAC:              rbacService,
+		Department:        deptService,
+		User:              userService,
+		Dictionary:        dictionaryService,
+		SysConfig:         configService,
+		File:              fileService,
+		Log:               logService,
+		Notification:      notificationService,
+		Monitoring:        monitoringService,
+		RemoteMaintenance: remoteMaintenance,
+		AuditRecorder:     audit.NewRecorder(database.GORM),
+		Weighing:          weighService,
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)

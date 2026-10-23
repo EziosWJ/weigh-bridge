@@ -27,23 +27,5 @@ file:
 
 # 同址设备维护只准备草稿，不自动应用或启动真实设备。
 maintenance:
-  # task init 填为本检出的独立目录；显式设为空字符串可关闭维护入口。
-  data_dir: /home/your-user/project/weighbridge/.data/agent
-
-log:
-  level: debug
-  format: text
-
-# task init 生成独立随机密钥，API 与 agent-mock 读取同一份本地配置。
-weighing:
-  agent_key: ""
-
-  # 两厂区配置示例：取消注释后列表整体替代旧单磅映射。
-  # 原厂沿用已有有效身份和本地密钥，第二厂使用独立密钥；真实值只写忽略配置。
-  # agents:
-  #   - id: scale-agent-1
-  #     scale_id: 1
-  #     key: replace-with-existing-first-site-secret
-  #   - id: scale-agent-2
-  #     scale_id: 2
-  #     key: replace-with-independent-second-site-secret
+  # Enable API forwarding to the Agent; device files stay on the Agent host.
+  enabled: true

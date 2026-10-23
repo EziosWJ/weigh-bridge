@@ -346,10 +346,10 @@ setInterval(() => {
  void workflowApi.get<DeviceState>(`/scales/${scale.id}/device`).then(device => {
   if (useAuthStore.getState().token !== token) return;
   const previous = useWeighingStore.getState().device;
-  const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || JSON.stringify(previous.images) !== JSON.stringify(device.images);
+  const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.captureBlockedReason !== device.captureBlockedReason || JSON.stringify(previous.images) !== JSON.stringify(device.images);
   useWeighingStore.setState({ device });
   if (!meaningful) return;
-  if (sample && (!device.online || !device.stable || !device.deviceOk || (previous && previous.revision !== device.revision))) clearSample();
+  if (sample && (device.captureBlockedReason || !device.online || !device.stable || !device.deviceOk || (previous && previous.revision !== device.revision))) clearSample();
   const config = useWeighingStore.getState().data.config;
   updateData({ config: { ...config, weight: Number(device.weight), stable: device.stable, online: device.online, timedOut: !device.online, deviceError: !device.deviceOk, evidence: device.images.length === 2 } });
  }).catch(() => {

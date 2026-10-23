@@ -43,6 +43,7 @@ type Dependencies struct {
 	Notification                 *notification.Service
 	Monitoring                   *monitoring.Service
 	Maintenance                  *agentmaintenance.Service
+	RemoteMaintenance            *agentmaintenance.Remote
 	MaintenanceBusinessValidator agentmaintenance.BusinessConfigValidator
 	AuditRecorder                audit.Recorder
 	Weighing                     *weighing.Service
@@ -105,9 +106,21 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		return nil, fmt.Errorf("create authentication handler: %w", err)
 	}
 	auth.RegisterRoutes(router, authHandler)
+	if deps.Maintenance != nil && deps.Weighing != nil && cfg.Node.Role != "central" {
+		deps.Maintenance.SetOperationGuard(deps.Weighing.BeginMaintenance)
+		deps.Weighing.SetCameraAvailability(deps.Maintenance.CameraAvailable)
+		deps.Weighing.SetCameraConfigSource(deps.Maintenance.CameraConfig)
+		if devices := deps.Weighing.Agent(); devices != nil {
+			deps.Maintenance.SetCameraTester(devices.TestCameras)
+		}
+	}
+	if deps.RemoteMaintenance != nil && deps.Weighing != nil {
+		deps.Weighing.SetCameraAvailability(deps.RemoteMaintenance.CameraAvailable)
+		deps.Weighing.SetCameraConfigSource(deps.RemoteMaintenance.CameraConfig)
+	}
 	if deps.Weighing != nil {
 		deps.Weighing.SetNode(cfg.Node, cfg.Weighing.ImageDir)
-		deps.Weighing.SetMaintenanceEnabled(deps.Maintenance != nil)
+		deps.Weighing.SetMaintenanceEnabled(deps.Maintenance != nil || deps.RemoteMaintenance != nil)
 		if devices := deps.Weighing.Agent(); devices != nil && cfg.Node.Role != "central" {
 			devices.Register(router)
 		}
@@ -167,7 +180,9 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		return nil, fmt.Errorf("create log handler: %w", err)
 	}
 	logmgmt.RegisterRoutes(system, logHandler)
-	if deps.Maintenance != nil {
+	if deps.RemoteMaintenance != nil {
+		deps.RemoteMaintenance.RegisterBusinessRoutes(system, deps.Auth, deps.RBAC, deps.AuditRecorder)
+	} else if deps.Maintenance != nil {
 		deps.Maintenance.RegisterBusinessRoutes(system, deps.Auth, deps.RBAC, deps.AuditRecorder)
 	}
 

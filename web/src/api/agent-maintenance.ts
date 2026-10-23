@@ -20,7 +20,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     location.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
   }
   if (!response.ok) {
-    const message = await response.text();
+    let message = await response.text();
+    try { const body = JSON.parse(message) as { message?: string }; if (body.message) message = body.message; } catch { /* Legacy plain-text maintenance errors. */ }
     throw new Error(message || `维护请求失败（${response.status}）`);
   }
   if (response.status === 204) return undefined as T;
@@ -51,5 +52,8 @@ export const agentMaintenanceApi = {
   logs: () => request<string>('/logs'),
   audit: (query: URLSearchParams) => request<{ records: Record<string, unknown>[]; total: number; offset: number }>(`/audit?${query}`),
   action: (body: Record<string, unknown>) => request<{ output?: string; needsDisposition?: boolean; previewToken?: string; jobs?: { id: string; queue: string; title?: string }[]; unknown?: boolean }>('/action', { method: 'POST', body: JSON.stringify(body) }),
+  testCamera: () => request<CameraTestResult>('/test-camera', { method: 'POST', body: '{}' }),
   testPrint: () => request<{ message?: string }>('/test-print', { method: 'POST', body: '{}' }),
 };
+
+export type CameraTestResult = { at: string; views: { view: string; success: boolean; error?: string; jpeg?: string }[] };

@@ -2,6 +2,8 @@
 
 日期：2026-10-22。依据：[当前规格](standalone-site-spec.md)、[ADR 0023](../adr/0023-standalone-site-baseline.md)、[ADR 0024](../adr/0024-postgresql-only.md)及 [EziosWJ/weigh-bridge #6](https://github.com/EziosWJ/weigh-bridge/issues/6)。本次是本地代码开发与隔离软件验证，不是生产切换，也没有 Git 提交／推送或远程关闭 Issue。
 
+本文保留分阶段交付事实。下文早期“API 本机配置、systemd 控制、Agent 离线仍可维护”及开发目录初始化说明，已由末节 2026-10-23 [Agent 持有配置与分机维护](#2026-10-23-agent-持有配置与分机维护)替代；当前部署以该节和当前规格为准。
+
 ## 实现范围
 
 - 明确的 `node.role=standalone`，固定本厂 ID、不可变部署身份和独立业务编号。自治不配置中心、不建同步状态、不启动同步任务；旧 center/site 代码和有效测试保留。
@@ -50,3 +52,15 @@
 | 遗留临时主体 | 保留原状态、来源、关联及快照，不自动转正式；升级前逐条确认继续保留、正式建档对应关系及历史依据，未确认记录不当作新正式资料 |
 
 Issue #6 的 S3 真实生产闭环尚未完成，不能关闭为全量验收通过。维护软件可独立推进，旧维护服务在目标工控机通过 S4 验收后才退出。安装、启停、恢复及现场清单见[部署说明](../device/standalone-deployment.md)。单盘故障保护具体方案及恢复指标继续暂缓。
+
+## 2026-10-23 摄像头共享维护补充
+
+按 [ADR 0025](../adr/0025-camera-stream-maintenance.md) 接入统一摄像头配置：维护页共用 RTSP／WHEP 入口和前后流名称，草稿／应用／核实／回退、整组停用、称重维护暂停、运行时预览及独立测试抓拍均已实现。预览配置读取沿用本地登录、称重查询权限和厂区范围；媒体播放直接连接局域网 MediaMTX，不增加媒体鉴权或改动既有 JWT。正式称重证据规则保持。
+
+软件测试、真实 MediaMTX v1.21.2 隔离联调及未部署项见[摄像头接入和交付说明](../device/camera-live-preview.md)。这些检查不触碰业务库和远端模拟配置；现有模拟服务器的 RTSP／WHEP 配置继续使用。真实摄像头及长期运行仍待现场验收。
+
+## 2026-10-23 Agent 持有配置与分机维护
+
+按 [ADR 0026](../adr/0026-agent-owned-device-maintenance.md) 重构：API 经已有 WebSocket 转发配置与维护操作，不再打开本机设备文件或调用本机 Agent 服务；现场 Agent 常驻并管理真实 `--env-file`、草稿、应用、回退及设备执行。页面停止设备不会退出控制进程，Agent 进程离线需宿主机恢复。现有 JWT／维护权限／业务审计及称重、打印规则保留，媒体直接播放方式保持。
+
+先前“API 本机 .data/agent 草稿初始化和 systemd 接管”是历史实现，新默认开发入口为 `maintenance.enabled: true`；旧 data_dir 仅兼容启用标志。软件验证与部署方法见[Agent 远程维护](../device/agent-remote-maintenance.md)，真实双机及现场设备仍待验收。

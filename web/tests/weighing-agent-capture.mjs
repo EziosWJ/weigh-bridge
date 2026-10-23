@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
 const base = 'http://127.0.0.1:4194';
-const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4194', '--strictPort'], { cwd: new URL('..', import.meta.url), stdio: 'ignore' });
+const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4194', '--strictPort'], { cwd: new URL('..', import.meta.url), env: process.env, stdio: 'ignore' });
 let browser;
 let page;
 const deadline = setTimeout(() => { vite.kill('SIGTERM'); void browser?.close(); }, 45_000);
@@ -25,6 +25,7 @@ try {
   await page.route('**/api/weighing/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const ok = data => route.fulfill({ json: { code: 200, data } });
+    if (path.endsWith('/camera-preview')) return ok({ mode: 'legacy' });
     if (path.includes('/agent-images/')) return route.fulfill({ contentType: 'image/png', body: png });
     if (path.includes('/session/')) return ok({ scaleId: 1, holderUserId: 1, generation: 1, sessionToken: 'isolated-session', expiresAt: new Date(Date.now() + 60000).toISOString() });
     if (path.endsWith('/samples')) {

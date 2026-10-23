@@ -3,6 +3,7 @@ package weighing
 import (
 	"context"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
+	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"slices"
 	"strings"
@@ -19,6 +20,9 @@ type Service struct {
 	printMu            sync.Mutex
 	store              Store
 	devices            *agentbridge.Hub
+	maintenance        maintenanceGate
+	cameraAvailable    func(int64) bool
+	cameraConfig       func() (agentprinter.Config, error)
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {

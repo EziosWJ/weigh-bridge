@@ -65,7 +65,7 @@ if not config_path.exists():
       'node': {'role':'standalone','site_id':site_id},
       'weighing': {'image_dir':str(root/'data/agent-images')},
       'file': {'storage_root':str(root/'data/uploads')},
-      'maintenance': {'data_dir':str(root/'agent')},
+      'maintenance': {'enabled':True},
     }
     # JSON is a YAML subset; never interpolate credentials through the shell.
     with config_path.open('x') as f: json.dump(cfg,f,ensure_ascii=False,indent=2)
@@ -94,7 +94,7 @@ WantedBy=default.target
 ''',
  'weighbridge-agent-printer.service': f'''[Unit]
 Description=Weighbridge local scale camera and printer
-After=weighbridge-business.service
+After=network-online.target
 [Service]
 Type=simple
 WorkingDirectory={root}/agent

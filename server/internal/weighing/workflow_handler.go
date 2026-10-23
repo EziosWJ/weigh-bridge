@@ -1,6 +1,7 @@
 package weighing
 
 import (
+	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,7 @@ func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
 	confirm := rbac.RequirePermission(h.permissions, "weighing:confirm")
 	router.GET("/scales/:id/session", read, h.session)
 	router.GET("/scales/:id/device", read, h.deviceState)
+	router.GET("/scales/:id/camera-preview", read, h.cameraPreview)
 	if h.service.node.Role == "central" {
 		router.GET("/agent-images/:imageId", read, func(c *gin.Context) {
 			name := c.Param("imageId")
@@ -302,5 +304,8 @@ func (h *Handler) deviceState(c *gin.Context) {
 		writeResult(c, nil, ErrConditions)
 		return
 	}
-	writeResult(c, h.service.devices.State(id), nil)
+	writeResult(c, struct {
+		agentbridge.State
+		CaptureBlockedReason string `json:"captureBlockedReason,omitempty"`
+	}{h.service.devices.State(id), h.service.captureBlockedReason(id)}, nil)
 }

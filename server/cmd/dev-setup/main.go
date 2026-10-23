@@ -176,8 +176,8 @@ func render(template, driver, uploads, secret string) (string, error) {
 				line = "  secret: " + secret
 			case "file.storage_root":
 				line = "  storage_root: " + uploads
-			case "maintenance.data_dir":
-				line = "  data_dir: " + filepath.Join(filepath.Dir(uploads), "agent")
+			case "maintenance.enabled":
+				line = "  enabled: true"
 
 			}
 			filled[field] = true
@@ -325,18 +325,16 @@ func withMaintenanceDirectory(contents string) (string, bool, error) {
 	if document["maintenance"] != nil && !ok {
 		return contents, false, nil
 	}
+	if _, found := section["enabled"]; found {
+		return contents, false, nil
+	}
 	if _, found := section["data_dir"]; found {
 		return contents, false, nil
 	}
 	if section == nil {
 		section = map[string]any{}
 	}
-	root, err := filepath.Abs("..")
-	if err != nil {
-		return "", false, err
-	}
-	directory := filepath.Join(root, ".data", "agent")
-	encoded, err := yaml.Parser().Marshal(map[string]any{"maintenance": map[string]any{"data_dir": directory}})
+	encoded, err := yaml.Parser().Marshal(map[string]any{"maintenance": map[string]any{"enabled": true}})
 	if err != nil {
 		return "", false, err
 	}
@@ -347,14 +345,14 @@ func withMaintenanceDirectory(contents string) (string, bool, error) {
 		}
 		remainder := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
 		if remainder != "" && !strings.HasPrefix(remainder, "#") {
-			section["data_dir"] = directory
+			section["enabled"] = true
 			encoded, err = yaml.Parser().Marshal(map[string]any{"maintenance": section})
 			if err != nil {
 				return "", false, err
 			}
 			lines[i] = strings.TrimSuffix(string(encoded), "\n")
 		} else {
-			value, err := yaml.Parser().Marshal(map[string]any{"data_dir": directory})
+			value, err := yaml.Parser().Marshal(map[string]any{"enabled": true})
 			if err != nil {
 				return "", false, err
 			}

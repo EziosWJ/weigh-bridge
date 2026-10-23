@@ -35,6 +35,12 @@ type Config struct {
 	CameraRearURL       string `json:"cameraRearUrl"`
 	PlateRecognitionURL string `json:"plateRecognitionUrl"`
 	CameraTimeoutMS     int    `json:"cameraTimeoutMs"`
+	CameraMode          string `json:"cameraMode,omitempty"`
+	CameraEnabled       bool   `json:"cameraEnabled"`
+	CameraRTSPBase      string `json:"cameraRtspBase"`
+	CameraWHEPBase      string `json:"cameraWhepBase"`
+	CameraFrontPath     string `json:"cameraFrontPath"`
+	CameraRearPath      string `json:"cameraRearPath"`
 
 	SerialEnabled    bool   `json:"serialEnabled"`
 	SerialPort       string `json:"serialPort"`
@@ -82,6 +88,9 @@ func ValidateConfig(c Config) error {
 }
 
 func validateCamera(c Config) error {
+	if err := validateMediaCamera(c); err != nil {
+		return err
+	}
 	for _, raw := range []string{c.CameraFrontURL, c.CameraRearURL, c.PlateRecognitionURL} {
 		if raw == "" {
 			continue
@@ -218,6 +227,13 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 		}
 	}
 	cfg = NormalizeConfig(cfg)
+	if raw, ok := values["WEIGHBRIDGE_CAMERA_CONFIG"]; ok {
+		var media CameraSettings
+		if json.Unmarshal([]byte(raw), &media) != nil {
+			return cfg, errors.New("摄像头共享配置无效")
+		}
+		cfg.SetCameraSettings(media)
+	}
 	return cfg, ValidateConfig(cfg)
 }
 
@@ -233,6 +249,7 @@ func ConfigDigest(c Config) string {
 // and fills serial fields absent from older drafts. SerialEnabled is not
 // defaulted: an old file means "printing only".
 func NormalizeConfig(c Config) Config {
+	c.ResolveCameraURLs()
 	if c.PrintScale == 0 {
 		c.PrintScale = 1
 	}

@@ -4,6 +4,8 @@
 
 ## 当前状态
 
+2026-10-23 补充：本地称重工作台已增加 MediaMTX WebRTC 播放代码；随后按用户要求于北京时间 17:09 启用本服务器 WebRTC 并映射 TCP 8889／UDP 8189，17:10 完成两路跨主机浏览器播放、切换、放大复用、会话释放及原 RTSP 抓拍复查。配置、备份与验证明细见[实时预览接入说明](camera-live-preview.md)。
+
 已在指定服务器部署并保持两路模拟 RTSP 流运行，完成跨主机截帧和故障恢复检查。首次部署仅验证模拟源；后续本机联调已配置真实 Agent 的前后地址，并修正首次采集的页面门槛，见下文联调记录。**尚未完成当前运行 Agent 的图片上传及完整称重闭环验收**。
 
 | 项目 | 实际值 |
@@ -14,7 +16,8 @@
 | 服务名 | `mediamtx`、`front`、`rear` |
 | 车前地址 | `rtsp://192.168.1.10:8554/front` |
 | 车后地址 | `rtsp://192.168.1.10:8554/rear` |
-| 对外监听 | `192.168.1.10:8554`，TCP RTSP |
+| 对外监听 | `192.168.1.10` 上的 TCP 8554（RTSP）、TCP 8889（WebRTC HTTP）、UDP 8189（WebRTC 媒体） |
+| 浏览器直接播放 | `http://192.168.1.10:8889/front`、`http://192.168.1.10:8889/rear` |
 | 视频 | H.264、1280×720、15 fps，约一秒关键帧间隔 |
 | 内容 | 动态测试图、FRONT/REAR、北京时间、帧号、模拟标记；无车辆或车牌素材 |
 | 版本 | MediaMTX `v1.21.2`，FFmpeg `8.1.2` |
@@ -32,16 +35,18 @@ registry-1.docker.io/bluenviron/mediamtx@sha256:c0feb4acc548d5f410d57d9046f62dfa
 | --- | --- |
 | `.env` | 固定镜像摘要；实际 Compose 直接绑定 `192.168.1.10` |
 | `compose.yaml` | 三个容器、目录挂载、重启和日志轮转 |
-| `mediamtx.yml` | TCP RTSP 与 front/rear 两个发布 path |
+| `mediamtx.yml` | TCP RTSP、WebRTC 与 front/rear 两个发布 path |
 | `publish.sh` | 实时生成两路测试画面 |
 | `fonts/DejaVuSans.ttf` | 从宿主机复制的字体 |
 | `verify.py` | 并发抓拍两路、各两次，验证 JPEG 标记、耗时和摘要变化 |
 | `verification/report.json` | 最新一次 `verify.py` 结果；重复执行会覆盖 |
+| `verification/webrtc-report.json` | 2026-10-23 17:10 从开发机浏览器实际连接远端媒体的播放验证 |
+| `backups/webrtc-20261023T090906Z/` | 启用 WebRTC 前的配置及本次文档更新前的说明备份 |
 | `verification/recovery.json` | 本次单路故障与恢复记录 |
 | `verification/front-*.jpg`、`rear-*.jpg` | 容器内验证及开发机跨主机截帧样图 |
 | `README.md`、`DEPLOYMENT.md` | 远端维护说明及实际部署记录 |
 
-博客为便于复现，把 Compose 的绑定地址参数化为 `CAMERA_BIND_IP`；实际部署文件使用上表中的固定 IP。除这一点外，博客中的 Compose、推流脚本和 MediaMTX 配置来自本次实际部署。
+博客为便于复现，把 Compose 的绑定地址参数化为 `CAMERA_BIND_IP`；实际部署文件使用上表中的固定 IP。博客保留首次仅 RTSP 的实验配置；后续 WebRTC 端口与允许来源以本备忘和实时预览接入说明为准。
 
 ## 日常查看与启停
 
@@ -120,7 +125,7 @@ python3 verify.py
 | --- | --- |
 | 镜像拉取 403 | 原加速站曾拒绝请求；本次使用显式 `registry-1.docker.io` 成功，不需要改 Docker 全局配置 |
 | 容器运行，但 RTSP 返回找不到流 | 看 MediaMTX 日志是否有该 path 的在线发布者，再看对应 front/rear 容器日志 |
-| 另一台机器连不上 | 地址应使用 `192.168.1.10`；检查 TCP 8554、路由和防火墙；该部署只提供 TCP RTSP |
+| 另一台机器连不上 | 地址应使用 `192.168.1.10`；RTSP 检查 TCP 8554，WebRTC 同时检查 TCP 8889 与 UDP 8189、页面 origin 和防火墙 |
 | Agent 抓拍失败，播放器却能播放 | 用 Agent 同一组 FFmpeg 参数和超时截帧；检查它实际加载的地址、二进制版本、FFmpeg PATH |
 | 默认 2 秒超时 | 本次取图约 2.3～3.1 秒；从 6000 ms 联调，完整预算包含上传与可选识别 |
 | 显示已保存，运行仍用旧地址 | 区分草稿、保存和已生效；执行维护页应用并核对运行摘要 |
@@ -134,7 +139,7 @@ python3 verify.py
 
 ### 2026-10-23 本机工作台联调修正
 
-工作台曾要求已有前后图片才启用采集，但真实 Agent 只在收到 `capture.request` 后抓拍，导致首次采集互相等待。已移除发起采集前的预览图片门槛，保留本次抓拍结果和人工确认要求；采集返回的两路图片也可显示在现场画面中。首次无图不表示重量链路未接通，当前画面仍为按需抓拍，非实时视频。
+工作台曾要求已有前后图片才启用采集，但真实 Agent 只在收到 `capture.request` 后抓拍，导致首次采集互相等待。已移除发起采集前的预览图片门槛，保留本次抓拍结果和人工确认要求；采集返回的两路图片也可显示在现场画面中。首次无图不表示重量链路未接通。该次修正时画面仍为按需抓拍；后续实时预览已单独接入，不替代正式称重抓拍。
 
 本机实际 FFmpeg 单帧验证：`/front` 和 `/rear` 均在约 3 秒内返回 JPEG，误填的 `/near` 返回 400 且无图片。本地忽略的 `agent.env` 已改用 `/front`、`/rear`，超时 6000 ms；现有 Agent 需重启读取修改。
 
@@ -147,6 +152,7 @@ python3 verify.py
 | [agent-printer/config.go](../../server/cmd/agent-printer/config.go) | `--env-file` 选择与独立参数兼容分支 |
 | [agentprinter/config.go](../../server/internal/agentprinter/config.go) | 字段、默认值、校验与 `ReadEnvironment` |
 | [维护页面](../../web/src/pages/agent-maintenance.tsx) | URL 配置、脱敏与应用入口 |
+| [实时预览](../../web/src/pages/weighing/camera-live.tsx) | 本地浏览器 WebRTC 监看，独立于 Agent 正式抓拍 |
 | [本厂部署说明](standalone-deployment.md) | 正式部署、维护与恢复边界 |
 
 后续尚待完成：
@@ -158,3 +164,7 @@ python3 verify.py
 - 用真实摄像头、D12 带载及实物打印完成现场闭环验收。
 
 模拟截图只用于联调。本次记录不改变 [Issue #6 交付](../requirements/standalone-site-delivery.md)中完整真实生产闭环仍待验收的结论。
+
+## 共享配置维护补充（2026-10-23）
+
+称重台已改用后端运行时生效配置，不再读取 Vite 摄像头变量；设备维护与转流接入见[摄像头共享配置说明](camera-live-preview.md)。现有 17:09 开启的 RTSP／WebRTC 配置继续使用，本次不增加媒体鉴权。

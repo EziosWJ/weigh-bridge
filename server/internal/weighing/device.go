@@ -16,6 +16,11 @@ func withDevice(ctx context.Context, state agentbridge.State, capture *p.Capture
 	return context.WithValue(ctx, deviceKey{}, deviceContext{state, capture})
 }
 func (s *Service) deviceCommand(ctx context.Context, scale int64, fn func(context.Context) (CommandResult, error)) (CommandResult, error) {
+	release, err := s.maintenance.enter()
+	if err != nil {
+		return CommandResult{}, err
+	}
+	defer release()
 	// Idempotent command replay is still resolved by the repository before validating a new sample.
 	// A missing/offline device context rejects fresh samples, while stored operations can replay.
 	if s.devices == nil {

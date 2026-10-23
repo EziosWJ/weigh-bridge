@@ -17,6 +17,14 @@ func (s *Service) ChangeSession(ctx context.Context, id int64, action string, in
 	return s.store.ChangeSession(ctx, id, action, in, e)
 }
 func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (Sample, error) {
+	release, gateErr := s.maintenance.enter()
+	if gateErr != nil {
+		return Sample{}, gateErr
+	}
+	defer release()
+	if s.cameraAvailable != nil && !s.cameraAvailable(in.ScaleID) {
+		return Sample{}, ErrConditions
+	}
 	if s.devices == nil {
 		return Sample{}, ErrConditions
 	}

@@ -45,3 +45,16 @@ func (r *Repository) ValidateDevelopmentMaintenanceConfig(ctx context.Context, c
 	}
 	return nil
 }
+
+// BoundMaintenanceConfig resolves identity without opening an API-local device
+// directory. Agent-owned paths and runtime parameters are read over the wire.
+func (r *Repository) BoundMaintenanceConfig(ctx context.Context, siteID, scaleID int64, serverURL string) (agentprinter.Config, error) {
+	if siteID > 0 {
+		var row struct{ ID int64 }
+		if err := r.db.WithContext(ctx).Table("wb_scale").Select("id").Where("site_id=?", siteID).Order("id").Take(&row).Error; err != nil {
+			return agentprinter.Config{}, err
+		}
+		scaleID = row.ID
+	}
+	return r.DevelopmentMaintenanceConfig(ctx, scaleID, serverURL)
+}

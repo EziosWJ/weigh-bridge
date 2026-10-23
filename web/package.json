@@ -17,6 +17,7 @@
     "test:notifications": "node tests/notifications.mjs",
     "test:weighing": "node tests/weighing-core.mjs",
     "test:weighing:agent-capture": "node tests/weighing-agent-capture.mjs",
+    "test:weighing:camera-live": "node tests/weighing-camera-live.mjs",
     "test:weighing:invalid-original": "node tests/weighing-invalid-original.mjs",
     "test:weighing:standalone": "node tests/standalone-workbench.mjs",
     "test:weighing:smoke": "node tests/weighing-smoke.mjs",

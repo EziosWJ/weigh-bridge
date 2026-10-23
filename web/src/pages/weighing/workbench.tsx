@@ -82,7 +82,7 @@ function WorkbenchContent() {
   const needsDayVerification = !!selected?.crossDayDoubt;
   const conditionIssue = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : !data.config.online ? 'Agent 离线或重量数据已过期' : data.config.deviceError ? '设备异常，请恢复后重新采集' : !data.config.stable ? '重量未稳定，请等待设备稳定' : !Number.isFinite(data.config.weight) || data.config.weight <= 0 ? '等待有效上磅重量' : '';
   const shouldVerifyDay = !conditionIssue && needsDayVerification;
-  const blocked = conditionIssue || (needsDayVerification ? '请先核实跨天运输，再继续称重' : '');
+  const blocked = conditionIssue || device?.captureBlockedReason || (needsDayVerification ? '请先核实跨天运输，再继续称重' : '');
   const taskInfo = successfulTask || selected;
   const summaryPlate = taskInfo?.plate || data.draft.plate || plate;
   const summaryDirection = taskInfo?.direction ?? data.draft.direction;
@@ -355,7 +355,7 @@ function WorkbenchContent() {
     <div className="workbench-page-heading"><PageHeader title="称重工作台" actions={<><StatusTag tone={data.config.online ? 'success' : 'warning'}>{data.config.online ? 'Agent 在线' : 'Agent 离线'}</StatusTag><span className="hidden text-sm text-text-tertiary sm:inline">{roleLabels[data.config.role]}</span></>} /></div>
     {(feedback || storageError || syncNotice) && <div role="status" className="workbench-notice rounded-control border border-border bg-neutral-background px-4 py-2 text-sm">{feedback && <p>{feedback}</p>}{syncNotice && <p>{syncNotice}</p>}{storageError && <p className="text-error">{storageError}</p>}</div>}
     <div className={`weighing-station weighing-camera-${cameraSize}`}>
-      <DeviceCameraPanel scenePlate={confirmedRecord?.capture?.plateEvidence?.scenePlate ?? recognition?.scenePlate ?? data.draftPlateEvidence?.scenePlate} size={cameraSize} onSizeChange={setCameraSize} capture={confirmedRecord?.capture ?? (sampleReady ? data.capture : undefined)} saved={!!confirmedRecord} />
+      <DeviceCameraPanel scaleId={Number(params.get('scaleId'))} scenePlate={confirmedRecord?.capture?.plateEvidence?.scenePlate ?? recognition?.scenePlate ?? data.draftPlateEvidence?.scenePlate} size={cameraSize} onSizeChange={setCameraSize} capture={confirmedRecord?.capture ?? (sampleReady ? data.capture : undefined)} saved={!!confirmedRecord} />
       <div className="weighing-console min-w-0 space-y-4">
         <ContentCard className="weighing-vehicle-bar shadow-none" bodyClassName="px-4 py-3">
           <div className="workbench-current-vehicle"><h2>当前车辆</h2><span className="text-xs text-text-tertiary">人工核对后定位运输</span></div>

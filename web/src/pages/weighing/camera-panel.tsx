@@ -9,6 +9,8 @@ import { useWeighingStore } from '@/store/weighing-store';
 import { beijingTime } from '@/lib/weighing/query';
 import { formatWeight } from '@/lib/weighing/weights';
 import type { CaptureSnapshot } from '@/types/weighing';
+import { useCameraConfiguration } from '@/lib/weighing/camera-preview';
+import { CameraLive } from './camera-live';
 
 function CameraImagePreview({ open, title, description, src, alt, onClose, children }: { open: boolean; title: string; description: string; src: string; alt: string; onClose: () => void; children?: ReactNode }) {
   const controls = useRef<HTMLDivElement>(null);
@@ -54,32 +56,34 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
 
 export type CameraSize = 'small' | 'standard' | 'large';
 
-export function DeviceCameraPanel({ scenePlate, capture, saved = false, size, onSizeChange }: { scenePlate?: string; capture?: CaptureSnapshot; saved?: boolean; size: CameraSize; onSizeChange: (size: CameraSize) => void }) {
+export function DeviceCameraPanel({ scaleId, scenePlate, capture, saved = false, size, onSizeChange }: { scaleId: number; scenePlate?: string; capture?: CaptureSnapshot; saved?: boolean; size: CameraSize; onSizeChange: (size: CameraSize) => void }) {
   const device = useWeighingStore(s => s.device);
   const [view, setView] = useState<'front' | 'rear'>('front');
   const camera = { src: device?.images.find(i => i.view === view)?.url ?? capture?.images?.find(i => i.view === view)?.url ?? '', title: view === 'front' ? '车头视角' : '车尾视角' };
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
+  const configuration = useCameraConfiguration(scaleId);
+  const preview = configuration.mode === 'mediamtx' ? configuration : null;
   return <ContentCard className="weighing-camera shadow-none" bodyClassName="p-0">
     <div className="workbench-camera-toolbar flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <h2 className="flex items-center gap-2 text-base font-semibold"><Camera className="h-4 w-4 text-text-tertiary" aria-hidden />现场画面<span className="camera-source-label">最近上传图片</span></h2>
+      <h2 className="flex items-center gap-2 text-base font-semibold"><Camera className="h-4 w-4 text-text-tertiary" aria-hidden />现场画面<span className="camera-source-label">{preview ? '实时监控' : '最近上传图片'}</span></h2>
       <div className="flex items-center gap-1" role="group" aria-label="摄像头画面大小">
         {([['small', '小窗'], ['standard', '标准'], ['large', '大窗']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} className={size === value ? 'bg-neutral-background text-primary' : ''} onClick={() => onSizeChange(value)}>{label}</Button>)}
-        <Button size="sm" variant="ghost" aria-label="放大摄像头画面" disabled={!camera.src} onClick={() => setOpen(true)}><Maximize2 className="h-4 w-4" aria-hidden /><span className="sr-only">放大</span></Button>
+        {!preview && <Button size="sm" variant="ghost" aria-label="放大摄像头画面" disabled={!camera.src} onClick={() => setOpen(true)}><Maximize2 className="h-4 w-4" aria-hidden /><span className="sr-only">放大</span></Button>}
       </div>
     </div>
     <div className="workbench-camera-views" role="group" aria-label="摄像头视角">
       {(['front', 'rear'] as const).map(value => <Button key={value} size="sm" variant="ghost" aria-pressed={view === value} onClick={() => { setView(value); setFailed(false); }}>{value === 'front' ? '车头视角' : '车尾视角'}</Button>)}
-      <span className="ml-auto text-xs text-text-secondary">{device?.online ? 'Agent 已连接' : 'Agent 未连接'} · 非实时视频</span>
+      <span className="ml-auto text-xs text-text-secondary">{preview ? '实时监控 · 称重时另行抓拍' : `${device?.online ? 'Agent 已连接' : 'Agent 未连接'} · 非实时视频`}</span>
     </div>
-    <button type="button" disabled={!camera.src} aria-label="查看摄像头大图" onClick={() => setOpen(true)} className="workbench-camera-feed relative block w-full bg-neutral-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2">
+    {preview ? <CameraLive key={`${scaleId}:${view}:${preview.revision ?? ''}`} url={preview.ready ? preview[view] ?? '' : ''} message={preview.message} title={camera.title} /> : <button type="button" disabled={!camera.src} aria-label="查看摄像头大图" onClick={() => setOpen(true)} className="workbench-camera-feed relative block w-full bg-neutral-background focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary focus-visible:outline-offset-2">
       {camera.src ? <AgentImage key={camera.src} src={camera.src} alt={`${camera.title}预览`} className="aspect-video w-full object-contain" onLoad={() => setFailed(false)} onError={() => setFailed(true)} /> : <span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>尚未取得现场图片</strong><span>{device?.online ? '点击“采集重量”，由 Agent 同步获取前后抓拍。' : '请先连接 Agent 并等待设备重量就绪。'}</span><span>实时视频暂未接入</span></span>}
       <span className="absolute left-3 top-3 rounded bg-black/70 px-2 py-1 text-xs text-white">最近图片 · {camera.title}</span>
       <span className="absolute bottom-3 right-3 flex items-center gap-1 rounded bg-black/70 px-2 py-1 text-xs text-white"><Maximize2 className="h-3 w-3" aria-hidden />点击放大</span>
-    </button>
+    </button>}
     <div className="workbench-camera-evidence space-y-3 p-4">
       {failed && <p role="alert" className="text-sm text-error">最近图片加载失败，请检查连接或等待 Agent 重新上传。</p>}
-      <div className="workbench-camera-plate">{scenePlate ? <PlateCloseup plate={scenePlate} /> : <div className="rounded-control border border-border bg-neutral-background p-3 text-sm text-text-secondary">请核对现场车牌，图片不能替代人工确认。</div>}<p className="mt-2 text-xs text-text-tertiary"></p></div>
+      <div className="workbench-camera-plate">{scenePlate ? <PlateCloseup plate={scenePlate} /> : <div className="rounded-control border border-border bg-neutral-background p-3 text-sm text-text-secondary">请核对现场车牌，图片不能替代人工确认。</div>}<p className="mt-2 text-xs text-text-tertiary">{preview ? '实时画面用于监看 · 下方抓拍随本次称重保存' : 'Agent 最近上传图片 · 非实时视频'}</p></div>
       <div className="workbench-camera-capture border-t border-border pt-3"><h3 className="mb-3 text-sm font-medium">{saved ? '已保存抓拍' : '本次抓拍'}</h3>{capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : <div className="flex items-center gap-3 py-2 text-sm text-text-tertiary"><Camera className="h-5 w-5 shrink-0" aria-hidden /><p>采集重量时同步抓拍，图片与本次重量一起保留。</p></div>}</div>
     </div>
     <CameraImagePreview open={open && !!camera.src} title="摄像头画面" description="" src={camera.src} alt={`${camera.title}预览大图`} onClose={() => setOpen(false)}>{scenePlate && <PlateCloseup plate={scenePlate} />}</CameraImagePreview>

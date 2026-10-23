@@ -49,6 +49,16 @@ func (s *Service) RegisterBusinessRoutes(group *gin.RouterGroup, authenticator a
 			}
 		})
 	}
+	routes.GET("/camera-preview", rbac.RequireAnyPermission(permissions, PermissionView, PermissionManage), func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		cfg, runtimeError := s.CameraConfig()
+		request := c.Request.WithContext(context.WithValue(c.Request.Context(), businessRequestKey{}, true))
+		if err := s.validateBusinessConfig(request, cfg); err != nil {
+			platformhttp.WriteError(c, 400, 400, err.Error(), nil)
+			return
+		}
+		platformhttp.OK(c, cfg.PreviewConfig(runtimeError))
+	})
 	view := PermissionView
 	manage := PermissionManage
 	bind(http.MethodGet, "/status", "status", view, "maintenance.status")
@@ -58,6 +68,7 @@ func (s *Service) RegisterBusinessRoutes(group *gin.RouterGroup, authenticator a
 	bind(http.MethodPost, "/config/import", "config/import", manage, "maintenance.config.import")
 	bind(http.MethodPost, "/action", "action", manage, "maintenance.action")
 	bind(http.MethodPost, "/test-print", "test-print", manage, "maintenance.test-print")
+	bind(http.MethodPost, "/test-camera", "test-camera", manage, "maintenance.test-camera")
 	bind(http.MethodGet, "/logs", "logs", view, "maintenance.logs.read")
 	bind(http.MethodGet, "/audit", "audit", view, "maintenance.audit.read")
 }

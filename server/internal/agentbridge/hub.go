@@ -55,6 +55,7 @@ type Hub struct {
 	conn        *connection
 	state       State
 	printResult func(context.Context, int64, p.PrintResult) error
+	maintenance *MaintenanceState
 }
 
 func New(cfg Config) *Hub {
@@ -172,6 +173,7 @@ func (h *Hub) serve(ws *websocket.Conn, admitted func()) {
 		return
 	}
 	h.conn = c
+	h.maintenance = nil
 	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}}
 	h.mu.Unlock()
 	admitted()
@@ -243,7 +245,18 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 			return err
 		}
 		h.state.Images = images
-	case "capture.result":
+	case "maintenance.state":
+		var state MaintenanceState
+		if json.Unmarshal(m.Payload, &state) != nil || state.Config.ScaleID != h.cfg.ScaleID || state.Config.AgentID != h.cfg.ID {
+			return errors.New("invalid maintenance state")
+		}
+		state.Config.AgentKey = ""
+		state.Config.CameraFrontURL, state.Config.CameraRearURL, state.Config.PlateRecognitionURL = "", "", ""
+		if h.maintenance != nil && (h.maintenance.Config != state.Config || h.maintenance.Running != state.Running) {
+			h.state.Revision++
+		}
+		h.maintenance = &state
+	case "capture.result", "camera.test.result", "maintenance.result":
 		if ch, ok := c.pending[m.RequestID]; ok {
 			ch <- m
 			delete(c.pending, m.RequestID)
@@ -315,6 +328,9 @@ func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error
 		return p.Capture{}, 0, ErrUnavailable
 	}
 	var result p.Capture
+	if m.Type != "capture.result" {
+		return result, 0, ErrUnavailable
+	}
 	if err := json.Unmarshal(m.Payload, &result); err != nil {
 		return result, 0, err
 	}

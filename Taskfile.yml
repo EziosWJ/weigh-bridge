@@ -326,3 +326,9 @@ tasks:
     summary: Run the default test suite
     deps:
       - backend:test
+
+  camera:integration:
+    summary: Verify real MediaMTX v1.21.2 video decoding and RTSP capture (set MEDIAMTX_BIN; needs FFmpeg and Chromium)
+    dir: server
+    cmds:
+      - go test -tags=mediamtx_integration ./internal/agentprinter -run '^TestRealMediaMTXPreviewAndCapture$' -count=1 -timeout=1m

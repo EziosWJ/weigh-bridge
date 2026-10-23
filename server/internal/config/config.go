@@ -50,8 +50,19 @@ type NodeConfig struct {
 
 // MaintenanceConfig configures the local Agent maintenance bridge.
 type MaintenanceConfig struct {
+	Enabled *bool  `koanf:"enabled"`
 	DataDir string `koanf:"data_dir"`
 }
+
+// IsEnabled keeps the old data_dir setting as an enable flag for existing
+// installations. Device files are never opened by the business API.
+func (m MaintenanceConfig) IsEnabled(standalone bool) bool {
+	if m.Enabled != nil {
+		return *m.Enabled
+	}
+	return standalone || m.DataDir != ""
+}
+
 type NodePeer struct {
 	SiteID int64  `koanf:"site_id"`
 	Key    string `koanf:"key"`

@@ -14,6 +14,8 @@
 
 | 主题／材料 | 当前效力 | 保留与替代范围 |
 | --- | --- | --- |
+| [ADR 0026](adr/0026-agent-owned-device-maintenance.md) | 当前设备配置与维护边界，软件已实现，现场待验收 | Agent 持有配置及设备执行；API 复用现有通道转发；支持本厂局域网分机，替代强制同机与 API 直接启动已停 Agent 进程 |
+| [ADR 0025](adr/0025-camera-stream-maintenance.md)、[摄像头接入与交付](device/camera-live-preview.md) | 当前摄像头维护决策 | 本厂 MediaMTX 配套、共享配置、直接预览和独立维护测试；真实设备及长时间运行另行验收 |
 | [ADR 0024](adr/0024-postgresql-only.md)、[数据库交付](requirements/postgresql-only-delivery.md) | 当前数据库依据，已完成收敛 | 开发、数据库集成测试与生产仅 PostgreSQL；旧 SQLite 要求退役，历史验证事实保留 |
 | [ADR 0023](adr/0023-standalone-site-baseline.md)、[当前规格](requirements/standalone-site-spec.md) | 当前架构与阶段依据 | 本地自治、三服务、维护整合、中心暂缓；软件交付见 Issue #6 记录 |
 | [ADR 0021](adr/0021-local-weighing-authority-and-central-sync.md)、[中心同步业务规格](requirements/local-first-deployment-spec.md)、[Issue #4 规格](requirements/local-first-deployment-issue-spec.md)、[同步设计](architecture/local-first-sync-design.md) | 部分被替代／中心能力暂缓 | 保留本地业务权威、断互联网可用、编号与快照；替代中心管理权和首次下发；同步与跨厂查询退出本期 |

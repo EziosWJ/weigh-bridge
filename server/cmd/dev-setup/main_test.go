@@ -16,7 +16,7 @@ import (
 )
 
 func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testing.T) {
-	root := checkout(t)
+	checkout(t)
 	if _, err := invoke(t, "init"); err != nil {
 		t.Fatal(err)
 	}
@@ -24,8 +24,8 @@ func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if original.Maintenance.DataDir != filepath.Join(root, ".data", "agent") {
-		t.Fatal("new development config lacks its isolated maintenance directory")
+	if original.Maintenance.Enabled == nil || !*original.Maintenance.Enabled {
+		t.Fatal("new development config did not enable Agent maintenance")
 	}
 	path := filepath.Join("configs", "config.dev.yaml")
 	contents, _ := os.ReadFile(path)
@@ -48,8 +48,8 @@ func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Maintenance.DataDir != original.Maintenance.DataDir {
-		t.Fatal("existing development config did not gain a maintenance directory")
+	if updated.Maintenance.Enabled == nil || !*updated.Maintenance.Enabled {
+		t.Fatal("existing development config did not enable Agent maintenance")
 	}
 	if updated.JWT != original.JWT || updated.Weighing.AgentKey != original.Weighing.AgentKey || !reflect.DeepEqual(updated.Node, original.Node) || updated.Database != original.Database {
 		t.Fatal("backfill changed existing credentials or deployment identity")
@@ -62,7 +62,7 @@ func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testi
 	if !bytes.Equal(before, after) {
 		t.Fatal("repeated initialization changed configured maintenance")
 	}
-	for _, text := range []string{"maintenance:\n  data_dir: \"\"\n", "node:\n  role: site\n", "maintenance: {data_dir: /custom/agent}\n"} {
+	for _, text := range []string{"maintenance:\n  enabled: false\n", "maintenance:\n  data_dir: \"\"\n", "node:\n  role: site\n", "maintenance: {data_dir: /custom/agent}\n"} {
 		if out, changed, err := withMaintenanceDirectory(text); err != nil || changed || out != text {
 			t.Fatal("explicit disable/custom path or named deployment role must be preserved")
 		}

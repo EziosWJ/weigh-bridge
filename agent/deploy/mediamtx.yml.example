@@ -1,0 +1,25 @@
+# MediaMTX v1.21.2. Copy to a private deployment directory; replace placeholders.
+# Native process example; Docker requires explicit host/container network mapping.
+logLevel: info
+rtsp: true
+rtspTransports: [tcp]
+rtspAddress: :8554
+rtmp: false
+hls: false
+srt: false
+playback: false
+moq: false
+
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: [http://REPLACE_BUSINESS_LAN_HOST:18900]
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: false
+webrtcAdditionalHosts: [REPLACE_MEDIA_LAN_IP]
+webrtcICEServers2: []
+
+paths:
+  front:
+    source: rtsp://REPLACE_CAMERA_USER:REPLACE_CAMERA_PASSWORD@REPLACE_FRONT_CAMERA/live
+  rear:
+    source: rtsp://REPLACE_CAMERA_USER:REPLACE_CAMERA_PASSWORD@REPLACE_REAR_CAMERA/live

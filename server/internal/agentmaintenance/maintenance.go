@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
+	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	platformhttp "github.com/EziosWJ/weighbridge/server/internal/platform/http"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -104,6 +105,10 @@ type Service struct {
 	page                    []byte
 	startupError            string
 	businessConfigValidator BusinessConfigValidator
+	operationGuard          func(context.Context) (func(), error)
+	cameraTester            func(context.Context, int64) (p.CameraTest, error)
+	environment             string
+	deviceOwned             bool
 }
 
 func (s *Service) SetBusinessConfigValidator(v BusinessConfigValidator) {
@@ -130,7 +135,7 @@ func isBusinessRequest(r *http.Request) bool {
 }
 
 func Open(dir string, runner Runner) (*Service, error) {
-	return open(dir, runner, nil)
+	return open(dir, runner, nil, false)
 }
 
 // OpenWithDraft prepares a new maintenance directory without applying device
@@ -139,17 +144,17 @@ func OpenWithDraft(dir string, runner Runner, draft Config) (*Service, error) {
 	if err := validate(draft); err != nil {
 		return nil, err
 	}
-	return open(dir, runner, &draft)
+	return open(dir, runner, &draft, false)
 }
 
-func open(dir string, runner Runner, initialDraft *Config) (*Service, error) {
+func open(dir string, runner Runner, initialDraft *Config, deviceOwned bool) (*Service, error) {
 	if runner == nil {
 		runner = ExecRunner{}
 	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	s := &Service{dir: dir, runner: runner, sessions: map[string]time.Time{}, previews: map[string][]Job{}, unknownPreviews: map[string]bool{}}
+	s := &Service{dir: dir, runner: runner, deviceOwned: deviceOwned, sessions: map[string]time.Time{}, previews: map[string][]Job{}, unknownPreviews: map[string]bool{}}
 	if b, e := os.ReadFile(filepath.Join(dir, "maintenance.json")); e == nil {
 		var v struct {
 			Draft    Config `json:"draft"`
@@ -191,7 +196,7 @@ func open(dir string, runner Runner, initialDraft *Config) (*Service, error) {
 	s.draft = agentprinter.NormalizeConfig(s.draft)
 	s.active = agentprinter.NormalizeConfig(s.active)
 	s.previous = agentprinter.NormalizeConfig(s.previous)
-	if s.password == "" {
+	if s.password == "" && !deviceOwned {
 		pw := randomToken(18)
 		s.password = hashPassword(pw)
 		if err := os.WriteFile(filepath.Join(dir, "bootstrap-password.txt"), []byte(pw+"\n"), 0600); err != nil {
@@ -323,6 +328,7 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("/api/config/import", s.importConnection)
 	mux.HandleFunc("/api/action", s.action)
 	mux.HandleFunc("/api/test-print", s.testPrint)
+	mux.HandleFunc("/api/test-camera", s.testCamera)
 	mux.HandleFunc("/api/logs", s.logs)
 	mux.HandleFunc("/api/audit", s.auditAPI)
 	return security(mux)
@@ -449,6 +455,9 @@ func (s *Service) status(w http.ResponseWriter, r *http.Request) {
 	if agent.Err == nil && strings.TrimSpace(agent.Output) == "active" {
 		agentState = "运行中"
 	}
+	if s.deviceOwned && strings.TrimSpace(agent.Output) == "inactive" {
+		agentState = "已停止"
+	}
 	if cups.Err == nil && strings.TrimSpace(cups.Output) == "scheduler is running" {
 		cupsState = "运行中"
 	}
@@ -485,7 +494,14 @@ func (s *Service) status(w http.ResponseWriter, r *http.Request) {
 	} else if cameraConfigured {
 		cameraState = "已配置；Agent 未运行"
 	}
+	if cfg.CameraMode == "mediamtx" && !cfg.CameraEnabled {
+		cameraState = "已停用（连接配置保留）"
+	}
 	camera := map[string]any{"frontConfigured": cfg.CameraFrontURL != "", "rearConfigured": cfg.CameraRearURL != "", "recognitionConfigured": cfg.PlateRecognitionURL != "", "captureConfigured": cameraConfigured, "state": cameraState}
+	if cfg.CameraMode == "mediamtx" {
+		camera["enabled"], camera["mode"] = cfg.CameraEnabled, cfg.CameraMode
+		camera["frontConfigured"], camera["rearConfigured"] = cfg.CameraFrontPath != "", cfg.CameraRearPath != ""
+	}
 	s.json(w, map[string]any{"checkedAt": now.Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil, "scale": scaleView, "camera": camera})
 }
 func cloudStatus(path string) string {
@@ -618,6 +634,11 @@ func (s *Service) configAPI(w http.ResponseWriter, r *http.Request) {
 	c = agentprinter.NormalizeConfig(c)
 	s.mu.Lock()
 	before := s.draft
+	// Older clients omit the shared fields. They must not silently downgrade
+	// an already migrated camera or re-enable its retired direct URLs.
+	if before.CameraMode == "mediamtx" && c.CameraMode == "" {
+		c.SetCameraSettings(before.CameraSettings())
+	}
 	if c.AgentKey == "••••••" || c.AgentKey == "" {
 		c.AgentKey = before.AgentKey
 	}
@@ -688,6 +709,14 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 	}
 	var result Result
 	if in.Action == "apply" || in.Action == "restore" {
+		if s.operationGuard != nil {
+			release, err := s.operationGuard(r.Context())
+			if err != nil {
+				s.fail(w, err)
+				return
+			}
+			defer release()
+		}
 		s.mu.Lock()
 		before, cfg := s.active, s.draft
 		if in.Action == "restore" {
@@ -696,6 +725,10 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		if cfg.AgentID == "" {
 			s.fail(w, errors.New("尚无可恢复的上一份配置"))
+			return
+		}
+		if cfg.CameraMode == "mediamtx" && s.operationGuard == nil && !s.deviceOwned {
+			s.fail(w, errors.New("共享摄像头配置须通过统一业务维护入口应用，以核实在途称重请求"))
 			return
 		}
 		if err := validate(cfg); err != nil {
@@ -710,25 +743,29 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, errors.New("Agent 连接密钥尚未设置"))
 			return
 		}
-		queue := s.runner.Run([]string{"lpstat", "-p", cfg.Queue})
-		if queue.Err != nil || queueState(queue.Output, cfg.Queue) == "未知／不可读取" {
-			s.fail(w, errors.New("所选 CUPS 队列不存在或不可读取，请先检查打印服务与已安装队列"))
-			return
-		}
-		jobs := s.readJobs()
-		if jobs.Err != nil {
-			s.fail(w, fmt.Errorf("无法检查队列作业，配置未应用：%w", jobs.Err))
-			return
-		}
-		current := jobsForQueues(ParseJobs(jobs.Output), before.Queue, cfg.Queue)
-		if len(current) > 0 {
-			if !s.previewMatches(in.PreviewToken, current) {
-				s.offerPreview(w, current)
+		skipPrintChecks := s.deviceOwned && samePrinter(before, cfg)
+		var current []Job
+		if !skipPrintChecks {
+			queue := s.runner.Run([]string{"lpstat", "-p", cfg.Queue})
+			if queue.Err != nil || queueState(queue.Output, cfg.Queue) == "未知／不可读取" {
+				s.fail(w, errors.New("所选 CUPS 队列不存在或不可读取，请先检查打印服务与已安装队列"))
 				return
 			}
-			if in.Disposition != "cancel" {
-				http.Error(w, "配置应用前必须完成或明确取消未结束作业；保留作业时暂不应用", http.StatusConflict)
+			jobs := s.readJobs()
+			if jobs.Err != nil {
+				s.fail(w, fmt.Errorf("无法检查队列作业，配置未应用：%w", jobs.Err))
 				return
+			}
+			current = jobsForQueues(ParseJobs(jobs.Output), before.Queue, cfg.Queue)
+			if len(current) > 0 {
+				if !s.previewMatches(in.PreviewToken, current) {
+					s.offerPreview(w, current)
+					return
+				}
+				if in.Disposition != "cancel" {
+					http.Error(w, "配置应用前必须完成或明确取消未结束作业；保留作业时暂不应用", http.StatusConflict)
+					return
+				}
 			}
 		}
 		priorState := s.runner.Run([]string{"systemctl", "--user", "is-active", "weighbridge-agent-printer.service"})
@@ -759,37 +796,39 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 			}
 			response.flush(client)
 		}()
-		rechecked := s.readJobs()
-		if rechecked.Err != nil {
-			s.fail(w, fmt.Errorf("Agent 已暂停，但无法复核 CUPS 作业；未更改配置：%w", rechecked.Err))
-			return
-		}
-		currentAfterStop := jobsForQueues(ParseJobs(rechecked.Output), before.Queue, cfg.Queue)
-		if !sameJobs(current, currentAfterStop) {
-			s.offerPreview(w, currentAfterStop)
-			return
-		}
-		current = currentAfterStop
-		if in.Disposition == "cancel" {
-			if len(in.JobIDs) == 0 || !subset(in.JobIDs, current) {
-				s.fail(w, errors.New("请选择预览中仍存在的作业"))
+		if !skipPrintChecks {
+			rechecked := s.readJobs()
+			if rechecked.Err != nil {
+				s.fail(w, fmt.Errorf("Agent 已暂停，但无法复核 CUPS 作业；未更改配置：%w", rechecked.Err))
 				return
 			}
-			for _, id := range in.JobIDs {
-				canceled := s.cancelJob(r, id)
-				if canceled.Err != nil {
-					s.fail(w, canceled.Err)
+			currentAfterStop := jobsForQueues(ParseJobs(rechecked.Output), before.Queue, cfg.Queue)
+			if !sameJobs(current, currentAfterStop) {
+				s.offerPreview(w, currentAfterStop)
+				return
+			}
+			current = currentAfterStop
+			if in.Disposition == "cancel" {
+				if len(in.JobIDs) == 0 || !subset(in.JobIDs, current) {
+					s.fail(w, errors.New("请选择预览中仍存在的作业"))
 					return
 				}
-			}
-			check := s.readJobs()
-			if check.Err != nil {
-				s.fail(w, check.Err)
-				return
-			}
-			if remaining := jobsForQueues(ParseJobs(check.Output), before.Queue, cfg.Queue); len(remaining) != 0 {
-				http.Error(w, "仍有未结束作业，配置未应用；请先处理剩余作业", http.StatusConflict)
-				return
+				for _, id := range in.JobIDs {
+					canceled := s.cancelJob(r, id)
+					if canceled.Err != nil {
+						s.fail(w, canceled.Err)
+						return
+					}
+				}
+				check := s.readJobs()
+				if check.Err != nil {
+					s.fail(w, check.Err)
+					return
+				}
+				if remaining := jobsForQueues(ParseJobs(check.Output), before.Queue, cfg.Queue); len(remaining) != 0 {
+					http.Error(w, "仍有未结束作业，配置未应用；请先处理剩余作业", http.StatusConflict)
+					return
+				}
 			}
 		}
 		pausePath := filepath.Join(s.dir, "maintenance.pause")
@@ -1251,6 +1290,11 @@ var pageCSS string
 
 // BuildAgentEnvironment writes the Agent's private environment without exposing secrets in API responses.
 func BuildAgentEnvironment(dir string, c Config) error {
+	return BuildAgentEnvironmentAt(filepath.Join(dir, "agent.env"), c)
+}
+
+func BuildAgentEnvironmentAt(path string, c Config) error {
+	c = agentprinter.NormalizeConfig(c)
 	if err := validate(c); err != nil {
 		return err
 	}
@@ -1261,7 +1305,9 @@ func BuildAgentEnvironment(dir string, c Config) error {
 	data += fmt.Sprintf("WEIGHBRIDGE_SITE_ID=%d\nWEIGHBRIDGE_SITE_CODE=%s\nWEIGHBRIDGE_SITE_NAME=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_SCALE_NAME=%s\n", c.SiteID, strconv.Quote(c.SiteCode), strconv.Quote(c.SiteName), strconv.Quote(c.ScaleCode), strconv.Quote(c.ScaleName))
 	data += fmt.Sprintf("WEIGHBRIDGE_SERIAL_ENABLED=%t\nWEIGHBRIDGE_SERIAL_PORT=%s\nWEIGHBRIDGE_SERIAL_BAUD=%d\nWEIGHBRIDGE_SERIAL_PROTOCOL=%s\nWEIGHBRIDGE_SERIAL_WEIGHT_UNIT=%s\nWEIGHBRIDGE_SERIAL_STALE_MS=%d\n", c.SerialEnabled, strconv.Quote(c.SerialPort), c.SerialBaud, strconv.Quote(c.SerialProtocol), strconv.Quote(c.SerialWeightUnit), c.SerialStaleMS)
 	data += fmt.Sprintf("WEIGHBRIDGE_CAMERA_FRONT_URL=%s\nWEIGHBRIDGE_CAMERA_REAR_URL=%s\nWEIGHBRIDGE_PLATE_RECOGNITION_URL=%s\nWEIGHBRIDGE_CAMERA_TIMEOUT_MS=%d\n", strconv.Quote(c.CameraFrontURL), strconv.Quote(c.CameraRearURL), strconv.Quote(c.PlateRecognitionURL), c.CameraTimeoutMS)
-	return writePrivate(filepath.Join(dir, "agent.env"), []byte(data))
+	media, _ := json.Marshal(c.CameraSettings())
+	data += "WEIGHBRIDGE_CAMERA_CONFIG=" + strconv.Quote(string(media)) + "\n"
+	return writePrivate(path, []byte(data))
 }
 func PortIsLoopback(addr string) bool {
 	host, _, e := net.SplitHostPort(addr)
