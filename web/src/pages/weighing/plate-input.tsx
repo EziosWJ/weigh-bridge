@@ -26,6 +26,6 @@ export function PlateInput({ value, onChange, id, inputRef, disabled, legacyValu
       }} />
     </div>
     {open && <div id={`${controlId}-provinces`} role="group" aria-label="车牌省份" className="plate-provinces">{provinces.map(item => <Button key={item} size="sm" aria-pressed={province === item} disabled={disabled} onClick={() => { onChange(item + tail); setOpen(false); document.getElementById(controlId)?.focus(); }}>{item}</Button>)}</div>}
-    <p id={`${controlId}-hint`} className={`mt-1 text-xs ${error ? 'text-error' : 'text-text-tertiary'}`}>{error || (legacy ? '历史测试车牌：可沿用原值；改牌请录入普通或新能源号牌' : '支持连续输入、完整车牌粘贴及新能源号牌')}</p>
+    <p id={`${controlId}-hint`} className={`mt-1 text-xs ${error ? 'text-error' : 'text-text-tertiary'}`}>{error || (legacy ? '' : '')}</p>
   </div>;
 }

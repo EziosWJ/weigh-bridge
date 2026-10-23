@@ -79,9 +79,9 @@ export function DeviceCameraPanel({ scenePlate, capture, saved = false, size, on
     </button>
     <div className="workbench-camera-evidence space-y-3 p-4">
       {failed && <p role="alert" className="text-sm text-error">最近图片加载失败，请检查连接或等待 Agent 重新上传。</p>}
-      <div className="workbench-camera-plate">{scenePlate ? <PlateCloseup plate={scenePlate} /> : <div className="rounded-control border border-border bg-neutral-background p-3 text-sm text-text-secondary">请核对现场车牌，图片不能替代人工确认。</div>}<p className="mt-2 text-xs text-text-tertiary">Agent 最近上传图片 · 非实时视频</p></div>
+      <div className="workbench-camera-plate">{scenePlate ? <PlateCloseup plate={scenePlate} /> : <div className="rounded-control border border-border bg-neutral-background p-3 text-sm text-text-secondary">请核对现场车牌，图片不能替代人工确认。</div>}<p className="mt-2 text-xs text-text-tertiary"></p></div>
       <div className="workbench-camera-capture border-t border-border pt-3"><h3 className="mb-3 text-sm font-medium">{saved ? '已保存抓拍' : '本次抓拍'}</h3>{capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : <div className="flex items-center gap-3 py-2 text-sm text-text-tertiary"><Camera className="h-5 w-5 shrink-0" aria-hidden /><p>采集重量时同步抓拍，图片与本次重量一起保留。</p></div>}</div>
     </div>
-    <CameraImagePreview open={open && !!camera.src} title="摄像头画面" description="Agent 最近上传图片，非实时视频。" src={camera.src} alt={`${camera.title}预览大图`} onClose={() => setOpen(false)}>{scenePlate && <PlateCloseup plate={scenePlate} />}</CameraImagePreview>
+    <CameraImagePreview open={open && !!camera.src} title="摄像头画面" description="" src={camera.src} alt={`${camera.title}预览大图`} onClose={() => setOpen(false)}>{scenePlate && <PlateCloseup plate={scenePlate} />}</CameraImagePreview>
   </ContentCard>;
 }
