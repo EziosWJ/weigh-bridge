@@ -1197,13 +1197,45 @@ func (s *Service) logs(w http.ResponseWriter, r *http.Request) {
 	if !s.require(w, r) {
 		return
 	}
-	x := s.runner.Run([]string{"journalctl", "--user", "-u", "weighbridge-agent-printer.service", "-n", "200", "--no-pager"})
-	if x.Err != nil {
-		http.Error(w, x.Err.Error(), 503)
+	userLogs := s.runner.Run([]string{"journalctl", "--user", "-u", "weighbridge-agent-printer.service", "-n", "200", "--no-pager"})
+	if userLogs.Err == nil && journalOutputHasEntries(userLogs.Output) {
+		writeJournalOutput(w, s.redactLog(userLogs.Output))
 		return
 	}
+
+	// Deployments may run the Agent as either a system or user unit. The user
+	// journal query is preferred for the documented user-unit installation;
+	// fall back to the system journal for system-unit installations.
+	systemLogs := s.runner.Run([]string{"journalctl", "-u", "weighbridge-agent-printer.service", "-n", "200", "--no-pager"})
+	if systemLogs.Err == nil {
+		writeJournalOutput(w, s.redactLog(systemLogs.Output))
+		return
+	}
+	if userLogs.Err == nil {
+		http.Error(w, "系统级 Agent 日志读取失败："+s.redactLog(journalErrorMessage(systemLogs)), 503)
+		return
+	}
+	http.Error(w, "用户级 Agent 日志读取失败："+s.redactLog(journalErrorMessage(userLogs))+"；系统级 Agent 日志读取失败："+s.redactLog(journalErrorMessage(systemLogs)), 503)
+}
+
+func writeJournalOutput(w http.ResponseWriter, output string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte(s.redactLog(x.Output)))
+	_, _ = w.Write([]byte(output))
+}
+
+func journalOutputHasEntries(output string) bool {
+	trimmed := strings.TrimSpace(output)
+	return trimmed != "" && !strings.Contains(trimmed, "-- No entries --")
+}
+
+func journalErrorMessage(result Result) string {
+	if output := strings.TrimSpace(result.Output); output != "" {
+		return output
+	}
+	if result.Err != nil {
+		return result.Err.Error()
+	}
+	return "没有日志输出"
 }
 func (s *Service) redactLog(v string) string {
 	s.mu.Lock()
