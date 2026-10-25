@@ -11,7 +11,7 @@
 ```bash
 task init
 task dev
-# 在浏览器中登录管理员账号，完成首次本厂配置
+# Server 首次启动自动建立本厂身份，登录后在配置管理确认过磅单标题
 cd server
 go run ./cmd/agent-provision --agent-env-path "$PWD/../agent.env" --server-url http://127.0.0.1:8900
 cd ..
@@ -39,7 +39,7 @@ task agent -- --env-file /绝对路径/agent.env --state-dir /绝对路径/agent
 
 ## mock 本机启动
 
-先按上文在网页完成本厂配置并生成 `agent.env`。mock 可读取显式指定的 Agent 环境文件，或用 `--server` 指定地址；不从业务 API YAML 导入身份，不需要配对文件。
+先启动 Server，确认内部身份已自动建立，再按上文生成 `agent.env`。mock 可读取显式指定的 Agent 环境文件，或用 `--server` 指定地址；不从业务 API YAML 导入身份，不需要配对文件。
 
 ```bash
 # 终端一：API 与系统 Web

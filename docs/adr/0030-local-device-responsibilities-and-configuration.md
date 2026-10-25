@@ -24,5 +24,5 @@ Server 内设独立摄像头管理模块，数据存 PostgreSQL，保存即用�
 - [ADR 0025](../history/adr/0025-camera-stream-maintenance.md)：替代前后两路配置、视频源由部署文件维护以及不使用 Control API 的限制；自由部署、浏览器直接 WHEP 预览及预览不是正式证据的原则保留，不新增播放鉴权层。
 - [ADR 0026](../history/adr/0026-agent-owned-device-maintenance.md)：设备参数由 Agent 持有收窄为串口与打印；相机及视频服务配置归 Server；网页草稿流程替换为单次提交，进程常驻与主机恢复边界保留。
 - [ADR 0027](0027-optional-weighing-capture.md)：前后各一图调整为本次指定的摄像头集合；强制默认开启、关闭可缺图及策略快照原则保留。
-- [ADR 0028](0028-single-local-runtime-identity.md)、[ADR 0029](../history/adr/0029-local-initialization-and-agent-connection.md)：替代 Agent 配对与密钥维护、本厂独立菜单入口等对应条款；单一本厂身份、初始化只填两名称、编号固定及地址不属于厂区业务资料继续有效。
+- [ADR 0028](0028-single-local-runtime-identity.md)、[ADR 0029](../history/adr/0029-local-initialization-and-agent-connection.md)：替代 Agent 配对与密钥维护、本厂独立菜单入口等对应条款；单一本厂身份、编号固定及地址不属于厂区业务资料继续有效。人工两名称初始化随后由 [ADR 0031](0031-automatic-local-identity.md) 替换为启动自动建立内部身份。
 - [协议 v1](../../protocol/v1.md) 是改造前的实现契约。认证头、相机上传／采集消息及测量窗口需按新规格修订并与 Server、真实 Agent、mock 协同升级；本决策不宣称旧客户端已具备新能力。

@@ -39,7 +39,7 @@ task dev
 
 `task init` 生成随机 JWT 及本机上传目录配置，保留已有文件，不创建数据库；`task dev` 显式迁移后启动 API（8900）与 Web（5173）。配置缺失、端口及初始化细则见[开发初始化](docs/development-initialization.md)。真实凭据仅放忽略的本地配置。
 
-管理员在所用版本的本厂配置入口完成首次初始化；Agent／mock 的启动及连接配置见 [Agent 使用说明](agent/README.md)。真实 Agent 与同磅 mock 互斥，软件模拟不替代现场验收。
+Server 首次启动自动建立本厂内部身份，无需填写厂区及地磅名称；在“配置管理”确认过磅单标题。Agent／mock 的启动及连接配置见 [Agent 使用说明](agent/README.md)。真实 Agent 与同磅 mock 互斥，软件模拟不替代现场验收。
 
 ## 检查与发布
 

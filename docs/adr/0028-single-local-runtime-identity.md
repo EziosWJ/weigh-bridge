@@ -8,7 +8,7 @@ status: accepted (consolidated summary)
 
 ## 有效决定
 
-每厂独立运行本地 Server、Agent 和 PostgreSQL，不保留中心、site／standalone 或空角色兼容。本厂未配置可登录管理，首次名称及地磅配置成功即初始化完成，身份编号固定，无操作员人数门槛；Agent 接入和配置归属按 ADR 0030。本厂账号及资料独立维护，互联网断开不影响正常本地链路。
+每厂独立运行本地 Server、Agent 和 PostgreSQL，不保留中心、site／standalone 或空角色兼容。本厂身份编号固定，无操作员人数门槛；首次内部身份按 [ADR 0031](0031-automatic-local-identity.md) 在 Server 启动时自动建立，不再要求填写厂区及地磅名称；Agent 接入和配置归属按 ADR 0030。本厂账号及资料独立维护，互联网断开不影响正常本地链路。
 
 ## 取舍
 

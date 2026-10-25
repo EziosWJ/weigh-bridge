@@ -7,6 +7,7 @@
 | ADR | 保留的决定与理由 |
 | --- | --- |
 | [0028 单一本厂形态](0028-single-local-runtime-identity.md) | 每厂自治、固定身份及单一路径，减少中心和多模式依赖；初始化已合并 0029 修订，旧清库仅为历史切换 |
+| [0031 本厂身份自动建立](0031-automatic-local-identity.md) | 取消人工两名称初始化，保留内部身份与历史关联，网页聚焦过磅单标题 |
 | [0024 PostgreSQL](0024-postgresql-only.md) | 开发、数据库测试、生产一套数据库，退出双库成本；保留 migration 历史 |
 | [0030 设备职责与配置](0030-local-device-responsibilities-and-configuration.md) | Server 管相机与视频，Agent 管仪表与打印；局域网无配对接入、单次应用及成功参数备份，换取安装维护简化 |
 | [0013 正式称重证据](0013-formal-weighing-evidence.md) | 设备依据、人工确认及本地校验，不用手输原始值代替采集 |
