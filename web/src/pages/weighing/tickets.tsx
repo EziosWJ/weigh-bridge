@@ -14,6 +14,7 @@ import { Pagination } from "@/components/common/pagination";
 import { StatusTag } from "@/components/common/status-tag";
 import { TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
+import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
@@ -47,7 +48,6 @@ export function WeighingTicketsPage() {
   const deferred = useDeferredValue(filter);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [downloadError, setDownloadError] = useState('');
   const [reopenTicketId, setReopenTicketId] = useState<string | null>(null);
   const result = useWeighingPage<WireTicket>('tickets', deferred, page, pageSize);
   const summary = useWeighingSummary('tickets', deferred, result.revision);
@@ -55,7 +55,7 @@ export function WeighingTicketsPage() {
   const canReopenTicket = (row: WireTicket) => row.status === 'void'
     && can('reopen')
     && (capabilities?.sites.some(site => site.id === row.siteId && site.canOperate) ?? false);
-  const download = (kind: string) => void downloadWeighingCsv(kind, filter).catch(error => setDownloadError(error.message));
+  const download = (kind: string) => void downloadWeighingCsv(kind, filter).then(() => toast.success("过磅单 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }));
   const columns: DataTableColumn<WireTicket>[] = [
     { title: '单号 / 车牌', key: 'ticket', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>{row.ticketNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
     {title:"厂区",key:"site",width:100,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
@@ -69,7 +69,7 @@ export function WeighingTicketsPage() {
   if (params.get('ticket')) return <Navigate replace to={`/weighing/tickets/${encodeURIComponent(params.get('ticket')!)}`} />;
   return <div className="weighing-list-page"><PageHeader title="最终单据" description="" /><DeviceBanner compact />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} ticket />
-    {(downloadError || summary.error) && <p role="alert" className="text-error">{downloadError || summary.error}</p>}
+    {summary.error && <p role="alert" className="text-error">{summary.error}</p>}
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="单据" description={`筛选 ${result.total} 张；当前有效 ${summary.result?.taskCount ?? '—'} 趟，最终净重合计 ${summary.result?.net ?? '—'} 吨`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <><Button size="sm" onClick={() => download('tickets')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('tickets-summary')}>导出净重汇总 CSV</Button></>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="最终单据列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1304} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
@@ -85,7 +85,6 @@ export function WeighingTicketDetailPage() {
   const [reopenOpen, setReopenOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const ticket = data.tickets.find((item) => item.id === id);
   const canOperate = !!capabilities?.permissionCodes.some(code => ["weighing:void","weighing:reopen","weighing:print","weighing:reprint"].includes(code));
   const canPrint = capabilities?.permissionCodes.includes("weighing:print") ?? false;
@@ -109,7 +108,7 @@ export function WeighingTicketDetailPage() {
     if (!ticket || operation !== "void") return;
     try {
       await dispatch({ type: "voidTicket", ticketId: ticket.id, reason });
-      setOperation(null); setNotice("操作已保存；原单据及其历史记录保留。");
+      setOperation(null); toast.success("单据已作废，原单据及历史记录已保留。");
     } catch (failure) { setError(failure instanceof Error ? failure.message : "操作失败"); }
   }
 
@@ -122,7 +121,6 @@ export function WeighingTicketDetailPage() {
     <DeviceBanner />
     <div className="space-y-space-6">
       <TicketPrintActions ticketId={ticket.id} />
-      {notice && <p role="status" className="text-success">{notice}</p>}
       <ContentCard title="单据状态与重量" extra={<StatusTag tone={pending ? "warning" : ticket.status === "valid" ? "success" : "neutral"}>{pending ? "提交结果待核实" : ticket.status === "valid" ? "有效单据" : "已作废单据"}</StatusTag>}>
         {pending && <p className="mb-space-4 text-warning">提交结果尚未核实，请<WorkbenchLink className={linkClass} to={`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`}>前往工作台查询结果</WorkbenchLink>。</p>}
         <div className="mb-space-4 grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4"><DetailItem label="车牌" value={ticket.plate} /><DetailItem label="业务" value={directionLabels[ticket.direction]} /><DetailItem label={ticket.direction === 'inbound' ? '供货方' : '收货方'} value={ticket.partyName} /><DetailItem label="物料" value={[ticket.materialName, ticket.materialSpec].filter(Boolean).join(' / ')} /></div>

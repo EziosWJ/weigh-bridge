@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { weighingApi, type WeighingSite, type SiteGrant } from '@/api/weighing';
 import { FormDialog } from '@/components/common/form-dialog';
+import { toast } from '@/components/common/toast-store';
 import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { localSiteId, localSiteSetupMessage } from '@/lib/local-site';
@@ -19,7 +20,7 @@ export function SiteAssignDialog({user,onClose}:{user:UserRecord;onClose:()=>voi
   void Promise.all([weighingApi.siteOptions(),weighingApi.siteGrants(user.id),weighingApi.capabilities()]).then(([options,rows,caps])=>{if(active){const id=localSiteId(caps);setSites(options.filter(site=>site.id===id));setGrants(rows);}}).catch(e=>{if(active)setError(getErrorMessage(e,'本厂授权加载失败'));}).finally(()=>{if(active)setLoading(false);});
   return()=>{active=false;};
  },[user.id,revision]);
- async function save(){setBusy(true);setError('');try{await weighingApi.saveSiteGrants(user.id,grants);onClose();}catch(e){setError(getErrorMessage(e,'本厂授权保存失败'));}finally{setBusy(false);}}
+ async function save(){setBusy(true);setError('');try{await weighingApi.saveSiteGrants(user.id,grants);toast.success('本厂授权已保存');onClose();}catch(e){setError(getErrorMessage(e,'本厂授权保存失败'));}finally{setBusy(false);}}
  return <FormDialog open title="本厂授权" description={`${user.nickname||user.username} · 业务动作仍受角色权限控制，查询授权不赋予操作权。`} loading={busy} submitDisabled={loading||!!error||!sites.length} onCancel={onClose} onSubmit={save}>
   {loading?<p role="status">正在加载本厂授权…</p>:<div className="space-y-3">{sites.map(site=>{
    const grant=grants.find(g=>g.siteId===site.id);

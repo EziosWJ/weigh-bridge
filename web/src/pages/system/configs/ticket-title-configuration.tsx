@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getSystemConfigPage, updateSystemConfig } from "@/api/system";
 import { ContentCard } from "@/components/common/content-card";
 import { DetailDialog } from "@/components/common/detail-dialog";
+import { toast } from "@/components/common/toast-store";
 import { Field } from "@/components/common/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,6 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [preview, setPreview] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
@@ -40,7 +40,6 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
   async function save() {
     if (!record || saving) return;
     const value = title.trim();
-    setNotice("");
     if (!value || [...value].length > 100 || /[\r\n\t]/.test(value)) {
       setError("请填写 1～100 个字符的单行标题。");
       return;
@@ -54,7 +53,7 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
       });
       setRecord({ ...record, configValue: value });
       setTitle(value);
-      setNotice("过磅单标题已保存，将用于之后生成的单据。");
+      toast.success({ title: "过磅单标题已保存", description: "新标题将用于之后生成的单据；历史单据保持不变。" });
       onSaved();
     } catch (failure) {
       setError(getErrorMessage(failure, "过磅单标题保存失败"));
@@ -69,7 +68,7 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
         <div className="flex flex-wrap items-end gap-space-3">
           <div className="w-full max-w-xl [&_p:empty]:hidden">
             <Field label="打印标题" htmlFor="ticket-title">
-              <Input id="ticket-title" className="scroll-mt-24" value={title} maxLength={100} disabled={saving} placeholder="例如：某某酒厂过磅单" onChange={(event) => { setTitle(event.target.value); setError(""); setNotice(""); }} />
+              <Input id="ticket-title" className="scroll-mt-24" value={title} maxLength={100} disabled={saving} placeholder="例如：某某酒厂过磅单" onChange={(event) => { setTitle(event.target.value); setError(""); }} />
             </Field>
           </div>
           <Button type="button" disabled={saving || !title.trim()} onClick={() => setPreview(true)}>预览标题</Button>
@@ -78,7 +77,6 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
       </form>
     ) : <Button onClick={() => void load()}>重新加载标题</Button>}
     {error && <p role="alert" className="mt-space-3 text-sm text-error">{error}</p>}
-    {notice && <p role="status" className="mt-space-3 text-sm text-success">{notice}</p>}
     <DetailDialog open={preview} title="过磅单标题预览" description="使用当前输入的标题展示样张，保存后生效。预览不会打印或生成正式单据。" onCancel={() => setPreview(false)} trapFocus>
       <TicketSheet sheet={{ template: "weighing-compact-v1", widthMm: 210, heightMm: 99, layers: 5, title: title.trim(), marks: ["标题预览样张"], rows: [
         [{ label: "单号", value: "预览样张" }, { label: "车牌", value: "川A12345" }],

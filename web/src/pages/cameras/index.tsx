@@ -135,12 +135,6 @@ export function CamerasPage() {
     const result = await cameraApi.sync(current.configVersion, current.video.version);
     await load(false);
     if (result.state !== "synced") throw new Error(result.error || "视频源同步未完成，请稍后重试");
-    setNotice("视频源已同步。");
-  }
-
-  async function syncFromSettings() {
-    try { await syncVideo(); toast.success("视频源已同步。"); }
-    catch (failure) { setError(`同步视频源失败：${getErrorMessage(failure, "请稍后重试")}`); }
   }
 
   const captureCameras = list?.cameras.filter(camera => camera.captureEnabled && camera.enabled) ?? [];
@@ -185,7 +179,7 @@ export function CamerasPage() {
 
     {list && <div className="grid gap-5 xl:grid-cols-2">
       <CaptureSettingsCard list={list} cameras={captureCameras} canManage={canManage} onSaved={next => { applyList({ ...list, ...next, cameras: list.cameras }, false); }} />
-      <VideoSettingsCard list={list} canManage={canManage} onSaved={video => applyList({ ...list, video }, false)} onSync={syncFromSettings} />
+      <VideoSettingsCard list={list} canManage={canManage} onSaved={video => applyList({ ...list, video }, false)} onSync={syncVideo} />
     </div>}
     {list && <p className="text-xs text-text-tertiary">视频映射同步与直连抓拍分别反馈：摄像头保存成功不会因 MediaMTX 离线回滚；预览不可用不代表抓拍不可用。测试抓拍、预览或同步都不会创建正式称重样本。{list.video.updateTime && !list.video.updateTime.startsWith('0001') ? ` 视频配置更新于 ${formatDateTime(list.video.updateTime)}。` : ''}</p>}
 
@@ -202,7 +196,6 @@ function CaptureSettingsCard({ list, cameras, canManage, onSaved }: { list: Came
   const [recognitionId, setRecognitionId] = useState(list.recognitionCameraId ? String(list.recognitionCameraId) : "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   // Reflect server-side clearing (deleted/disabled recognition source) without
   // discarding edits made while the page stays open.
@@ -215,7 +208,7 @@ function CaptureSettingsCard({ list, cameras, canManage, onSaved }: { list: Came
   async function save() {
     const timeoutMs = Number(timeout);
     if (!Number.isFinite(timeoutMs) || timeoutMs < 500 || timeoutMs > 60_000) { setError("抓拍超时须在 500 到 60000 毫秒之间。"); return; }
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setError("");
     try {
       const saved = await cameraApi.saveSettings({
         configVersion: list.configVersion,
@@ -225,8 +218,7 @@ function CaptureSettingsCard({ list, cameras, canManage, onSaved }: { list: Came
         clearRecognitionCamera: !recognitionId && !!list.recognitionCameraId,
       });
       onSaved({ configVersion: saved.configVersion, captureTimeoutMs: saved.captureTimeoutMs, recognitionCameraId: saved.recognitionCameraId ?? null, recognitionUrl: saved.recognitionUrl ?? "" });
-      setNotice("抓拍设置已保存；新配置版本立即用于后续采集，进行中未确认样本会失效并需重新采集。");
-      toast.success("抓拍设置已保存");
+      toast.success({ title: "抓拍设置已保存", description: "新配置立即用于后续采集；进行中的未确认样本需重新采集。", duration: 5000 });
     } catch (failure) { setError(getErrorMessage(failure, "抓拍设置保存失败")); }
     finally { setBusy(false); }
   }
@@ -249,7 +241,6 @@ function CaptureSettingsCard({ list, cameras, canManage, onSaved }: { list: Came
       </Field>
       <p className="text-xs text-text-tertiary">删除识别源或取消其“称重抓拍”用途时，Server 会清除识别源选择并停用识别，不会静默改选其他摄像头。</p>
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
-      {notice && <p role="status" className="text-sm text-text-secondary">{notice}</p>}
       {canManage && <Button variant="primary" disabled={busy} onClick={() => void save()}>{busy ? "正在保存…" : "保存抓拍设置"}</Button>}
     </div>
   </ContentCard>;
@@ -265,7 +256,6 @@ function VideoSettingsCard({ list, canManage, onSaved, onSync }: { list: CameraL
   const [busy, setBusy] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   useEffect(() => {
     setApiUrl(video.apiUrl);
@@ -274,7 +264,7 @@ function VideoSettingsCard({ list, canManage, onSaved, onSync }: { list: CameraL
   }, [video.version, video.apiUrl, video.apiUsername, video.whepBaseUrl]);
 
   async function save() {
-    setBusy(true); setError(""); setNotice("");
+    setBusy(true); setError("");
     try {
       const saved = await cameraApi.saveVideo({
         apiUrl: apiUrl.trim(),
@@ -285,15 +275,14 @@ function VideoSettingsCard({ list, canManage, onSaved, onSync }: { list: CameraL
       });
       onSaved(saved);
       setApiPassword(""); setClearPassword(false);
-      setNotice("视频服务设置已保存。远端同步结果单独显示，不因 MediaMTX 离线回滚。");
-      toast.success("视频服务设置已保存");
+      toast.success({ title: "视频服务设置已保存", description: "远端同步结果单独显示；MediaMTX 离线不会回滚本次保存。", duration: 5000 });
     } catch (failure) { setError(getErrorMessage(failure, "视频服务设置保存失败")); }
     finally { setBusy(false); }
   }
 
   async function sync() {
-    setSyncing(true); setError(""); setNotice("");
-    try { await onSync(); setNotice("视频源已同步。"); }
+    setSyncing(true); setError("");
+    try { await onSync(); toast.success("视频源已同步。"); }
     catch (failure) { setError(`同步视频源失败：${getErrorMessage(failure, "请稍后重试")}`); }
     finally { setSyncing(false); }
   }
@@ -321,7 +310,6 @@ function VideoSettingsCard({ list, canManage, onSaved, onSync }: { list: CameraL
         <p>同步失败或待恢复独立显示；相机保存成功不因远端离线回滚，直连抓拍仍可使用。预览映射未同步时明确显示不可用，不用旧画面冒充新配置。</p>
       </div>
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
-      {notice && <p role="status" className="text-sm text-text-secondary">{notice}</p>}
       {canManage && <div className="flex flex-wrap gap-2"><Button variant="primary" disabled={busy} onClick={() => void save()}>{busy ? "正在保存…" : "保存视频设置"}</Button><Button disabled={syncing || busy} onClick={() => void sync()}>{syncing ? "正在同步…" : "同步视频源"}</Button></div>}
     </div>
   </ContentCard>;

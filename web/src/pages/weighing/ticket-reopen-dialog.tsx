@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { FormDialog } from '@/components/common/form-dialog';
+import { toast } from '@/components/common/toast-store';
 import { Field } from '@/components/common/field';
 import { Input } from '@/components/ui/input';
 import { plateError } from '@/lib/weighing/plate';
@@ -151,11 +152,15 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
       setConfirming(false);
       onClose();
       if (latest.pending) {
+        toast.warning({ title: '提交结果待核实', description: '请先在工作台查询原请求，再继续办理。', duration: 6000 });
         navigate(`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`);
         return;
       }
       const reopened = latest.tickets.find(item => item.previousId === ticket.id);
-      if (reopened) navigate(`/weighing/tickets/${encodeURIComponent(reopened.id)}`);
+      if (reopened) {
+        toast.success('更正单据已生成，原单据及历史依据已保留。');
+        navigate(`/weighing/tickets/${encodeURIComponent(reopened.id)}`);
+      }
     } catch (failure) {
       const pending = useWeighingStore.getState().data.pending;
       setConfirming(false);

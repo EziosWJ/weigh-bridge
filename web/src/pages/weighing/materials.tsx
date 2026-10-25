@@ -6,6 +6,7 @@ import { DataTableCard } from '@/components/common/data-table-card';
 import { DataTable } from '@/components/common/data-table';
 import { TableToolbar } from '@/components/common/table-toolbar';
 import { TableActions } from '@/components/common/table-actions';
+import { toast } from '@/components/common/toast-store';
 import { Pagination } from '@/components/common/pagination';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
 import { FormDialog } from '@/components/common/form-dialog';
@@ -100,7 +101,7 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
       {parties && <Select aria-label="主体性质筛选" value={nature} onChange={e => { setNature(e.target.value); setPage(1); }}><option value="">全部主体性质</option><option value="enterprise">企业</option><option value="individual">个人</option></Select>}
     </SearchFilterBar>
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title={`${name}列表`} description={`共 ${rows.length} 条；已引用资料可停用，不能删除。`} actions={<Button disabled={saving} onClick={() => void load()}>刷新</Button>} /><DataTable compact stickyHeader fixedEdges ariaLabel={`${name}列表`} className="weighing-list-scroll" columns={columns} dataSource={rows.slice((currentPage - 1) * pageSize, currentPage * pageSize)} rowKey="id" minWidth={parties ? 1208 : 992} /><Pagination page={currentPage} pageSize={pageSize} total={rows.length} onPageChange={setPage} onPageSizeChange={v => { setPageSize(v); setPage(1); }} /></DataTableCard>
-    <ConfirmDialog open={!!deleting} title={`删除${name}`} description={<><span>确认删除“{deleting?.name}”？引用过的资料请改为停用。</span>{error && <p role="alert" className="mt-2 text-error">{error}</p>}</>} onCancel={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await dispatch({ type: parties ? 'deleteParty' : 'deleteMaterial', id: deleting.id, version: deleting.version }); setDeleting(null); } catch (e) { setError(e instanceof Error ? e.message : '删除失败'); } }} />
+    <ConfirmDialog open={!!deleting} title={`删除${name}`} description={<><span>确认删除“{deleting?.name}”？引用过的资料请改为停用。</span>{error && <p role="alert" className="mt-2 text-error">{error}</p>}</>} onCancel={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await dispatch({ type: parties ? 'deleteParty' : 'deleteMaterial', id: deleting.id, version: deleting.version }); toast.success(`${name}已删除`); setDeleting(null); } catch (e) { setError(e instanceof Error ? e.message : '删除失败'); } }} />
   </div>;
 }
 
@@ -118,7 +119,7 @@ function MaterialEditContent() {
   if (id && !current) return <PageHeader title="物料不存在" actions={<Link to={back}>返回资料列表</Link>} />;
   return <>
     <PageHeader title={`${id ? admin ? '编辑' : '查看' : '新增'}物料`} description="一种可独立称重和汇总的规格对应一条资料。" actions={<Link className={linkClass} to={back}>返回物料列表</Link>} /><MasterBanner />
-    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); try { await dispatch({ type: 'saveMaterial', id, version: baseVersion, ...form }); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
+    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); try { await dispatch({ type: 'saveMaterial', id, version: baseVersion, ...form }); toast.success(id ? '物料已更新' : '物料已创建'); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
       <fieldset disabled={!admin || saving}><FormSection title="物料信息"><div className="grid gap-x-5 md:col-span-2 md:grid-cols-2">
         <Field label="物料编码" help="自动生成且唯一，保存后不可修改"><Input value={current?.code ?? '保存时自动生成'} readOnly /></Field>
         <Field label="物料名称" htmlFor="material-name" required><Input id="material-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
@@ -149,7 +150,7 @@ function PartyEditContent() {
   if (id && !current) return <PageHeader title="往来主体不存在" actions={<Link to={back}>返回资料列表</Link>} />;
   return <>
     <PageHeader title={`${id ? admin ? '编辑' : '查看' : '新增'}往来主体`} description="同一企业或个人可兼具多种业务身份；司机属于本趟运输，不自动建档。" actions={<Link className={linkClass} to={back}>返回主体列表</Link>} /><MasterBanner />
-    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); try { await dispatch({ type: 'saveParty', id, version: baseVersion, ...form }); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
+    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); try { await dispatch({ type: 'saveParty', id, version: baseVersion, ...form }); toast.success(id ? '往来主体已更新' : '往来主体已创建'); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
       <fieldset disabled={!admin || saving} className="space-y-5"><FormSection title="主体信息"><div className="grid gap-x-5 md:col-span-2 md:grid-cols-2">
         <Field label="主体编码" help="自动生成且唯一，保存后不可修改"><Input value={current?.code ?? '保存时自动生成'} readOnly /></Field>
         <Field label="名称" htmlFor="party-name" required><Input id="party-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
@@ -187,7 +188,7 @@ function CategoriesContent() {
     { title: '操作', key: 'action', width: 180, render: (_, c) => <TableActions><Button size="sm" variant="ghost" disabled={!admin || saving} onClick={() => { setError(''); setEditing(c); }}>编辑</Button><Button size="sm" variant="ghost" disabled={!admin || saving} onClick={() => { setError(''); setDeleting(c); }}>删除</Button></TableActions> },
   ];
   return <div className="weighing-list-page"><PageHeader title="物料分类" description="" actions={admin && <Button onClick={() => { setError(''); setEditing({ name: '', enabled: true }); }}>新增分类</Button>} /><MasterBanner />{!admin && <RoleHint />}<DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="分类列表" description={`共 ${data.categories.length} 项`} /><DataTable compact stickyHeader ariaLabel="物料分类列表" className="weighing-list-scroll" columns={columns} dataSource={data.categories} rowKey="id" minWidth={600} /></DataTableCard>
-    <FormDialog open={!!editing} title="维护物料分类" onCancel={() => setEditing(null)} onSubmit={async () => { if (!editing) return; try { await dispatch({ type: 'saveCategory', ...editing }); setEditing(null); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>{editing && <><Field label="分类名称" htmlFor="category-name" required><Input id="category-name" required value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></Field><Field label="分类状态" htmlFor="category-enabled"><Select id="category-enabled" value={String(editing.enabled)} onChange={e => setEditing({ ...editing, enabled: e.target.value === 'true' })}><option value="true">启用</option><option value="false">停用</option></Select></Field></>}{error && <p role="alert" className="text-error">{error}</p>}</FormDialog>
-    <ConfirmDialog open={!!deleting} title="删除分类" description={<><span>确认删除“{deleting?.name}”？</span>{error && <p role="alert" className="text-error">{error}</p>}</>} onCancel={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await dispatch({ type: 'deleteCategory', id: deleting.id, version: deleting.version }); setDeleting(null); } catch (failure) { setError(failure instanceof Error ? failure.message : '删除失败'); } }} />
+    <FormDialog open={!!editing} title="维护物料分类" onCancel={() => setEditing(null)} onSubmit={async () => { if (!editing) return; try { await dispatch({ type: 'saveCategory', ...editing }); toast.success(editing.id ? '物料分类已更新' : '物料分类已创建'); setEditing(null); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>{editing && <><Field label="分类名称" htmlFor="category-name" required><Input id="category-name" required value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></Field><Field label="分类状态" htmlFor="category-enabled"><Select id="category-enabled" value={String(editing.enabled)} onChange={e => setEditing({ ...editing, enabled: e.target.value === 'true' })}><option value="true">启用</option><option value="false">停用</option></Select></Field></>}{error && <p role="alert" className="text-error">{error}</p>}</FormDialog>
+    <ConfirmDialog open={!!deleting} title="删除分类" description={<><span>确认删除“{deleting?.name}”？</span>{error && <p role="alert" className="text-error">{error}</p>}</>} onCancel={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await dispatch({ type: 'deleteCategory', id: deleting.id, version: deleting.version }); toast.success('物料分类已删除'); setDeleting(null); } catch (failure) { setError(failure instanceof Error ? failure.message : '删除失败'); } }} />
   </div>;
 }

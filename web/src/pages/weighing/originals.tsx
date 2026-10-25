@@ -7,6 +7,7 @@ import { Pagination } from '@/components/common/pagination';
 import { StatusTag } from '@/components/common/status-tag';
 import { TableActions } from '@/components/common/table-actions';
 import { TableToolbar } from '@/components/common/table-toolbar';
+import { toast } from '@/components/common/toast-store';
 import { Button } from '@/components/ui/button';
 import { useWeighingStore } from '@/store/weighing-store';
 import { useWeighingPage, useWeighingSummary, downloadWeighingCsv } from '@/hooks/use-weighing-page';
@@ -21,11 +22,10 @@ export function WeighingOriginalsPage() {
   const deferred = useDeferredValue(filter);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [downloadError, setDownloadError] = useState('');
   const result = useWeighingPage<WireOriginal>('originals', deferred, page, pageSize);
   const summary = useWeighingSummary('originals', deferred, result.revision);
   const canExport = capabilities?.permissionCodes.includes('weighing:export');
-  const download = (kind: string) => void downloadWeighingCsv(kind, filter).catch(error => setDownloadError(error.message));
+  const download = (kind: string) => void downloadWeighingCsv(kind, filter).then(() => toast.success("原始称重 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }));
   const linkClass = 'text-primary hover:underline';
   const columns: DataTableColumn<WireOriginal>[] = [
     { title: '任务号 / 车牌', key: 'task', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
@@ -39,7 +39,7 @@ export function WeighingOriginalsPage() {
   ];
   return <div className="weighing-list-page"><PageHeader title="原始称重" description="" /><DeviceBanner compact />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} dateLabel="二次称重确认" hideStatus />
-    {(downloadError || summary.error) && <p role="alert" className="text-error">{downloadError || summary.error}</p>}
+    {summary.error && <p role="alert" className="text-error">{summary.error}</p>}
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="原始称重记录" description={`筛选 ${result.total} 趟；关联有效单 ${summary.result?.taskCount ?? '—'} 趟，原始净重合计 ${summary.result?.net ?? '—'} 吨`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{canExport && <><Button size="sm" onClick={() => download('originals')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('originals-summary')}>导出净重汇总 CSV</Button></>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="原始称重列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1316} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />

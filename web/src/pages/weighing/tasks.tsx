@@ -17,6 +17,7 @@ import { Pagination } from "@/components/common/pagination";
 import { StatusTag } from "@/components/common/status-tag";
 import { TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
+import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
@@ -38,7 +39,6 @@ export function WeighingTasksPage() {
   const deferred = useDeferredValue(filter);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [downloadError, setDownloadError] = useState('');
   const result = useWeighingPage<WireTask>('tasks', deferred, page, pageSize);
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const columns: DataTableColumn<WireTask>[] = [
@@ -56,8 +56,7 @@ export function WeighingTasksPage() {
   return <div className="weighing-list-page">
     <PageHeader title="待回磅任务" description="默认显示待二次称重的车辆，可切换状态查询历史任务。" />
     <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(Object.keys(value).length ? value : { status: 'second' }); setPage(1); }} />
-    {downloadError && <p role="alert" className="text-error">{downloadError}</p>}
-    <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).catch(error => setDownloadError(error.message))}>导出筛选明细 CSV</Button>}</>} />
+    <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).then(() => toast.success("运输任务 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }))}>导出筛选明细 CSV</Button>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1352} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
@@ -106,7 +105,14 @@ export function WeighingTaskDetailPage() {
       if (operation === "correct") await dispatch({ type: "correctTask", taskId: task.id, input, reason }, operationBasis.current);
       if (operation === "terminate") await dispatch({ type: "terminate", taskId: task.id, reason }, operationBasis.current);
       if (operation === "reweigh") await dispatch({ type: "reweigh", taskId: task.id, reason, sameLoad, checked, stage: reweighStage, otherValid, captureId: reweighCapture?.id }, operationBasis.current);
-      setOperation(null); setNotice(useWeighingStore.getState().data.pending ? "提交结果待核实，请前往工作台查询上次提交结果。" : "操作已保存至服务端测试数据。");
+      setOperation(null);
+      if (useWeighingStore.getState().data.pending) {
+        setNotice("提交结果待核实，请前往工作台查询上次提交结果。");
+        toast.warning({ title: "提交结果待核实", description: "请先查询原请求，再继续办理。", duration: 6000 });
+      } else {
+        setNotice("");
+        toast.success(`${operationTitles[operation]}已完成`);
+      }
     } catch (failure) { setError(failure instanceof Error ? failure.message : "操作失败"); }
   }
 
