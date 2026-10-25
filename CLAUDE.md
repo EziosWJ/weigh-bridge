@@ -1,15 +1,15 @@
 # weighbridge AI 开发指导
 
-使用中文交流。项目为酒厂地磅管理系统；先阅读根目录 CONTEXT.md，再读[当前阶段规格](docs/requirements/standalone-site-spec.md)；历史材料的适用范围按[开发基线索引](docs/development-baseline.md)判断。AGENTS.md 是指向本文件的符号链接，更新规则时维护本文件。
+使用中文交流。项目为酒厂地磅管理系统；先阅读根目录 CONTEXT.md，再读[当前阶段规格](docs/requirements/standalone-site-spec.md)；按任务读[业务规则](docs/requirements/weighing-business-spec.md)或[设备细则](docs/requirements/local-device-maintenance-spec.md)，实施前核对[当前状态](docs/next.md)。AGENTS.md 是指向本文件的符号链接，更新规则时维护本文件。
 
 ## 目录与当前阶段
 
 - server/：Go 1.26、Gin、GORM，沿用现有 internal 模块、cmd 入口、configs、migrations、integration。
 - web/：React + TypeScript + Vite，npm 及 package-lock.json；前端开发前读取 web/AGENTS.md。
-- agent/ 和 protocol/：现场设备运行与维护资料、部署资源及已实现的 v1 通信契约；设备 Go 实现沿用 server/cmd 与 server/internal，真实能力按交付记录判断。
-- docs/architecture/ 和 docs/requirements/：架构规划和阶段验收；docs/adr/ 与 record/ 包含脚手架历史，涉及既有决策时按需阅读。
+- agent/ 和 protocol/：现场设备运行与维护资料、部署资源及分版本通信契约（当前 v2，v1 为历史）；设备 Go 实现沿用 server/cmd 与 server/internal，真实能力按交付记录判断。
+- docs/requirements/：当前规格与交付证据；docs/adr/：重要决策理由；docs/history/：旧阶段和交付原始证据，追溯时按需阅读。
 
-当前目标为每厂本地自治：业务服务（内嵌 Web）、设备服务和 PostgreSQL，中心暂缓，见 [ADR 0023](docs/adr/0023-standalone-site-baseline.md)。业务闭环、通信、打印与 D12 已有分阶段实现；本地自治改造、维护整合和完整真实设备验收仍待完成。分别标注决策、代码、软件验证和现场验收，不以历史 Phase 1／Phase 2A 限制当前开发。
+每厂本地自治的最终职责以总规格正文为准；实现、软件验证和现场验收分别记录在当前状态。历史文档不作为隐含需求；文档权威位置和更新规则见[开发基线](docs/development-baseline.md)。
 
 ## 开发约定
 
@@ -17,7 +17,7 @@
 2. 所有 API 复用现有鉴权、RBAC、错误处理、响应封装和日志审计规范；保持已有路由和响应契约。不擅自改变 JWT、权限或用户管理逻辑。
 3. 数据库结构变化必须新增 Goose migration，仅维护 PostgreSQL 的 `server/migrations/schema` 与 `seed`，保留历史 migration；API 启动不执行 AutoMigrate。
 4. 新增代码提供必要的行为测试；不通过删除测试、禁用 CI 或跳过配置检查规避失败。依赖和技术栈保持当前版本，升级需明确需求。
-5. 正式称重需设备重量、操作员确认和本地业务校验；对应抓拍默认强制，本厂管理员可按 [ADR 0027](docs/adr/0027-optional-weighing-capture.md) 关闭并保留无图状态。互联网断开不阻塞本地正常业务；本地服务或设备链路故障不得用缓存绕过确认。提交与打印结果未知时先核实，恢复不自动重放。
+5. 正式称重需设备重量、操作员确认和本地业务校验；对应抓拍默认强制，本厂管理员可按[业务规则](docs/requirements/weighing-business-spec.md#4-抓拍策略)关闭并保留无图状态。互联网断开不阻塞本地正常业务；本地服务或设备链路故障不得用缓存绕过确认。提交与打印结果未知时先核实，恢复不自动重放。
 6. 真实凭据仅写入忽略的本地配置；示例配置使用占位符。保持 AGENTS.md 链接有效。
 7. Git 操作遵守用户授权；origin 指向 https://github.com/EziosWJ/weigh-bridge.git，提交和推送须在用户授权范围内执行。历史 Issue 引用保留源仓库身份。
 

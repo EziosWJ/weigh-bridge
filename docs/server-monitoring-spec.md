@@ -4,7 +4,7 @@
 
 范围依据：已确认的服务器监控需求与 ADR-0011。用户已确认测试边界、ticket 拆分与发布。目标 tracker 为本仓库 GitHub Issues，发布标签为 `ready-for-agent`。
 
-已发布：[Spec #64](https://github.com/EziosWJ/base-project-golang/issues/64)。实现工作项与阻塞依赖见 [ticket 索引](server-monitoring-tickets.md)。
+已发布：[Spec #64](https://github.com/EziosWJ/base-project-golang/issues/64)。实现工作项与阻塞依赖见 [ticket 索引](history/platform/server-monitoring-tickets.md)。
 
 本文件保留首版 Linux 契约。2026-10-14 的[增量 Spec #77](server-monitoring-extension-spec.md) 将平台目标扩展至 Windows Server 2019/2022 原生 API 部署，增加 IPv4/IPv6 网卡 IP 弹窗，并将模块改为默认关闭；开关关闭时不执行本文件描述的持续采集和历史维护。涉及平台范围、默认启用及网卡地址时，以增量规格为准。
 

@@ -4,7 +4,7 @@
 
 Accepted
 
-实现规格已发布为 [Spec #64](https://github.com/EziosWJ/base-project-golang/issues/64)，7 个实现工作项与阻塞依赖见 [ticket 索引](../server-monitoring-tickets.md)。
+实现规格已发布为 [Spec #64](https://github.com/EziosWJ/base-project-golang/issues/64)，7 个实现工作项与阻塞依赖见 [ticket 索引](../history/platform/server-monitoring-tickets.md)。
 
 ## Decision
 
@@ -32,5 +32,5 @@ Linux 的 `/proc/net` 指向 `/proc/self/net`，对应读取进程的网络命�
 - 采集进程故障不应拖垮 API；面板按区域报告采集失败与过期，避免将旧值视为实时数据。
 - 最近 30 分钟历史归属 API 实例内存；API 重启后清空，采集进程重启时 API 保留历史并留下中断缺口。
 - 采集使用专用用户及必要读取权限，设置超时，同一采集任务不重叠运行；具体采集依赖在实现时选择。
-- 指标口径、异常规则与验收要求见 [服务器监控模块需求与设计](../server-monitoring.md)。
-- 正式实现契约见 [Spec](../server-monitoring-spec.md)，端到端切片和阻塞依赖见 [ticket 拆分](../server-monitoring-tickets.md)。
+- 指标口径、异常规则与验收要求见 [服务器监控模块需求与设计](../history/platform/server-monitoring.md)。
+- 正式实现契约见 [Spec](../server-monitoring-spec.md)，端到端切片和阻塞依赖见 [ticket 拆分](../history/platform/server-monitoring-tickets.md)。

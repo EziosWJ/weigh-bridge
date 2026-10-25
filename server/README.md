@@ -1,18 +1,16 @@
 # weighbridge Server 本地开发与调试
 
-> 当前目标为本厂自治，见[当前规格](../docs/requirements/standalone-site-spec.md)。内嵌 Web 已可用，但 site 配置、初始化和管理权限仍有中心依赖，自治与维护整合尚待实施；本文已有工具说明不等于新部署已完成。
+> 本页为当前单一本厂软件的开发与运行参考；目标见[总规格](../docs/requirements/standalone-site-spec.md)，实际软件与现场结果见[当前状态](../docs/next.md)。Server 管理业务、摄像头与视频，Agent 管理仪表及打印；协议 v1 历史部分仅用于旧客户端追溯。
 
 `server` 是基于 Go、Gin、GORM 的 REST API，开发、测试及生产统一使用 PostgreSQL。数据库结构与内置数据由独立的 Goose migration 管理；API 启动时不会执行 migration 或 GORM `AutoMigrate()`。
 
 ## 称重业务与 Agent
 
-称重模块提供资料、操作会话、Agent 采集、任务首磅／回磅、纠错重称、单据作废重开、列表汇总／CSV、Agent 打印及人工反馈 API。用户业务入口沿用现有 Bearer、RBAC、响应及审计；Agent 单独以配置密钥连接，不获得用户操作权限。
+称重模块提供资料、操作会话、采集确认、任务、异常处置、单据、查询／CSV 和打印核实，沿用既有 Bearer、RBAC、本厂操作范围、响应及审计。Agent 以局域网设备通道接入唯一地磅，只需 Server 地址，不取得用户业务确认权限；未初始化和同磅冲突明确拒绝。
 
-配置 `weighing.agent_id`、`scale_id`、`agent_key` 和 `image_dir`；密钥为空时禁止 Agent 接入。`session_ttl` 默认 60s，用于操作权续租；采样不设时间有效期，移除 `sample_ttl` 配置。采样仅在现场条件、业务绑定或操作会话失效时失效。不再使用测试模式门控。重量传吨制十进制字符串，数据库存千分之一吨整数。新增 schema 00012／00013 和 seed 00007，不改写旧 migration 或历史测试单据。
+Server 直接取得相机新图并编排 Agent 测量窗口，采样保留连接及测量代次至确认；无固定确认倒计时，设备、业务绑定或操作会话变化使依据失效。`session_ttl` 用于操作权续租，不是采样确认时限；重量消息为吨制十进制字符串，数据库存千分之一吨整数。细则见[业务规则](../docs/requirements/weighing-business-spec.md)与[分版本通信契约](../protocol/v1.md)。
 
-通过 `task agent:mock` 启动独立设备模拟控制台；[运行说明](../agent/README.md)及[协议 v1](../protocol/v1.md)描述连接、图片上传、状态、采集与打印命令。图片目录应与业务数据库一起备份。真实 D12 与打印已有部分现场交付，摄像头／识别及完整生产闭环尚待验收，详见[交付索引](../docs/history/README.md)。
-
-精简五联针打方案见 [单据查看与打印](../docs/requirements/ticket-view-print-spec.md)。`weighing.ticket_title`（或 `APP_WEIGHING__TICKET_TITLE`）配置完整纸单标题，默认“酒厂过磅单”，部署前替换为实际酒厂名称。单据详情及 Agent 打印任务携带相同的 `printSheet` 字段；五联纸一次复写，不生成五个任务。
+开发运行见 [Agent／mock](../agent/README.md)，网络相机见[接入说明](../docs/device/camera-live-preview.md)。图片目录与业务库关联保留并一起备份；打印账本位于 Agent。单据标题由“系统管理 → 配置管理”维护，旧 YAML 标题仅作为升级固化来源，新票面快照与五联打印按业务规格执行。
 
 ## 前置条件
 
@@ -180,3 +178,9 @@ GOCACHE=/tmp/server-build go test -tags=integration ./integration
 集成测试需要 Docker daemon 可用，会执行 migration 并检查 Goose 版本表。
 
 仓库根目录的 `task db:check` 执行后端检查和完整 PostgreSQL 集成测试；测试使用临时容器、随机本机端口并自动清理，Docker 不可用时检查失败。普通单元测试不需要 Docker。
+
+## 数据库测试组织
+
+PostgreSQL 集成测试每次运行共用一个临时容器，迁移命令编译一次。普通业务测试通过 `startBusinessPostgres` 从本次迁移后的模板克隆独立数据库；模板使用 test 种子，迁移完成后禁止连接。迁移、环境种子、升级／回退专项通过 `startPostgres` 创建空库并执行真实迁移；恢复目标也使用空库。各测试结束删库，整套结束清理容器和临时可执行文件。Goose 回退测试涉及全局状态，保持串行。
+
+`TestPostgresLocalBusinessRecovery` 核对恢复后业务证据、未决操作不重放及不复用后续编号；图片和设备打印账本的完整恢复不在该测试范围。一次性本厂初始化见 `TestPostgresLocalSiteInitializationHTTP`。业务浏览器入口 `npm --prefix web run test:weighing:backend` 使用临时 PostgreSQL、端口 18085／4185／18090 及 Playwright Chromium，结束清理；已知失败仍以当前状态为准。

@@ -12,4 +12,4 @@ status: accepted
 
 取舍是本地验证需要 PostgreSQL 服务，换取开发、测试与生产行为一致，以及一套迁移、备份运维和构建路径。Server 不再因 SQLite 要求 CGO 或 C 编译器。Agent 本地存储按独立设备需求决定，当前没有新增 SQLite 的要求；本次不改动现有 Agent 账本。
 
-这是数据库支持范围的调整，不改变业务规则、现场验收边界或本厂自治改造的范围。当前开发基线见 [基线索引](../development-baseline.md)，实际改动和验证见 [交付记录](../requirements/postgresql-only-delivery.md)。
+这是数据库支持范围的调整，不改变业务规则、现场验收边界或本厂自治改造的范围。当前开发基线见 [基线索引](../development-baseline.md)，实际改动和验证见 [交付记录](../history/requirements/postgresql-only-delivery.md)。

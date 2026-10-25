@@ -5,7 +5,7 @@
 
 ## 操作约定
 
-读取或实施旧工作项时，先用[当前开发基线](../development-baseline.md)核对范围；旧正文及标签不覆盖已替代条款。新建当前阶段工作项须链接[本厂自治规格](../requirements/standalone-site-spec.md)及 ADR 0023／0024，分别说明目标、已有实现和待验收项。
+读取或实施旧工作项时，先用[当前开发基线](../development-baseline.md)核对范围；旧正文及标签不覆盖已替代条款。新建当前阶段工作项须链接[当前总规格](../requirements/standalone-site-spec.md)及对应业务／设备细则，分别说明目标、已有实现和待验收项。
 
 - 读取：gh issue view <number> --repo EziosWJ/weigh-bridge --comments
 - 列表：gh issue list --repo EziosWJ/weigh-bridge --state open --json number,title,labels

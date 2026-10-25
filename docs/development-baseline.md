@@ -1,52 +1,38 @@
-# 当前开发基线与文档效力
+# 开发基线与文档维护
 
-生效日期：2026-10-22。用户已接受本厂自治、三个核心服务和中心暂缓，并已启动 [Issue #6](https://github.com/EziosWJ/weigh-bridge/issues/6) 代码实施。决策见 [ADR 0023](adr/0023-standalone-site-baseline.md)，当前阶段唯一总规格为[本厂自治与三服务部署](requirements/standalone-site-spec.md)。架构目标已确认；自治软件实现与验证见[交付记录](requirements/standalone-site-delivery.md)，现场切换及真实闭环尚未完成。
+2026-10-24～25 文档收敛。当前规则已经合并到有效规格正文，日常开发不再通过多个 ADR 的补丁推算要求。
 
-## 开发阅读顺序与冲突处理
+## 阅读与权威位置
 
-1. 先读根 [CONTEXT](../CONTEXT.md)，了解领域规则和实际状态。
-2. 开发当前阶段时读[当前规格](requirements/standalone-site-spec.md)；需要架构理由时读 ADR 0023。
-3. 按下表进入仍有效的业务／设备细则，先看文档顶部效力说明。历史交付记录用于确认做过什么，不作为追加需求。
-4. 被替代条款不参与当前验收；暂缓能力没有自动恢复期限。旧 Issue 或文档的“确认／ready／已授权／待实施”属于当时范围，不能覆盖本基线或视作新一轮启动指令。
-5. 如当前有效的材料互相冲突，列明具体条款并解决范围冲突后再做依赖它的变更；不自行拼接新旧两套方案。实现与目标不一致时登记差距，不通过改写交付事实宣称已完成。
-
-## 文档效力索引
-
-| 主题／材料 | 当前效力 | 保留与替代范围 |
-| --- | --- | --- |
-| [ADR 0027](adr/0027-optional-weighing-capture.md)、[强制抓拍配置](requirements/optional-weighing-capture-spec.md) | 当前抓拍业务规则，软件已实现，现场待验收 | 默认强制抓拍，本厂管理员可关闭；保留设备重量、人工确认、策略快照及无图事实 |
-| [ADR 0026](adr/0026-agent-owned-device-maintenance.md) | 当前设备配置与维护边界，软件已实现，现场待验收 | Agent 持有配置及设备执行；API 复用现有通道转发；支持本厂局域网分机，替代强制同机与 API 直接启动已停 Agent 进程 |
-| [ADR 0025](adr/0025-camera-stream-maintenance.md)、[摄像头接入与交付](device/camera-live-preview.md) | 当前摄像头维护决策 | 本厂 MediaMTX 配套、共享配置、直接预览和独立维护测试；真实设备及长时间运行另行验收 |
-| [ADR 0024](adr/0024-postgresql-only.md)、[数据库交付](requirements/postgresql-only-delivery.md) | 当前数据库依据，已完成收敛 | 开发、数据库集成测试与生产仅 PostgreSQL；旧 SQLite 要求退役，历史验证事实保留 |
-| [ADR 0023](adr/0023-standalone-site-baseline.md)、[当前规格](requirements/standalone-site-spec.md) | 当前架构与阶段依据 | 本地自治、三服务、维护整合、中心暂缓；软件交付见 Issue #6 记录 |
-| [ADR 0021](adr/0021-local-weighing-authority-and-central-sync.md)、[中心同步业务规格](requirements/local-first-deployment-spec.md)、[Issue #4 规格](requirements/local-first-deployment-issue-spec.md)、[同步设计](architecture/local-first-sync-design.md) | 部分被替代／中心能力暂缓 | 保留本地业务权威、断互联网可用、编号与快照；替代中心管理权和首次下发；同步与跨厂查询退出本期 |
-| [Issue #4 交付](requirements/local-first-deployment-delivery.md)、[旧部署说明](device/local-first-deployment.md) | 历史实现事实／旧拓扑操作说明 | 软件验证事实保留；旧三实例启用步骤不用于新自治部署 |
-| [ADR 0018](adr/0018-site-business-isolation.md)、[多厂区需求](requirements/multi-site-discovery.md) | 部分被替代 | 集中部署、共享资料与跨厂入口退出本期；厂区隔离、同厂两次称重、权限范围保留 |
-| [ADR 0016](adr/0016-agent-local-maintenance.md)、[ADR 0017](adr/0017-agent-maintenance-config-and-lan.md)、[维护首期](requirements/agent-maintenance-spec.md)、[维护改版](requirements/agent-maintenance-revision-spec.md) | 部分被替代／过渡可用 | 独立维护服务与密码不再是最终形态；配置与作业保护、核实及审计保留，整合后退役 |
-| [ADR 0020](adr/0020-managed-agent-bindings-and-local-activation.md)、[厂区配置需求](requirements/site-agent-configuration-discovery.md) | 部分被替代 | 中心归属管理及同机常规下载导入流程调整；本地身份、明确应用、停用检查、账本保护保留 |
-| [ADR 0013](adr/0013-formal-weighing-evidence.md)、[ADR 0014](adr/0014-manual-weight-adjustment.md)、[操作员处置规格](requirements/operator-weighing-corrections-spec.md) | 业务规则继续有效，含后续修订 | 抓拍条件按 ADR 0027 调整；设备证据、人工确认、原始／最终重量、双向调整、隔日续称、单磅重称、作废重开；断网按互联网与本地链路区分 |
-| [服务端业务规格](requirements/backend-business-loop-spec.md)、[业务设计](architecture/backend-business-loop-design.md) | 业务模型可复用，阶段限制属历史 | 单据版本、幂等、审计、资料快照保留；全局车牌占用、浏览器测试打印、系统内模拟等以之后的厂区／Agent 规则为准 |
-| [ADR 0015](adr/0015-agent-owned-simulation.md)、[ADR 0019](adr/0019-one-agent-per-scale.md)、[协议 v1](../protocol/v1.md) | 继续有效，设备输入模拟按 2026-10-23 补充 | 独立 mock 可替代 Agent，独立 D12／摄像头模拟器也可向真实 Agent 提供输入；真实 Agent 与同磅 mock 互斥；设备接本厂业务服务，不赋予用户确认权 |
-| [ADR 0022](adr/0022-keli-d12-serial-integration.md)、[D12 交付](requirements/d12-agent-integration-delivery.md)、[接入指导](device/keli-d12-agent-integration-guide.md) | 驱动细则与现场事实继续有效 | 保留参数、单位、独占与保鲜规则；非零、稳定灯、重启权限等未验收项继续跟踪 |
-| [单据打印规格](requirements/ticket-view-print-spec.md)、[连续纸校准](device/sk820-continuous-paper-calibration.md) | 继续有效 | 不因部署收缩改变单据内容、打印未知核实或实物验收要求 |
-| Phase 1／Phase 2A、早期访谈、脚手架 ADR 与 record/ | 历史阶段材料 | 当时的实现限制与“尚未实现”不表示现在；业务条款按后续有效规格应用 |
-
-## 已有实现与当前差距
-
-已具备服务端业务闭环、厂区隔离、Agent 协议与 mock、内嵌前端发布、打印与 D12 部分真实接入。Issue #4 中心同步已有软件实现和双数据库／浏览器验证；真实生产未切换。详见[历史与交付索引](history/README.md)。
-
-旧 `site` 配置、初始化与写入权限仍依赖中心，作为历史模式保留。Issue #6 新增显式 `standalone` 模式、本地初始化及统一维护 API，生产包不依赖独立维护服务；通用摄像头抓拍通道已实现，现场设备参数、真实非零称重及连续纸等尚待验收。具体改造项与验收以当前规格为准，不把“暂停中心”理解为现有 site 实例关掉中心即可正式上线。
-
-## 工作项映射
-
-| 工作项 | 本地基线中的用途 |
+| 需要了解什么 | 唯一维护位置 |
 | --- | --- |
-| [EziosWJ/weigh-bridge #4](https://github.com/EziosWJ/weigh-bridge/issues/4) | 旧中心＋厂区同步实现来源；本地需求／设计已标效力，不再作为当前启动或验收总依据 |
-| [EziosWJ/weigh-bridge #3](https://github.com/EziosWJ/weigh-bridge/issues/3) | Agent 契约与 mock 实现来源；设备通信细则继续复用，部署与断网规则按 ADR 0023 |
-| [EziosWJ/weigh-bridge #6](https://github.com/EziosWJ/weigh-bridge/issues/6) | 当前本厂自治软件实施及 S1..S4 验收来源；软件与现场状态见交付记录 |
+| 领域术语与稳定约束 | 根 [CONTEXT](../CONTEXT.md) |
+| 产品目标、职责、范围和部署边界 | [当前总规格](requirements/standalone-site-spec.md) |
+| 称重、资料、单据、查询及打印业务规则 | [业务规格](requirements/weighing-business-spec.md) |
+| 仪表、相机、接入、配置、恢复及其验收 | [设备维护规格](requirements/local-device-maintenance-spec.md) |
+| 已交付改造的工程依赖 | [工作包档案](history/requirements/local-device-maintenance-plan.md)；当前剩余工作见状态页 |
+| 实现、验证、现场差距和剩余事项 | [当前状态](next.md)，链接原始交付证据 |
+| 重要取舍及其理由 | [ADR 索引](adr/README.md)，需要理由时才读原决策 |
+| 工程执行和测试 | [根开发指导](../CLAUDE.md)、[开发约定](agents/development.md) |
+| 旧方案与验证来源 | [历史索引](history/README.md)、[条款及文件迁移记录](history/document-consolidation.md) |
 
-本次开发已读取 Issue #6；未发布、评论、修改或关闭远程工作项，表格不宣称远程标签或正文已同步。远程工作项后续更新遵循[工作项约定](agents/issue-tracker.md)，保留源仓库身份和历史事实。
+先读 CONTEXT 与总规格，再按任务进入业务或设备细则；准备实施时先读当前状态，仅在追溯已交付工程范围时读工作包档案。协议、部署和设备手册必须看顶部版本范围：它们可以描述已交付旧版的真实操作，不能由新目标文档推定工具已升级。
 
-## 后续维护规则
+## 协议和交付入口
 
-新架构决策用新 ADR 记录替代范围，并更新本索引、CONTEXT 和当前规格入口；旧正文保留，在顶部添加精确的效力说明。实际完成后更新交付记录和现状，不删除尚未验收的限制。中心恢复需新范围确认，不能移除“暂缓”标签就直接实施旧同步方案。
+通信文档分开保存 v1 历史事实与 v2 契约，新版按 v2 阅读；v1 的 key／配对、Agent 图片上传和前后两图只供旧版兼容及追溯。交付和验证统一由[当前状态](next.md)链接原始证据，本文不重复维护进度。
+
+## 效力规则
+
+- 当前规格正文直接表达已确认要求；归档文档用于追溯，不补充当前隐含需求。有效文档若有真实冲突，定位条款并澄清；不能自行恢复旧方案。
+- ADR 保留决定及取舍，不维护完成进度。部分修订已合入当前规格，原正文中的时间、授权、待实现等只代表当时上下文。
+- 当前状态区分目标与实现，交付记录只证明实际记载的版本和范围。历史 Issue 的 ready、已授权或待实施不等于当前启动、部署或数据操作授权。
+- 暂缓能力没有自动恢复期限；历史多模式清库和配对步骤不适用于当前保留单厂库的改造。
+- 模块参考仅在修改对应能力时阅读；其脚手架阶段和旧数据库描述不覆盖当前单一本厂／PostgreSQL 范围。
+
+## 后续维护
+
+1. 规则变化直接修改对应有效规格正文和受影响验收条件，移除失效条款；不再用“顶部补充覆盖正文”维护现行规则。
+2. 需要保留重大取舍时新增 ADR，记录原因、代价及替代范围；实现拆分只写任务依赖，不复制规格。
+3. 完成实现后补交付证据并更新当前状态；已结束计划、访谈及旧方案归档。仍有用的设备参数、故障经验和未验收限制保留可达入口。
+4. 索引和 README 只导航，除必要摘要外不复制规则或进度。移动文件同时修复引用，保留 ADR 编号、源仓库身份及验证事实；开发指导维护 CLAUDE.md，保持 AGENTS.md 链接有效。

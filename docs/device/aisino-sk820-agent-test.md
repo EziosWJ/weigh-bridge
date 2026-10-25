@@ -26,7 +26,7 @@ Agent 每秒上报零重量、`stable=false`、`deviceOk=false` 及未接入说�
 
 ### 2026-10-21 维护改版重新部署
 
-按[维护控制台改版](../requirements/agent-maintenance-revision-delivery.md)重新构建并部署打印 Agent、维护服务及两个用户级 unit。将旧启动参数迁入 `agent.env`：Server 为 `http://skyrim:8900`，保留原连接密钥、Agent／地磅身份、`Aisino-SK820-raw` 队列及 175 mm 校准设置；打印尝试账本、维护密码和记录均保留。旧打印 unit 的固定 Server drop-in 已移除，旧 SSH 隧道已关闭，本次没有使用隧道。
+按[维护控制台改版](../history/requirements/agent-maintenance-revision-delivery.md)重新构建并部署打印 Agent、维护服务及两个用户级 unit。将旧启动参数迁入 `agent.env`：Server 为 `http://skyrim:8900`，保留原连接密钥、Agent／地磅身份、`Aisino-SK820-raw` 队列及 175 mm 校准设置；打印尝试账本、维护密码和记录均保留。旧打印 unit 的固定 Server drop-in 已移除，旧 SSH 隧道已关闭，本次没有使用隧道。
 
 维护服务现在默认监听 `0.0.0.0:18901`，`http://fcc-com-01:18901/` 返回 HTTP 200。打印与维护服务均为 active。部署核查时 `skyrim:8900` 超时，Agent 按 `agent.env` 直连并持续重试；Server 恢复可达后应自动重连。此记录不代表现场防火墙或打印纸面效果已验收。
 
@@ -35,7 +35,7 @@ HP 主机文件：
 - 程序：`~/weighbridge-agent/bin/weighbridge-agent-printer`
 - 密钥：`~/weighbridge-agent/agent.env`，权限 600，不纳入仓库
 - 尝试记录：`~/weighbridge-agent/state/`，目录权限 700
-- 用户服务：`~/.config/systemd/user/weighbridge-agent-printer.service`，该次部署使用当时的测试隧道参数；当前仓库[模板](../../agent/deploy/weighbridge-agent-printer.service)已改为显式读取 `agent.env`，后续升级须按[迁移说明](agent-local-maintenance.md#从旧启动参数升级)处理旧参数及 drop-in
+- 用户服务：`~/.config/systemd/user/weighbridge-agent-printer.service`，该次部署使用当时的测试隧道参数；当前仓库[模板](../../agent/deploy/weighbridge-agent-printer.service)已改为显式读取 `agent.env`，后续升级须按[迁移说明](../history/device/agent-local-maintenance.md#从旧启动参数升级)处理旧参数及 drop-in
 
 用户服务通过 `flock` 防止重复启动，已启用 `enabled`；`loginctl show-user hp -p Linger` 为 `yes`。CUPS 保持既有已启动、开机自启配置。
 

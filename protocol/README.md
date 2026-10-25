@@ -1,5 +1,5 @@
 # Agent 通信协议
 
-[协议 v1](v1.md) 定义 Agent 与 Server 的 WSS 消息、HTTP 图片上传、身份配置、采集和打印交互。独立 agent-mock 与真实 Agent 使用同一契约；当前目标连接本厂业务服务，见 [ADR 0023](../docs/adr/0023-standalone-site-baseline.md)。
+[通信契约](v1.md)按版本描述接入、测量、配置和打印；沿用文件路径以保护引用。当前 Server／Agent／mock 使用 v2，v1 部分保留旧身份、上传与采集的实现事实。先读 v2 的不兼容变化及协同升级顺序，不将旧配对或 Agent 图片上传作为新采集前提。
 
-契约及接入已有软件验证；D12 与打印已有部分现场结果，完整设备闭环尚待验收，见[交付索引](../docs/history/README.md)。历史 SQLite 验证不代表当前数据库支持。需求与决策见 [Spec](../docs/requirements/agent-mock-issue-spec.md)、[ADR 0015](../docs/adr/0015-agent-owned-simulation.md)。
+产品职责见[总规格](../docs/requirements/standalone-site-spec.md)，设备行为见[设备规格](../docs/requirements/local-device-maintenance-spec.md)，实际软件与现场验收见[当前状态](../docs/next.md)。模拟和真实 Agent 使用统一业务链路，输入模拟不代替现场证据。

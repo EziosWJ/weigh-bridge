@@ -1,28 +1,7 @@
 # 领域文档
 
-本仓库采用 single-context 布局：
-根目录 CONTEXT.md 保存领域术语与项目约束，docs/adr/ 保存决策记录。
-server、web、agent、protocol 不分别建立领域上下文。
+采用 single-context：根 CONTEXT.md 维护领域术语及稳定约束，docs/adr/ 保存重要决策理由；server、web、agent、protocol 不另设领域上下文。
 
-## 阅读顺序
+开发先读 [CONTEXT](../../CONTEXT.md) 和[当前总规格](../requirements/standalone-site-spec.md)，按任务读业务／设备细则。实施前核对[当前状态](../next.md)，前端修改按 web/AGENTS.md 选择 Pattern。历史文档只在追溯来源或实际交付时读取，不作为隐含需求。
 
-1. 探索代码前先读取根 CONTEXT.md。
-2. 开发当前阶段时读取[本厂自治规格](../requirements/standalone-site-spec.md)；通过[基线索引](../development-baseline.md)判断旧规格与 ADR 的适用条款。
-3. 涉及架构理由时读取 ADR 0023，数据库范围读取 ADR 0024；按基线索引进入具体业务和设备细则。
-4. 修改前端前，读取 web/AGENTS.md 及涉及页面的 Pattern。
-
-文档尚不存在时继续当前工作；由 domain-modeling 在术语或决策明确后按需创建。
-
-## 领域语言
-
-Issue、需求、测试和设计使用 CONTEXT.md 已定义的领域术语。
-发现术语冲突或缺口时明确指出，通过 domain-modeling 澄清并记录。
-需求与实现细节写入对应需求或设计文档，不作为术语定义堆入词汇表。
-
-## 决策与阶段边界
-
-方案与既有 ADR 冲突时，说明冲突及重新决策的理由。
-历史脚手架 ADR 保留来源与适用背景，不能直接作为酒厂业务已实现的证据。
-区分计划能力、当前界面模拟能力与实际完成能力。
-
-旧材料顶部标为被替代／暂缓的条款退出当前实现与验收；交付记录保留当时事实。当前有效文档互相冲突时先明确条款冲突，不自行拼接新旧方案。新决策同时更新基线索引、当前入口及旧材料效力说明。
+Issue、需求、设计与测试使用既有领域术语；发现术语冲突时澄清后更新 CONTEXT。业务行为、字段和验收写对应规格，技术取舍需要保留理由时写 ADR，进度写当前状态。新决策直接更新有效规格正文，旧条款归档，避免层层补丁；具体维护规则见[开发基线](../development-baseline.md)。

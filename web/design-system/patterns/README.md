@@ -45,14 +45,15 @@ DataTableCard
 
 | 页面 | Pattern | 当前差异或说明 |
 | --- | --- | --- |
-| 称重模拟 `src/pages/weighing/` | Standard List / Form / Detail 变体 | 工作台仅当前车辆；详情、预览、资料编辑及演示设置独立；[页面覆盖说明](../pages/weighing.md) |
-| 厂区配置 `src/pages/weighing/site-config.tsx` | Standard List Page 变体 | 列表上方组合现场连接地址表单，厂区维护与配置下载由业务页面负责 |
+| 称重业务 `src/pages/weighing/` | Standard List / Form / Detail 变体 | 独立工作台、资料、任务和单据；[页面覆盖规则](../pages/weighing.md) |
+| 本厂配置 `src/pages/system/configs/local-site-configuration.tsx` | Detail Page + FormDialog 变体 | 集中在配置管理分组，首次两名称表单／后续详情；沿用本厂权限、固定编号，旧入口重定向 |
+| 摄像头管理 `src/pages/cameras/index.tsx` | Standard List Page + FormDialog 变体 | 动态列表、测试预览、识别与视频同步；[页面覆盖规则](../pages/cameras.md) |
 | 用户管理 `src/pages/system/users/index.tsx` | Standard List Page | 用户筛选、选择、行操作和用户 Dialog 由页面负责 |
 | 角色管理 `src/pages/system/roles/index.tsx` | Standard List Page | 角色筛选、权限分配和行操作是业务扩展 |
 | 菜单管理 `src/pages/system/menus/index.tsx` | Tree List Page | 层级菜单使用表格化树形数据，保留菜单专属操作 |
 | 部门管理 `src/pages/system/depts/index.tsx` | Tree List Page | 部门层级、展开和节点操作是页面状态 |
 | 字典管理 `src/pages/system/dicts/index.tsx` | Standard List Page 变体 | 左右为字典类型和字典项双列表，不是树；保留双表语义 |
-| 配置管理 `src/pages/system/configs/index.tsx` | Standard List Page | 配置类型、内置配置保护和编辑 Dialog 是业务差异 |
+| 配置管理 `src/pages/system/configs/index.tsx` | Standard List + Detail / Form 变体 | 系统配置列表与本厂配置分组组合，分组按原权限可达 |
 | 文件管理 `src/pages/system/files/index.tsx` | Standard List Page + Upload Section | 主体是文件列表，上传/预览通过业务 Dialog 进入 |
 | 登录日志 `src/pages/system/logs/login-logs.tsx` | Standard List Page | 日志筛选、详情 Dialog 和清理操作是业务扩展 |
 | 操作日志 `src/pages/system/logs/oper-logs.tsx` | Standard List Page | 日志筛选、详情 Dialog 和清理操作是业务扩展 |
@@ -60,7 +61,7 @@ DataTableCard
 | 通知管理 `src/pages/system/notifications/index.tsx` | Standard Form Page + Standard List Page | 发布表单与历史列表组合在同一页面 |
 | 修改密码 `src/pages/change-password.tsx` | Standard Form Page | 左侧安全提示是表单页的业务辅助区块 |
 | 个人中心 `src/pages/account-profile.tsx` | Detail Page + Upload Section | 只读账号信息与头像上传组合 |
-| 设备维护 `src/pages/agent-maintenance.tsx` | Detail / Standard Form / Standard List 变体 | 按运行总览、设备与打印、配置和维护记录分区；[页面覆盖说明](../pages/agent-maintenance.md) |
+| 设备维护 `src/pages/agent-maintenance.tsx` | Detail / Standard Form / Standard List 变体 | 按运行总览、设备与打印、配置和维护记录分区；配置只有串口、波特率与打印校准且单次保存并应用；[页面覆盖说明](../pages/agent-maintenance.md) |
 
 字典管理的双列表和通知管理的复合页面目前没有形成第三种稳定的外围结构，因此作为变体记录，不为单个页面新增 Pattern。
 

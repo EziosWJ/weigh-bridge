@@ -6,13 +6,13 @@
 
 ## 定位与架构原则
 
-weighbridge 面向酒厂车辆进出厂称重的可追溯管理。当前已完成工程初始化及 Phase 2A 前端界面模拟；下面的正式地磅领域流程仍为开发约束与规划，尚未实现。保留原 Go + React 脚手架模块和接口，按现有模块组织渐进扩展。原实现以单厂区、单地磅起步；2026-10-21 客户确认两个厂区，各一台地磅及独立工控机、打印机等现场设备。多厂区隔离与 Agent 互斥已获用户授权实施，代码与受控软件验证完成；`fcc-com-01` 已在后续厂区配置交付中升级，真实称重设备现场验收待执行。范围见[确认需求](../requirements/multi-site-discovery.md)，准确结果见[实施记录](../requirements/multi-site-delivery.md)。
+weighbridge 面向酒厂车辆进出厂称重的可追溯管理。当前已完成工程初始化及 Phase 2A 前端界面模拟；下面的正式地磅领域流程仍为开发约束与规划，尚未实现。保留原 Go + React 脚手架模块和接口，按现有模块组织渐进扩展。原实现以单厂区、单地磅起步；2026-10-21 客户确认两个厂区，各一台地磅及独立工控机、打印机等现场设备。多厂区隔离与 Agent 互斥已获用户授权实施，代码与受控软件验证完成；`fcc-com-01` 已在后续厂区配置交付中升级，真实称重设备现场验收待执行。范围见[确认需求](requirements/multi-site-discovery.md)，准确结果见[实施记录](requirements/multi-site-delivery.md)。
 
 Server 的开发、数据库集成测试与生产统一使用 PostgreSQL，SQLite 兼容要求已退役，见 [ADR 0024](../adr/0024-postgresql-only.md)。下文旧阶段的 SQLite 验证记录仅表示当时事实。
 
 ## 职责边界
 
-- Server：此前按远程或云端部署规划，2026-10-22 已按 Issue #4 实施厂区本地业务权威、中心统一资料并同步汇总，软件验证及现场边界见[交付记录](../requirements/local-first-deployment-delivery.md)，真实生产部署尚未切换，见 [ADR 0021](../adr/0021-local-weighing-authority-and-central-sync.md) 与[业务修改规格](../requirements/local-first-deployment-spec.md)。中心与厂区共用当前代码、按角色独立部署及存储；各厂本地 Server、Web、PostgreSQL 与 Agent 部署在该厂工控机上。中心统一管理账号授权与资料，首期不发起现场业务处置或打印；复用认证、RBAC、系统管理与审计。业务规则及规格汇总均已最终确认，访谈结束；单盘故障保护目标保留，具体方案按用户要求暂缓讨论。
+- Server：此前按远程或云端部署规划，2026-10-22 已按 Issue #4 实施厂区本地业务权威、中心统一资料并同步汇总，软件验证及现场边界见[交付记录](requirements/local-first-deployment-delivery.md)，真实生产部署尚未切换，见 [ADR 0021](adr/0021-local-weighing-authority-and-central-sync.md) 与[业务修改规格](requirements/local-first-deployment-spec.md)。中心与厂区共用当前代码、按角色独立部署及存储；各厂本地 Server、Web、PostgreSQL 与 Agent 部署在该厂工控机上。中心统一管理账号授权与资料，首期不发起现场业务处置或打印；复用认证、RBAC、系统管理与审计。业务规则及规格汇总均已最终确认，访谈结束；单盘故障保护目标保留，具体方案按用户要求暂缓讨论。
 - Agent：酒厂地磅房 Linux 工控机上的现场设备代理，负责 D12 重量采集、RTSP/HyperLPR3 车牌识别及 Linux 针式打印机。已实现 WSS 接入、独立 Web agent-mock 与最小打印 Agent；2026-10-22 已将柯力 D12 tF=05 串口驱动合入同一打印 Agent，共用单一连接与身份，完成解析、保鲜、故障测试及 `fcc-com-01` 零值、故障和恢复的现场验证。摄像头、车牌识别及完整正式采集闭环仍未实现；非零带载、面板稳定灯对照及重启后串口权限仍待现场复核。A4 单张纸版面已获现场确认，五联及连续走纸待验收。
 - Web：浏览器管理界面，提供系统管理、称重业务及 Agent 数据展示，由操作员核对后确认；设备模拟控制已移至独立 mock。Web 不直接驱动串口或打印机。
 - protocol：约定 Agent 与 Server 的设备状态、采集、图片与打印通信契约；v1 契约及通信接入已实现，真实设备尚未验收。
@@ -68,7 +68,7 @@ Server 的开发、数据库集成测试与生产统一使用 PostgreSQL，SQLit
 
 全部业务重量统一以吨表达，精确至 0.001 吨；重量展示最多保留三位小数，并省略末尾无效零，例如 5.000 吨显示为 5 吨、5.250 吨显示为 5.25 吨。毛重、皮重、净重、调整差额与汇总适用同一规则。设备原始报文及原单位作为测量证据保留，不等同于业务录入单位。
 
-称重顺序与毛皮重语义分别处理：原料入厂卸货通常先毛后皮，成品出厂装货通常先皮后毛。不能把首次固定为毛重，也不能简单按两次测量取较大值来掩盖业务异常。业务一期已确认的规则与待决问题见 [需求讨论](../requirements/business-v1-discovery.md)，均为计划／未实现。
+称重顺序与毛皮重语义分别处理：原料入厂卸货通常先毛后皮，成品出厂装货通常先皮后毛。不能把首次固定为毛重，也不能简单按两次测量取较大值来掩盖业务异常。业务一期已确认的规则与待决问题见 [需求讨论](requirements/business-v1-discovery.md)，均为计划／未实现。
 
 ## 计划业务流程
 
@@ -78,39 +78,39 @@ Server 的开发、数据库集成测试与生产统一使用 PostgreSQL，SQLit
 
 这是业务顺序说明，尚不构成已实现的 API、状态机或数据库模型；实际闸口与单据放行细节留待需求确认。
 
-2026-10-18 客户确认的操作员处置、隔日回磅、双向人工调整与单磅重称已完成前端模拟：操作员直接办理并留痕，过夜车沿用原任务和首次依据；人工调整备注选填，默认“磅精度调整”；出单后先作废，再沿用有效另一磅办理重称或人工更正并关联重开。旧单保留各版快照，同一任务最多一张有效测试单。规则见 [补充 Spec](../requirements/operator-weighing-corrections-spec.md)，验证与限制见 [交付记录](../requirements/operator-weighing-corrections-delivery.md)。正式业务与真实设备仍未实现；服务端测试能力的后续交付见下方阶段记录。
+2026-10-18 客户确认的操作员处置、隔日回磅、双向人工调整与单磅重称已完成前端模拟：操作员直接办理并留痕，过夜车沿用原任务和首次依据；人工调整备注选填，默认“磅精度调整”；出单后先作废，再沿用有效另一磅办理重称或人工更正并关联重开。旧单保留各版快照，同一任务最多一张有效测试单。规则见 [补充 Spec](requirements/operator-weighing-corrections-spec.md)，验证与限制见 [交付记录](requirements/operator-weighing-corrections-delivery.md)。正式业务与真实设备仍未实现；服务端测试能力的后续交付见下方阶段记录。
 
 ## 人工确认和断网边界
 
 早期界面与流程验证阶段（历史）没有摄像头，车牌支持专用控件手填及模拟识别候选，经人工核对后匹配任务；采用模拟重量、内置示例摄像头预览与抓拍图片、明确标记的测试单据和打印预览。历史模拟图片保留当时的视角、时间、重量及人工确认车牌，不代表现场拍摄。2026-10-19 起按下方 Agent 接入范围统一处理新数据，系统不再提供设备模拟控制；真实车牌识别、仪表采集与现场抓拍仍待真实设备实现及验收。业务仍要求操作员确认及对应抓拍，稳定状态与识别结果不能绕过人工确认形成记录；Server 沿用现有鉴权与权限校验。
 
-Agent 与 Server 使用 WSS，本机开发允许 WS。此前远程 Server 架构下，云端断网暂停正式称重确认，不得把现场缓存视作云端已确认。2026-10-22 已确认调整目标：互联网中断而厂区本地业务服务及设备链路正常时，仍可经操作员确认及本地 Server 校验形成正式记录；有网后同步既有记录，不自动补办历史称重、重新出单或打印，见 [ADR 0021](../adr/0021-local-weighing-authority-and-central-sync.md)。本地运行与同步的软件实现及验证见 [Issue #4 交付记录](../requirements/local-first-deployment-delivery.md)，生产现场仍待切换验收；本地业务服务或设备链路异常不等于互联网中断；提交结果不明时仍先查询此前结果，不能擅自将缓存转为正式记录。最小连接、重连和协议细节已按 [v1 契约](../../protocol/v1.md) 实现并通过协议／SQLite／浏览器验证；真实设备的参数和能力仍待现场核实。已确认的恢复和打印重试规则见业务一期需求讨论。
+Agent 与 Server 使用 WSS，本机开发允许 WS。此前远程 Server 架构下，云端断网暂停正式称重确认，不得把现场缓存视作云端已确认。2026-10-22 已确认调整目标：互联网中断而厂区本地业务服务及设备链路正常时，仍可经操作员确认及本地 Server 校验形成正式记录；有网后同步既有记录，不自动补办历史称重、重新出单或打印，见 [ADR 0021](adr/0021-local-weighing-authority-and-central-sync.md)。本地运行与同步的软件实现及验证见 [Issue #4 交付记录](requirements/local-first-deployment-delivery.md)，生产现场仍待切换验收；本地业务服务或设备链路异常不等于互联网中断；提交结果不明时仍先查询此前结果，不能擅自将缓存转为正式记录。最小连接、重连和协议细节已按 [v1 契约](../../protocol/v1.md) 实现并通过协议／SQLite／浏览器验证；真实设备的参数和能力仍待现场核实。已确认的恢复和打印重试规则见业务一期需求讨论。
 
 ## 分阶段边界
 
 Phase 1 只允许目录迁移、工程标识、配置和文档适配，保留 API 响应与数据库 migration 历史，不新增称重、车辆、物料表或业务接口。
 
-Phase 2A 已完成前端界面与流程模拟：车牌录入及人工核对、模拟重量、当前浏览器保存、测试单据与打印预览；需求见 [Spec](../requirements/business-v1-ui-scope.md)，实际验证与限制见 [交付记录](../requirements/phase-2a-delivery.md)。不包含正式业务 API、业务表或现场通信。初版试用后已确认 [可用性改版](../requirements/phase-2a-usability.md)，页面分工及完整资料模型以该文件为准，已完成改版实现与约定验证，见 [改版记录](../requirements/phase-2a-usability-delivery.md)。
+Phase 2A 已完成前端界面与流程模拟：车牌录入及人工核对、模拟重量、当前浏览器保存、测试单据与打印预览；需求见 [Spec](requirements/business-v1-ui-scope.md)，实际验证与限制见 [交付记录](requirements/phase-2a-delivery.md)。不包含正式业务 API、业务表或现场通信。初版试用后已确认 [可用性改版](requirements/phase-2a-usability.md)，页面分工及完整资料模型以该文件为准，已完成改版实现与约定验证，见 [改版记录](requirements/phase-2a-usability-delivery.md)。
 
-人工重量调整与原始／最终双列表已完成前端模拟及约定验证，2026-10-17 后续修订也已实施：操作员录入最终重量、系统计算扣减，业务统一使用吨并精确至 0.001 吨，展示时省略末尾无效零；旧缓存完成一次性换算并保留 kg 来源数据。正式业务能力仍未实现，见 [需求](../requirements/manual-weight-adjustment.md)、[调整交付](../requirements/weight-entry-tonne-plan.md) 与 [历史交付记录](../requirements/manual-weight-adjustment-delivery.md)。
+人工重量调整与原始／最终双列表已完成前端模拟及约定验证，2026-10-17 后续修订也已实施：操作员录入最终重量、系统计算扣减，业务统一使用吨并精确至 0.001 吨，展示时省略末尾无效零；旧缓存完成一次性换算并保留 kg 来源数据。正式业务能力仍未实现，见 [需求](requirements/manual-weight-adjustment.md)、[调整交付](requirements/weight-entry-tonne-plan.md) 与 [历史交付记录](requirements/manual-weight-adjustment-delivery.md)。
 
-2026-10-18 已扩展独立称重工作台、普通／新能源专用车牌录入、正确／错误／失败模拟识别与同源标签协作；识别候选必须人工核对，各次称重保留候选及确认值，真实识别与正式业务仍未实现。范围见 [Issue #2 规格](../requirements/standalone-workbench-plate-recognition-spec.md)，验证与限制见 [交付记录](../requirements/standalone-workbench-delivery.md)。
+2026-10-18 已扩展独立称重工作台、普通／新能源专用车牌录入、正确／错误／失败模拟识别与同源标签协作；识别候选必须人工核对，各次称重保留候选及确认值，真实识别与正式业务仍未实现。范围见 [Issue #2 规格](requirements/standalone-workbench-plate-recognition-spec.md)，验证与限制见 [交付记录](requirements/standalone-workbench-delivery.md)。
 
-2026-10-18 已确认下一阶段计划为服务端业务闭环及现有前端接入：完整保留任务、称重依据和单据版本，采用服务端测试数据，不导入旧浏览器演示库，真实设备另行接入。操作员直接办理并留痕，业务权限由服务端校验；同车有新未结束任务时，允许基于旧依据更正旧单，禁止对旧任务实际重称。用户已明确启动按顺序实施，资料、服务端测试称重闭环、异常处置、列表汇总／CSV 与浏览器打印反馈已实现，SQLite／真实浏览器完成验证；PostgreSQL 集成受 Docker 环境阻碍尚未验证，正式设备能力未实现，进度见 [实施记录](../requirements/backend-business-loop-delivery.md)，范围与设计见 [确认范围](../requirements/backend-business-loop-spec.md)、[技术设计](../architecture/backend-business-loop-design.md) 与 [实施计划](../requirements/backend-business-loop-plan.md)。
+2026-10-18 已确认下一阶段计划为服务端业务闭环及现有前端接入：完整保留任务、称重依据和单据版本，采用服务端测试数据，不导入旧浏览器演示库，真实设备另行接入。操作员直接办理并留痕，业务权限由服务端校验；同车有新未结束任务时，允许基于旧依据更正旧单，禁止对旧任务实际重称。用户已明确启动按顺序实施，资料、服务端测试称重闭环、异常处置、列表汇总／CSV 与浏览器打印反馈已实现，SQLite／真实浏览器完成验证；PostgreSQL 集成受 Docker 环境阻碍尚未验证，正式设备能力未实现，进度见 [实施记录](requirements/backend-business-loop-delivery.md)，范围与设计见 [确认范围](requirements/backend-business-loop-spec.md)、[技术设计](architecture/backend-business-loop-design.md) 与 [实施计划](requirements/backend-business-loop-plan.md)。
 
 后续现场阶段先核实设备能力并细化正式业务状态、设备边界与通信契约，再按原脚手架组织业务模块和测试。设备驱动、车牌识别、物理打印及 WSS 的具体交付以之后批准的阶段范围为准。
 
-2026-10-19 已确认并授权实施：独立 agent-mock 与未来真实 Agent 共用通信契约，模拟行为归属 Agent，系统统一处理采集数据，不再区分模拟／正式两套业务流程；Agent 给出重量及稳定状态，操作员仍需人工确认。通信、mock 与系统接入已实现，当前已完成协议／SQLite／浏览器验证。此前测试阶段的完成记录及历史测试单据保持其原有含义；真实设备仍未验收。范围见 [Issue #3 Spec](../requirements/agent-mock-issue-spec.md)，契约见 [协议 v1](../../protocol/v1.md)，决策见 [ADR 0015](../adr/0015-agent-owned-simulation.md)。
+2026-10-19 已确认并授权实施：独立 agent-mock 与未来真实 Agent 共用通信契约，模拟行为归属 Agent，系统统一处理采集数据，不再区分模拟／正式两套业务流程；Agent 给出重量及稳定状态，操作员仍需人工确认。通信、mock 与系统接入已实现，当前已完成协议／SQLite／浏览器验证。此前测试阶段的完成记录及历史测试单据保持其原有含义；真实设备仍未验收。范围见 [Issue #3 Spec](requirements/agent-mock-issue-spec.md)，契约见 [协议 v1](../../protocol/v1.md)，决策见 [ADR 0015](../adr/0015-agent-owned-simulation.md)。
 
 2026-10-19 已按用户要求部署最小 SK-820 打印 Agent，通过现有业务打印链路完成实物出纸。经实线表格与边距校准，用户已确认 A4 单张纸上约 175 mm 宽的版面可用；五联效果和连续走纸仍待现场验收，不能据此认定真实称重或完整设备接入已完成。详见[现场联调记录](../device/aisino-sk820-agent-test.md)。
 
-2026-10-20 已授权并完成 Agent 本地打印维护首期代码及受控软件验证：维护人员可在断云或打印 Agent 停止时，通过本地页面检查和配置打印、处理作业并查询维护记录；现场操作员可只读排障。工控机安装、CUPS 权限、现场 TLS、服务恢复和实物纸张效果仍待现场验收。见[维护需求](../requirements/agent-maintenance-spec.md)、[部署说明](../device/agent-local-maintenance.md)及[交付记录](../requirements/agent-maintenance-delivery.md)。此维护功能不代表仪表、摄像头、正式称重或五联连续纸已实现。
+2026-10-20 已授权并完成 Agent 本地打印维护首期代码及受控软件验证：维护人员可在断云或打印 Agent 停止时，通过本地页面检查和配置打印、处理作业并查询维护记录；现场操作员可只读排障。工控机安装、CUPS 权限、现场 TLS、服务恢复和实物纸张效果仍待现场验收。见[维护需求](requirements/agent-maintenance-spec.md)、[部署说明](../device/agent-local-maintenance.md)及[交付记录](requirements/agent-maintenance-delivery.md)。此维护功能不代表仪表、摄像头、正式称重或五联连续纸已实现。
 
-2026-10-21 用户根据现场反馈确认并授权实施 Agent 本地维护控制台改版，代码及受控软件验证已完成：统一打印运行配置来源，默认支持可信维护局域网的 HTTP 访问，采用顶部菜单及列表式服务／队列操作。配置来源与网络访问取舍见 [ADR 0017](../adr/0017-agent-maintenance-config-and-lan.md)，范围见[改版需求](../requirements/agent-maintenance-revision-spec.md)，准确验证结果及升级边界见[改版交付记录](../requirements/agent-maintenance-revision-delivery.md)。本次未升级真实工控机，CUPS 权限、旧队列恢复与实物纸张仍待现场验收。仪表和摄像头只提供未接入状态页，实际配置、重量及视频预览仍未实现，延至驱动阶段。
+2026-10-21 用户根据现场反馈确认并授权实施 Agent 本地维护控制台改版，代码及受控软件验证已完成：统一打印运行配置来源，默认支持可信维护局域网的 HTTP 访问，采用顶部菜单及列表式服务／队列操作。配置来源与网络访问取舍见 [ADR 0017](adr/0017-agent-maintenance-config-and-lan.md)，范围见[改版需求](requirements/agent-maintenance-revision-spec.md)，准确验证结果及升级边界见[改版交付记录](requirements/agent-maintenance-revision-delivery.md)。本次未升级真实工控机，CUPS 权限、旧队列恢复与实物纸张仍待现场验收。仪表和摄像头只提供未接入状态页，实际配置、重量及视频预览仍未实现，延至驱动阶段。
 
-2026-10-21 用户确认并启动厂区配置与 Agent 启动配置补充开发：后台厂区／地磅管理、动态 Agent 绑定、可重复下载的现场连接配置、真实 Agent 本地导入与 mock 文件启动已实现，PostgreSQL／SQLite 和浏览器验证通过；已备份升级当前本机开发 API，并将打印 Agent 及维护服务部署至 `fcc-com-01`，原身份、打印设置和账本保留。第二厂区真实工控机尚未指定，本轮未发起实物打印，仪表、摄像头及真实称重验收仍按原边界处理。范围见[需求讨论](../requirements/site-agent-configuration-discovery.md)，准确检查及部署结果见[交付记录](../requirements/site-agent-configuration-delivery.md)。
+2026-10-21 用户确认并启动厂区配置与 Agent 启动配置补充开发：后台厂区／地磅管理、动态 Agent 绑定、可重复下载的现场连接配置、真实 Agent 本地导入与 mock 文件启动已实现，PostgreSQL／SQLite 和浏览器验证通过；已备份升级当前本机开发 API，并将打印 Agent 及维护服务部署至 `fcc-com-01`，原身份、打印设置和账本保留。第二厂区真实工控机尚未指定，本轮未发起实物打印，仪表、摄像头及真实称重验收仍按原边界处理。范围见[需求讨论](requirements/site-agent-configuration-discovery.md)，准确检查及部署结果见[交付记录](requirements/site-agent-configuration-delivery.md)。
 
-2026-10-22 用户授权并完成柯力 D12 仪表与真实现场 Agent 对接：新增 `server/internal/agentscale`，实现 tF=05 固定帧解析、本机带载验证的累加校验、字节流拆包、精确吨制换算、串口独占读取、保鲜／故障／恢复和本地状态文件；合入现有打印 Agent，保留单一 WSS 身份、打印账本、配置应用与 kick。现场单位按 `fcc-com-01` 用户确认显式配置为吨，不依文档 kg 标志再次换算。`fcc-com-01` 已部署并验证稳定零值、串口占用故障及恢复，Server 与维护页均收到对应状态；打印账本未变化，未发起打印或正式称重。真实非零带载、面板稳定灯对照、重启后串口权限及负值／净重／非零皮重仍待现场验证，摄像头未接入时采集请求明确失败。见[交付记录](../requirements/d12-agent-integration-delivery.md)、[接入指导](../device/keli-d12-agent-integration-guide.md)与 [ADR 0022](../adr/0022-keli-d12-serial-integration.md)。
+2026-10-22 用户授权并完成柯力 D12 仪表与真实现场 Agent 对接：新增 `server/internal/agentscale`，实现 tF=05 固定帧解析、本机带载验证的累加校验、字节流拆包、精确吨制换算、串口独占读取、保鲜／故障／恢复和本地状态文件；合入现有打印 Agent，保留单一 WSS 身份、打印账本、配置应用与 kick。现场单位按 `fcc-com-01` 用户确认显式配置为吨，不依文档 kg 标志再次换算。`fcc-com-01` 已部署并验证稳定零值、串口占用故障及恢复，Server 与维护页均收到对应状态；打印账本未变化，未发起打印或正式称重。真实非零带载、面板稳定灯对照、重启后串口权限及负值／净重／非零皮重仍待现场验证，摄像头未接入时采集请求明确失败。见[交付记录](requirements/d12-agent-integration-delivery.md)、[接入指导](../device/keli-d12-agent-integration-guide.md)与 [ADR 0022](../adr/0022-keli-d12-serial-integration.md)。
 
 ## 脚手架复用
 

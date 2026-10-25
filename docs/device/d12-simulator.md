@@ -12,20 +12,18 @@ task device:d12
 
 默认控制页：<http://127.0.0.1:8091>。启动日志及页面显示实际虚拟串口，例如 `/dev/pts/3`。启动后按 200 ms 周期发送稳定零值；读取端未打开时丢弃报文，不积压后再发送。
 
-把页面列出的串口字段合入开发 Agent **实际使用的** `agent.env`，其余身份、连接、摄像头及打印参数继续沿用原配置：
+把页面列出的串口字段合入开发 Agent **实际使用的** `agent.env`，Server 地址与打印参数沿用已有配置：
 
 ```dotenv
-WEIGHBRIDGE_SERIAL_ENABLED=true
 WEIGHBRIDGE_SERIAL_PORT="/dev/pts/3"
 WEIGHBRIDGE_SERIAL_BAUD=9600
-WEIGHBRIDGE_SERIAL_PROTOCOL="keli-d12-tf05"
-WEIGHBRIDGE_SERIAL_WEIGHT_UNIT="t"
-WEIGHBRIDGE_SERIAL_STALE_MS=1000
 ```
+
+D12 tF=05、8N1、吨制解析及 1 秒无有效帧阈值固定，不再提供启用开关、协议、源单位和超时配置。
 
 路径须替换成这次启动的实际值。通过既有维护入口应用配置，或以原参数和 `--env-file` 重启开发 Agent。仅在 shell 中导出串口参数不等于 Agent 已读取它们。建议模拟器与 Agent 使用同一系统用户；跨用户时须具备该 PTY 的读写权限，模拟器不会更改宿主机权限。
 
-本机开发可在仓库根目录准备 `agent.env`，填写完整连接配置及上述串口字段，再在另一终端运行 `task agent`，自动编译并启动真实 Agent。首次配置示例、默认开发状态目录及自定义文件／账本路径见 [Agent 启动说明](../../agent/README.md#本地启动真实-agent)。
+本机开发可在仓库根目录准备 `agent.env`，填写 Server 地址及上述串口字段，再在另一终端运行 `task agent`，自动编译并启动真实 Agent。首次配置示例、默认开发状态目录及自定义文件／账本路径见 [Agent 启动说明](../../agent/README.md#本地启动真实-agent)。
 
 真实 Agent 与同磅 `agent-mock` 仍互斥；D12 模拟器没有 Agent 连接，应与真实 Agent 同时运行。业务服务和维护页不会另开串口。
 
@@ -99,10 +97,10 @@ task device:d12 -- --listen 0.0.0.0:8091
 
 ## 协议及验证边界
 
-固定 18 字节：`STX A B C 显示重量[6] 皮重[6] CR CKS`。A=`0x2d`，B=`0x30`（稳定）／`0x38`（动态），C=`0x20`，皮重固定零。CKS 为前 16 字节累加取低 8 位，不含 CR。遵循[现场 D12 配置](keli-d12-agent-integration-guide.md)，源单位显式设为 `t`；B4 保留抓包值，不能依其文档 kg 含义再次换算。
+固定 18 字节：`STX A B C 显示重量[6] 皮重[6] CR CKS`。A=`0x2d`，B=`0x30`（稳定）／`0x38`（动态），C=`0x20`，皮重固定零。CKS 为前 16 字节累加取低 8 位，不含 CR。遵循[现场 D12 配置](keli-d12-agent-integration-guide.md)，当前驱动固定按已核验设备的吨制解析；B4 保留抓包值，不能依其文档 kg 含义再次换算。
 
 报文生成器与生产解析器分开实现，以现场 `1.560 t` 的稳定／动态原始帧作独立断言。行为测试经过 Linux PTY 和生产串口驱动，检查重量、动态位、单帧容错、连续坏帧、停发过期、恢复、无读取端不积压、退出释放及重启归零。
 
-PTY 验证覆盖软件终端和协议行为，不模拟 RS232 电气、真实波特率传输、接线、仪表固件或现场串口权限。负数、超载、净重、非零皮重、原始抓包回放和摄像头／完整业务联调不在本次范围。软件验证记录见[交付记录](../requirements/d12-simulator-delivery.md)。
+PTY 验证覆盖软件终端和协议行为，不模拟 RS232 电气、真实波特率传输、接线、仪表固件或现场串口权限。负数、超载、净重、非零皮重、原始抓包回放和摄像头／完整业务联调不在本次范围。软件验证记录见[交付记录](../history/requirements/d12-simulator-delivery.md)。
 
 复验入口：`task backend:check`；已安装项目 Web 开发依赖及 Playwright Chromium 时，运行 `task device:d12:smoke` 验证独立二进制、控制页操作、桌面／窄屏布局及退出清理。冒烟使用临时回环端口和临时目录，不连接已有 Agent 或业务库，结束后自动停止进程、关闭浏览器并移除临时目录；截图保存在忽略的 `.task/d12-simulator-*.png`。

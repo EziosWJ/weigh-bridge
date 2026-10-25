@@ -1,8 +1,8 @@
 # ADR-0012：通知持久化与实时推送的边界
 
-状态：Accepted（已实施，验证记录见通知与公告实现说明）。
+状态：Accepted。软件验证见[通知实现记录](../history/platform/notification-implementation.md)，[原始决定](../history/adr/0012-notification-realtime-boundary.md)保留原数据库范围。
 
-通知与公告的实时更新采用 SSE，首版仅承诺单 API 实例，复用 PostgreSQL / SQLite，不引入 Redis 或 MQ。当前需求是服务端向页面推送变化，选择 SSE 而不引入双向 WebSocket 通信；跨实例投递在真实多实例需求出现时再设计。
+通知与公告的实时更新采用 SSE，首版仅承诺单 API 实例，复用 PostgreSQL（当前单库范围见 [ADR 0024](0024-postgresql-only.md)），不引入 Redis 或 MQ。当前需求是服务端向页面推送变化，选择 SSE 而不引入双向 WebSocket 通信；跨实例投递在真实多实例需求出现时再设计。
 
 数据库是消息与阅读状态的事实来源，先成功提交再推送变化，实时连接失败不影响已成功保存的消息。客户端首次打开、断线重连和服务重启后重新查询完整状态，不持久化和逐条重放实时事件，也不补弹离线期间的提示；允许心跳和重连，不使用消息轮询或轮询降级。这使持久化消息不会因断线丢失，但不承诺每一次实时提示必达。
 

@@ -1,6 +1,6 @@
 # ADR-0007: 站内通知与触发操作原子提交
 
-状态：Accepted（设计已确认，尚未实施）
+状态：Accepted。实现与验证见[通知交付记录](../history/platform/notification-implementation.md)，[原始决定](../history/adr/0007-atomic-site-notifications.md)保留当时状态。
 
 首版站内通知用于管理员手动发布及用户角色分配变更。已选择角色变更、对应操作审计与通知在同一数据库事务中提交，任何写入失败均回滚并提示重试；手动群发的通知、接收记录及操作审计同样整次提交或回滚，以保证成功响应代表接收人已有可查询的通知。
 
