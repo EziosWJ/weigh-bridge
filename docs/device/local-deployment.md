@@ -95,7 +95,15 @@ Agent-only 只要求 Agent 主机可访问的 Server 地址，不需要业务数
 
 摄像头列表、RTSP 源地址与凭据、抓拍用途、统一超时、识别接口和 MediaMTX 管理／WHEP 入口均在 Server 的「摄像头管理」页维护，保存后用于后续采集；不再由 Agent 配置或重载。Server 直接连接摄像头取帧并保存图片，历史图片保存当时名称、来源和摘要。Agent 离线只阻止依赖仪表的正式采集，不阻止网络摄像头维护、测试和预览。
 
-MediaMTX 可部署在本厂任意可达主机。发布包提供 `deploy/mediamtx.yml.example`，复制到私有部署目录并替换占位地址；安装器不自动启动它。Server 通过 Control API 同步本系统托管路径，部署文件重建或远端重启后由 Server 轻量核对并补回。浏览器必须能访问配置的 WHEP 入口，Server 必须能访问管理接口。管理凭据不下发浏览器。
+MediaMTX 可部署在本厂任意可达主机，以原生二进制配合 [mediamtx.service](../../deploy/mediamtx.service) 运行。发布包提供 [mediamtx.yml.example](../../deploy/mediamtx.yml.example)，复制到私有目录并替换占位地址；安装器不自动启动它，媒体主机也不需要 FFmpeg。Server 通过 Control API 同步本系统托管路径，部署文件重建或远端重启后由 Server 轻量核对并补回。浏览器必须能访问配置的 WHEP 入口，Server 必须能访问管理接口。
+
+部署文件不设 MediaMTX 账号密码，控制面靠网络隔离保护：9997 只允许业务 Server 主机访问，该接口能读回相机源地址，不能对整个局域网开放；媒体端口只在本厂可信网段开放。上线前核对：
+
+- `webrtcAdditionalHosts` 填浏览器可达的媒体主机 IP，不能是 `0.0.0.0`。
+- `webrtcAllowOrigins` 与浏览器实际访问页面的 origin 完全一致；更换主机或端口须同步更新。
+- 页面本身使用 HTTPS 时必须给 8889 配置证书，否则浏览器按混合内容拒绝 WebRTC。
+- 相机 RTSP 源地址与可选凭据在业务页面填写，由 Server 经 API 建路径；配置文件不写 `paths`。
+- 相机输出 H.264；H.265 在浏览器 WebRTC 预览中通常不可用。
 
 历史 Agent 相机字段只用于升级期识别和备份，不再是运行配置入口。未取得现场品牌、协议及参数前，不能宣称真实摄像头接入或识别完成。
 

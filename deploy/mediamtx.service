@@ -1,0 +1,31 @@
+# MediaMTX — native installation template.
+#
+#   install -m 644 deploy/mediamtx.service /etc/systemd/system/mediamtx.service
+#   install -d -o mediamtx -g mediamtx /etc/mediamtx
+#   install -m 600 -o mediamtx -g mediamtx deploy/mediamtx.yml.example \
+#     /etc/mediamtx/mediamtx.yml   # then replace the REPLACE_* placeholders
+#   systemctl daemon-reload
+#   systemctl enable --now mediamtx.service
+#
+# All listening ports are above 1024, so the service runs without root.
+[Unit]
+Description=MediaMTX streaming server
+Documentation=https://mediamtx.org/docs/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mediamtx
+Group=mediamtx
+ExecStart=/usr/local/bin/mediamtx /etc/mediamtx/mediamtx.yml
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

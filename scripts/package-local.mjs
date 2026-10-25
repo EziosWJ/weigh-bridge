@@ -31,6 +31,7 @@ await copyFile(join(root, 'server/configs/config.yaml'), join(stage, 'configs/co
 await copyFile(join(root, 'agent/deploy/install-local.sh'), join(stage, 'install.sh'))
 await mkdir(join(stage, 'deploy'), { recursive: true })
 await copyFile(join(root, 'deploy/mediamtx.yml.example'), join(stage, 'deploy/mediamtx.yml.example'))
+await copyFile(join(root, 'deploy/mediamtx.service'), join(stage, 'deploy/mediamtx.service'))
 await cp(join(root, 'docs'), join(stage, 'docs'), { recursive: true })
 await copyFile(join(root, 'CONTEXT.md'), join(stage, 'CONTEXT.md'))
 await writeFile(join(stage, 'DEPLOYMENT.md'), '# 本厂部署\n\n默认同机安装；也可用 `install.sh --component server|agent` 分机安装。Agent-only 只填 `--server-url`，不需要数据库凭据。迁移、初始化、升级、备份和回退见 [离线部署说明](docs/device/local-deployment.md)。软件与现场验收状态见 [当前状态](docs/next.md)。\n')

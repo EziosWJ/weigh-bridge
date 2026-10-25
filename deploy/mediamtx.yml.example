@@ -1,9 +1,18 @@
-# MediaMTX v1.21.2. Copy to a private deployment directory; replace placeholders.
-# Native process example; Docker requires explicit host/container network mapping.
+# MediaMTX v1.21.2 — field template for a native binary deployment.
+# Copy to a private directory (for example /etc/mediamtx/mediamtx.yml), replace
+# every REPLACE_* placeholder, and start it with deploy/mediamtx.service.
+#
+# Security model: this file defines no credentials. The Control API on 9997 can
+# read camera source addresses, including embedded credentials, so it must be
+# restricted at the network layer to the business Server host. Media and
+# preview ports stay on the trusted plant LAN. See
+# docs/device/local-deployment.md for the field checklist.
+
 logLevel: info
+
 rtsp: true
-rtspTransports: [tcp]
 rtspAddress: :8554
+rtspTransports: [tcp]
 rtmp: false
 hls: false
 srt: false
@@ -12,14 +21,34 @@ moq: false
 
 webrtc: true
 webrtcAddress: :8889
-webrtcAllowOrigins: [http://REPLACE_BUSINESS_LAN_HOST:18900]
+# Serve WHEP over HTTPS (certificate + key) when the business page itself uses
+# HTTPS; browsers reject insecure WebRTC requests from a secure page.
+webrtcEncryption: false
+# The exact origin the browser loads the business page from, scheme included.
+webrtcAllowOrigins:
+  - http://REPLACE_BUSINESS_PAGE_ORIGIN
 webrtcLocalUDPAddress: :8189
 webrtcIPsFromInterfaces: false
+# A real address the browser can reach. Never 0.0.0.0: it is sent to clients.
 webrtcAdditionalHosts: [REPLACE_MEDIA_LAN_IP]
 webrtcICEServers2: []
 
-paths:
-  front:
-    source: rtsp://REPLACE_CAMERA_USER:REPLACE_CAMERA_PASSWORD@REPLACE_FRONT_CAMERA/live
-  rear:
-    source: rtsp://REPLACE_CAMERA_USER:REPLACE_CAMERA_PASSWORD@REPLACE_REAR_CAMERA/live
+api: true
+apiAddress: :9997
+metrics: false
+pprof: false
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: api
+      - action: read
+      - action: publish
+
+# Intentionally empty: the business Server creates wb-<publicId> paths through
+# the Control API. Do not add camera sources here; static paths are not part of
+# the field deployment.
+paths: {}
