@@ -39,7 +39,7 @@
 
 配置读取走现有业务登录及 `weighing:read`、厂区查询范围；维护配置和测试使用现有维护权限。维护页预览配置接口是 `GET /api/system/agent-maintenance/camera-preview`。这些是业务接口原有权限的复用，不改变媒体服务的播放方式。
 
-MediaMTX v1.21.2 配置样例见 [mediamtx.yml.example](../../../agent/deploy/mediamtx.yml.example)。只需按现场配置摄像头 source、RTSP／WebRTC 监听和浏览器 origin，开放相应媒体端口。当前模拟服务器已开启两路 RTSP 和 WHEP，无需为本次共享配置另加鉴权配置。
+MediaMTX v1.21.2 配置样例见 [mediamtx.yml.example](../../../deploy/mediamtx.yml.example)。只需按现场配置摄像头 source、RTSP／WebRTC 监听和浏览器 origin，开放相应媒体端口。当前模拟服务器已开启两路 RTSP 和 WHEP，无需为本次共享配置另加鉴权配置。
 
 MediaMTX 由部署负责安装、上游摄像头接入、启动和恢复，系统不生成它的上游配置或控制其重启。升级业务服务时同步升级 Agent 二进制，备份共享配置及身份；配置回退继续使用维护页现有流程。MediaMTX 二进制和摄像头 source 配置同样纳入本厂备份恢复清单。
 

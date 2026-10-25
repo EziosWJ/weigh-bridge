@@ -220,3 +220,45 @@ func TestCaptureRequiredBuiltinValueAndAudit(t *testing.T) {
 		t.Fatalf("invalid value=%v", err)
 	}
 }
+
+func TestBuiltinTicketTitleIsProtectedTextKey(t *testing.T) {
+	store := newMemoryStore()
+	remark := "打印在正式过磅单上的标题"
+	store.configs[9] = Config{
+		ID: 9, ConfigName: "单据标题", ConfigKey: TicketTitleKey,
+		ConfigValue: "原酒厂过磅单", ConfigType: "SYSTEM", ValueType: "TEXT",
+		Status: 1, IsBuiltin: builtin, Remark: &remark,
+	}
+	service := NewService(store)
+	ctx := context.Background()
+
+	if err := service.Update(ctx, audit.Metadata{}, 9, Input{ConfigValue: "  新酒厂过磅单  ", ConfigName: "changed", ConfigKey: "changed", Status: intPtr(0)}); err != nil {
+		t.Fatal(err)
+	}
+	row := store.configs[9]
+	if row.ConfigValue != "新酒厂过磅单" || row.ConfigName != "单据标题" || row.ConfigKey != TicketTitleKey || row.Status != 1 || row.Remark == nil || *row.Remark != remark {
+		t.Fatalf("protected title metadata changed: %+v", row)
+	}
+	if len(store.auditEvents) != 1 || store.auditEvents[0].Action != "config.update" || !strings.Contains(store.auditEvents[0].Summary, `"before":"原酒厂过磅单"`) {
+		t.Fatalf("title audit=%+v", store.auditEvents)
+	}
+	for _, value := range []string{"", "   ", "第一行\n第二行", strings.Repeat("长", maxTicketTitleRunes+1)} {
+		if err := service.Update(ctx, audit.Metadata{}, 9, Input{ConfigValue: value}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid title %q error=%v", value, err)
+		}
+	}
+	if err := service.Status(ctx, audit.Metadata{}, 9, 0); !errors.Is(err, ErrBuiltin) {
+		t.Fatalf("title status error=%v", err)
+	}
+}
+
+func TestBuiltinTicketTitleRejectsWrongValueType(t *testing.T) {
+	store := newMemoryStore()
+	store.configs[10] = Config{ID: 10, ConfigKey: TicketTitleKey, ValueType: "BOOLEAN", IsBuiltin: builtin}
+	service := NewService(store)
+	if err := service.Update(context.Background(), audit.Metadata{}, 10, Input{ConfigValue: "true"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("wrong value type error=%v", err)
+	}
+}
+
+func intPtr(value int) *int { return &value }

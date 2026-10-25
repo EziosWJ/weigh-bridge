@@ -28,6 +28,6 @@ Server 正式抓拍直接读取源相机，MediaMTX 只承载浏览器预览；�
 
 ## 部署与验证入口
 
-MediaMTX 可独立部署，安装器不负责远端进程生命周期；样例见[mediamtx.yml.example](../../agent/deploy/mediamtx.yml.example)。核对 Server 到相机／管理接口、浏览器到 WHEP／媒体端口的不同网络路径。正式 HTTPS 页面使用浏览器信任的预览入口，不增加业务播放鉴权层。
+MediaMTX 可独立部署，安装器不负责远端进程生命周期；样例见[mediamtx.yml.example](../../deploy/mediamtx.yml.example)。核对 Server 到相机／管理接口、浏览器到 WHEP／媒体端口的不同网络路径。正式 HTTPS 页面使用浏览器信任的预览入口，不增加业务播放鉴权层。
 
 开发可用[模拟源](camera-simulation-dev-memo.md)。软件回归复用 `test:camera-management`、`test:weighing:camera-live`、`test:weighing:agent-capture` 及业务后端冒烟；真实 MediaMTX 集成入口为 `MEDIAMTX_BIN=/path/to/mediamtx task camera:integration`，使用临时端口和进程并清理。入口存在不代表本次已执行，实际结果只记在交付记录。

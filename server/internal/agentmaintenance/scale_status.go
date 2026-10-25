@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/user"
+	"strings"
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentscale"
@@ -65,6 +67,11 @@ func readScaleView(path string, now time.Time, agentRunning bool) ScaleView {
 		FramesInvalid: s.FramesInvalid, DiscardedBytes: s.DiscardedBytes,
 		UnitFlag: s.UnitFlag, Negative: s.Negative, Anomaly: s.Anomaly, WrittenAt: file.At,
 	}
+	// Serial open failures must name the actual Agent account, not the browser
+	// account, and must survive the later stale/stopped early returns.
+	if strings.Contains(strings.ToLower(v.Fault), "permission") || strings.Contains(v.Fault, "权限") {
+		v.Fault += serialPermissionHint(v.Port)
+	}
 	// The file itself is a heartbeat. A stopped Agent or a file older than a
 	// few seconds cannot be presented as the current weight.
 	if file.At.IsZero() || now.Sub(file.At) > 5*time.Second || file.At.Sub(now) > 5*time.Second {
@@ -85,7 +92,7 @@ func readScaleView(path string, now time.Time, agentRunning bool) ScaleView {
 	}
 	if !s.Enabled {
 		v.DeviceOK, v.Stable = false, false
-		v.State = "未启用"
+		v.State = "未配置串口"
 		return v
 	}
 	if s.LastValidAt.IsZero() || now.Sub(s.LastValidAt) > time.Duration(s.StaleMS)*time.Millisecond {
@@ -106,4 +113,22 @@ func readScaleView(path string, now time.Time, agentRunning bool) ScaleView {
 		v.State = "动态"
 	}
 	return v
+}
+
+// serialPermissionHint names the account that actually runs the Agent. A
+// browser account is irrelevant to serial permissions, and merely restarting
+// the web page cannot grant access to the port.
+func serialPermissionHint(port string) string {
+	account := "当前 Agent 运行账号"
+	uid := os.Geteuid()
+	if current, err := user.Current(); err == nil && current.Username != "" {
+		account = fmt.Sprintf("%s（UID %s）", current.Username, current.Uid)
+	} else {
+		account = fmt.Sprintf("UID %d", uid)
+	}
+	target := "该串口"
+	if port != "" {
+		target = port
+	}
+	return fmt.Sprintf("；请管理员为 Agent 运行账号 %s 授予 %s 的读写权限（通常加入 dialout 组），组变更后可能需要重启 Agent 会话才生效", account, target)
 }

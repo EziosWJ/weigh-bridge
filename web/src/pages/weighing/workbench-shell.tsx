@@ -7,7 +7,6 @@ import { useWeighingStore } from '@/store/weighing-store';
 import { roleLabels } from '@/types/weighing';
 import { WORKBENCH_WINDOW,workbenchWindow } from '@/lib/workbench-window';
 import './workbench.css';
-import { NodeSyncStatus } from './node-sync-status';
 
 export function WorkbenchShell() {
   const capabilities=useWeighingStore(s=>s.capabilities);
@@ -31,9 +30,9 @@ export function WorkbenchShell() {
     return () => { document.removeEventListener('fullscreenchange', update); if (window.name === name) window.name = previousName; };
   }, [scaleId]);
   if(!scaleId)return <Navigate to="/weighing/sites" replace/>;
-  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无该厂区称重操作权限。<a href="/weighing/sites" className="text-primary underline">返回厂区面板</a></div>;
-  if(!ready)return <p role="status" className="p-6">正在核对厂区授权…</p>;
-  return <div className="standalone-workbench min-h-screen bg-background">
+  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/sites" className="text-primary underline">返回本厂称重</a></div>;
+  if(!ready)return <p role="status" className="p-6">正在核对本厂操作权限…</p>;
+  return <div className="weighing-workbench min-h-screen bg-background">
     <a href="#main-content" className="workbench-skip">跳转到称重操作</a>
     <header className="workbench-topbar">
       <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name} · 人工核对确认</p></div></div>
@@ -48,6 +47,6 @@ export function WorkbenchShell() {
       </nav>
     </header>
     {error && <p role="status" className="px-4 text-sm text-warning">{error}</p>}
-    <NodeSyncStatus/><main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
+    <main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
   </div>;
 }

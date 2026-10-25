@@ -67,30 +67,26 @@ func initialize(driver string, out io.Writer) error {
 			if readErr != nil {
 				return errors.New("无法读取已有开发配置")
 			}
-			updated, changed, keyErr := withAgentKey(string(contents))
-			if keyErr != nil {
-				return keyErr
-			}
-			updated, maintenanceChanged, maintenanceErr := withMaintenanceDirectory(updated)
+			updated, changed, maintenanceErr := withMaintenanceDirectory(string(contents))
 			if maintenanceErr != nil {
 				return maintenanceErr
 			}
-			if changed || maintenanceChanged {
+			if changed {
 				// Replace atomically; do not risk truncating existing credentials.
-				temporary, createErr := os.CreateTemp(filepath.Dir(path), ".config.dev.agent-*")
+				temporary, createErr := os.CreateTemp(filepath.Dir(path), ".config.dev.maintenance-*")
 				if createErr != nil {
-					return errors.New("无法补充本地 Agent 密钥")
+					return errors.New("无法补充维护目录配置")
 				}
 				defer os.Remove(temporary.Name())
 				_, writeErr := io.WriteString(temporary, updated)
 				closeErr := temporary.Close()
 				if writeErr != nil || closeErr != nil {
-					return errors.New("无法写入本地 Agent 密钥")
+					return errors.New("无法写入维护目录配置")
 				}
 				if err := os.Rename(temporary.Name(), path); err != nil {
-					return errors.New("无法保存本地 Agent 密钥")
+					return errors.New("无法保存维护目录配置")
 				}
-				fmt.Fprintln(out, "[已补充] 缺失的本地 Agent 密钥或维护目录；已有 JWT、身份与其他配置保留。请重启 API 读取配置。")
+				fmt.Fprintln(out, "[已补充] 缺失的维护目录；已有 JWT、数据库与其他配置保留。请重启 API 读取配置。")
 			}
 		}
 		fmt.Fprintln(out, "[保留] config.dev.yaml 已存在；已有配置与 JWT 保留（仅补齐缺失项）。")
@@ -191,8 +187,7 @@ func render(template, driver, uploads, secret string) (string, error) {
 			return "", errors.New("开发配置模板缺少 " + field + "；检查 configs/config.dev.example.yaml")
 		}
 	}
-	contents, _, err := withAgentKey(strings.Join(out, "\n") + "\n")
-	return contents, err
+	return strings.Join(out, "\n") + "\n", nil
 }
 
 func diagnose(ctx context.Context, selectedDriver string, out io.Writer) error {
@@ -230,95 +225,11 @@ func diagnose(ctx context.Context, selectedDriver string, out io.Writer) error {
 	return nil
 }
 
-// withAgentKey fills only a missing local key. Invalid existing YAML is preserved
-// for doctor to diagnose, and configured keys are never rotated by initialization.
-func withAgentKey(contents string) (string, bool, error) {
-	document, err := yaml.Parser().Unmarshal([]byte(contents))
-	if err != nil {
-		return contents, false, nil
-	}
-	if node, ok := document["node"].(map[string]any); ok && node["role"] != nil && node["role"] != "" {
-		return contents, false, nil
-	}
-	section, ok := document["weighing"].(map[string]any)
-	if document["weighing"] != nil && !ok {
-		return contents, false, nil
-	}
-	if existing, found := section["agent_key"]; found && existing != nil {
-		value, stringValue := existing.(string)
-		if !stringValue || strings.TrimSpace(value) != "" {
-			return contents, false, nil
-		}
-	}
-	data := make([]byte, 32)
-	if _, err := rand.Read(data); err != nil {
-		return "", false, errors.New("无法生成 Agent 随机密钥")
-	}
-	key := hex.EncodeToString(data)
-	lines := strings.Split(contents, "\n")
-	header := -1
-	for i, line := range lines {
-		if regexp.MustCompile(`^weighing\s*:`).MatchString(line) {
-			header = i
-			break
-		}
-	}
-	if header < 0 {
-		return strings.TrimRight(contents, "\n") + "\n\nweighing:\n  agent_key: " + key + "\n", true, nil
-	}
-	remainder := strings.TrimSpace(strings.SplitN(lines[header], ":", 2)[1])
-	if remainder != "" && !strings.HasPrefix(remainder, "#") {
-		// Retain all fields in a one-line flow mapping while expanding this section.
-		if !strings.Contains(remainder, "}") {
-			return contents, false, nil
-		}
-		section["agent_key"] = key
-		encoded, err := yaml.Parser().Marshal(map[string]any{"weighing": section})
-		if err != nil {
-			return "", false, errors.New("无法补充 Agent 本地配置")
-		}
-		lines[header] = strings.TrimSuffix(string(encoded), "\n")
-		return strings.Join(lines, "\n"), true, nil
-	}
-	indent := "  "
-	end := len(lines)
-	for i := header + 1; i < len(lines); i++ {
-		text := strings.TrimSpace(lines[i])
-		if text == "" || strings.HasPrefix(text, "#") {
-			continue
-		}
-		prefix := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
-		if prefix == "" {
-			end = i
-			break
-		}
-		indent = prefix
-		break
-	}
-	if _, found := section["agent_key"]; found {
-		for i := header + 1; i < end; i++ {
-			if strings.HasPrefix(lines[i], indent) && regexp.MustCompile(`^agent_key\s*:`).MatchString(strings.TrimPrefix(lines[i], indent)) {
-				comment := ""
-				if position := strings.Index(lines[i], "#"); position >= 0 {
-					comment = " " + lines[i][position:]
-				}
-				lines[i] = indent + "agent_key: " + key + comment
-				return strings.Join(lines, "\n"), true, nil
-			}
-		}
-	}
-	lines = append(lines[:header+1], append([]string{indent + "agent_key: " + key}, lines[header+1:]...)...)
-	return strings.Join(lines, "\n"), true, nil
-}
-
 // Only backfill absent development settings. An explicit empty directory keeps
-// maintenance disabled; named deployment roles must use their own setup flow.
+// maintenance disabled.
 func withMaintenanceDirectory(contents string) (string, bool, error) {
 	document, err := yaml.Parser().Unmarshal([]byte(contents))
 	if err != nil {
-		return contents, false, nil
-	}
-	if node, ok := document["node"].(map[string]any); ok && node["role"] != nil && node["role"] != "" {
 		return contents, false, nil
 	}
 	section, ok := document["maintenance"].(map[string]any)

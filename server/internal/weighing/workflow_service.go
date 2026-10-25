@@ -2,9 +2,24 @@ package weighing
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
+	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
+	"github.com/EziosWJ/weighbridge/server/internal/camera"
+)
+
+// Measurement commands are short correlated round trips. The unified camera
+// capture deadline is owned by camera.CapturePlan.TimeoutMS and is deliberately
+// not held under the device state lock.
+const (
+	measurementCommandTimeout = 10 * time.Second
+	measurementCancelTimeout  = 2 * time.Second
 )
 
 func (s *Service) Session(ctx context.Context, id int64) (ScaleSession, error) {
@@ -16,6 +31,15 @@ func (s *Service) ChangeSession(ctx context.Context, id int64, action string, in
 	}
 	return s.store.ChangeSession(ctx, id, action, in, e)
 }
+
+// Capture orchestrates one formal acquisition:
+//
+//	Agent begin (freeze the instrument basis) -> parallel Server camera capture
+//	under one deadline -> Agent end verification -> persist the sample.
+//
+// The camera set and config version are frozen before the window opens. The
+// Agent generation is kept on the sample so confirmation can verify the same
+// basis even after a transient weight change that restored the original value.
 func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (Sample, error) {
 	release, gateErr := s.maintenance.enter()
 	if gateErr != nil {
@@ -26,14 +50,8 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 	if err != nil {
 		return Sample{}, err
 	}
-	if policy.Required && s.cameraAvailable != nil && !s.cameraAvailable(in.ScaleID) {
+	if in.ScaleID < 1 || in.ClientID == "" || s.devices == nil || s.camera == nil {
 		return Sample{}, ErrConditions
-	}
-	if s.devices == nil {
-		return Sample{}, ErrConditions
-	}
-	if in.ScaleID < 1 || in.ClientID == "" {
-		return Sample{}, ErrInvalid
 	}
 	if in.PlateEvidence != nil {
 		value := in.PlateEvidence
@@ -41,7 +59,6 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 			return Sample{}, ErrInvalid
 		}
 	}
-
 	current, err := s.store.Session(ctx, in.ScaleID)
 	if err != nil {
 		return Sample{}, err
@@ -49,25 +66,211 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 	if !validSession(current, e.Metadata.ActorID, in.SessionInput) {
 		return Sample{}, ErrSession
 	}
-	captured, revision, err := s.devices.CaptureWithPolicy(ctx, in.ScaleID, policy.Required)
-	if err != nil {
-		return Sample{}, ErrConditions
+	if err := s.devices.RequireCapability(in.ScaleID, p.CapabilityMeasurementWindow); err != nil {
+		return Sample{}, ErrMeasurementCapability
 	}
-	state, unlock, err := s.devices.Guard(in.ScaleID, revision)
-	if err != nil {
-		return Sample{}, ErrConditions
-	}
+	// A new begin supersedes an unconfirmed window, so two captures on one
+	// scale must not overlap. This lock spans network work but never the device
+	// state lock (Hub.Guard is taken only for the local commit).
+	unlock := s.lockCapture(in.ScaleID)
 	defer unlock()
-	return s.store.Capture(withCapturePolicy(withDevice(ctx, state, &captured), policy), in, e)
+
+	plan, err := s.camera.Plan(ctx, in.ScaleID, agentbridge.ID(), policy.Required)
+	if err != nil {
+		return Sample{}, err
+	}
+	if policy.Required && len(plan.Cameras) == 0 {
+		return Sample{}, ErrCaptureCameraRequired
+	}
+	begin, err := s.beginMeasurement(ctx, in.ScaleID, policy.Revision, plan)
+	if err != nil {
+		return Sample{}, err
+	}
+	outcome, captureErr := s.camera.Capture(ctx, plan)
+	if captureErr != nil || !outcome.Success {
+		s.cancelMeasurement(in.ScaleID, begin.Generation, "抓拍未满足策略")
+		return Sample{}, ErrConditions
+	}
+	end, err := s.endMeasurement(ctx, in.ScaleID, begin.Generation)
+	if err != nil {
+		s.cancelMeasurement(in.ScaleID, begin.Generation, "测量结束核实失败")
+		return Sample{}, err
+	}
+	// Recognition is optional and reuses an already saved image; a failure must
+	// not discard a valid instrument and image basis.
+	candidate, recognizedAt, plateSource := "", time.Time{}, ""
+	if platform, recognizeErr := s.camera.RecognizeOutcome(ctx, plan, outcome); recognizeErr == nil && platform != "" {
+		candidate, recognizedAt, plateSource = platform, time.Now().UTC(), "server"
+	} else if in.PlateEvidence != nil && in.PlateEvidence.Source == "agent" {
+		// The Agent still observes the scene plate for operator cross-check.
+		// Recognition failure must not discard that observation, and the
+		// evidence must keep its actual source instead of claiming Server work.
+		observed := s.devices.State(in.ScaleID).Plate
+		candidate, recognizedAt, plateSource = observed.Candidate, observed.At, "agent"
+	}
+	// Take the device state lock only for the local commit, never across the
+	// capture interval. Any change after end is rejected here; changes between
+	// end and operator confirmation are rejected by verify.
+	state, unlockState, err := s.devices.Guard(in.ScaleID, 0)
+	if err != nil {
+		return Sample{}, ErrConditions
+	}
+	locked := true
+	defer func() {
+		if locked {
+			unlockState()
+		}
+	}()
+	if state.Weight != end.State.Weight || !state.Stable || !state.DeviceOK {
+		return Sample{}, ErrConditions
+	}
+	captured := p.Capture{
+		Success:     true,
+		DeviceState: end.State.DeviceState,
+		ImageStatus: captureImageStatus(plan, outcome),
+		CapturedAt:  end.EndedAt.UTC(),
+		Images:      outcome.Images,
+		Plate:       p.Plate{Candidate: candidate, At: recognizedAt},
+		PlateSource: plateSource,
+		// The generation and its verification are the evidence that the basis
+		// survived the whole image window.
+		MeasurementGeneration: begin.Generation,
+		MeasurementVerified:   true,
+		CameraConfigVersion:   plan.ConfigVersion,
+	}
+	if len(outcome.Failures) > 0 {
+		captured.ImageError = outcome.Failures[0].Message
+	}
+	sample, err := s.store.Capture(withServerCapture(withCapturePolicy(ctx, policy), state, &captured, outcome.Failures), in, e)
+	// Release the device state lock before sending any further Agent command;
+	// Command takes the same hub mutex.
+	locked = false
+	unlockState()
+	if err != nil {
+		// The measurement window has no persisted sample to confirm. Releasing
+		// it is best effort; it is equally unusable after any later session or
+		// policy change.
+		s.cancelMeasurement(in.ScaleID, begin.Generation, "采样保存失败")
+		return Sample{}, err
+	}
+	return sample, nil
 }
+
+func captureImageStatus(plan camera.CapturePlan, outcome camera.CaptureOutcome) string {
+	if plan.Required {
+		return "complete"
+	}
+	if len(plan.Cameras) == 0 {
+		return "disabled"
+	}
+	if len(outcome.Images) > 0 {
+		return "complete"
+	}
+	return "capture_failed"
+}
+
+func (s *Service) beginMeasurement(ctx context.Context, scale int64, policyRevision string, plan camera.CapturePlan) (p.MeasurementBeginResult, error) {
+	var result p.MeasurementBeginResult
+	message, err := s.devices.Command(ctx, scale, p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{
+		CaptureID: plan.CaptureID, CapturePolicyRevision: policyRevision, CameraConfigVersion: plan.ConfigVersion,
+	}, measurementCommandTimeout)
+	if err != nil || message.Type != p.TypeMeasurementBeginResult || json.Unmarshal(message.Payload, &result) != nil {
+		return result, ErrConditions
+	}
+	if !result.Accepted || result.Generation == "" || result.State.Unit != "t" || result.State.Weight <= 0 || !result.State.Stable || !result.State.DeviceOK {
+		return result, ErrConditions
+	}
+	return result, nil
+}
+
+func (s *Service) endMeasurement(ctx context.Context, scale int64, generation string) (p.MeasurementEndResult, error) {
+	var result p.MeasurementEndResult
+	message, err := s.devices.Command(ctx, scale, p.TypeMeasurementEndRequest, p.MeasurementEndRequest{Generation: generation}, measurementCommandTimeout)
+	if err != nil || message.Type != p.TypeMeasurementEndResult || json.Unmarshal(message.Payload, &result) != nil {
+		return result, ErrConditions
+	}
+	if !result.Verified || result.Generation != generation || result.EndedAt.IsZero() || result.State.Unit != "t" || result.State.Weight <= 0 || !result.State.Stable || !result.State.DeviceOK {
+		return result, ErrConditions
+	}
+	return result, nil
+}
+
+// cancelMeasurement releases a window that will never be confirmed. Failure is
+// harmless: an already superseded or disconnected window is equally unusable.
+func (s *Service) cancelMeasurement(scale int64, generation, reason string) {
+	if s.devices == nil || generation == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), measurementCancelTimeout)
+	defer cancel()
+	_, _ = s.devices.Command(ctx, scale, p.TypeMeasurementCancelRequest, p.MeasurementCancelRequest{Generation: generation, Reason: reason}, measurementCancelTimeout)
+}
+
+// verifySample re-checks the persisted measurement basis at operator
+// confirmation. A replay of an already committed request is not re-verified:
+// its stored result remains authoritative and must not depend on a live device.
+func (s *Service) verifySample(ctx context.Context, actor int64, requestID string, sampleID int64) error {
+	if op, err := s.store.Operation(ctx, actor, requestID); err == nil && op.Status != "not_found" {
+		return nil
+	}
+	sample, err := s.store.Sample(ctx, sampleID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return ErrNotFound
+		}
+		return ErrConditions
+	}
+	if sample.MeasurementGeneration == "" {
+		// Historical samples retain the original fresh device revision rule.
+		return nil
+	}
+	if s.devices == nil {
+		return ErrConditions
+	}
+	if s.camera != nil && sample.CameraConfigVersion > 0 {
+		version, err := s.camera.ConfigVersion(ctx)
+		if err != nil || version != sample.CameraConfigVersion {
+			return ErrCameraConfigChanged
+		}
+	}
+	if err := s.devices.RequireCapability(sample.ScaleID, p.CapabilityMeasurementWindow); err != nil {
+		return ErrMeasurementCapability
+	}
+	if invalidated, ok := s.devices.LastMeasurementInvalidation(sample.ScaleID); ok && invalidated.Generation == sample.MeasurementGeneration {
+		return ErrConditions
+	}
+	message, err := s.devices.Command(ctx, sample.ScaleID, p.TypeMeasurementVerifyRequest, p.MeasurementVerifyRequest{Generation: sample.MeasurementGeneration}, measurementCommandTimeout)
+	if err != nil {
+		return ErrConditions
+	}
+	var result p.MeasurementVerifyResult
+	if message.Type != p.TypeMeasurementVerifyResult || json.Unmarshal(message.Payload, &result) != nil {
+		return ErrConditions
+	}
+	if !result.Valid || result.Generation != sample.MeasurementGeneration || result.State.Unit != "t" || !result.State.Stable || !result.State.DeviceOK || result.State.Weight != sample.Weight {
+		return ErrConditions
+	}
+	return nil
+}
+
 func (s *Service) InvalidateSample(ctx context.Context, id int64, in SessionInput, actor int64) error {
-	return s.store.InvalidateSample(ctx, id, in, actor)
+	sample, lookupErr := s.store.Sample(ctx, id)
+	if err := s.store.InvalidateSample(ctx, id, in, actor); err != nil {
+		return err
+	}
+	if lookupErr == nil && sample.MeasurementGeneration != "" {
+		s.cancelMeasurement(sample.ScaleID, sample.MeasurementGeneration, "操作员废弃采样")
+	}
+	return nil
 }
+
 func (s *Service) ConfirmFirst(ctx context.Context, in ConfirmationInput, e audit.Event) (CommandResult, error) {
 	if !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleID < 1 || in.TaskID != nil {
 		return CommandResult{}, ErrInvalid
 	}
-	return s.deviceCommand(ctx, in.ScaleID, func(ctx context.Context) (CommandResult, error) { return s.store.ConfirmFirst(ctx, in, e) })
+	return s.confirmCommand(ctx, e.Metadata.ActorID, in.RequestID, in.ScaleID, in.SampleID, func(ctx context.Context) (CommandResult, error) {
+		return s.store.ConfirmFirst(ctx, in, e)
+	})
 }
 func (s *Service) Operation(ctx context.Context, actor int64, key string) (Operation, error) {
 	if !validRequestID(key) {
@@ -91,24 +294,28 @@ func (s *Service) ConfirmSecond(ctx context.Context, id int64, in ConfirmationIn
 		return CommandResult{}, ErrInvalid
 	}
 	in.TaskID = ptr(id)
-	return s.deviceCommand(ctx, in.ScaleID, func(ctx context.Context) (CommandResult, error) { return s.store.ConfirmSecond(ctx, id, in, e) })
+	return s.confirmCommand(ctx, e.Metadata.ActorID, in.RequestID, in.ScaleID, in.SampleID, func(ctx context.Context) (CommandResult, error) {
+		return s.store.ConfirmSecond(ctx, id, in, e)
+	})
 }
 func (s *Service) FindTicket(ctx context.Context, id int64) (TicketView, error) {
-	v, err := s.store.FindTicket(ctx, id)
-	if err == nil {
-		s.decorateTicketImages(&v)
-	}
-	return v, err
+	return s.store.FindTicket(ctx, id)
 }
 func (s *Service) Tasks(ctx context.Context, q PageQuery) (Page[Task], error) {
 	return s.store.Tasks(ctx, q)
 }
 func (s *Service) Tickets(ctx context.Context, q PageQuery) (Page[TicketView], error) {
-	v, err := s.store.Tickets(ctx, q)
-	if err == nil {
-		for i := range v.Records {
-			s.decorateTicketImages(&v.Records[i])
-		}
-	}
-	return v, err
+	return s.store.Tickets(ctx, q)
+}
+
+// captureLocks serializes measurement windows per scale. A new begin replaces
+// an unconfirmed window, so overlapping Server captures would invalidate each
+// other. The map is tiny (one scale per site) and entries live for the process.
+var captureLocks sync.Map
+
+func (s *Service) lockCapture(scale int64) func() {
+	value, _ := captureLocks.LoadOrStore(scale, &sync.Mutex{})
+	mutex := value.(*sync.Mutex)
+	mutex.Lock()
+	return mutex.Unlock
 }

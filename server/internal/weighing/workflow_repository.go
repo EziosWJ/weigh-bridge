@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"regexp"
 	"strings"
@@ -194,15 +193,6 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 		parties[id] = p
 	}
 	party := parties[in.PartyID]
-	for _, id := range ids {
-		var temporary struct{ State string }
-		if err := tx.Table("wb_temporary_party").Where("party_id=?", id).Find(&temporary).Error; err != nil {
-			return BusinessInfo{}, err
-		}
-		if (temporary.State == "returned" || temporary.State == "resubmitted" || temporary.State == "approved" || temporary.State == "linked") && (old == nil || (old.PartyID != id && (old.CarrierID == nil || *old.CarrierID != id))) {
-			return BusinessInfo{}, ErrInvalid
-		}
-	}
 	if party.Enabled != 1 && (old == nil || old.PartyID != party.ID) {
 		return BusinessInfo{}, ErrInvalid
 	}
@@ -317,25 +307,64 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 		if err != nil {
 			return err
 		}
+		captureSource := device.Source
+		if captureSource == "" {
+			captureSource = "agent"
+		}
 		source, candidate, observedAt := "manual", "", ""
-		if in.PlateEvidence != nil && in.PlateEvidence.Source == "agent" {
+		if captureSource == "server" && captured.Plate.Candidate != "" {
+			// Optional recognition reuses a Server camera image; when recognition
+			// was unavailable the candidate may instead be the Agent's observation.
+			source = captured.PlateSource
+			if source != "agent" {
+				source = "server"
+			}
+			candidate = captured.Plate.Candidate
+			if !captured.Plate.At.IsZero() {
+				observedAt = captured.Plate.At.Format(time.RFC3339Nano)
+			}
+		} else if captureSource != "server" && in.PlateEvidence != nil && in.PlateEvidence.Source == "agent" {
 			source = "agent"
 			candidate = captured.Plate.Candidate
 			observedAt = captured.Plate.At.Format(time.RFC3339Nano)
 		}
 		plateEvidence := snapshot(map[string]any{"source": source, "candidate": candidate, "confirmedPlate": business.Plate, "at": now, "observedAt": observedAt})
-		var primaryImage p.Image
-		for _, image := range captured.Images {
-			if primaryImage.ID == "" || image.View == "front" {
-				primaryImage = image
+		capturedAt := captured.CapturedAt
+		if capturedAt.IsZero() {
+			capturedAt = now
+		}
+		evidenceFields := map[string]any{"captureRequired": policy.Required, "capturePolicyRevision": policy.Revision, "imageStatus": captured.ImageStatus, "imageError": captured.ImageError, "source": captureSource, "images": captured.Images, "at": capturedAt, "receivedAt": now, "weight": captured.Weight, "plate": business.Plate, "plateEvidence": json.RawMessage(plateEvidence)}
+		if captureSource == "server" {
+			verifiedAt := capturedAt
+			evidenceFields["measurementGeneration"] = captured.MeasurementGeneration
+			evidenceFields["measurementVerifiedAt"] = verifiedAt
+			evidenceFields["measurementVerified"] = captured.MeasurementVerified
+			evidenceFields["cameraConfigVersion"] = captured.CameraConfigVersion
+			evidenceFields["failures"] = device.Failures
+		} else {
+			var primaryImage p.Image
+			for _, image := range captured.Images {
+				if primaryImage.ID == "" || image.View == "front" {
+					primaryImage = image
+				}
 			}
+			cameraLabel := "车头视角"
+			if primaryImage.View == "rear" {
+				cameraLabel = "车尾视角"
+			}
+			evidenceFields["agentId"] = device.State.AgentID
+			evidenceFields["imageSrc"] = primaryImage.URL
+			evidenceFields["sha256"] = primaryImage.SHA256
+			evidenceFields["preset"] = primaryImage.View
+			evidenceFields["cameraLabel"] = cameraLabel
 		}
-		cameraLabel := "车头视角"
-		if primaryImage.View == "rear" {
-			cameraLabel = "车尾视角"
+		evidence := snapshot(evidenceFields)
+		verifiedAt := (*time.Time)(nil)
+		if captured.MeasurementVerified && captured.MeasurementGeneration != "" {
+			value := capturedAt
+			verifiedAt = &value
 		}
-		evidence := snapshot(map[string]any{"captureRequired": policy.Required, "capturePolicyRevision": policy.Revision, "imageStatus": captured.ImageStatus, "imageError": captured.ImageError, "source": "agent", "agentId": device.State.AgentID, "imageSrc": primaryImage.URL, "sha256": primaryImage.SHA256, "images": captured.Images, "preset": primaryImage.View, "cameraLabel": cameraLabel, "at": captured.CapturedAt, "receivedAt": now, "weight": captured.Weight, "plate": business.Plate, "plateEvidence": json.RawMessage(plateEvidence)})
-		result = Sample{ScaleID: in.ScaleID, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: "agent", Weight: captured.Weight, CapturedAt: now, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision}
+		result = Sample{ScaleID: in.ScaleID, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: captureSource, Weight: captured.Weight, CapturedAt: capturedAt, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision, MeasurementGeneration: captured.MeasurementGeneration, MeasurementVerifiedAt: verifiedAt, CameraConfigVersion: captured.CameraConfigVersion}
 		// Recapture invalidates earlier unconfirmed samples in this session.
 		if err := tx.Model(&Sample{}).Where("scale_id=? AND session_generation=? AND invalidated_at IS NULL AND id NOT IN (SELECT sample_id FROM wb_weigh_record)", in.ScaleID, session.Generation).Update("invalidated_at", now).Error; err != nil {
 			return err
@@ -347,6 +376,12 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 	})
 	return result, err
 }
+
+// Sample returns one unconfirmed or historical sample for confirmation checks.
+func (r *Repository) Sample(ctx context.Context, id int64) (Sample, error) {
+	return findOne[Sample](r.db.WithContext(ctx), id)
+}
+
 func (r *Repository) InvalidateSample(ctx context.Context, id int64, in SessionInput, actor int64) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		sample, err := findOne[Sample](tx, id)
@@ -381,7 +416,17 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 		return sample, ErrConditions
 	}
 	device, ok := ctx.Value(deviceKey{}).(deviceContext)
-	if !ok || sample.DeviceRevision != device.State.Revision || sample.Weight != device.State.Weight {
+	if !ok || sample.Weight != device.State.Weight {
+		return sample, ErrConditions
+	}
+	// New samples are bound to the Agent measurement generation, which the
+	// service verified immediately before this transaction. Historical samples
+	// keep the original fresh device revision rule.
+	if sample.MeasurementGeneration == "" {
+		if sample.DeviceRevision != device.State.Revision {
+			return sample, ErrConditions
+		}
+	} else if sample.MeasurementVerifiedAt == nil {
 		return sample, ErrConditions
 	}
 	var used int64
@@ -424,7 +469,7 @@ func replayOperation(op Operation, requestHash string) (CommandResult, error) {
 	return result, nil
 }
 func domainError(err error) bool {
-	return errors.Is(err, ErrForbidden) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrConflict) || errors.Is(err, ErrReferenced) || errors.Is(err, ErrConditions) || errors.Is(err, ErrCapturePolicyChanged) || errors.Is(err, ErrSession) || errors.Is(err, ErrWeight) || errors.Is(err, ErrNotFound)
+	return errors.Is(err, ErrForbidden) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrConflict) || errors.Is(err, ErrReferenced) || errors.Is(err, ErrConditions) || errors.Is(err, ErrCapturePolicyChanged) || errors.Is(err, ErrCaptureCameraRequired) || errors.Is(err, ErrMeasurementCapability) || errors.Is(err, ErrCameraConfigChanged) || errors.Is(err, ErrSession) || errors.Is(err, ErrWeight) || errors.Is(err, ErrNotFound)
 }
 func (r *Repository) command(ctx context.Context, key, action string, payload any, e audit.Event, lock func(*gorm.DB) error, perform func(*gorm.DB, string) (commandOutcome, error)) (CommandResult, error) {
 	var result CommandResult
@@ -590,23 +635,9 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 }
 func (r *Repository) Operation(ctx context.Context, actor int64, key string) (Operation, error) {
 	requested := key
-	var node struct{ Role string }
-	if err := r.db.WithContext(ctx).Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
-		return Operation{}, err
-	}
-	if node.Role == "central" {
-		scope, ok := ctx.Value(siteScopeKey).(siteScope)
-		if !ok || scope.FilterSiteID < 1 {
-			return Operation{RequestID: requested, Status: "not_found"}, nil
-		}
-		key = fmt.Sprintf("%d:%s", scope.FilterSiteID, key)
-	}
 	op, found, err := findOperation(r.db.WithContext(ctx), actor, key)
 	if err == nil && !found {
 		op = Operation{RequestID: requested, Status: "not_found"}
-	}
-	if op.OriginRequestID != "" {
-		op.RequestID = op.OriginRequestID
 	}
 	return op, err
 }

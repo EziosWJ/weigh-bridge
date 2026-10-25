@@ -66,12 +66,16 @@ func (s *Service) reloadEnvironment() (bool, error) {
 	defer s.mu.Unlock()
 	if s.active != c {
 		oldActive, oldDraft := s.active, s.draft
+		oldVersion, oldAppliedAt := s.configVersion, s.appliedAt
 		if s.draft == s.active {
 			s.draft = c
 		}
 		s.active = c
+		s.configVersion++
+		s.appliedAt = time.Now().UTC()
 		if err := s.persist(); err != nil {
 			s.active, s.draft = oldActive, oldDraft
+			s.configVersion, s.appliedAt = oldVersion, oldAppliedAt
 			return false, err
 		}
 	}
@@ -107,8 +111,8 @@ func (s *Service) activateConfig(cfg Config, restore bool) (Result, bool) {
 	if err := validate(cfg); err != nil {
 		return Result{Err: err}, true
 	}
-	if cfg.AgentKey == "" || strings.ContainsAny(cfg.AgentKey, "\r\n\x00") {
-		return Result{Err: errors.New("Agent 连接密钥未设置或格式无效")}, true
+	if strings.ContainsAny(cfg.AgentKey, "\r\n\x00") {
+		return Result{Err: errors.New("旧连接密钥格式无效")}, true
 	}
 	path := s.environmentPath()
 	oldEnv, err := os.ReadFile(path)
@@ -145,6 +149,8 @@ func (s *Service) activateConfig(cfg Config, restore bool) (Result, bool) {
 		if restore {
 			s.draft = cfg
 		}
+		s.configVersion++
+		s.appliedAt = time.Now().UTC()
 		result.Err = s.persist()
 		s.mu.Unlock()
 	}

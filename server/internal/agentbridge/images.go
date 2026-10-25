@@ -27,6 +27,17 @@ var imageName = regexp.MustCompile(`^[0-9]+_[a-f0-9]{32}_(front|rear)\.(png|jpg)
 
 func (h *Hub) Register(router gin.IRouter) {
 	g := router.Group("/api/agent")
+	// Keyless mode is the ADR 0030 production path. The server resolves the
+	// local site's sole scale; the Agent supplies only its Server address.
+	// The legacy keyed path remains available only when no local resolver was
+	// installed, so old deployments can be diagnosed during the upgrade.
+	if h.local != nil {
+		g.GET("/ws", func(c *gin.Context) {
+			websocket.Server{Handshake: func(_ *websocket.Config, _ *http.Request) error { return nil }, Handler: websocket.Handler(h.serveLocal)}.ServeHTTP(c.Writer, c.Request)
+		})
+		g.POST("/images", h.uploadLocal)
+		return
+	}
 	g.Use(func(c *gin.Context) {
 		scale, _ := strconv.ParseInt(c.GetHeader("X-Scale-ID"), 10, 64)
 		child, resolveErr := h.resolve(c.Request.Context(), scale)
@@ -112,7 +123,10 @@ func (h *Hub) Image(id string) (p.Image, error) {
 		view = "rear"
 	}
 	sum := sha256.Sum256(data)
-	return p.Image{ID: id, View: view, URL: "/api/weighing/agent-images/" + id, SHA256: hex.EncodeToString(sum[:])}, nil
+	// Historical Agent images keep their original file identity and view name.
+	// Source and status are explicit so new pages never label them as
+	// Server-acquired camera evidence.
+	return p.Image{ID: id, View: view, URL: "/api/weighing/agent-images/" + id, SHA256: hex.EncodeToString(sum[:]), Source: "agent", Status: "captured"}, nil
 }
 func (h *Hub) ServeImage(c *gin.Context) {
 	id := c.Param("imageId")

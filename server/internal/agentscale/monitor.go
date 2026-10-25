@@ -2,6 +2,8 @@ package agentscale
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -12,41 +14,58 @@ import (
 
 // maxConsecutiveBad makes a sustained checksum/structure failure visible before
 // the normal stale threshold. A single corrupt frame followed by a good one
-// does not take the scale out of service.
+// does not take the scale out of service, but it does latch the current
+// measurement basis invalid because a formal capture must not hide a serial
+// error that happened inside the image capture interval.
 const maxConsecutiveBad = 3
+
+const (
+	// ProtocolName is the only supported instrument profile after ADR 0030.
+	ProtocolName = "keli-d12-tf05"
+	// StaleThreshold is the fixed 1 s freshness limit for a valid frame.
+	StaleThreshold = time.Second
+	// DefaultBaud is the documented D12 setting; the site may still choose
+	// another supported value when its instrument is configured differently.
+	DefaultBaud = 9600
+)
 
 // errReadTimeout is returned by the Linux serial reader when no bytes arrived
 // within the poll interval. It is not a device failure.
 var errReadTimeout = errors.New("serial read timeout")
 
-// Config describes one locally attached D12 instrument.
+// Measurement errors are mapped to protocol error codes by the Agent. The
+// monitor itself stays protocol-free.
+var (
+	ErrMeasurementUnavailable       = errors.New("称重仪表未配置或不可用，无法建立测量依据")
+	ErrMeasurementFault             = errors.New("称重仪表故障或数据无效，无法建立测量依据")
+	ErrMeasurementStale             = errors.New("超过 1 秒未收到有效帧，测量依据已过期")
+	ErrMeasurementUnstable          = errors.New("称重仪表未稳定，无法建立测量依据")
+	ErrMeasurementWeightChanged     = errors.New("测量期间重量发生变化，请重新采集")
+	ErrMeasurementGenerationInvalid = errors.New("测量依据已失效或代次无效，请重新采集")
+	ErrMeasurementSuperseded        = errors.New("测量窗口已被新的采集替代，请重新采集")
+)
+
+// Config describes one locally attached D12 instrument. The protocol, source
+// unit and freshness threshold are fixed; only the local port and baud come
+// from the Agent's device settings.
 type Config struct {
-	Enabled  bool
-	Port     string
-	Baud     int
-	Protocol string
-	Unit     Unit
-	Stale    time.Duration
+	Port string
+	Baud int
 }
 
+// Configured reports whether a serial path exists. An unconfigured Agent keeps
+// its maintenance connection and printing ability.
+func (c Config) Configured() bool { return c.Port != "" }
+
 func (c Config) Validate() error {
-	if c.Protocol != "" && c.Protocol != "keli-d12-tf05" {
-		return fmt.Errorf("unsupported scale protocol %q", c.Protocol)
-	}
-	if !c.Enabled {
+	if c.Port == "" {
 		return nil
 	}
-	if c.Port == "" || !strings.HasPrefix(c.Port, "/dev/") || strings.Contains(c.Port, "..") {
+	if !strings.HasPrefix(c.Port, "/dev/") || strings.Contains(c.Port, "..") {
 		return errors.New("serial port must be an absolute /dev path")
 	}
 	if !supportedBaud(c.Baud) {
 		return fmt.Errorf("unsupported serial baud %d", c.Baud)
-	}
-	if c.Unit != UnitTonne && c.Unit != UnitKilogram {
-		return fmt.Errorf("unsupported source unit %q", c.Unit)
-	}
-	if c.Stale < 200*time.Millisecond || c.Stale >= 3*time.Second {
-		return errors.New("stale threshold must be between 200 ms and 3000 ms")
 	}
 	return nil
 }
@@ -101,6 +120,42 @@ type Snapshot struct {
 	RawFrame          string    `json:"rawFrame"`
 }
 
+// Measurement is one atomic begin/end/verify view of the instrument basis.
+type Measurement struct {
+	Generation string
+	Snapshot   Snapshot
+	EndedAt    time.Time
+}
+
+// MeasurementInvalidation is an unsolicited transition that made a window
+// invalid after it was opened.
+type MeasurementInvalidation struct {
+	Generation string
+	Reason     string
+	Snapshot   Snapshot
+	At         time.Time
+}
+
+type measurementWindow struct {
+	generation string
+	basis      uint64
+	weight     int64
+	at         time.Time
+	ended      bool
+	cancelled  bool
+	superseded bool
+	notified   bool
+	endedAt    time.Time
+	verifiedAt time.Time
+}
+
+type measurementTracker struct {
+	runID   string
+	basis   uint64
+	seq     uint64
+	windows map[string]*measurementWindow
+}
+
 // Monitor owns one serial reader. It has no WSS dependency; the Agent starts it
 // once and reads snapshots across connection retries.
 type Monitor struct {
@@ -126,16 +181,34 @@ type Monitor struct {
 	consecutiveBad int
 	lastHealth     string
 	changes        chan struct{}
+	measurements   measurementTracker
 }
 
 func New(cfg Config, opener Opener) (*Monitor, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if opener == nil {
+	if cfg.Baud == 0 && cfg.Configured() {
+		cfg.Baud = DefaultBaud
+	}
+	if opener == nil && cfg.Configured() {
 		opener = SerialOpener(cfg.Port, cfg.Baud)
 	}
-	return &Monitor{cfg: cfg, opener: opener, now: time.Now, changes: make(chan struct{}, 1)}, nil
+	return &Monitor{
+		cfg:          cfg,
+		opener:       opener,
+		now:          time.Now,
+		changes:      make(chan struct{}, 1),
+		measurements: measurementTracker{runID: newMeasurementRunID(), windows: map[string]*measurementWindow{}},
+	}, nil
+}
+
+func newMeasurementRunID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("run-%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
 }
 
 // HealthChanges signals transitions in availability, stability or fault text.
@@ -145,7 +218,7 @@ func (m *Monitor) HealthChanges() <-chan struct{} { return m.changes }
 // Run reads until ctx is cancelled. Open failures, read failures and device
 // disappearance are retried with bounded backoff; cancellation closes the port.
 func (m *Monitor) Run(ctx context.Context) {
-	if !m.cfg.Enabled {
+	if !m.cfg.Configured() {
 		return
 	}
 	backoff := 200 * time.Millisecond
@@ -217,6 +290,8 @@ func (m *Monitor) feed(data []byte, at time.Time) {
 	defer m.mu.Unlock()
 	m.stream.Feed(data,
 		func(f Frame) {
+			wasHasFrame, wasArmed := m.hasFrame, m.armed
+			oldMilli, oldIssue, oldStable := m.lastMilli, m.lastIssue, m.lastFrame.Stable
 			m.hasFrame = true
 			m.armed = true
 			m.lastFrame = f
@@ -227,12 +302,21 @@ func (m *Monitor) feed(data []byte, at time.Time) {
 			m.consecutiveBad = 0
 			m.lastFrameError = ""
 			m.transportFault = ""
+			// Every parsed frame participates in the basis. A repeated identical
+			// stable frame does not change it; any value, stability or fault change
+			// does, even when it later returns to the previous value.
+			if !wasHasFrame || !wasArmed || m.lastMilli != oldMilli || m.lastIssue != oldIssue || f.Stable != oldStable {
+				m.measurements.basis++
+			}
 		},
 		func(err error) {
 			m.lastFrameAt = at
 			m.invalid++
 			m.consecutiveBad++
 			m.lastFrameError = err.Error()
+			// A malformed frame is a serial error and latches invalidity for any
+			// capture that spans it.
+			m.measurements.basis++
 		},
 	)
 	m.stream.Trim()
@@ -240,8 +324,8 @@ func (m *Monitor) feed(data []byte, at time.Time) {
 }
 
 func (m *Monitor) lastMillis(f Frame) {
-	m.lastMilli, m.lastIssue = interpret(f, m.cfg.Unit)
-	if _, err := f.TareMilliTonnes(m.cfg.Unit); err != nil {
+	m.lastMilli, m.lastIssue = interpret(f, UnitTonne)
+	if _, err := f.TareMilliTonnes(UnitTonne); err != nil {
 		m.tareIssue = err.Error()
 	} else {
 		m.tareIssue = ""
@@ -278,6 +362,7 @@ func (m *Monitor) opened() {
 	m.connected = true
 	m.armed = false // a fresh frame, not a successful open, restores availability
 	m.transportFault = ""
+	m.measurements.basis++
 	m.updateHealthLocked(m.now())
 	m.mu.Unlock()
 }
@@ -291,6 +376,7 @@ func (m *Monitor) closed(err error) {
 	} else if m.transportFault == "" {
 		m.transportFault = "串口读取已停止"
 	}
+	m.measurements.basis++
 	m.updateHealthLocked(m.now())
 	m.mu.Unlock()
 }
@@ -300,6 +386,7 @@ func (m *Monitor) setTransportFault(reason string) {
 	m.connected = false
 	m.armed = false
 	m.transportFault = reason
+	m.measurements.basis++
 	m.updateHealthLocked(m.now())
 	m.mu.Unlock()
 }
@@ -314,14 +401,14 @@ func (m *Monitor) Snapshot(now time.Time) Snapshot {
 
 func (m *Monitor) snapshotLocked(now time.Time) Snapshot {
 	s := Snapshot{
-		Enabled:           m.cfg.Enabled,
+		Enabled:           m.cfg.Configured(),
 		Port:              m.cfg.Port,
 		Baud:              m.cfg.Baud,
-		Protocol:          m.cfg.Protocol,
-		Unit:              string(m.cfg.Unit),
+		Protocol:          ProtocolName,
+		Unit:              string(UnitTonne),
 		Connected:         m.connected,
 		Armed:             m.armed,
-		StaleMS:           int(m.cfg.Stale / time.Millisecond),
+		StaleMS:           int(StaleThreshold / time.Millisecond),
 		WeightMilliTonnes: m.lastMilli,
 		Weight:            FormatMilliTonnes(m.lastMilli),
 		SourceWeight:      m.lastFrame.WeightSource,
@@ -352,11 +439,11 @@ func (m *Monitor) snapshotLocked(now time.Time) Snapshot {
 	if m.consecutiveBad > 0 {
 		s.ChecksumStatus = "failed"
 	}
-	if !m.cfg.Enabled {
-		s.Fault = "称重仪表未启用"
+	if !m.cfg.Configured() {
+		s.Fault = "称重仪表尚未配置串口路径，仅打印可用"
 		return s
 	}
-	stale := m.hasFrame && now.Sub(m.lastValid) > m.cfg.Stale
+	stale := m.hasFrame && now.Sub(m.lastValid) > StaleThreshold
 	s.Stale = stale
 	healthy := m.connected && m.armed && m.hasFrame && !stale && m.consecutiveBad < maxConsecutiveBad && m.lastIssue == ""
 	s.DeviceOK = healthy
@@ -373,13 +460,191 @@ func (m *Monitor) snapshotLocked(now time.Time) Snapshot {
 	case !m.armed:
 		s.Fault = "串口已重新打开，等待新的有效帧"
 	case stale:
-		s.Fault = fmt.Sprintf("超过 %d ms 未收到有效帧", m.cfg.Stale.Milliseconds())
+		s.Fault = "超过 1000 ms 未收到有效帧"
 	case m.consecutiveBad >= maxConsecutiveBad:
 		s.Fault = fmt.Sprintf("连续 %d 帧校验或结构错误", m.consecutiveBad)
 	case m.lastIssue != "":
 		s.Fault = m.lastIssue
 	}
 	return s
+}
+
+// BeginMeasurement atomically captures the current basis. Repeated identical
+// stable frames leave it valid; any later value, stability, serial or fault
+// change makes end/verify fail even if the reading returns to this value.
+func (m *Monitor) BeginMeasurement(now time.Time) (Measurement, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.pruneMeasurementsLocked(now)
+	s := m.snapshotLocked(now)
+	if err := m.readinessLocked(s); err != nil {
+		return Measurement{Snapshot: s}, err
+	}
+	for _, w := range m.measurements.windows {
+		if !w.cancelled {
+			w.superseded = true
+		}
+	}
+	m.measurements.seq++
+	gen := fmt.Sprintf("%s-%d-%d", m.measurements.runID, m.measurements.basis, m.measurements.seq)
+	w := &measurementWindow{generation: gen, basis: m.measurements.basis, weight: s.WeightMilliTonnes, at: now}
+	m.measurements.windows[gen] = w
+	return Measurement{Generation: gen, Snapshot: s}, nil
+}
+
+// EndMeasurement verifies that the window survived the image capture interval
+// without any invalidating transition. The basis is not cleared here: it stays
+// valid until the operator confirmation calls VerifyMeasurement.
+func (m *Monitor) EndMeasurement(generation string, now time.Time) (Measurement, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.snapshotLocked(now)
+	w := m.measurements.windows[generation]
+	if w == nil {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementGenerationInvalid
+	}
+	if w.cancelled {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementGenerationInvalid
+	}
+	if w.superseded {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementSuperseded
+	}
+	if w.basis != m.measurements.basis {
+		if s.WeightMilliTonnes != w.weight {
+			return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementWeightChanged
+		}
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementGenerationInvalid
+	}
+	if err := m.readinessLocked(s); err != nil {
+		return Measurement{Generation: generation, Snapshot: s}, err
+	}
+	if s.WeightMilliTonnes != w.weight {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementWeightChanged
+	}
+	w.ended, w.endedAt = true, now
+	return Measurement{Generation: generation, Snapshot: s, EndedAt: now}, nil
+}
+
+// VerifyMeasurement rechecks the same basis at operator confirmation, after
+// the capture window ended. A transient change that restored the same value
+// already changed the basis and is rejected here.
+func (m *Monitor) VerifyMeasurement(generation string, now time.Time) (Measurement, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.snapshotLocked(now)
+	w := m.measurements.windows[generation]
+	if w == nil || !w.ended || w.cancelled {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementGenerationInvalid
+	}
+	if w.superseded {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementSuperseded
+	}
+	if w.basis != m.measurements.basis {
+		if s.WeightMilliTonnes != w.weight {
+			return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementWeightChanged
+		}
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementGenerationInvalid
+	}
+	if err := m.readinessLocked(s); err != nil {
+		return Measurement{Generation: generation, Snapshot: s}, err
+	}
+	if s.WeightMilliTonnes != w.weight {
+		return Measurement{Generation: generation, Snapshot: s}, ErrMeasurementWeightChanged
+	}
+	w.verifiedAt = now
+	return Measurement{Generation: generation, Snapshot: s, EndedAt: w.endedAt}, nil
+}
+
+// CancelMeasurement releases a window that will never be confirmed. An unknown
+// or already superseded generation returns ErrMeasurementGenerationInvalid.
+func (m *Monitor) CancelMeasurement(generation string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	w := m.measurements.windows[generation]
+	if w == nil {
+		return ErrMeasurementGenerationInvalid
+	}
+	if w.superseded {
+		return ErrMeasurementSuperseded
+	}
+	w.cancelled = true
+	return nil
+}
+
+// InvalidateMeasurements latches every open window invalid, for example when
+// the Server connection changes. The basis also advances so future windows
+// cannot reuse an old reading.
+func (m *Monitor) InvalidateMeasurements(reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.measurements.basis++
+	for _, w := range m.measurements.windows {
+		if !w.cancelled && !w.superseded {
+			w.superseded = true
+		}
+	}
+}
+
+// InvalidatedMeasurements reports windows that must be declared invalid to the
+// Server. Each window is reported at most once; the correlated end/verify
+// reply remains authoritative.
+func (m *Monitor) InvalidatedMeasurements(now time.Time) []MeasurementInvalidation {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.snapshotLocked(now)
+	var out []MeasurementInvalidation
+	for _, w := range m.measurements.windows {
+		if w.cancelled || w.superseded || w.notified {
+			continue
+		}
+		reason := ""
+		switch {
+		case w.basis != m.measurements.basis:
+			reason = "测量期间重量或仪表状态发生变化，本次依据已失效"
+		case s.Stale:
+			reason = ErrMeasurementStale.Error()
+		case !s.DeviceOK:
+			if s.Fault != "" {
+				reason = s.Fault
+			} else {
+				reason = ErrMeasurementFault.Error()
+			}
+		case !s.Stable:
+			reason = ErrMeasurementUnstable.Error()
+		case s.WeightMilliTonnes != w.weight:
+			reason = ErrMeasurementWeightChanged.Error()
+		}
+		if reason == "" {
+			continue
+		}
+		w.notified = true
+		out = append(out, MeasurementInvalidation{Generation: w.generation, Reason: reason, Snapshot: s, At: now})
+	}
+	return out
+}
+
+func (m *Monitor) readinessLocked(s Snapshot) error {
+	switch {
+	case !m.cfg.Configured():
+		return ErrMeasurementUnavailable
+	case s.Stale:
+		return ErrMeasurementStale
+	case !s.DeviceOK:
+		return ErrMeasurementFault
+	case !s.Stable:
+		return ErrMeasurementUnstable
+	case s.WeightMilliTonnes <= 0:
+		return ErrMeasurementUnavailable
+	}
+	return nil
+}
+
+func (m *Monitor) pruneMeasurementsLocked(now time.Time) {
+	for gen, w := range m.measurements.windows {
+		if now.Sub(w.at) > time.Hour {
+			delete(m.measurements.windows, gen)
+		}
+	}
 }
 
 func (m *Monitor) updateHealthLocked(at time.Time) {

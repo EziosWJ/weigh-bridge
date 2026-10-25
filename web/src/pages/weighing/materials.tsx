@@ -63,7 +63,7 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
   const [pageSize, setPageSize] = useState(10);
   const [deleting, setDeleting] = useState<Material | Party | null>(null);
   const [error, setError] = useState('');
-  const admin = capabilities?.nodeRole!=='site' && (capabilities?.permissionCodes.includes('weighing:master:write') ?? false);
+  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
   const name = parties ? '往来主体' : '物料';
   const base = parties ? '/weighing/parties' : '/weighing/materials';
   const suffix = params.get('returnTo') ? `?${params.toString()}` : '';
@@ -91,7 +91,7 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
     { title: '操作', key: 'actions', width: 144, nowrap: true, render: (_, r) => <TableActions><Link className="text-primary hover:underline" to={`${base}/${r.id}/edit${suffix}`}>{admin ? '编辑' : '查看'}</Link>{admin && <Button size="sm" variant="ghost" onClick={() => { setError(''); setDeleting(r); }}>删除</Button>}</TableActions> },
   ];
   return <div className="weighing-list-page">
-    <PageHeader title={`${name}资料`} description={parties ? '' : ''} actions={<><ReturnLink />{parties&&capabilities?.nodeRole&&capabilities.nodeRole!=='standalone'&&<Link className={linkClass} to="/weighing/temporary-parties">临时主体登记与确认</Link>}{admin && <Link className={linkClass} to={`${base}/new${suffix}`}>新增{name}</Link>}</>} />
+    <PageHeader title={`${name}资料`} description={parties ? '' : ''} actions={<><ReturnLink />{admin && <Link className={linkClass} to={`${base}/new${suffix}`}>新增{name}</Link>}</>} />
     {!admin && <RoleHint />}
     <SearchFilterBar compact actions={<Button onClick={() => { setKeyword(''); setEnabled(''); setClassification(''); setNature(''); setPage(1); }}>清空筛选</Button>}>
       <Input aria-label="资料搜索" placeholder={parties ? '名称 / 简称 / 编码 / 电话' : '名称 / 编码 / 规格'} value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1); }} />
@@ -113,7 +113,7 @@ function MaterialEditContent() {
   const [baseVersion] = useState(current?.version);
   const [form, setForm] = useState({ name: current?.name ?? '', categoryId: current?.categoryId ?? '', spec: current?.spec ?? '', enabled: current?.enabled ?? true, remark: current?.remark ?? '' });
   const [error, setError] = useState('');
-  const admin = capabilities?.nodeRole!=='site' && (capabilities?.permissionCodes.includes('weighing:master:write') ?? false);
+  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
   const back = `/weighing/materials${params.toString() ? `?${params}` : ''}`;
   if (id && !current) return <PageHeader title="物料不存在" actions={<Link to={back}>返回资料列表</Link>} />;
   return <>
@@ -144,7 +144,7 @@ function PartyEditContent() {
   const [baseVersion] = useState(current?.version);
   const [form, setForm] = useState({ name: current?.name ?? '', shortName: current?.shortName ?? '', nature: current?.nature ?? 'enterprise' as PartyNature, roles: current?.roles ?? ['supplier'] as PartyKind[], phone: current?.phone ?? '', address: current?.address ?? '', creditCode: current?.creditCode ?? '', enabled: current?.enabled ?? true, remark: current?.remark ?? '', contacts: current?.contacts ?? [] });
   const [error, setError] = useState('');
-  const admin = capabilities?.nodeRole!=='site' && (capabilities?.permissionCodes.includes('weighing:master:write') ?? false);
+  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
   const back = `/weighing/parties${params.toString() ? `?${params}` : ''}`;
   if (id && !current) return <PageHeader title="往来主体不存在" actions={<Link to={back}>返回资料列表</Link>} />;
   return <>
@@ -177,7 +177,7 @@ function PartyEditContent() {
 
 function CategoriesContent() {
   const { data, dispatch, capabilities, saving } = useWeighingMasterStore();
-  const admin = capabilities?.nodeRole!=='site' && (capabilities?.permissionCodes.includes('weighing:master:write') ?? false);
+  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
   const [editing, setEditing] = useState<{ id?: string; name: string; enabled: boolean; version?: number } | null>(null);
   const [deleting, setDeleting] = useState<MaterialCategory | null>(null);
   const [error, setError] = useState('');

@@ -29,13 +29,57 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   return (contentType.includes('text/') ? await response.text() : await response.json()) as T;
 }
 
+export type SerialSettings = { port: string; baud: number };
+export type PrintSettings = {
+  queue: string;
+  formLengthMm: number;
+  printWidthMm: number;
+  printScale: number;
+  offsetXmm: number;
+  offsetYmm: number;
+};
+export type DeviceSettings = { serial: SerialSettings; print: PrintSettings };
+export type EffectiveConfig = {
+  configVersion: number;
+  digest: string;
+  serial: SerialSettings;
+  print: PrintSettings;
+  appliedAt?: string;
+  running: boolean;
+  deviceState: string;
+  serialState?: string;
+  printerState?: string;
+};
+export type BackupRecord = {
+  id: number;
+  configVersion: number;
+  digest: string;
+  settings: DeviceSettings;
+  appliedAt: string;
+  source: string;
+  restoredFromId?: number;
+  receivedAt?: string;
+};
+export type CupsQueue = { name: string; state: string; description?: string; isDefault: boolean };
+export type CupsQueuesResult = { queues: CupsQueue[]; at?: string; code?: string; error?: string };
+export type ApplyResult = {
+  status: 'applied' | 'rejected' | 'unknown' | 'rolled_back' | 'rollback_failed';
+  code?: string;
+  message?: string;
+  configVersion: number;
+  digest: string;
+  appliedAt?: string;
+  effective?: EffectiveConfig;
+};
+
 export type MaintenanceConfig = {
   config: Record<string, unknown>;
   active: Record<string, unknown>;
+  effective?: EffectiveConfig;
+  backup?: BackupRecord;
+  liveBackup?: Record<string, unknown>;
+  capabilities?: Record<string, boolean>;
   saved?: boolean;
-  hasAgentKey?: boolean;
-  hasActiveAgentKey?: boolean;
-  keyChanged?: boolean;
   environmentKnown?: boolean;
   environmentError?: string;
   runtimeState?: string;
@@ -46,14 +90,16 @@ export type MaintenanceConfig = {
 export const agentMaintenanceApi = {
   status: () => request<Record<string, unknown>>('/status'),
   config: () => request<MaintenanceConfig>('/config'),
-  saveConfig: (config: Record<string, unknown>) => request<unknown>('/config', { method: 'PUT', body: JSON.stringify(config) }),
-  importConfig: (connection: unknown, confirm = false) => request<Record<string, unknown>>('/config/import', { method: 'POST', body: JSON.stringify({ connection, confirm }) }),
+  apply: (settings: DeviceSettings, baseVersion: number) => request<ApplyResult>('/apply', {
+    method: 'POST', body: JSON.stringify({ baseVersion, settings }),
+  }),
+  restore: (backupId: number, baseVersion: number) => request<ApplyResult>('/restore', {
+    method: 'POST', body: JSON.stringify({ backupId, baseVersion }),
+  }),
+  queues: () => request<CupsQueuesResult>('/queues'),
   jobs: () => request<{ jobs?: { id: string; queue: string; title?: string }[]; unknown?: boolean; previewToken?: string; queuesOutput?: string }>('/jobs'),
   logs: () => request<string>('/logs'),
   audit: (query: URLSearchParams) => request<{ records: Record<string, unknown>[]; total: number; offset: number }>(`/audit?${query}`),
   action: (body: Record<string, unknown>) => request<{ output?: string; needsDisposition?: boolean; previewToken?: string; jobs?: { id: string; queue: string; title?: string }[]; unknown?: boolean }>('/action', { method: 'POST', body: JSON.stringify(body) }),
-  testCamera: () => request<CameraTestResult>('/test-camera', { method: 'POST', body: '{}' }),
   testPrint: () => request<{ message?: string }>('/test-print', { method: 'POST', body: '{}' }),
 };
-
-export type CameraTestResult = { at: string; views: { view: string; success: boolean; error?: string; jpeg?: string }[] };

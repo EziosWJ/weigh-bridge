@@ -68,8 +68,7 @@ func (s *Service) captureBlockedReasonWithPolicy(scale int64, required bool) str
 	if paused {
 		return "设备维护中，暂停采集和确认"
 	}
-	if required && s.cameraAvailable != nil && !s.cameraAvailable(scale) {
-		return "摄像头已停用或当前配置尚未核实，请检查设备维护"
-	}
+	// Server-owned cameras are validated by the frozen capture plan. The old
+	// Agent camera availability callback must not block a Server capture.
 	return ""
 }

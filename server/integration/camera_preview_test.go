@@ -18,10 +18,6 @@ func TestPostgresCameraPreviewUsesExistingReadPermissionsAndSiteScope(t *testing
 	database := openTemporaryDatabase(t, temporary.dsn)
 	defer database.Close()
 	deps := testDependencies(t, database, t.TempDir())
-	var scale struct{ ID, SiteID int64 }
-	if err := database.GORM.Table("wb_scale").Select("id,site_id").Where("code=?", "SCALE01").Take(&scale).Error; err != nil {
-		t.Fatal(err)
-	}
 	maintenance, err := agentmaintenance.OpenWithDraft(t.TempDir(), &maintenanceIntegrationRunner{}, agentprinter.Defaults())
 	if err != nil {
 		t.Fatal(err)
@@ -33,6 +29,11 @@ func TestPostgresCameraPreviewUsesExistingReadPermissionsAndSiteScope(t *testing
 		t.Fatal(err)
 	}
 	token := loginAdmin(t, router)
+	ensureLocalSite(t, router, token, 1)
+	var scale struct{ ID, SiteID int64 }
+	if err := database.GORM.Table("wb_scale").Select("id,site_id").Where("site_id=?", 1).Take(&scale).Error; err != nil {
+		t.Fatal(err)
+	}
 	path := fmt.Sprintf("/api/weighing/scales/%d/camera-preview", scale.ID)
 	req := serveJSON(router, http.MethodGet, path, "", token)
 	if req.Code != 200 {

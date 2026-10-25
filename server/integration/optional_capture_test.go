@@ -19,14 +19,27 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
 	deps := testDependencies(t, db, t.TempDir())
-	hub := agentbridge.New(agentbridge.Config{ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key", ImageDir: t.TempDir()})
-	deps.Weighing = weighing.NewService(weighing.NewRepository(db.GORM), hub)
+	repository := weighing.NewRepository(db.GORM)
+	imageDir := t.TempDir()
+	hub := agentbridge.NewMultiple(nil)
+	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
+		return repository.AgentConfig(ctx, id, imageDir)
+	})
+	deps.Weighing = weighing.NewService(repository, hub)
+	cameraService, frames, _ := newCaptureService(t, db, t.TempDir())
+	deps.Camera = cameraService
 	router, err := app.Build(testAPIConfig(), db, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	token := loginAdmin(t, router)
-	device := startWeighingAgent(t, router, hub)
+	testLocalSetup(t, db, router, token, 1)
+	addCaptureCameras(t, db, "rtsp://camera/optional-1", "rtsp://camera/optional-2")
+	deviceConfig, err := repository.AgentConfig(context.Background(), 1, imageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := startWeighingAgentWithConfig(t, router, hub, deviceConfig)
 	encode := func(v any) string {
 		b, e := json.Marshal(v)
 		if e != nil {
@@ -64,7 +77,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 	party := weighingData[weighing.Party](t, router, "POST", "/api/weighing/parties", `{"name":"无图供收方","nature":"enterprise","roles":["supplier","customer"]}`, token)
 	checks := map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}
 	for index, direction := range []string{"inbound", "outbound"} {
-		device.controlAction(`{"action":"camera-disabled"}`)
+		frames.failAll(true)
 		firstWeight, secondWeight := "30", "10"
 		if direction == "outbound" {
 			firstWeight, secondWeight = "10", "30"
@@ -81,7 +94,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 			t.Fatal("toggle did not apply immediately")
 		}
 		sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
-		assertCaptureEvidence(t, sample.Evidence, false, "disabled", 0)
+		assertCaptureEvidence(t, sample.Evidence, false, "capture_failed", 0)
 		firstBody := map[string]any{"scaleId": 1, "clientId": "optional-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": fmt.Sprintf("optional-stale-%d", index), "checks": checks}
 		// A false -> true -> false cycle must invalidate the old sample as well.
 		toggle(true)
@@ -95,13 +108,13 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		}
 		// A mixed-policy trip reuses its confirmed no-image first basis.
 		if direction == "outbound" {
-			device.controlAction(`{"action":"camera-ready"}`)
+			frames.failAll(false)
 			toggle(true)
 		}
 		device.weight(secondWeight)
 		sampleBody["taskId"] = first.TaskID
 		secondSample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
-		status, count := "disabled", 0
+		status, count := "capture_failed", 0
 		if direction == "outbound" {
 			status, count = "complete", 2
 		}
@@ -113,7 +126,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		if ticket.Mode != "normal" || ticket.FinalNet != 20000 || len(ticket.Basis) != 2 {
 			t.Fatalf("formal ticket=%+v", ticket)
 		}
-		assertCaptureEvidence(t, ticket.Basis[0].Evidence, false, "disabled", 0)
+		assertCaptureEvidence(t, ticket.Basis[0].Evidence, false, "capture_failed", 0)
 		toggle(true)
 		replay := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/first-confirmation", encode(firstBody), token)
 		if replay.RecordID != first.RecordID {
@@ -128,7 +141,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/print-attempts/"+itoa(reprint.PrintAttemptID)+"/result", fmt.Sprintf(`{"requestId":"optional-reprinted-%d","status":"printed","reason":"软件测试核实"}`, index), token)
 		void := weighingData[weighing.CommandResult](t, router, "POST", ticketPath+"/void", fmt.Sprintf(`{"requestId":"optional-void-%d","reason":"软件测试重称"}`, index), token)
 		toggle(false)
-		device.controlAction(`{"action":"camera-failure"}`)
+		frames.failAll(true)
 		sampleBody["targetRecordId"] = second.RecordID
 		replacement := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
 		assertCaptureEvidence(t, replacement.Evidence, false, "capture_failed", 0)

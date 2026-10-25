@@ -94,7 +94,8 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 			resultErr = p.ErrKicked
 		}
 	}()
-	server, id, key, scaleID, queue := cfg.ServerURL, cfg.AgentID, cfg.AgentKey, cfg.ScaleID, cfg.Queue
+	server, queue := cfg.ServerURL, cfg.Queue
+	scaleID, agentID := cfg.ScaleID, cfg.AgentID
 	digest := agentprinter.ConfigDigest(cfg)
 	u, err := url.Parse(server)
 	if err != nil {
@@ -113,9 +114,17 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 	if err != nil {
 		return err
 	}
-	wsConfig.Header.Set("Authorization", "Bearer "+key)
-	wsConfig.Header.Set("X-Agent-ID", id)
-	wsConfig.Header.Set("X-Scale-ID", strconv.FormatInt(scaleID, 10))
+	// Optional legacy diagnostics only. A keyless Agent sends no identity
+	// headers at all; the Server resolves the local site in agent.hello.ack.
+	if cfg.AgentKey != "" {
+		wsConfig.Header.Set("Authorization", "Bearer "+cfg.AgentKey)
+	}
+	if cfg.AgentID != "" {
+		wsConfig.Header.Set("X-Agent-ID", cfg.AgentID)
+	}
+	if cfg.ScaleID > 0 {
+		wsConfig.Header.Set("X-Scale-ID", strconv.FormatInt(cfg.ScaleID, 10))
+	}
 	dial, cancel := context.WithTimeout(ctx, 5*time.Second)
 	conn, err := wsConfig.DialContext(dial)
 	cancel()
@@ -123,6 +132,25 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 		return err
 	}
 	defer conn.Close()
+	ack, err := helloHandshake(conn)
+	if err != nil {
+		return err
+	}
+	if ack.ScaleID > 0 {
+		scaleID = ack.ScaleID
+		cfg.ScaleID = ack.ScaleID
+	}
+	if ack.AgentID != "" {
+		agentID = ack.AgentID
+		cfg.AgentID = ack.AgentID
+	}
+	if !containsString(ack.Capabilities, p.CapabilityMeasurementWindow) {
+		slog.Warn("Server 未接受测量窗口能力，正式采集将不可用", "scale", scaleID)
+	}
+	if monitor, err := activeMonitor(control, scale); err == nil {
+		monitor.InvalidateMeasurements("connection_changed")
+		defer monitor.InvalidateMeasurements("connection_changed")
+	}
 	writeAgentStatus(statusPath, true, digest)
 	defer writeAgentStatus(statusPath, false, digest)
 	conn.MaxPayloadBytes = 128 << 10
@@ -135,7 +163,7 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 		case <-done:
 		}
 	}()
-	slog.Info("printer Agent connected", "queue", queue, "scale", scaleID, "serial", cfg.SerialEnabled)
+	slog.Info("printer Agent connected", "queue", queue, "scale", scaleID, "agent", agentID, "serial", cfg.SerialPort)
 	var writes sync.Mutex
 	sendMessage := func(message p.Message) error {
 		writes.Lock()
@@ -143,9 +171,56 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
 		return websocket.JSON.Send(conn, message)
 	}
+	sendVersion := func(version int, kind string, payload any) error {
+		return sendMessage(p.NewVersion(version, kind, fmt.Sprintf("printer-%d", time.Now().UnixNano()), "", payload))
+	}
 	send := func(kind string, payload any) error {
-		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		return sendMessage(p.New(kind, fmt.Sprintf("printer-%d", time.Now().UnixNano()), "", payload))
+		return sendVersion(p.LegacyProtocolVersion, kind, payload)
+	}
+	sendRequest := func(version int, kind, request string, payload any) error {
+		return sendMessage(p.NewVersion(version, kind, fmt.Sprintf("printer-%d", time.Now().UnixNano()), request, payload))
+	}
+	sendMaintenance := func() error {
+		if control == nil {
+			return nil
+		}
+		state := control.report()
+		state.Config.ScaleID = scaleID
+		state.Config.AgentID = agentID
+		return send("maintenance.state", state)
+	}
+	// Effective configuration and the last success backup are unsolicited
+	// reports. Server persists them; they never make the candidate an applied
+	// fact until the device reload was verified locally.
+	sendConfigState := func() error {
+		if control == nil {
+			return nil
+		}
+		return sendVersion(p.ProtocolVersion, p.TypeAgentConfigState, control.maintenance.EffectiveConfig())
+	}
+	sendConfigBackup := func() error {
+		if control == nil {
+			return nil
+		}
+		backup, ok := control.maintenance.ConfigBackup()
+		if !ok {
+			return nil
+		}
+		return sendVersion(p.ProtocolVersion, p.TypeAgentConfigBackup, backup)
+	}
+	sendInvalidations := func(monitor *agentscale.Monitor) {
+		for _, invalidation := range monitor.InvalidatedMeasurements(time.Now()) {
+			err := sendVersion(p.ProtocolVersion, p.TypeMeasurementInvalidated, p.MeasurementInvalidated{
+				Generation: invalidation.Generation,
+				Reason:     invalidation.Reason,
+				State:      measuredState(invalidation.Snapshot),
+				At:         invalidation.At.UTC(),
+			})
+			if err != nil {
+				cancelRun(err)
+				return
+			}
+		}
 	}
 	sendState := func() error {
 		if control != nil {
@@ -157,7 +232,13 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 		return err
 	}
 	if control != nil {
-		if err = send("maintenance.state", control.report()); err != nil {
+		if err = sendMaintenance(); err != nil {
+			return err
+		}
+		if err = sendConfigState(); err != nil {
+			return err
+		}
+		if err = sendConfigBackup(); err != nil {
 			return err
 		}
 	}
@@ -213,18 +294,24 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 			if err := sendState(); err != nil {
 				return err
 			}
+			if monitor, err := activeMonitor(control, scale); err == nil {
+				sendInvalidations(monitor)
+			}
 		case <-stateTicker.C:
 			if control == nil {
 				writeAgentStatus(statusPath, true, digest)
 			} else {
 				current, _, _ := control.snapshot()
 				writeAgentStatus(statusPath, true, agentprinter.ConfigDigest(current))
-				if err := send("maintenance.state", control.report()); err != nil {
+				if err := sendMaintenance(); err != nil {
 					return err
 				}
 			}
 			if err := sendState(); err != nil {
 				return err
+			}
+			if monitor, err := activeMonitor(control, scale); err == nil {
+				sendInvalidations(monitor)
 			}
 		case <-heartbeatTicker.C:
 			if err := send("heartbeat", struct{}{}); err != nil {
@@ -242,7 +329,7 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 				}
 				go func(id string, in p.MaintenanceRequest) {
 					result := control.maintenance.DeviceRequest(ctx, in)
-					if err := send("maintenance.state", control.report()); err != nil {
+					if err := sendMaintenance(); err != nil {
 						cancelRun(err)
 						return
 					}
@@ -296,6 +383,124 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 						return err
 					}
 				}
+			case p.TypeMeasurementBeginRequest:
+				var request p.MeasurementBeginRequest
+				if err := json.Unmarshal(m.Payload, &request); err != nil {
+					if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementBeginResult, m.RequestID, p.MeasurementBeginResult{Accepted: false, Code: p.ErrorInvalidPayload, Message: "测量开始参数无效"}); err != nil {
+						return err
+					}
+					continue
+				}
+				result := beginMeasurement(control, scale, request)
+				if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementBeginResult, m.RequestID, result); err != nil {
+					return err
+				}
+			case p.TypeMeasurementEndRequest:
+				var request p.MeasurementEndRequest
+				if err := json.Unmarshal(m.Payload, &request); err != nil {
+					if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementEndResult, m.RequestID, p.MeasurementEndResult{Verified: false, Code: p.ErrorInvalidPayload, Message: "测量结束参数无效", EndedAt: time.Now().UTC()}); err != nil {
+						return err
+					}
+					continue
+				}
+				result := endMeasurement(control, scale, request)
+				if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementEndResult, m.RequestID, result); err != nil {
+					return err
+				}
+			case p.TypeMeasurementCancelRequest:
+				var request p.MeasurementCancelRequest
+				if err := json.Unmarshal(m.Payload, &request); err != nil {
+					if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementCancelResult, m.RequestID, p.MeasurementCancelResult{Cancelled: false, Code: p.ErrorInvalidPayload, Message: "测量取消参数无效"}); err != nil {
+						return err
+					}
+					continue
+				}
+				result := cancelMeasurement(control, scale, request)
+				if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementCancelResult, m.RequestID, result); err != nil {
+					return err
+				}
+			case p.TypeMeasurementVerifyRequest:
+				var request p.MeasurementVerifyRequest
+				if err := json.Unmarshal(m.Payload, &request); err != nil {
+					if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementVerifyResult, m.RequestID, p.MeasurementVerifyResult{Valid: false, Code: p.ErrorInvalidPayload, Message: "测量核实参数无效", CheckedAt: time.Now().UTC()}); err != nil {
+						return err
+					}
+					continue
+				}
+				result := verifyMeasurement(control, scale, request)
+				if err := sendRequest(p.ProtocolVersion, p.TypeMeasurementVerifyResult, m.RequestID, result); err != nil {
+					return err
+				}
+			case p.TypeAgentConfigApplyRequest:
+				var request p.ConfigApplyRequest
+				if json.Unmarshal(m.Payload, &request) != nil {
+					if err := sendRequest(p.ProtocolVersion, p.TypeAgentConfigApplyResult, m.RequestID, p.ConfigApplyResult{Status: p.ConfigApplyRejected, Code: p.ErrorInvalidPayload, Message: "配置应用参数无效"}); err != nil {
+						return err
+					}
+					continue
+				}
+				go func(requestID string, request p.ConfigApplyRequest) {
+					result := p.ConfigApplyResult{Status: p.ConfigApplyRejected, Code: p.ErrorDeviceUnavailable, Message: "设备维护未启用"}
+					if control != nil {
+						result = control.maintenance.ApplySettings(ctx, request)
+					}
+					if err := sendRequest(p.ProtocolVersion, p.TypeAgentConfigApplyResult, requestID, result); err != nil {
+						cancelRun(err)
+						return
+					}
+					if result.Status == p.ConfigApplyApplied {
+						if err := sendState(); err != nil {
+							cancelRun(err)
+							return
+						}
+						if err := sendConfigState(); err != nil {
+							cancelRun(err)
+							return
+						}
+						if err := sendConfigBackup(); err != nil {
+							cancelRun(err)
+						}
+					}
+				}(m.RequestID, request)
+			case p.TypeAgentConfigRestoreRequest:
+				var request p.ConfigRestoreRequest
+				if json.Unmarshal(m.Payload, &request) != nil {
+					if err := sendRequest(p.ProtocolVersion, p.TypeAgentConfigRestoreResult, m.RequestID, p.ConfigApplyResult{Status: p.ConfigApplyRejected, Code: p.ErrorInvalidPayload, Message: "配置恢复参数无效"}); err != nil {
+						return err
+					}
+					continue
+				}
+				go func(requestID string, request p.ConfigRestoreRequest) {
+					result := p.ConfigApplyResult{Status: p.ConfigApplyRejected, Code: p.ErrorDeviceUnavailable, Message: "设备维护未启用"}
+					if control != nil {
+						result = control.maintenance.RestoreSettings(ctx, request)
+					}
+					if err := sendRequest(p.ProtocolVersion, p.TypeAgentConfigRestoreResult, requestID, result); err != nil {
+						cancelRun(err)
+						return
+					}
+					if result.Status == p.ConfigApplyApplied {
+						if err := sendState(); err != nil {
+							cancelRun(err)
+							return
+						}
+						if err := sendConfigState(); err != nil {
+							cancelRun(err)
+							return
+						}
+						if err := sendConfigBackup(); err != nil {
+							cancelRun(err)
+						}
+					}
+				}(m.RequestID, request)
+			case p.TypePrinterQueuesRequest:
+				result := p.CupsQueuesResult{At: time.Now().UTC(), Code: p.ErrorQueuesUnavailable, Error: "设备维护未启用"}
+				if control != nil {
+					result = control.maintenance.Queues()
+				}
+				if err := sendRequest(p.ProtocolVersion, p.TypePrinterQueuesResult, m.RequestID, result); err != nil {
+					return err
+				}
 			case "print.request":
 				var req agentprinter.Request
 				if err := json.Unmarshal(m.Payload, &req); err != nil {
@@ -329,10 +534,13 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 // reported as unavailable with weight zero, because the v1 payload cannot
 // carry a negative business weight.
 func currentDeviceState(scale *agentscale.Monitor, now time.Time) p.DeviceState {
-	s := scale.Snapshot(now)
-	if !s.Enabled {
-		return p.DeviceState{Unit: "t", DeviceOK: false, Error: "称重仪表未启用；仅打印可用"}
+	if scale == nil {
+		return p.DeviceState{Unit: "t", DeviceOK: false, Error: "称重仪表尚未配置"}
 	}
+	return deviceStateFromSnapshot(scale.Snapshot(now))
+}
+
+func deviceStateFromSnapshot(s agentscale.Snapshot) p.DeviceState {
 	if !s.DeviceOK {
 		reason := s.Fault
 		if reason == "" {
@@ -341,6 +549,171 @@ func currentDeviceState(scale *agentscale.Monitor, now time.Time) p.DeviceState 
 		return p.DeviceState{Unit: "t", DeviceOK: false, Stable: false, Error: reason}
 	}
 	return p.DeviceState{Weight: p.Weight(s.WeightMilliTonnes), Unit: "t", Stable: s.Stable, DeviceOK: true}
+}
+
+func measuredState(s agentscale.Snapshot) p.MeasuredState {
+	return p.MeasuredState{DeviceState: deviceStateFromSnapshot(s), At: s.LastValidAt.UTC()}
+}
+
+func activeMonitor(control *deviceRuntime, fallback *agentscale.Monitor) (*agentscale.Monitor, error) {
+	if control == nil {
+		if fallback == nil {
+			return nil, agentscale.ErrMeasurementUnavailable
+		}
+		return fallback, nil
+	}
+	return control.measurementScale()
+}
+
+func beginMeasurement(control *deviceRuntime, fallback *agentscale.Monitor, request p.MeasurementBeginRequest) p.MeasurementBeginResult {
+	if request.CaptureID == "" || len(request.CaptureID) > 80 || len(request.CapturePolicyRevision) > 80 || request.CameraConfigVersion < 0 {
+		return p.MeasurementBeginResult{Accepted: false, Code: p.ErrorInvalidPayload, Message: "测量开始参数无效"}
+	}
+	monitor, err := activeMonitor(control, fallback)
+	if err != nil {
+		return p.MeasurementBeginResult{Accepted: false, Code: p.ErrorDeviceUnavailable, Message: err.Error()}
+	}
+	measurement, err := monitor.BeginMeasurement(time.Now())
+	result := p.MeasurementBeginResult{State: measuredState(measurement.Snapshot)}
+	if err != nil {
+		result.Code, result.Message = measurementErrorCode(err), err.Error()
+		return result
+	}
+	result.Accepted, result.Generation = true, measurement.Generation
+	return result
+}
+
+func endMeasurement(control *deviceRuntime, fallback *agentscale.Monitor, request p.MeasurementEndRequest) p.MeasurementEndResult {
+	now := time.Now()
+	result := p.MeasurementEndResult{Generation: request.Generation, EndedAt: now.UTC()}
+	monitor, err := activeMonitor(control, fallback)
+	if err != nil {
+		result.Code, result.Message = p.ErrorDeviceUnavailable, err.Error()
+		return result
+	}
+	measurement, err := monitor.EndMeasurement(request.Generation, now)
+	result.State = measuredState(measurement.Snapshot)
+	if !measurement.EndedAt.IsZero() {
+		result.EndedAt = measurement.EndedAt.UTC()
+	}
+	if err != nil {
+		result.Code, result.Message = measurementErrorCode(err), err.Error()
+		return result
+	}
+	result.Verified = true
+	return result
+}
+
+func cancelMeasurement(control *deviceRuntime, fallback *agentscale.Monitor, request p.MeasurementCancelRequest) p.MeasurementCancelResult {
+	result := p.MeasurementCancelResult{Generation: request.Generation}
+	monitor, err := activeMonitor(control, fallback)
+	if err != nil {
+		result.Code, result.Message = p.ErrorDeviceUnavailable, err.Error()
+		return result
+	}
+	if err := monitor.CancelMeasurement(request.Generation); err != nil {
+		result.Code, result.Message = measurementErrorCode(err), err.Error()
+		return result
+	}
+	result.Cancelled = true
+	return result
+}
+
+func verifyMeasurement(control *deviceRuntime, fallback *agentscale.Monitor, request p.MeasurementVerifyRequest) p.MeasurementVerifyResult {
+	now := time.Now()
+	result := p.MeasurementVerifyResult{Generation: request.Generation, CheckedAt: now.UTC()}
+	monitor, err := activeMonitor(control, fallback)
+	if err != nil {
+		result.Code, result.Message = p.ErrorDeviceUnavailable, err.Error()
+		return result
+	}
+	measurement, err := monitor.VerifyMeasurement(request.Generation, now)
+	result.State = measuredState(measurement.Snapshot)
+	if err != nil {
+		result.Code, result.Message = measurementErrorCode(err), err.Error()
+		return result
+	}
+	result.Valid = true
+	return result
+}
+
+func measurementErrorCode(err error) string {
+	switch {
+	case errors.Is(err, agentscale.ErrMeasurementUnstable):
+		return p.ErrorDeviceUnstable
+	case errors.Is(err, agentscale.ErrMeasurementStale):
+		return p.ErrorDeviceStale
+	case errors.Is(err, agentscale.ErrMeasurementFault):
+		return p.ErrorDeviceFault
+	case errors.Is(err, agentscale.ErrMeasurementWeightChanged):
+		return p.ErrorWeightChanged
+	case errors.Is(err, agentscale.ErrMeasurementSuperseded):
+		return p.ErrorGenerationSuperseded
+	case errors.Is(err, agentscale.ErrMeasurementGenerationInvalid):
+		return p.ErrorGenerationInvalid
+	case errors.Is(err, agentscale.ErrMeasurementUnavailable):
+		return p.ErrorDeviceUnavailable
+	default:
+		return p.ErrorDeviceUnavailable
+	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+// helloHandshake performs the revision 2 keyless admission handshake. A
+// rejection (uninitialized site, missing scale, conflict or unsupported
+// protocol) is surfaced with its actual reason for logging and retry.
+func helloHandshake(conn *websocket.Conn) (p.HelloAck, error) {
+	var ack p.HelloAck
+	hostname, _ := os.Hostname()
+	request := fmt.Sprintf("hello-%d", time.Now().UnixNano())
+	message := p.NewVersion(p.ProtocolVersion, p.TypeHello, "hello-"+request, request, p.Hello{
+		ProtocolVersion: p.ProtocolVersion,
+		AgentVersion:    "agent-printer",
+		Hostname:        hostname,
+		Capabilities: []string{
+			p.CapabilityMeasurementWindow, p.CapabilityEffectiveConfig,
+			p.CapabilityCupsQueues, p.CapabilityParameterBackup,
+		},
+	})
+	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	if err := websocket.JSON.Send(conn, message); err != nil {
+		return ack, err
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	for {
+		var reply p.Message
+		if err := websocket.JSON.Receive(conn, &reply); err != nil {
+			return ack, fmt.Errorf("等待 Agent 接入确认失败：%w", err)
+		}
+		switch reply.Type {
+		case p.TypeHelloAck:
+			if reply.RequestID != "" && reply.RequestID != request {
+				continue
+			}
+			if err := json.Unmarshal(reply.Payload, &ack); err != nil {
+				return ack, errors.New("Agent 接入确认格式无效")
+			}
+			if ack.ProtocolVersion != p.ProtocolVersion {
+				return ack, fmt.Errorf("Agent 协议版本不受支持：%d", ack.ProtocolVersion)
+			}
+			return ack, nil
+		case "error":
+			var refusal p.Error
+			_ = json.Unmarshal(reply.Payload, &refusal)
+			if refusal.Message == "" {
+				refusal.Message = "Server 拒绝了设备接入"
+			}
+			return ack, fmt.Errorf("Agent 接入失败（%s）：%s", refusal.Code, refusal.Message)
+		}
+	}
 }
 
 func captureFailure(scale *agentscale.Monitor, now time.Time) p.Capture {
@@ -440,6 +813,13 @@ func handlePrint(ctx context.Context, cfg agentprinter.Config, state, queue, pau
 			return
 		case <-time.After(100 * time.Millisecond):
 		}
+	}
+	if queue == "" {
+		// A keyless first installation may not have a CUPS queue yet. Do not
+		// reserve an attempt or invoke lp with an empty destination; the Server
+		// keeps the physical result unknown for the existing verification flow.
+		slog.Error("print queue not configured; print not submitted", "attempt", req.AttemptID)
+		return
 	}
 	jobCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

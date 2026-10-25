@@ -157,12 +157,8 @@
       $('frame').textContent = s.lastFrame || '—';
       $('frame-type').textContent = s.framesSent ? (s.lastFrameBad ? '错误校验帧' : '正常校验帧') : '尚未发送报文';
       $('config').textContent = [
-        'WEIGHBRIDGE_SERIAL_ENABLED=true',
         `WEIGHBRIDGE_SERIAL_PORT="${s.port}"`,
-        'WEIGHBRIDGE_SERIAL_BAUD=9600',
-        'WEIGHBRIDGE_SERIAL_PROTOCOL="keli-d12-tf05"',
-        'WEIGHBRIDGE_SERIAL_WEIGHT_UNIT="t"',
-        'WEIGHBRIDGE_SERIAL_STALE_MS=1000'
+        'WEIGHBRIDGE_SERIAL_BAUD=9600'
       ].join('\n');
       $('write-error').textContent = s.writeError ? '串口发送失败：' + s.writeError : '';
       updateButtons();

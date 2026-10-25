@@ -26,15 +26,9 @@ type SummaryLine struct {
 	Net          Tonnes `json:"net" swaggertype:"string"`
 }
 type Summary struct {
-	Freshness []SiteFreshness `json:"freshness,omitempty"`
-	Rows      []SummaryLine   `json:"rows"`
-	TaskCount int64           `json:"taskCount"`
-	Gross     Tonnes          `json:"gross" swaggertype:"string"`
-	Tare      Tonnes          `json:"tare" swaggertype:"string"`
-	Net       Tonnes          `json:"net" swaggertype:"string"`
-}
-
-type SiteFreshness struct {
-	SiteID      int64  `json:"siteId"`
-	LastSuccess string `json:"lastSuccess"`
+	Rows      []SummaryLine `json:"rows"`
+	TaskCount int64         `json:"taskCount"`
+	Gross     Tonnes        `json:"gross" swaggertype:"string"`
+	Tare      Tonnes        `json:"tare" swaggertype:"string"`
+	Net       Tonnes        `json:"net" swaggertype:"string"`
 }

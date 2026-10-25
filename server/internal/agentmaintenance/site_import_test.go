@@ -54,8 +54,16 @@ func TestSiteConfigurationImportPreviewsAndPreservesLocalPrinting(t *testing.T) 
 		t.Fatal(err)
 	}
 	env, err = agentprinter.ReadEnvironment(filepath.Join(dir, "agent.env"), Defaults())
-	if err != nil || env != s.draft {
-		t.Fatalf("site metadata did not round trip: %+v %v", env, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Connection identity round-trips; display metadata is intentionally not
+	// written to agent.env any more.
+	if env.ServerURL != s.draft.ServerURL || env.AgentID != s.draft.AgentID || env.AgentKey != s.draft.AgentKey || env.ScaleID != s.draft.ScaleID || env.Queue != s.draft.Queue {
+		t.Fatalf("connection identity did not round trip: %+v", env)
+	}
+	if env.SiteName != "" || env.ScaleName != "" || env.SiteCode != "" || env.ScaleCode != "" || env.SiteID != 0 {
+		t.Fatalf("display metadata must not be written to agent.env: %+v", env)
 	}
 	audit, err := os.ReadFile(filepath.Join(dir, "maintenance.jsonl"))
 	if err != nil {

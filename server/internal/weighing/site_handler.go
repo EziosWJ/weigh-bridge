@@ -57,11 +57,8 @@ func (h *Handler) siteScope(c *gin.Context) {
 	}
 	scope := siteScope{Read: []int64{}, Operate: []int64{}}
 	for _, s := range sites {
-		if (h.service.node.Role == "site" || h.service.node.Role == "standalone") && s.ID != h.service.node.SiteID {
-			continue
-		}
 		scope.Read = append(scope.Read, s.ID)
-		if s.CanOperate && s.Enabled == 1 && h.service.node.Role != "central" {
+		if s.CanOperate && s.Enabled == 1 {
 			scope.Operate = append(scope.Operate, s.ID)
 		}
 	}
@@ -69,8 +66,25 @@ func (h *Handler) siteScope(c *gin.Context) {
 	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	fail := func(err error) { writeResult(c, nil, err); c.Abort() }
 	path := strings.TrimPrefix(c.FullPath(), "/api/weighing/")
-	if strings.HasPrefix(path, "temporary-parties") || strings.HasPrefix(path, "configuration/") || strings.HasPrefix(path, "site-config") || strings.HasPrefix(path, "agent-settings") || strings.HasPrefix(path, "users/") || path == "site-options" || strings.HasPrefix(path, "material") || strings.HasPrefix(path, "parties") {
+	if strings.HasPrefix(path, "site-config") || strings.HasPrefix(path, "agent-settings") || strings.HasPrefix(path, "users/") || path == "site-options" {
 		c.Next()
+		return
+	}
+	status, statusErr := h.service.LocalStatus(c)
+	if statusErr != nil {
+		fail(statusErr)
+		return
+	}
+	if strings.HasPrefix(path, "material") || strings.HasPrefix(path, "parties") {
+		if c.Request.Method != http.MethodGet && !status.Configured {
+			fail(ErrForbidden)
+			return
+		}
+		c.Next()
+		return
+	}
+	if c.Request.Method != http.MethodGet && !status.Initialized {
+		fail(ErrForbidden)
 		return
 	}
 	write := c.Request.Method != http.MethodGet

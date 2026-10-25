@@ -52,6 +52,9 @@ import { useListPage } from "@/hooks/use-list-page";
 import { getErrorMessage, isApiError } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
+import { weighingApi } from "@/api/weighing";
+import { useAuthStore } from "@/store/auth-store";
+import { LocalSiteConfiguration } from "./local-site-configuration";
 import type {
   ApiStatus,
   DataTableColumn,
@@ -83,6 +86,7 @@ const DEFAULT_FILTERS: FilterState = {
 
 const LOG_CLEAR_ENABLED_KEY = "system.log-clear-enabled";
 const CAPTURE_REQUIRED_KEY = "weighing.capture-required";
+const TICKET_TITLE_KEY = "weighing.ticket-title";
 
 const statusMeta: Record<ApiStatus, { label: string; tone: "success" | "neutral" }> = {
   1: { label: "启用", tone: "success" },
@@ -159,8 +163,11 @@ function isBuiltinConfig(config: SystemConfigRecord) {
 }
 
 function isEditableBuiltinConfig(config: SystemConfigRecord) {
+  if (!isBuiltinConfig(config)) return false;
+  if (config.configKey === TICKET_TITLE_KEY) {
+    return config.valueType === "TEXT";
+  }
   return (
-    isBuiltinConfig(config) &&
     [LOG_CLEAR_ENABLED_KEY, CAPTURE_REQUIRED_KEY].includes(config.configKey ?? "") &&
     config.valueType === "BOOLEAN"
   );
@@ -249,6 +256,45 @@ export function SystemConfigsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [permissionCodes, setPermissionCodes] = useState<string[] | null>(null);
+  const isAdmin =
+    useAuthStore((state) =>
+      state.user?.roles?.some((role) => role.roleCode === "ADMIN"),
+    ) ?? false;
+
+  useEffect(() => {
+    let active = true;
+    void weighingApi
+      .capabilities()
+      .then((capabilities) => {
+        if (active) setPermissionCodes(capabilities.permissionCodes);
+      })
+      .catch(() => {
+        // Keep the administrator entry usable if the business capability
+        // endpoint is temporarily unavailable; the backend still authorizes
+        // every write.
+        if (active) setPermissionCodes([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const canViewLocalSite =
+    permissionCodes === null
+      ? isAdmin
+      : permissionCodes.some(
+          (code) =>
+            code === "weighing:site:manage" || code === "weighing:site:export",
+        );
+  const canManageLocalSite =
+    permissionCodes === null
+      ? isAdmin
+      : permissionCodes.includes("weighing:site:manage");
+  const canManageSystemConfig =
+    permissionCodes === null
+      ? isAdmin
+      : permissionCodes.includes("system:config");
 
   const form = useForm<ConfigFormValues>({
     resolver: zodResolver(configFormSchema),
@@ -602,8 +648,19 @@ export function SystemConfigsPage() {
             <Button
               size="sm"
               variant="ghost"
-              disabled={record.configKey === CAPTURE_REQUIRED_KEY}
-              title={record.configKey === CAPTURE_REQUIRED_KEY ? "请通过编辑布尔值切换强制抓拍" : builtin ? "内置配置允许修改启停状态" : undefined}
+              disabled={
+                record.configKey === CAPTURE_REQUIRED_KEY ||
+                record.configKey === TICKET_TITLE_KEY
+              }
+              title={
+                record.configKey === CAPTURE_REQUIRED_KEY
+                  ? "请通过编辑布尔值切换强制抓拍"
+                  : record.configKey === TICKET_TITLE_KEY
+                    ? "单据标题始终启用，请直接编辑配置值"
+                    : builtin
+                      ? "内置配置允许修改启停状态"
+                      : undefined
+              }
               onClick={() =>
                 setConfirmAction({
                   type: "status",
@@ -635,15 +692,23 @@ export function SystemConfigsPage() {
     <>
       <PageHeader
         title="配置管理"
-        description=""
+        description="本厂资料、单据标题与系统参数统一在此维护。"
         actions={
-          <Button variant="primary" onClick={openCreateForm}>
-            <Plus className="h-4 w-4" aria-hidden />
-            新增配置
-          </Button>
+          canManageSystemConfig ? (
+            <Button variant="primary" onClick={openCreateForm}>
+              <Plus className="h-4 w-4" aria-hidden />
+              新增配置
+            </Button>
+          ) : undefined
         }
       />
 
+      {canViewLocalSite && (
+        <LocalSiteConfiguration canManage={canManageLocalSite} />
+      )}
+
+      {canManageSystemConfig ? (
+        <>
       <SearchFilterBar
         actions={
           <>
@@ -789,6 +854,17 @@ export function SystemConfigsPage() {
           loading={confirmLoading}
           onConfirm={runConfirmAction}
           onCancel={() => setConfirmAction(null)}
+        />
+      )}
+        </>
+      ) : canViewLocalSite ? (
+        <p role="status" className="mt-space-4 text-sm text-text-tertiary">
+          当前账号仅可维护本厂配置；通用系统配置需要系统配置权限。
+        </p>
+      ) : (
+        <EmptyState
+          title="无权访问配置管理"
+          description="请联系管理员分配本厂配置或系统配置权限。"
         />
       )}
     </>
@@ -981,7 +1057,11 @@ function ConfigFormDialog({
           {mode === "edit" && editingConfig?.isBuiltin === 1 && (
             <div className="mt-space-4 rounded-admin border border-border bg-neutral-background px-space-4 py-space-3 text-sm text-text-secondary">
               {builtinValueOnly
-                ? editingConfig.configKey === CAPTURE_REQUIRED_KEY ? "开启后须完成车前车后抓拍及上传；关闭后允许无图确认称重，缺少图片追溯依据。保存后生效，未确认采样须重新采集。" : "内置开关仅允许修改布尔值。"
+                ? editingConfig.configKey === CAPTURE_REQUIRED_KEY
+                  ? "开启后须完成本次指定摄像头抓拍及上传；关闭后允许无图确认称重，缺少图片追溯依据。保存后生效，未确认采样须重新采集。"
+                  : editingConfig.configKey === TICKET_TITLE_KEY
+                    ? "标题用于此后生成的正式过磅单；历史单据沿用升级基准或自身标题快照，不随本次修改重写。"
+                    : "内置开关仅允许修改布尔值。"
                 : "内置配置由系统维护，不允许编辑或删除。"}
             </div>
           )}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/EziosWJ/weighbridge/server/internal/app"
@@ -15,15 +16,20 @@ import (
 
 func TestPostgresNotificationUpgradePreservesHistory(t *testing.T) {
 	temporary := startPostgres(t)
-	runMigrations(t, projectRoot(t), temporary.dsn)
 	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
+	ctx := context.Background()
+	schema := filepath.Join(projectRoot(t), "migrations/schema")
+	seed := filepath.Join(projectRoot(t), "migrations/seed")
 	goose.SetTableName("goose_schema_db_version")
-	directory := filepath.Join(projectRoot(t), "migrations/schema")
-	if err := goose.DownToContext(context.Background(), db.SQL, directory, 7); err != nil {
+	if err := goose.UpToContext(ctx, db.SQL, schema, 16); err != nil {
+		t.Fatal(err)
+	}
+	goose.SetTableName("goose_seed_db_version")
+	if err := goose.UpToContext(ctx, db.SQL, seed, 12); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.GORM.Exec(`INSERT INTO sys_notification (id,title,content,source_type,publish_time,create_time) VALUES (1,'升级前消息','保留正文','MANUAL',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)`).Error; err != nil {
@@ -32,12 +38,29 @@ func TestPostgresNotificationUpgradePreservesHistory(t *testing.T) {
 	if err := db.GORM.Exec(`INSERT INTO sys_notification_recipient (notification_id,user_id,is_read,read_time) VALUES (1,1,1,CURRENT_TIMESTAMP)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.UpContext(context.Background(), db.SQL, directory); err != nil {
+	if err := db.GORM.Exec(`SELECT setval(pg_get_serial_sequence('sys_notification','id'), (SELECT MAX(id) FROM sys_notification), true)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.GORM.Exec("SELECT setval(pg_get_serial_sequence('sys_notification', 'id'), 1)").Error; err != nil {
+	goose.SetTableName("goose_schema_db_version")
+	if err := goose.UpContext(ctx, db.SQL, schema); err != nil {
 		t.Fatal(err)
 	}
+	goose.SetTableName("goose_seed_db_version")
+	if err := goose.UpContext(ctx, db.SQL, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	// Version 17 deliberately refuses an in-place rollback. Confirm the
+	// refusal leaves the upgrade and notification history intact.
+	goose.SetTableName("goose_schema_db_version")
+	if err := goose.DownToContext(ctx, db.SQL, schema, 7); err == nil || !strings.Contains(err.Error(), "restoring the previous database backup") {
+		t.Fatalf("schema 17 rollback should require restoring the previous database backup, got %v", err)
+	}
+	var schemaVersion int64
+	if err := db.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&schemaVersion).Error; err != nil || schemaVersion != 17 {
+		t.Fatalf("schema version after refused rollback=%d err=%v", schemaVersion, err)
+	}
+
 	deps := testDependencies(t, db, t.TempDir())
 	defer deps.Notification.Close()
 	router, err := app.Build(testAPIConfig(), db, deps)

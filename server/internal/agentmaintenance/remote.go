@@ -23,11 +23,17 @@ type Remote struct {
 	hub     *agentbridge.Hub
 	resolve func(context.Context) (Config, error)
 	guard   func(context.Context) (func(), error)
+	store   ConfigStore
 }
 
 func NewRemote(hub *agentbridge.Hub, resolve func(context.Context) (Config, error), guard func(context.Context) (func(), error)) *Remote {
-	return &Remote{hub, resolve, guard}
+	return &Remote{hub: hub, resolve: resolve, guard: guard}
 }
+
+// SetStore attaches the PostgreSQL persistence used for effective configuration
+// and success backups. Without a store the page can still apply, but read-only
+// restore points and offline display are unavailable.
+func (r *Remote) SetStore(store ConfigStore) { r.store = store }
 func (r *Remote) CameraConfig() (Config, error) {
 	cfg, err := r.resolve(context.Background())
 	if err != nil {
@@ -55,7 +61,7 @@ func (r *Remote) CameraAvailable(scale int64) bool {
 func (r *Remote) RegisterBusinessRoutes(group *gin.RouterGroup, a auth.Authenticator, permissions rbac.PermissionChecker, recorder audit.Recorder) {
 	routes := group.Group("/agent-maintenance", auth.BearerMiddleware(a))
 	for _, entry := range []struct{ method, path string }{
-		{"GET", "/status"}, {"GET", "/jobs"}, {"GET", "/config"}, {"PUT", "/config"}, {"POST", "/config/import"}, {"POST", "/action"}, {"POST", "/test-print"}, {"POST", "/test-camera"}, {"GET", "/logs"}, {"GET", "/audit"},
+		{"GET", "/status"}, {"GET", "/jobs"}, {"GET", "/config"}, {"PUT", "/config"}, {"POST", "/config/import"}, {"POST", "/action"}, {"POST", "/test-print"}, {"GET", "/logs"}, {"GET", "/audit"},
 	} {
 		permission := PermissionView
 		if entry.method != "GET" {
@@ -63,6 +69,9 @@ func (r *Remote) RegisterBusinessRoutes(group *gin.RouterGroup, a auth.Authentic
 		}
 		routes.Handle(entry.method, entry.path, rbac.RequireAnyPermission(permissions, permission, PermissionManage), r.forward(recorder))
 	}
+	routes.POST("/apply", rbac.RequireAnyPermission(permissions, PermissionManage), r.applyConfig(recorder))
+	routes.POST("/restore", rbac.RequireAnyPermission(permissions, PermissionManage), r.restoreConfig(recorder))
+	routes.GET("/queues", rbac.RequireAnyPermission(permissions, PermissionView, PermissionManage), r.queues)
 	routes.GET("/camera-preview", rbac.RequireAnyPermission(permissions, PermissionView, PermissionManage), func(c *gin.Context) {
 		cfg, err := r.CameraConfig()
 		c.Header("Cache-Control", "no-store")
@@ -123,6 +132,9 @@ func (r *Remote) forward(recorder audit.Recorder) gin.HandlerFunc {
 			return
 		}
 		c.Header("Cache-Control", "no-store")
+		if c.Request.Method == "GET" && path == "/config" && result.Status < 400 && len(result.JSON) > 0 {
+			result.JSON = r.decorateConfig(c.Request.Context(), cfg.ScaleID, result.JSON)
+		}
 		if path == "/status" && len(result.JSON) > 0 {
 			var state map[string]any
 			if json.Unmarshal(result.JSON, &state) == nil {

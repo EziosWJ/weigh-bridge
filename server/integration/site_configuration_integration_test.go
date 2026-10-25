@@ -5,11 +5,8 @@ package integration
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os/exec"
-	"strings"
 	"testing"
 	"time"
 
@@ -17,141 +14,128 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/agentconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/agentmock"
 	"github.com/EziosWJ/weighbridge/server/internal/app"
-	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 func TestPostgresSiteConfiguration(t *testing.T) {
-	if _, err := exec.LookPath("docker"); err != nil {
-		t.Fatal("Docker is required for PostgreSQL integration tests")
-	}
 	temporary := startBusinessPostgres(t)
 	db := openTemporaryDatabase(t, temporary.dsn)
-	defer db.Close()
-	checkSiteConfiguration(t, db, testDependencies(t, db, t.TempDir()))
-}
-func checkSiteConfiguration(t *testing.T, db *platformdatabase.Database, deps app.Dependencies) {
-	ctx := context.Background()
+	t.Cleanup(func() { _ = db.Close() })
+	deps := testDependencies(t, db, t.TempDir())
+	t.Cleanup(deps.Notification.Close)
 	repo := weighing.NewRepository(db.GORM)
-	images := t.TempDir()
-	initial := []agentbridge.Config{{ID: "existing-agent", ScaleID: 1, Key: "existing-key", ImageDir: images}}
-	if err := repo.ImportAgentBindings(ctx, initial); err != nil {
-		t.Fatal(err)
-	}
-	if err := repo.ImportAgentBindings(ctx, []agentbridge.Config{{ID: "must-not-replace", ScaleID: 1, Key: "different"}}); err != nil {
-		t.Fatal(err)
-	}
-	bindings, err := repo.AgentConfigs(ctx, images)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hub := agentbridge.NewMultiple(bindings)
-	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
-		return repo.AgentConfig(ctx, id, images)
+	imageDir := t.TempDir()
+	hub := agentbridge.NewMultiple(nil)
+	// ADR 0030 production admission is keyless: the Server resolves the local
+	// site's sole scale and does not require the retired connection secret.
+	hub.SetLocalResolver(func(ctx context.Context) (agentbridge.Config, error) {
+		return repo.LocalAgentConfig(ctx, imageDir)
 	})
 	deps.Weighing = weighing.NewService(repo, hub)
 	router, err := app.Build(testAPIConfig(), db, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewServer(router)
-	defer server.Close()
 	admin := loginAdmin(t, router)
+	ensureLocalSite(t, router, admin, 1, "LOCAL01", "本厂", "SCALE01", "一号地磅", "existing-agent")
+
+	// The legacy export route no longer borrows a database address: callers must
+	// supply the address the Agent host can reach.
+	assertEnvelopeCode(t, serveJSON(router, http.MethodGet, "/api/weighing/site-config/1/connection", "", admin), http.StatusOK, http.StatusBadRequest, "请显式提供 Agent 主机可访问的业务服务地址")
+	const exportPath = "/api/weighing/site-config/1/connection?serverUrl=http%3A%2F%2F127.0.0.1%3A18900"
+	connection := weighingData[agentconfig.Connection](t, router, "GET", exportPath, "", admin)
+	again := weighingData[agentconfig.Connection](t, router, "GET", exportPath, "", admin)
+	if connection != again || connection.SiteID != 1 || connection.ScaleID != 1 || connection.AgentID != "agent-01" || connection.AgentKey != "" || connection.ServerURL != "http://127.0.0.1:18900" {
+		t.Fatalf("local connection export was unstable or leaked a legacy key: first=%+v second=%+v", connection, again)
+	}
+	if err := connection.ValidateEndpoint(); err != nil {
+		t.Fatal(err)
+	}
+
+	configs := weighingData[[]weighing.SiteConfiguration](t, router, http.MethodGet, "/api/weighing/site-config", "", admin)
+	if len(configs) != 1 || configs[0].ID != 1 {
+		t.Fatalf("single local configuration = %+v", configs)
+	}
+	input := weighing.SiteConfigurationInput{
+		ServerURL: configs[0].ServerURL, Code: configs[0].Code, Name: configs[0].Name,
+		ScaleCode: configs[0].ScaleCode, ScaleName: configs[0].ScaleName, AgentID: configs[0].AgentID,
+		Enabled: configs[0].Enabled, Version: configs[0].Version,
+	}
 	encode := func(v any) string {
-		b, err := json.Marshal(v)
+		t.Helper()
+		body, err := json.Marshal(v)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return string(b)
+		return string(body)
 	}
-	call := func(method, path string, body any) *httptest.ResponseRecorder {
-		s := ""
-		if body != nil {
-			s = encode(body)
+	for field, change := range map[string]func(*weighing.SiteConfigurationInput){
+		"factory code": func(v *weighing.SiteConfigurationInput) { v.Code = "FOREIGN" },
+		"scale code":   func(v *weighing.SiteConfigurationInput) { v.ScaleCode = "FOREIGN-SCALE" },
+		"agent ID":     func(v *weighing.SiteConfigurationInput) { v.AgentID = "foreign-agent" },
+	} {
+		candidate := input
+		change(&candidate)
+		response := serveJSON(router, http.MethodPut, "/api/weighing/site-config/1", encode(candidate), admin)
+		if response.Code != http.StatusOK || envelopeCode(t, response) != http.StatusBadRequest {
+			t.Errorf("changing fixed %s returned status=%d envelope=%d body=%s", field, response.Code, envelopeCode(t, response), response.Body.String())
 		}
-		return serveJSON(router, method, path, s, admin)
 	}
-	assertEnvelopeCode(t, call("PUT", "/api/weighing/agent-settings", map[string]string{"serverUrl": server.URL}), 200, 200, "success")
-	old := weighingData[agentconfig.Connection](t, router, "GET", "/api/weighing/site-config/1/connection", "", admin)
-	if old.AgentID != "existing-agent" || old.AgentKey != "existing-key" {
-		t.Fatal("legacy identity was replaced")
+	input.Name = "本厂改名"
+	updated := weighingData[weighing.SiteConfiguration](t, router, http.MethodPut, "/api/weighing/site-config/1", encode(input), admin)
+	if updated.Name != "本厂改名" {
+		t.Fatalf("editable local name was not saved: %+v", updated)
 	}
-	input := weighing.SiteConfigurationInput{Code: "SITE03", Name: "三厂", ScaleCode: "SCALE03", ScaleName: "三厂地磅", AgentID: "site-agent-3", Enabled: 1}
-	created := weighingData[weighing.SiteConfiguration](t, router, "POST", "/api/weighing/site-config", encode(input), admin)
-	if created.ID <= 2 || created.ScaleID <= 2 {
-		t.Fatalf("bad allocation %+v", created)
+
+	// A local installation cannot add a second factory or write another
+	// factory's configuration through legacy multi-site routes.
+	additional := weighing.SiteConfigurationInput{Code: "OTHER", Name: "他厂", ScaleCode: "OTHER-SCALE", ScaleName: "他磅", AgentID: "other-agent", Enabled: 1}
+	added := serveJSON(router, http.MethodPost, "/api/weighing/site-config", encode(additional), admin)
+	if added.Code == http.StatusOK && envelopeCode(t, added) == http.StatusOK {
+		t.Fatal("local installation created a second factory")
 	}
-	path := fmt.Sprintf("/api/weighing/site-config/%d", created.ID)
-	connection := weighingData[agentconfig.Connection](t, router, "GET", path+"/connection", "", admin)
-	again := weighingData[agentconfig.Connection](t, router, "GET", path+"/connection", "", admin)
-	if connection != again || connection.SiteID != created.ID || connection.ScaleID != created.ScaleID || connection.AgentKey == "" {
-		t.Fatal("configuration is not stable or is misbound")
+	cross := serveJSON(router, http.MethodPut, "/api/weighing/site-config/2", encode(additional), admin)
+	if cross.Code == http.StatusOK && envelopeCode(t, cross) == http.StatusOK {
+		t.Fatal("local installation changed a foreign factory")
 	}
-	if err := connection.Validate(); err != nil {
-		t.Fatal(err)
+	var sites, scales, bindings int64
+	for table, count := range map[string]*int64{"wb_site": &sites, "wb_scale": &scales, "wb_agent_binding": &bindings} {
+		if err := db.GORM.Table(table).Count(count).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
-	input.Version = created.Version
-	input.AgentID = "existing-agent"
-	assertEnvelopeCode(t, call("PUT", path, input), 200, 400, "厂区、地磅及已有 Agent 编号不可修改，请保留原身份")
-	input.AgentID = created.AgentID
-	// Database-managed additions connect to the already-running Hub.
-	mockCtx, cancel := context.WithCancel(ctx)
+	if sites != 1 || scales != 1 || bindings != 1 {
+		t.Fatalf("legacy multi-site request changed local identity: sites=%d scales=%d bindings=%d", sites, scales, bindings)
+	}
+
+	// The existing Agent binding remains active without an API restart.
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	mockCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: connection.AgentID, ScaleID: connection.ScaleID, Key: connection.AgentKey})
+	control := httptest.NewServer(mock.Handler())
+	t.Cleanup(control.Close)
 	go func() { defer close(done); mock.Run(mockCtx) }()
-	defer func() {
+	t.Cleanup(func() {
 		cancel()
 		select {
 		case <-done:
 		case <-time.After(12 * time.Second):
-			t.Error("mock did not exit")
+			t.Error("mock Agent failed to stop")
 		}
-	}()
+	})
 	deadline := time.Now().Add(6 * time.Second)
-	for !hub.Connected(connection.ScaleID) && time.Now().Before(deadline) {
+	for !hub.Connected(1) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !hub.Connected(connection.ScaleID) {
-		t.Fatal("newly configured Agent could not connect without restart")
+	if !hub.Connected(1) {
+		t.Fatal("local Agent binding did not connect")
 	}
 	input.Enabled = 0
-	assertEnvelopeCode(t, call("PUT", path, input), 200, 400, "不能停用：Agent 尚未离线")
-	// Ordinary downloads remain available while the Agent is connected.
-	again = weighingData[agentconfig.Connection](t, router, "GET", path+"/connection", "", admin)
-	if again != connection {
-		t.Fatal("online export changed configuration")
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(12 * time.Second):
-		t.Fatal("mock did not stop")
-	}
-	deadline = time.Now().Add(3 * time.Second)
-	for hub.Connected(connection.ScaleID) && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	disabled := weighingData[weighing.SiteConfiguration](t, router, "PUT", path, encode(input), admin)
-	request, _ := http.NewRequest("GET", server.URL+"/api/agent/ws", nil)
-	request.Header.Set("Authorization", "Bearer "+connection.AgentKey)
-	request.Header.Set("X-Agent-ID", connection.AgentID)
-	request.Header.Set("X-Scale-ID", fmt.Sprint(connection.ScaleID))
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response.Body.Close()
-	if response.StatusCode != 401 {
-		t.Fatal("disabled site accepted Agent")
-	}
-	input.Enabled = 1
-	input.Version = disabled.Version
-	weighingData[weighing.SiteConfiguration](t, router, "PUT", path, encode(input), admin)
-	if _, err := repo.AgentConfig(ctx, connection.ScaleID, images); err != nil {
-		t.Fatal("reenabled mapping unavailable")
-	}
-	listing := call("GET", "/api/weighing/site-config", nil)
-	if strings.Contains(listing.Body.String(), connection.AgentKey) {
-		t.Fatal("ordinary list exposes connection key")
+	input.Version = updated.Version
+	disabled := serveJSON(router, http.MethodPut, "/api/weighing/site-config/1", encode(input), admin)
+	if disabled.Code != http.StatusOK || envelopeCode(t, disabled) != http.StatusBadRequest {
+		t.Fatalf("online Agent should block disabling the local scale: %d %s", disabled.Code, disabled.Body.String())
 	}
 }

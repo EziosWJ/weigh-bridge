@@ -29,11 +29,10 @@ const rows = Array.from({length: 12}, (_, index) => ({
 }));
 const materials = rows.map(row => ({id: row.id, version: 1, enabled: 1, name: '酿酒高粱', code: `GL${row.id}`, categoryId: 1, spec: '一级原粮', remark: '按约定规格验收入库，保留完整备注。'}));
 const parties = rows.map(row => ({id: row.id, version: 1, enabled: 1, name: '四川省粮食供应有限公司', code: `PARTY${row.id}`, shortName: '粮食供应', nature: 'enterprise', roles: ['supplier', 'carrier'], phone: '13800138000', contacts: [{id: 1, name: '张师傅', isDefault: 1}], address: '四川省宜宾市翠屏区产业园区粮食仓储中心一号仓库', remark: 'LONG_REFERENCE_WITHOUT_SPACES_'.repeat(3)}));
-const sites = rows.map(row => ({id: row.id, code: `SITE${row.id}`, name: `第${row.id}厂区`, enabled: 1, version: 1, scaleId: row.id, scaleName: '一号地磅', scaleCode: `SCALE${row.id}`, agentId: 'scale-agent-printer-01'}));
 const pageResult = records => ({records, total: records.length, page: 1, pageSize: 10});
 const pages = [
   ['tasks', '运输任务列表', 9], ['originals', '原始称重列表', 8], ['tickets', '最终单据列表', 8],
-  ['materials', '物料列表', 7], ['parties', '往来主体列表', 7], ['site-config', '厂区配置列表', 5],
+  ['materials', '物料列表', 7], ['parties', '往来主体列表', 7],
   ['categories', '物料分类列表', 3],
 ];
 
@@ -61,7 +60,6 @@ try {
     else if (path.endsWith('/parties')) data = pageResult(parties);
     else if (path.endsWith('/tasks') || path.endsWith('/originals')) data = pageResult(rows.slice(0, 10));
     else if (path.endsWith('/tickets')) data = pageResult(rows.slice(0, 10).map(row => ({...row, status: 'valid'})));
-    else if (path.endsWith('/site-config')) data = sites;
     else if (path.endsWith('/agent-settings')) data = {serverUrl: 'http://192.168.1.100:8900'};
     await route.fulfill({json: {code: 200, message: 'ok', data}});
   });
@@ -73,6 +71,7 @@ try {
     await page.setViewportSize(viewport);
     for (const [path, label, count] of pages) {
       await page.goto(`${base}/weighing/${path}`);
+      assert.equal(await page.getByLabel('筛选厂区', {exact: true}).count(), 0, 'local lists have no cross-site filter');
       const region = page.getByRole('region', {name: label, exact: true});
       await region.locator('tbody tr').first().waitFor();
       assert.equal(await region.locator('thead th').count(), count, `${path}: all columns retained`);
@@ -122,7 +121,7 @@ try {
     }
   }
   assert.deepEqual(errors, []);
-  console.log('PASS: seven business lists at 1366×768 / 1280×720 / 1024×768 / 390px; all columns, fixed edges, sticky headers, unclipped long text, visible pagination, keyboard scrolling');
+  console.log('PASS: six business lists at 1366×768 / 1280×720 / 1024×768 / 390px; all columns, fixed edges, sticky headers, unclipped long text, visible pagination, keyboard scrolling');
 } finally {
   clearTimeout(deadline);
   await browser?.close();

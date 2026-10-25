@@ -18,50 +18,99 @@ import (
 var ErrUnavailable = errors.New("Agent 离线、数据过期或设备未稳定，请重新采集")
 
 type Config struct {
-	ID       string
-	ScaleID  int64
+	// ID is an internal diagnostics identity. It is not a pairing credential.
+	ID      string
+	SiteID  int64
+	ScaleID int64
+	// Key is the retired v1 connection secret. It is read only by the legacy
+	// keyed route so an old binary can still be diagnosed during the upgrade
+	// window; keyless admission ignores it.
 	Key      string
 	ImageDir string
 }
 type State struct {
 	ConnectionID string `json:"connectionId"`
 	p.DeviceState
-	AgentID    string    `json:"agentId"`
-	ScaleID    int64     `json:"scaleId"`
-	Online     bool      `json:"online"`
-	Revision   int64     `json:"revision,string"`
-	ReceivedAt time.Time `json:"receivedAt"`
-	Plate      p.Plate   `json:"plate"`
-	Images     []p.Image `json:"images"`
+	AgentID         string    `json:"agentId"`
+	ScaleID         int64     `json:"scaleId"`
+	Online          bool      `json:"online"`
+	Revision        int64     `json:"revision,string"`
+	ReceivedAt      time.Time `json:"receivedAt"`
+	Plate           p.Plate   `json:"plate"`
+	Images          []p.Image `json:"images"`
+	ProtocolVersion int       `json:"protocolVersion"`
+	AgentVersion    string    `json:"agentVersion,omitempty"`
+	Hostname        string    `json:"hostname,omitempty"`
+	Capabilities    []string  `json:"capabilities"`
 }
 type connection struct {
-	id      string
-	kicking bool
-	kickID  string
-	kickAck chan struct{}
-	ws      *websocket.Conn
-	writes  sync.Mutex
-	seen    time.Time
-	pending map[string]chan p.Message
-	prints  map[string]int64
+	id           string
+	kicking      bool
+	kickID       string
+	kickAck      chan struct{}
+	ws           *websocket.Conn
+	writes       sync.Mutex
+	seen         time.Time
+	pending      map[string]chan p.Message
+	prints       map[string]int64
+	protocol     int
+	capabilities map[string]bool
+	hello        *p.Hello
 }
 type Hub struct {
 	children    map[int64]*Hub
 	gate        sync.RWMutex
 	parent      *Hub
 	resolver    func(context.Context, int64) (Config, error)
+	local       func(context.Context) (Config, error)
 	mu          sync.Mutex
 	cfg         Config
 	conn        *connection
 	state       State
 	printResult func(context.Context, int64, p.PrintResult) error
+	configState func(context.Context, int64, *p.EffectiveConfig, *p.ConfigBackup)
 	maintenance *MaintenanceState
+	effective   *p.EffectiveConfig
+	backup      *p.ConfigBackup
+	invalidated *p.MeasurementInvalidated
 }
 
 func New(cfg Config) *Hub {
-	return &Hub{cfg: cfg, state: State{AgentID: cfg.ID, ScaleID: cfg.ScaleID, Revision: time.Now().UnixNano(), Images: []p.Image{}}}
+	return &Hub{cfg: cfg, state: State{AgentID: cfg.ID, ScaleID: cfg.ScaleID, Revision: time.Now().UnixNano(), Images: []p.Image{}, ProtocolVersion: p.LegacyProtocolVersion, Capabilities: []string{}}}
 }
 func ID() string { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
+
+// SetConfigStateHandler receives every Agent-reported effective configuration
+// and success backup. It is invoked asynchronously so a slow database write
+// never blocks the device read loop or delays measurement messages.
+func (h *Hub) SetConfigStateHandler(fn func(context.Context, int64, *p.EffectiveConfig, *p.ConfigBackup)) {
+	if h.children != nil {
+		h.mu.Lock()
+		h.configState = fn
+		children := make([]*Hub, 0, len(h.children))
+		for _, child := range h.children {
+			children = append(children, child)
+		}
+		h.mu.Unlock()
+		for _, child := range children {
+			child.SetConfigStateHandler(fn)
+		}
+		return
+	}
+	h.mu.Lock()
+	h.configState = fn
+	h.mu.Unlock()
+}
+
+func (h *Hub) publishConfig(effective *p.EffectiveConfig, backup *p.ConfigBackup) {
+	fn := h.configState
+	if fn == nil {
+		return
+	}
+	scale := h.cfg.ScaleID
+	go fn(context.Background(), scale, effective, backup)
+}
+
 func (h *Hub) SetPrintHandler(fn func(context.Context, int64, p.PrintResult) error) {
 	if h.children != nil {
 		h.mu.Lock()
@@ -100,6 +149,7 @@ func (h *Hub) State(scale int64) State {
 	s := h.state
 	s.Online = scale == h.cfg.ScaleID && h.freshLocked()
 	s.Images = append([]p.Image{}, s.Images...)
+	s.Capabilities = append([]string{}, s.Capabilities...)
 	if !s.Online {
 		s.Stable = false
 	}
@@ -121,6 +171,7 @@ func (h *Hub) Guard(scale, revision int64) (State, func(), error) {
 	}
 	s := h.state
 	s.Images = append([]p.Image{}, s.Images...)
+	s.Capabilities = append([]string{}, s.Capabilities...)
 	return s, h.mu.Unlock, nil
 }
 func (h *Hub) disconnect(c *connection) {
@@ -163,18 +214,21 @@ func (h *Hub) Serve(ws *websocket.Conn) {
 	h.serve(ws, func() {})
 }
 func (h *Hub) serve(ws *websocket.Conn, admitted func()) {
-	c := &connection{id: ID(), ws: ws, seen: time.Now(), pending: map[string]chan p.Message{}, prints: map[string]int64{}}
+	c := &connection{id: ID(), ws: ws, seen: time.Now(), pending: map[string]chan p.Message{}, prints: map[string]int64{}, protocol: p.LegacyProtocolVersion, capabilities: map[string]bool{}}
 	h.mu.Lock()
 	if h.conn != nil {
 		h.mu.Unlock()
 		admitted()
-		_ = c.send(p.New("error", ID(), "", map[string]string{"code": "agent_conflict", "message": "该地磅已有 Agent 在线，请先在后台踢出或停止原进程"}))
+		_ = c.send(p.New("error", ID(), "", p.Error{Code: p.ErrorAgentConflict, Message: "该地磅已有 Agent 在线，请先在后台踢出或停止原进程"}))
 		_ = ws.Close()
 		return
 	}
 	h.conn = c
 	h.maintenance = nil
-	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}}
+	h.effective = nil
+	h.backup = nil
+	h.invalidated = nil
+	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}, ProtocolVersion: p.LegacyProtocolVersion, Capabilities: []string{}}
 	h.mu.Unlock()
 	admitted()
 	defer h.disconnect(c)
@@ -185,12 +239,12 @@ func (h *Hub) serve(ws *websocket.Conn, admitted func()) {
 		if err := websocket.JSON.Receive(ws, &m); err != nil {
 			return
 		}
-		if m.Version != 1 || m.MessageID == "" || len(m.MessageID) > 128 || m.OccurredAt.IsZero() {
-			_ = c.send(p.New("error", ID(), m.RequestID, map[string]string{"code": "invalid_message", "message": "无效协议版本、编号或时间"}))
+		if (m.Version != p.LegacyProtocolVersion && m.Version != p.ProtocolVersion) || m.MessageID == "" || len(m.MessageID) > 128 || m.OccurredAt.IsZero() {
+			_ = c.send(p.New("error", ID(), m.RequestID, p.Error{Code: p.ErrorInvalidMessage, Message: "无效协议版本、编号或时间"}))
 			continue
 		}
 		if err := h.receive(c, m); err != nil {
-			_ = c.send(p.New("error", ID(), m.RequestID, map[string]string{"code": "invalid_payload", "message": err.Error()}))
+			_ = c.send(p.New("error", ID(), m.RequestID, p.Error{Code: p.ErrorInvalidPayload, Message: err.Error()}))
 		}
 	}
 }
@@ -247,7 +301,7 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 		h.state.Images = images
 	case "maintenance.state":
 		var state MaintenanceState
-		if json.Unmarshal(m.Payload, &state) != nil || state.Config.ScaleID != h.cfg.ScaleID || state.Config.AgentID != h.cfg.ID {
+		if json.Unmarshal(m.Payload, &state) != nil || state.Config.ScaleID != h.cfg.ScaleID || (h.cfg.Key != "" && state.Config.AgentID != h.cfg.ID) {
 			return errors.New("invalid maintenance state")
 		}
 		state.Config.AgentKey = ""
@@ -256,11 +310,35 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 			h.state.Revision++
 		}
 		h.maintenance = &state
-	case "capture.result", "camera.test.result", "maintenance.result":
+	case p.TypeMeasurementBeginResult, p.TypeMeasurementEndResult, p.TypeMeasurementCancelResult, p.TypeMeasurementVerifyResult,
+		p.TypeAgentConfigApplyResult, p.TypeAgentConfigRestoreResult, p.TypePrinterQueuesResult,
+		"capture.result", "camera.test.result", "maintenance.result":
 		if ch, ok := c.pending[m.RequestID]; ok {
 			ch <- m
 			delete(c.pending, m.RequestID)
 		}
+	case p.TypeAgentConfigState:
+		var state p.EffectiveConfig
+		if json.Unmarshal(m.Payload, &state) != nil || state.ConfigVersion < 0 || len(state.Digest) > 64 || len(state.DeviceState) > 40 {
+			return errors.New("invalid effective config state")
+		}
+		h.effective = &state
+		h.publishConfig(&state, nil)
+	case p.TypeAgentConfigBackup:
+		var backup p.ConfigBackup
+		if json.Unmarshal(m.Payload, &backup) != nil || backup.ConfigVersion < 0 || len(backup.Digest) > 64 || backup.AppliedAt.IsZero() {
+			return errors.New("invalid config backup")
+		}
+		h.backup = &backup
+		h.publishConfig(nil, &backup)
+	case p.TypeMeasurementInvalidated:
+		var invalidated p.MeasurementInvalidated
+		if json.Unmarshal(m.Payload, &invalidated) != nil || invalidated.Generation == "" || len(invalidated.Reason) > 500 {
+			return errors.New("invalid measurement invalidation")
+		}
+		h.invalidated = &invalidated
+	case p.TypeHello:
+		return h.receiveHello(c, m)
 	case "print.result":
 		var result p.PrintResult
 		if err := json.Unmarshal(m.Payload, &result); err != nil {

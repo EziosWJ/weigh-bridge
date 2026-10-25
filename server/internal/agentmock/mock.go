@@ -36,6 +36,16 @@ type Print struct {
 	p.PrintRequest
 	Status string `json:"status"`
 }
+
+type mockMeasurement struct {
+	generation string
+	basis      uint64
+	weight     p.Weight
+	ended      bool
+	cancelled  bool
+	superseded bool
+	notified   bool
+}
 type Mock struct {
 	mu                       sync.Mutex
 	writes                   sync.Mutex
@@ -55,10 +65,15 @@ type Mock struct {
 	prints                   []Print
 	history                  []p.DeviceState
 	http                     *http.Client
+	measurementRun           string
+	measurementBasis         uint64
+	measurementSeq           uint64
+	measurementKey           string
+	measurements             map[string]*mockMeasurement
 }
 
 func New(cfg Config) *Mock {
-	m := &Mock{cfg: cfg, enabled: true, target: 30000, plate: p.Plate{Candidate: "晋A12345", At: time.Now().UTC()}, images: map[string][]byte{}, prints: []Print{}, history: []p.DeviceState{}, http: &http.Client{Timeout: 10 * time.Second}}
+	m := &Mock{cfg: cfg, enabled: true, target: 30000, plate: p.Plate{Candidate: "晋A12345", At: time.Now().UTC()}, images: map[string][]byte{}, prints: []Print{}, history: []p.DeviceState{}, http: &http.Client{Timeout: 10 * time.Second}, measurementRun: agentbridge.ID(), measurements: map[string]*mockMeasurement{}}
 	m.images["front"], _ = assets.ReadFile("assets/truck-front.png")
 	m.images["rear"], _ = assets.ReadFile("assets/truck-rear.png")
 	m.current = p.DeviceState{Unit: "t", DeviceOK: true}
@@ -122,14 +137,28 @@ func (m *Mock) dial(ctx context.Context) (*websocket.Conn, error) {
 	cfg.Header = m.headers()
 	return cfg.DialContext(ctx)
 }
+
+// headers returns only the optional legacy diagnostics. Keyless servers ignore
+// them; the v2 hello message is the authoritative capability handshake.
 func (m *Mock) headers() http.Header {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	h := http.Header{}
-	h.Set("Authorization", "Bearer "+m.cfg.Key)
-	h.Set("X-Agent-ID", m.cfg.ID)
-	h.Set("X-Scale-ID", strconv.FormatInt(m.cfg.ScaleID, 10))
+	if m.cfg.Key != "" {
+		h.Set("Authorization", "Bearer "+m.cfg.Key)
+	}
+	if m.cfg.ID != "" {
+		h.Set("X-Agent-ID", m.cfg.ID)
+	}
+	if m.cfg.ScaleID > 0 {
+		h.Set("X-Scale-ID", strconv.FormatInt(m.cfg.ScaleID, 10))
+	}
 	return h
 }
 func (m *Mock) send(kind, request string, payload any) error {
+	return m.sendVersion(p.LegacyProtocolVersion, kind, request, payload)
+}
+func (m *Mock) sendVersion(version int, kind, request string, payload any) error {
 	m.mu.Lock()
 	conn := m.conn
 	m.mu.Unlock()
@@ -139,7 +168,7 @@ func (m *Mock) send(kind, request string, payload any) error {
 	m.writes.Lock()
 	defer m.writes.Unlock()
 	_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	return websocket.JSON.Send(conn, p.New(kind, agentbridge.ID(), request, payload))
+	return websocket.JSON.Send(conn, p.NewVersion(version, kind, agentbridge.ID(), request, payload))
 }
 func (m *Mock) runConnection(ctx context.Context) {
 	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -156,6 +185,8 @@ func (m *Mock) runConnection(ctx context.Context) {
 	m.conn = conn
 	m.online = true
 	m.err = ""
+	// A new Server connection cannot reuse a previous capture basis.
+	m.invalidateMeasurementsLocked()
 	m.mu.Unlock()
 	defer func() {
 		_ = conn.Close()
@@ -164,6 +195,7 @@ func (m *Mock) runConnection(ctx context.Context) {
 			m.conn = nil
 			m.online = false
 		}
+		m.invalidateMeasurementsLocked()
 		m.mu.Unlock()
 	}()
 	done := make(chan struct{})
@@ -176,6 +208,13 @@ func (m *Mock) runConnection(ctx context.Context) {
 				return
 			}
 			switch msg.Type {
+			case p.TypeHelloAck:
+				var ack p.HelloAck
+				if json.Unmarshal(msg.Payload, &ack) == nil && ack.ScaleID > 0 {
+					m.mu.Lock()
+					m.cfg.ScaleID, m.cfg.ID = ack.ScaleID, ack.AgentID
+					m.mu.Unlock()
+				}
 			case "agent.kick":
 				_ = m.send("agent.kicked", msg.RequestID, struct{}{})
 				m.mu.Lock()
@@ -190,6 +229,26 @@ func (m *Mock) runConnection(ctx context.Context) {
 				var request p.CaptureRequest
 				if json.Unmarshal(msg.Payload, &request) == nil {
 					go m.captureWithPolicy(msg.RequestID, request.RequiresImages())
+				}
+			case p.TypeMeasurementBeginRequest:
+				var request p.MeasurementBeginRequest
+				if json.Unmarshal(msg.Payload, &request) == nil {
+					go m.beginMeasurement(msg.RequestID, request)
+				}
+			case p.TypeMeasurementEndRequest:
+				var request p.MeasurementEndRequest
+				if json.Unmarshal(msg.Payload, &request) == nil {
+					go m.endMeasurement(msg.RequestID, request)
+				}
+			case p.TypeMeasurementCancelRequest:
+				var request p.MeasurementCancelRequest
+				if json.Unmarshal(msg.Payload, &request) == nil {
+					go m.cancelMeasurement(msg.RequestID, request)
+				}
+			case p.TypeMeasurementVerifyRequest:
+				var request p.MeasurementVerifyRequest
+				if json.Unmarshal(msg.Payload, &request) == nil {
+					go m.verifyMeasurement(msg.RequestID, request)
 				}
 			case "print.request":
 				var value p.PrintRequest
@@ -213,6 +272,12 @@ func (m *Mock) runConnection(ctx context.Context) {
 			}
 		}
 	}()
+	_ = m.sendVersion(p.ProtocolVersion, p.TypeHello, "", p.Hello{
+		ProtocolVersion: p.ProtocolVersion,
+		AgentVersion:    "agent-mock",
+		Hostname:        "agent-mock",
+		Capabilities:    append([]string{}, p.FormalCaptureCapabilities...),
+	})
 	m.mu.Lock()
 	plate := m.plate
 	m.mu.Unlock()
@@ -237,6 +302,11 @@ func (m *Mock) runConnection(ctx context.Context) {
 			if err := m.send("device.state", "", state); err != nil {
 				return
 			}
+			for _, invalidation := range m.measurementInvalidations() {
+				if err := m.sendVersion(p.ProtocolVersion, p.TypeMeasurementInvalidated, "", invalidation); err != nil {
+					return
+				}
+			}
 			m.mu.Lock()
 			enabled := m.enabled
 			m.mu.Unlock()
@@ -249,6 +319,10 @@ func (m *Mock) runConnection(ctx context.Context) {
 func (m *Mock) tick() p.DeviceState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.tickLocked()
+}
+
+func (m *Mock) tickLocked() p.DeviceState {
 	weight := p.Weight(0)
 	stable := false
 	if m.onScale {
@@ -266,6 +340,11 @@ func (m *Mock) tick() p.DeviceState {
 	if m.fault {
 		m.current.Error = "模拟仪表故障"
 	}
+	key := fmt.Sprintf("%d|%t|%t|%s", m.current.Weight, m.current.Stable, m.current.DeviceOK, m.current.Error)
+	if m.measurementKey != "" && key != m.measurementKey {
+		m.measurementBasis++
+	}
+	m.measurementKey = key
 	m.history = append(m.history, m.current)
 	if len(m.history) > 40 {
 		m.history = m.history[len(m.history)-40:]
@@ -359,6 +438,172 @@ func (m *Mock) captureWithPolicy(request string, required bool) {
 	}
 	_ = m.send("capture.result", request, result)
 }
+func (m *Mock) invalidateMeasurementsLocked() {
+	m.measurementBasis++
+	for _, window := range m.measurements {
+		if !window.cancelled && !window.superseded {
+			window.superseded = true
+		}
+	}
+}
+
+func (m *Mock) measurementStateLocked() p.MeasuredState {
+	return p.MeasuredState{DeviceState: m.current, At: time.Now().UTC()}
+}
+
+func (m *Mock) beginMeasurement(requestID string, request p.MeasurementBeginRequest) {
+	if request.CaptureID == "" || len(request.CaptureID) > 80 || len(request.CapturePolicyRevision) > 80 || request.CameraConfigVersion < 0 {
+		_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementBeginResult, requestID, p.MeasurementBeginResult{Accepted: false, Code: p.ErrorInvalidPayload, Message: "测量开始参数无效"})
+		return
+	}
+	m.mu.Lock()
+	state := m.tickLocked()
+	if !state.DeviceOK {
+		m.mu.Unlock()
+		_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementBeginResult, requestID, p.MeasurementBeginResult{Accepted: false, Code: p.ErrorDeviceFault, Message: "设备故障"})
+		return
+	}
+	if !state.Stable {
+		m.mu.Unlock()
+		_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementBeginResult, requestID, p.MeasurementBeginResult{Accepted: false, Code: p.ErrorDeviceUnstable, Message: "设备未稳定"})
+		return
+	}
+	if state.Weight <= 0 {
+		m.mu.Unlock()
+		_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementBeginResult, requestID, p.MeasurementBeginResult{Accepted: false, Code: p.ErrorDeviceUnavailable, Message: "当前重量为零"})
+		return
+	}
+	for _, window := range m.measurements {
+		if !window.cancelled {
+			window.superseded = true
+		}
+	}
+	m.measurementSeq++
+	generation := fmt.Sprintf("%s-%d-%d", m.measurementRun, m.measurementBasis, m.measurementSeq)
+	m.measurements[generation] = &mockMeasurement{generation: generation, basis: m.measurementBasis, weight: state.Weight}
+	m.mu.Unlock()
+	_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementBeginResult, requestID, p.MeasurementBeginResult{Accepted: true, Generation: generation, State: p.MeasuredState{DeviceState: state, At: time.Now().UTC()}})
+}
+
+func (m *Mock) endMeasurement(requestID string, request p.MeasurementEndRequest) {
+	m.mu.Lock()
+	state := m.tickLocked()
+	window := m.measurements[request.Generation]
+	result := p.MeasurementEndResult{Generation: request.Generation, State: m.measurementStateLocked(), EndedAt: time.Now().UTC()}
+	switch {
+	case window == nil || window.cancelled:
+		result.Code = p.ErrorGenerationInvalid
+		result.Message = "测量代次无效"
+	case window.superseded:
+		result.Code = p.ErrorGenerationSuperseded
+		result.Message = "测量窗口已被替代"
+	case window.basis != m.measurementBasis:
+		if state.Weight != window.weight {
+			result.Code = p.ErrorWeightChanged
+		} else {
+			result.Code = p.ErrorGenerationInvalid
+		}
+		result.Message = "测量期间仪表状态发生变化"
+	case !state.DeviceOK:
+		result.Code = p.ErrorDeviceFault
+		result.Message = "设备故障"
+	case !state.Stable:
+		result.Code = p.ErrorDeviceUnstable
+		result.Message = "设备未稳定"
+	case state.Weight != window.weight:
+		result.Code = p.ErrorWeightChanged
+		result.Message = "重量发生变化"
+	default:
+		window.ended = true
+		result.Verified = true
+	}
+	m.mu.Unlock()
+	_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementEndResult, requestID, result)
+}
+
+func (m *Mock) verifyMeasurement(requestID string, request p.MeasurementVerifyRequest) {
+	m.mu.Lock()
+	state := m.tickLocked()
+	window := m.measurements[request.Generation]
+	result := p.MeasurementVerifyResult{Generation: request.Generation, State: m.measurementStateLocked(), CheckedAt: time.Now().UTC()}
+	switch {
+	case window == nil || !window.ended || window.cancelled:
+		result.Code = p.ErrorGenerationInvalid
+		result.Message = "测量代次无效或尚未结束"
+	case window.superseded:
+		result.Code = p.ErrorGenerationSuperseded
+		result.Message = "测量窗口已被替代"
+	case window.basis != m.measurementBasis:
+		if state.Weight != window.weight {
+			result.Code = p.ErrorWeightChanged
+		} else {
+			result.Code = p.ErrorGenerationInvalid
+		}
+		result.Message = "确认前仪表状态已变化"
+	case !state.DeviceOK:
+		result.Code = p.ErrorDeviceFault
+		result.Message = "设备故障"
+	case !state.Stable:
+		result.Code = p.ErrorDeviceUnstable
+		result.Message = "设备未稳定"
+	case state.Weight != window.weight:
+		result.Code = p.ErrorWeightChanged
+		result.Message = "重量发生变化"
+	default:
+		result.Valid = true
+	}
+	m.mu.Unlock()
+	_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementVerifyResult, requestID, result)
+}
+
+func (m *Mock) cancelMeasurement(requestID string, request p.MeasurementCancelRequest) {
+	m.mu.Lock()
+	window := m.measurements[request.Generation]
+	result := p.MeasurementCancelResult{Generation: request.Generation}
+	switch {
+	case window == nil:
+		result.Code = p.ErrorGenerationInvalid
+		result.Message = "测量代次无效"
+	case window.superseded:
+		result.Code = p.ErrorGenerationSuperseded
+		result.Message = "测量窗口已被替代"
+	default:
+		window.cancelled = true
+		result.Cancelled = true
+	}
+	m.mu.Unlock()
+	_ = m.sendVersion(p.ProtocolVersion, p.TypeMeasurementCancelResult, requestID, result)
+}
+
+func (m *Mock) measurementInvalidations() []p.MeasurementInvalidated {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	state := m.current
+	var out []p.MeasurementInvalidated
+	for _, window := range m.measurements {
+		if window.cancelled || window.superseded || window.notified {
+			continue
+		}
+		reason := ""
+		switch {
+		case window.basis != m.measurementBasis:
+			reason = "测量期间重量或仪表状态发生变化，本次依据已失效"
+		case !state.DeviceOK:
+			reason = "模拟仪表故障"
+		case !state.Stable:
+			reason = "仪表未稳定"
+		case state.Weight != window.weight:
+			reason = "重量发生变化"
+		}
+		if reason == "" {
+			continue
+		}
+		window.notified = true
+		out = append(out, p.MeasurementInvalidated{Generation: window.generation, Reason: reason, State: p.MeasuredState{DeviceState: state, At: time.Now().UTC()}, At: time.Now().UTC()})
+	}
+	return out
+}
+
 func (m *Mock) stateHTTP(w http.ResponseWriter, _ *http.Request) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -409,6 +654,7 @@ func (m *Mock) control(w http.ResponseWriter, r *http.Request) {
 		m.fault = false
 	case "disconnect":
 		m.enabled = false
+		m.invalidateMeasurementsLocked()
 		if m.conn != nil {
 			_ = m.conn.Close()
 		}

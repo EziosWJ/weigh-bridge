@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -15,7 +14,7 @@ import (
 	"github.com/knadh/koanf/parsers/yaml"
 )
 
-func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testing.T) {
+func TestInitializeBackfillsMaintenanceWithoutChangingCredentials(t *testing.T) {
 	checkout(t)
 	if _, err := invoke(t, "init"); err != nil {
 		t.Fatal(err)
@@ -51,8 +50,8 @@ func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testi
 	if updated.Maintenance.Enabled == nil || !*updated.Maintenance.Enabled {
 		t.Fatal("existing development config did not enable Agent maintenance")
 	}
-	if updated.JWT != original.JWT || updated.Weighing.AgentKey != original.Weighing.AgentKey || !reflect.DeepEqual(updated.Node, original.Node) || updated.Database != original.Database {
-		t.Fatal("backfill changed existing credentials or deployment identity")
+	if updated.JWT != original.JWT || updated.Weighing.AgentKey != original.Weighing.AgentKey || updated.Database != original.Database {
+		t.Fatal("backfill changed existing credentials or database configuration")
 	}
 	before, _ := os.ReadFile(path)
 	if _, err := invoke(t, "init"); err != nil {
@@ -62,19 +61,9 @@ func TestInitializeBackfillsMaintenanceWithoutChangingCredentialsOrRole(t *testi
 	if !bytes.Equal(before, after) {
 		t.Fatal("repeated initialization changed configured maintenance")
 	}
-	for _, text := range []string{"maintenance:\n  enabled: false\n", "maintenance:\n  data_dir: \"\"\n", "node:\n  role: site\n", "maintenance: {data_dir: /custom/agent}\n"} {
+	for _, text := range []string{"maintenance:\n  enabled: false\n", "maintenance:\n  data_dir: \"\"\n", "maintenance: {data_dir: /custom/agent}\n"} {
 		if out, changed, err := withMaintenanceDirectory(text); err != nil || changed || out != text {
-			t.Fatal("explicit disable/custom path or named deployment role must be preserved")
-		}
-	}
-}
-
-func TestNamedDeploymentInitDoesNotGenerateFallbackDeviceKey(t *testing.T) {
-	for _, role := range []string{"standalone", "site", "central"} {
-		contents := "node:\n  role: " + role + "\nweighing:\n  agent_key: \"\"\n"
-		out, changed, err := withAgentKey(contents)
-		if err != nil || changed || out != contents {
-			t.Fatal("named deployment must retain its existing credential source")
+			t.Fatal("explicit maintenance disable or custom path must be preserved")
 		}
 	}
 }
@@ -140,8 +129,8 @@ func TestInitializePostgresAndPreserveConfiguration(t *testing.T) {
 			if len(cfg.JWT.Secret) != 64 || strings.Contains(output, cfg.JWT.Secret) {
 				t.Fatal("JWT must be randomly generated and excluded from output")
 			}
-			if len(cfg.Weighing.AgentKey) != 64 || cfg.Weighing.AgentKey == cfg.JWT.Secret || strings.Contains(output, cfg.Weighing.AgentKey) {
-				t.Fatal("initialization must generate a separate Agent key without printing it")
+			if cfg.Weighing.AgentKey != "" || len(cfg.Weighing.Agents) != 0 {
+				t.Fatal("initialization must leave Agent bindings to 本厂配置")
 			}
 			if !strings.Contains(output, "task dev") {
 				t.Fatal("initialization must include the matching startup task")
@@ -284,7 +273,7 @@ func TestInvalidArgumentsDoNotCreateConfiguration(t *testing.T) {
 	}
 }
 
-func TestInitializeBackfillsAgentKeyAndPreservesExistingSettings(t *testing.T) {
+func TestInitializeKeepsAgentBindingsOutOfBusinessConfig(t *testing.T) {
 	checkout(t)
 	if _, err := invoke(t, "init", "--database", "postgres"); err != nil {
 		t.Fatal(err)
@@ -293,45 +282,30 @@ func TestInitializeBackfillsAgentKeyAndPreservesExistingSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if original.Weighing.AgentKey != "" || len(original.Weighing.Agents) != 0 {
+		t.Fatal("development config must not carry Agent bindings; configure them in 本厂配置")
+	}
 	path := filepath.Join("configs", "config.dev.yaml")
 	contents, _ := os.ReadFile(path)
-	lines := strings.Split(string(contents), "\n")
-	kept := []string{}
-	for _, line := range lines {
-		if !strings.HasPrefix(strings.TrimSpace(line), "agent_key:") {
-			kept = append(kept, line)
-		}
-	}
-	legacy := strings.Join(kept, "\n") + "\n# Keep my local settings verbatim.\n"
+	legacy := string(contents) + "# Keep my local settings verbatim.\n"
 	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
 	}
-	output, err := invoke(t, "init")
-	if err != nil {
+	if _, err := invoke(t, "init"); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated.Weighing.AgentKey) != 64 {
-		t.Fatal("existing local config still has no Agent key")
+	if updated.Weighing.AgentKey != "" || len(updated.Weighing.Agents) != 0 {
+		t.Fatal("repeated init added Agent bindings to the business config")
 	}
 	if updated.JWT.Secret != original.JWT.Secret || updated.Database != original.Database || updated.File != original.File {
-		t.Fatal("backfill changed existing settings")
-	}
-	if strings.Contains(output, updated.Weighing.AgentKey) {
-		t.Fatal("Agent key leaked into output")
+		t.Fatal("init changed existing settings")
 	}
 	before, _ := os.ReadFile(path)
 	if !bytes.Contains(before, []byte("# Keep my local settings verbatim.")) {
-		t.Fatal("backfill removed comments")
-	}
-	if _, err := invoke(t, "init"); err != nil {
-		t.Fatal(err)
-	}
-	after, _ := os.ReadFile(path)
-	if !bytes.Equal(before, after) {
-		t.Fatal("repeated init rotated a configured Agent key")
+		t.Fatal("init removed comments")
 	}
 }

@@ -55,6 +55,13 @@ func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
 			preservation := regexp.MustCompile(`(?m)^(UPDATE wb_sample SET expires_at = captured_at \+ INTERVAL '30 seconds' WHERE expires_at IS NULL;)\s*$`)
 			contents = preservation.ReplaceAll(contents, nil)
 		}
+		if filepath.Base(name) == "00018_local_device_contract.sql" {
+			// Retire historical pairing identities in place. Deleting them would
+			// break references from earlier device diagnostics; the UPDATE is a
+			// preservation step, not seed data.
+			preservation := regexp.MustCompile(`(?m)^UPDATE wb_agent_binding SET retired_at = COALESCE\(retired_at,CURRENT_TIMESTAMP\) WHERE retired_at IS NULL;\s*$`)
+			contents = preservation.ReplaceAll(contents, nil)
+		}
 		if schemaDML.Match(contents) {
 			t.Errorf("schema migration %s contains seed-data DML", name)
 		}

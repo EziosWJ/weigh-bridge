@@ -40,7 +40,7 @@ func (r *deviceRuntime) start(cfg agentprinter.Config) error {
 	if r.running {
 		return nil
 	}
-	scale, err := agentscale.New(agentscale.Config{Enabled: cfg.SerialEnabled, Port: cfg.SerialPort, Baud: cfg.SerialBaud, Protocol: cfg.SerialProtocol, Unit: agentscale.Unit(cfg.SerialWeightUnit), Stale: time.Duration(cfg.SerialStaleMS) * time.Millisecond}, nil)
+	scale, err := agentscale.New(agentscale.Config{Port: cfg.SerialPort, Baud: cfg.SerialBaud}, nil)
 	if err != nil {
 		return err
 	}
@@ -84,6 +84,17 @@ func (r *deviceRuntime) snapshot() (agentprinter.Config, *agentscale.Monitor, bo
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.cfg, r.scale, r.running
+}
+
+// measurementScale returns the currently running instrument monitor. The
+// measurement window must not use a stopped or reloaded device instance.
+func (r *deviceRuntime) measurementScale() (*agentscale.Monitor, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.running || r.scale == nil {
+		return nil, agentscale.ErrMeasurementUnavailable
+	}
+	return r.scale, nil
 }
 func (r *deviceRuntime) acquire(parent context.Context, printing bool) (context.Context, agentprinter.Config, *agentscale.Monitor, func(), error) {
 	return r.acquireGeneration(parent, printing, 0)

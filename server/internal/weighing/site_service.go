@@ -6,51 +6,58 @@ import (
 )
 
 func (s *Service) Sites(ctx context.Context, user int64) ([]Site, error) {
+	id, err := s.LocalSiteID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.store.Sites(ctx, user)
 	out := []Site{}
 	for _, v := range rows {
-		if (s.node.Role == "site" || s.node.Role == "standalone") && v.ID != s.node.SiteID {
-			continue
+		if v.ID == id {
+			out = append(out, v)
 		}
-		if s.node.Role == "central" {
-			v.CanOperate = false
-		}
-		out = append(out, v)
 	}
 	return out, err
 }
 func (s *Service) SiteOptions(ctx context.Context) ([]Site, error) {
-	rows, err := s.store.SiteOptions(ctx)
-	if s.node.Role != "site" && s.node.Role != "standalone" {
-		return rows, err
+	id, err := s.LocalSiteID(ctx)
+	if err != nil {
+		return nil, err
 	}
+	rows, err := s.store.SiteOptions(ctx)
 	out := []Site{}
-	for _, row := range rows {
-		if row.ID == s.node.SiteID {
-			out = append(out, row)
+	for _, v := range rows {
+		if v.ID == id {
+			out = append(out, v)
 		}
 	}
 	return out, err
 }
 func (s *Service) SiteGrants(ctx context.Context, user int64) ([]SiteGrant, error) {
+	id, err := s.LocalSiteID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.store.SiteGrants(ctx, user)
-	if s.node.Role != "standalone" {
-		return rows, err
-	}
-	for _, row := range rows {
-		if row.SiteID != s.node.SiteID {
-			continue
+	out := []SiteGrant{}
+	for _, v := range rows {
+		if v.SiteID == id {
+			out = append(out, v)
 		}
-		return []SiteGrant{row}, err
 	}
-	return []SiteGrant{}, err
+	return out, err
 }
 func (s *Service) SaveSiteGrants(ctx context.Context, user int64, rows []SiteGrant, e audit.Event) error {
-	if s.node.Role == "standalone" {
-		for _, row := range rows {
-			if row.SiteID != s.node.SiteID {
-				return ErrForbidden
-			}
+	id, err := s.LocalSiteID(ctx)
+	if err != nil {
+		return err
+	}
+	if id == 0 {
+		return ErrForbidden
+	}
+	for _, v := range rows {
+		if v.SiteID != id {
+			return ErrForbidden
 		}
 	}
 	return s.store.SaveSiteGrants(ctx, user, rows, e)

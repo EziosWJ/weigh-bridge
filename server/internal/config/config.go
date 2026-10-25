@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,7 +23,6 @@ const (
 // may contain deployment credentials; APP_ environment variables override YAML.
 type Config struct {
 	Environment string            `koanf:"env"`
-	Node        NodeConfig        `koanf:"node"`
 	Service     ServiceConfig     `koanf:"service"`
 	HTTP        HTTPConfig        `koanf:"http"`
 	Swagger     SwaggerConfig     `koanf:"swagger"`
@@ -39,33 +37,19 @@ type Config struct {
 	Weighing    WeighingConfig    `koanf:"weighing"`
 }
 
-// NodeConfig selects independent deployment ownership. Empty role retains the development topology.
-type NodeConfig struct {
-	Role       string     `koanf:"role"`
-	SiteID     int64      `koanf:"site_id"`
-	CentralURL string     `koanf:"central_url"`
-	SyncKey    string     `koanf:"sync_key"`
-	Peers      []NodePeer `koanf:"peers"`
-}
-
 // MaintenanceConfig configures the local Agent maintenance bridge.
 type MaintenanceConfig struct {
 	Enabled *bool  `koanf:"enabled"`
 	DataDir string `koanf:"data_dir"`
 }
 
-// IsEnabled keeps the old data_dir setting as an enable flag for existing
-// installations. Device files are never opened by the business API.
-func (m MaintenanceConfig) IsEnabled(standalone bool) bool {
+// IsEnabled enables local remote maintenance by default. Device files are
+// never opened by the business API.
+func (m MaintenanceConfig) IsEnabled() bool {
 	if m.Enabled != nil {
 		return *m.Enabled
 	}
-	return standalone || m.DataDir != ""
-}
-
-type NodePeer struct {
-	SiteID int64  `koanf:"site_id"`
-	Key    string `koanf:"key"`
+	return true
 }
 
 type AgentBinding struct {
@@ -74,13 +58,17 @@ type AgentBinding struct {
 	Key     string `koanf:"key"`
 }
 type WeighingConfig struct {
-	Agents      []AgentBinding `koanf:"agents"`
-	TicketTitle string         `koanf:"ticket_title"`
-	AgentID     string         `koanf:"agent_id"`
-	AgentKey    string         `koanf:"agent_key"`
-	ScaleID     int64          `koanf:"scale_id"`
-	ImageDir    string         `koanf:"image_dir"`
-	SessionTTL  time.Duration  `koanf:"session_ttl"`
+	Agents []AgentBinding `koanf:"agents"`
+	// TicketTitle is the legacy YAML value. Since ADR 0030 the editable
+	// sys_config row is authoritative; this field is read once at upgrade to
+	// preserve the previously printed title and is never read by ticket
+	// rendering afterwards.
+	TicketTitle string        `koanf:"ticket_title"`
+	AgentID     string        `koanf:"agent_id"`
+	AgentKey    string        `koanf:"agent_key"`
+	ScaleID     int64         `koanf:"scale_id"`
+	ImageDir    string        `koanf:"image_dir"`
+	SessionTTL  time.Duration `koanf:"session_ttl"`
 }
 
 type MonitoringConfig struct {
@@ -163,33 +151,6 @@ type LogConfig struct {
 // created. This keeps configuration errors deterministic and close to startup.
 func (c Config) Validate() error {
 	var errs []error
-	if c.Node.Role != "" && c.Node.Role != "central" && c.Node.Role != "site" && c.Node.Role != "standalone" {
-		errs = append(errs, errors.New("node.role must be central, site or standalone"))
-	}
-	if c.Node.Role == "site" && (c.Node.SiteID < 1 || c.Node.SiteID > 255 || strings.TrimSpace(c.Node.SyncKey) == "" || !strings.HasPrefix(c.Node.CentralURL, "http")) {
-		errs = append(errs, errors.New("site node requires site_id (1..255), central_url and sync_key"))
-	}
-	if c.Node.Role == "central" && c.Node.SiteID != 0 {
-		errs = append(errs, errors.New("central node must not set site_id"))
-	}
-	if c.Node.Role == "standalone" && (c.Node.SiteID < 1 || c.Node.SiteID > 255 || strings.TrimSpace(c.Node.CentralURL) != "" || strings.TrimSpace(c.Node.SyncKey) != "" || len(c.Node.Peers) != 0) {
-		errs = append(errs, errors.New("standalone node requires site_id (1..255) and must not configure central_url, sync_key or peers"))
-	}
-	if c.Node.Role == "site" {
-		u, err := url.Parse(c.Node.CentralURL)
-		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-			errs = append(errs, errors.New("node.central_url must be an HTTP(S) server URL"))
-		}
-	}
-	seenKeys := map[string]bool{}
-	seenPeers := map[int64]bool{}
-	for _, peer := range c.Node.Peers {
-		if peer.SiteID < 1 || peer.SiteID > 255 || strings.TrimSpace(peer.Key) == "" || seenPeers[peer.SiteID] || seenKeys[peer.Key] {
-			errs = append(errs, errors.New("node.peers requires unique site_id (1..255) and unique nonempty key"))
-		}
-		seenPeers[peer.SiteID] = true
-		seenKeys[peer.Key] = true
-	}
 
 	seenScales := map[int64]bool{}
 	seenAgents := map[string]bool{}

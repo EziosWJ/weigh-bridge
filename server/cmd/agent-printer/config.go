@@ -80,9 +80,9 @@ func printerOptions(args []string, getenv func(string) string) (agentprinter.Con
 			}
 		}
 	}
-	if c.AgentKey == "" {
-		return c, *state, errors.New("Agent 连接密钥尚未设置")
-	}
+	// ADR 0030: a key, manual Agent id and manual scale id are no longer
+	// startup gates. The Server assigns the local site and sole scale in the
+	// agent.hello.ack handshake.
 	c = agentprinter.NormalizeConfig(c)
 	return c, *state, agentprinter.ValidateConfig(c)
 }

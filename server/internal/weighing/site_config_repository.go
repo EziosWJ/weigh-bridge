@@ -5,18 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
 type AgentBinding struct {
-	ScaleID  int64 `gorm:"primaryKey;autoIncrement:false"`
-	AgentID  string
-	AgentKey string `json:"-"`
+	ScaleID   int64 `gorm:"primaryKey;autoIncrement:false"`
+	AgentID   string
+	AgentKey  string     `json:"-"`
+	RetiredAt *time.Time `json:"-"`
 }
 
 func (AgentBinding) TableName() string { return "wb_agent_binding" }
@@ -30,12 +33,10 @@ func (AgentSetting) TableName() string { return "wb_agent_setting" }
 
 type SiteConfiguration struct {
 	Site
-	ScaleID         int64  `json:"scaleId"`
-	ScaleCode       string `json:"scaleCode"`
-	ScaleName       string `json:"scaleName"`
-	AgentID         string `json:"agentId"`
-	PendingRevision int64  `json:"pendingRevision"`
-	AppliedRevision int64  `json:"appliedRevision"`
+	ScaleID   int64  `json:"scaleId"`
+	ScaleCode string `json:"scaleCode"`
+	ScaleName string `json:"scaleName"`
+	AgentID   string `json:"agentId"`
 }
 type SiteConfigurationInput struct {
 	ServerURL string `json:"serverUrl"`
@@ -50,7 +51,7 @@ type SiteConfigurationInput struct {
 
 func (r *Repository) SiteConfigurations(ctx context.Context) ([]SiteConfiguration, error) {
 	rows := []SiteConfiguration{}
-	err := r.db.WithContext(ctx).Table("wb_site s").Select("s.*,sc.id AS scale_id,sc.code AS scale_code,sc.name AS scale_name,COALESCE(a.agent_id,'') AS agent_id,COALESCE(p.revision,0) AS pending_revision,COALESCE(p.applied_revision,0) AS applied_revision").Joins("JOIN wb_scale sc ON sc.site_id=s.id").Joins("LEFT JOIN wb_agent_binding a ON a.scale_id=sc.id").Joins("LEFT JOIN wb_site_proposal p ON p.site_id=s.id").Order("s.id").Scan(&rows).Error
+	err := r.db.WithContext(ctx).Table("wb_site s").Select("s.*,sc.id AS scale_id,sc.code AS scale_code,sc.name AS scale_name,COALESCE(a.agent_id,'') AS agent_id").Joins("JOIN wb_scale sc ON sc.site_id=s.id").Joins("LEFT JOIN wb_agent_binding a ON a.scale_id=sc.id").Order("s.id").Scan(&rows).Error
 	return rows, err
 }
 func (r *Repository) AgentSettings(ctx context.Context) (AgentSetting, error) {
@@ -98,7 +99,7 @@ func (r *Repository) ImportAgentBindings(ctx context.Context, configs []agentbri
 }
 func (r *Repository) AgentConfigs(ctx context.Context, imageDir string) ([]agentbridge.Config, error) {
 	var rows []AgentBinding
-	if err := r.db.WithContext(ctx).Find(&rows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Table("wb_agent_binding a").Select("a.*").Joins("JOIN wb_scale sc ON sc.id=a.scale_id").Joins("JOIN wb_local_identity i ON i.site_id=sc.site_id AND i.id=1").Where("a.retired_at IS NULL").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]agentbridge.Config, 0, len(rows))
@@ -109,10 +110,46 @@ func (r *Repository) AgentConfigs(ctx context.Context, imageDir string) ([]agent
 }
 func (r *Repository) AgentConfig(ctx context.Context, scale int64, imageDir string) (agentbridge.Config, error) {
 	var a AgentBinding
-	err := r.db.WithContext(ctx).Table("wb_agent_binding a").Select("a.*").Joins("JOIN wb_scale sc ON sc.id=a.scale_id AND sc.enabled=1").Joins("JOIN wb_site s ON s.id=sc.site_id AND s.enabled=1").Where("a.scale_id=?", scale).Take(&a).Error
+	err := r.db.WithContext(ctx).Table("wb_agent_binding a").Select("a.*").Joins("JOIN wb_scale sc ON sc.id=a.scale_id AND sc.enabled=1").Joins("JOIN wb_site s ON s.id=sc.site_id AND s.enabled=1").Joins("JOIN wb_local_identity i ON i.site_id=s.id AND i.id=1").Where("a.scale_id=? AND a.retired_at IS NULL", scale).Take(&a).Error
 	return agentbridge.Config{ID: a.AgentID, ScaleID: a.ScaleID, Key: a.AgentKey, ImageDir: imageDir}, err
 }
+
+// LocalAgentConfig resolves the keyless runtime association for the sole
+// enabled scale of the local factory. The Agent identity is internal and is
+// taken from the retired binding when one exists, so historical diagnostics
+// keep their name without making the key an admission requirement.
+func (r *Repository) LocalAgentConfig(ctx context.Context, imageDir string) (agentbridge.Config, error) {
+	var row struct {
+		SiteID  int64
+		ScaleID int64
+		AgentID string
+	}
+	err := r.db.WithContext(ctx).Table("wb_scale sc").
+		Select("sc.site_id AS site_id,sc.id AS scale_id,COALESCE(a.agent_id,'') AS agent_id").
+		Joins("JOIN wb_site s ON s.id=sc.site_id AND s.enabled=1").
+		Joins("JOIN wb_local_identity i ON i.site_id=sc.site_id AND i.id=1").
+		Joins("LEFT JOIN wb_agent_binding a ON a.scale_id=sc.id").
+		Where("sc.enabled=1").Order("sc.id").Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return agentbridge.Config{}, agentbridge.ErrScaleNotInitialized
+	}
+	if err != nil {
+		return agentbridge.Config{}, err
+	}
+	id := row.AgentID
+	if id == "" {
+		id = fmt.Sprintf("agent-%02d", row.ScaleID)
+	}
+	return agentbridge.Config{ID: id, SiteID: row.SiteID, ScaleID: row.ScaleID, ImageDir: imageDir}, nil
+}
 func (r *Repository) SaveSiteConfiguration(ctx context.Context, id int64, in SiteConfigurationInput, e audit.Event, connected func(int64) bool) (SiteConfiguration, error) {
+	identity, identityErr := localsite.Read(ctx, r.db)
+	if identityErr != nil {
+		return SiteConfiguration{}, identityErr
+	}
+	if id == 0 || id != identity.SiteID {
+		return SiteConfiguration{}, ErrNotFound
+	}
 	var out SiteConfiguration
 	connectedNow := false
 	if connected != nil && id > 0 && in.Enabled == 0 {
@@ -123,64 +160,29 @@ func (r *Repository) SaveSiteConfiguration(ctx context.Context, id int64, in Sit
 		connectedNow = connected(sc.ID)
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// This existing singleton also serializes allocation of site IDs on PostgreSQL.
+		// Serialize edits with first-time setup and keep identity changes atomic.
 		if _, err := lockRow[AgentSetting](tx, 1); err != nil {
 			return err
 		}
 		site := Site{}
 		scale := Scale{}
 		binding := AgentBinding{}
-		if id > 0 {
-			var err error
-			site, err = lockRow[Site](tx, id)
-			if err != nil {
-				return err
-			}
-			if site.Version != in.Version {
-				return ErrConflict
-			}
-			if err = tx.Where("site_id=?", id).Take(&scale).Error; err != nil {
-				return err
-			}
-			res := tx.Where("scale_id=?", scale.ID).Limit(1).Find(&binding)
-			if res.Error != nil {
-				return res.Error
-			}
-			if site.Code != in.Code || scale.Code != in.ScaleCode || (binding.AgentID != "" && binding.AgentID != in.AgentID) {
-				return RejectionError("厂区、地磅及已有 Agent 编号不可修改，请保留原身份")
-			}
-		} else {
-			if err := tx.Model(&Site{}).Select("COALESCE(MAX(id),0)+1").Scan(&site.ID).Error; err != nil {
-				return err
-			}
-			site.Code = in.Code
-			scale.Code = in.ScaleCode
-			scale.SiteID = site.ID
-		}
-		var node struct{ Role string }
-		if err := tx.Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
+		var err error
+		site, err = lockRow[Site](tx, id)
+		if err != nil {
 			return err
 		}
-		if node.Role == "central" && id > 0 {
-			if binding.AgentID == "" {
-				binding = AgentBinding{ScaleID: scale.ID, AgentID: in.AgentID, AgentKey: agentbridge.ID()}
-				if err := tx.Create(&binding).Error; err != nil {
-					return err
-				}
-			}
-			site.Version++
-			if err := tx.Model(&Site{}).Where("id=?", id).Update("version", site.Version).Error; err != nil {
-				return err
-			}
-			if err := saveProposal(tx, site, scale, binding, in); err != nil {
-				return err
-			}
-			out = SiteConfiguration{Site: site, ScaleID: scale.ID, ScaleCode: scale.Code, ScaleName: scale.Name, AgentID: binding.AgentID}
-			e.Action = "site.configuration.propose"
-			e.Resource = "weighing.site"
-			e.ResourceID = site.ID
-			e.Summary = string(snapshot(in))
-			return audit.RecordOn(ctx, tx, e)
+		if site.Version != in.Version {
+			return ErrConflict
+		}
+		if err = tx.Where("site_id=?", id).Take(&scale).Error; err != nil {
+			return err
+		}
+		if err = tx.Where("scale_id=?", scale.ID).Limit(1).Find(&binding).Error; err != nil {
+			return err
+		}
+		if (in.Code != "" && site.Code != in.Code) || (in.ScaleCode != "" && scale.Code != in.ScaleCode) || (in.AgentID != "" && binding.AgentID != "" && binding.AgentID != in.AgentID) {
+			return RejectionError("厂区、地磅及已有 Agent 编号不可修改，请保留原身份")
 		}
 		if in.Enabled == 0 {
 			reasons := []string{}
@@ -204,41 +206,26 @@ func (r *Repository) SaveSiteConfiguration(ctx context.Context, id int64, in Sit
 				return RejectionError("不能停用：" + strings.Join(reasons, "、"))
 			}
 		}
-		site.ServerURL = in.ServerURL
 		site.Name = in.Name
 		site.Enabled = in.Enabled
 		site.Version++
-		if id == 0 {
-			if err := tx.Create(&site).Error; err != nil {
-				return normalizeSiteError(err)
-			}
-		} else {
-			if err := tx.Save(&site).Error; err != nil {
-				return normalizeSiteError(err)
-			}
+		if err := tx.Save(&site).Error; err != nil {
+			return normalizeSiteError(err)
 		}
 		scale.Name = in.ScaleName
 		scale.Enabled = in.Enabled
-		if scale.ID == 0 {
-			if err := tx.Create(&scale).Error; err != nil {
-				return normalizeSiteError(err)
-			}
-		} else {
-			if err := tx.Model(&Scale{}).Where("id=?", scale.ID).Updates(map[string]any{"name": scale.Name, "enabled": scale.Enabled}).Error; err != nil {
-				return normalizeSiteError(err)
-			}
+		if err := tx.Model(&Scale{}).Where("id=?", scale.ID).Updates(map[string]any{"name": scale.Name, "enabled": scale.Enabled}).Error; err != nil {
+			return normalizeSiteError(err)
 		}
 		if binding.AgentID == "" {
-			binding = AgentBinding{ScaleID: scale.ID, AgentID: in.AgentID, AgentKey: agentbridge.ID()}
+			// Internal association only; operators no longer supply or maintain
+			// an Agent number. Existing retired bindings keep their historical id.
+			binding = AgentBinding{ScaleID: scale.ID, AgentID: fmt.Sprintf("agent-%02d", scale.ID), AgentKey: agentbridge.ID()}
 			if err := tx.Create(&binding).Error; err != nil {
 				return normalizeSiteError(err)
 			}
 		}
-		if node.Role == "central" {
-			if err := saveProposal(tx, site, scale, binding, in); err != nil {
-				return err
-			}
-		}
+
 		out = SiteConfiguration{Site: site, ScaleID: scale.ID, ScaleCode: scale.Code, ScaleName: scale.Name, AgentID: binding.AgentID}
 		e.Action = "site.save"
 		e.Resource = "weighing.site"
@@ -254,32 +241,30 @@ func normalizeSiteError(err error) error {
 	}
 	return err
 }
-func (r *Repository) ExportAgentConnection(ctx context.Context, id int64, e audit.Event) (agentconfig.Connection, error) {
+func (r *Repository) ExportAgentConnection(ctx context.Context, id int64, serverURL string, e audit.Event) (agentconfig.Connection, error) {
+	identity, identityErr := localsite.Read(ctx, r.db)
+	if identityErr != nil {
+		return agentconfig.Connection{}, identityErr
+	}
+	if id == 0 || id != identity.SiteID {
+		return agentconfig.Connection{}, ErrNotFound
+	}
 	var out agentconfig.Connection
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Table("wb_site s").Select("s.server_url,s.id AS site_id,s.code AS site_code,s.name AS site_name,sc.id AS scale_id,sc.code AS scale_code,sc.name AS scale_name,a.agent_id,a.agent_key").Joins("JOIN wb_scale sc ON sc.site_id=s.id").Joins("JOIN wb_agent_binding a ON a.scale_id=sc.id").Where("s.id=?", id).Take(&out)
+		result := tx.Table("wb_site s").Select("s.id AS site_id,s.code AS site_code,s.name AS site_name,sc.id AS scale_id,sc.code AS scale_code,sc.name AS scale_name,a.agent_id").Joins("JOIN wb_scale sc ON sc.site_id=s.id").Joins("JOIN wb_agent_binding a ON a.scale_id=sc.id").Where("s.id=?", id).Take(&out)
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			return RejectionError("请先保存该厂区的 Agent 配置")
 		}
 		if result.Error != nil {
 			return result.Error
 		}
-		setting, err := findOne[AgentSetting](tx, 1)
-		if err != nil {
-			return err
-		}
-		if out.ServerURL == "" {
-			var node struct{ Role string }
-			if err := tx.Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
-				return err
-			}
-			if node.Role == "central" {
-				return RejectionError("请先为该厂区设置本厂 Server 地址并在现场应用")
-			}
-			out.ServerURL = setting.ServerURL
-		}
-		if err = out.Validate(); err != nil {
-			return RejectionError("请先设置有效的现场 Server 地址和 Agent 绑定")
+		out.ServerURL = serverURL
+		// ADR 0030 removed the Agent key from the connection contract. The
+		// legacy export remains available for old callers but must not hand
+		// back an unused secret or make identity an admission requirement.
+		out.AgentKey = ""
+		if err := out.ValidateEndpoint(); err != nil {
+			return RejectionError("Agent 配对信息或连接地址无效")
 		}
 		e.Action = "agent.configuration.export"
 		e.Resource = "weighing.site"

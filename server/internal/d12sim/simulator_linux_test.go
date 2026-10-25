@@ -199,7 +199,7 @@ func TestPTYAgainstProductionSerialMonitor(t *testing.T) {
 		}
 	}
 	control("pause", "")
-	m, err := agentscale.New(agentscale.Config{Enabled: true, Port: s.State().Port, Baud: 9600, Protocol: "keli-d12-tf05", Unit: agentscale.UnitTonne, Stale: time.Second}, nil)
+	m, err := agentscale.New(agentscale.Config{Port: s.State().Port, Baud: 9600}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

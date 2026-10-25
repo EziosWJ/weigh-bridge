@@ -43,8 +43,28 @@ func OpenDevice(dir, environment string, initial Config, runner Runner) (*Servic
 	if _, err = s.reloadEnvironment(); err != nil {
 		return nil, err
 	}
+	// The operator may have explicitly re-paired agent.env while preserving
+	// maintenance drafts. Keep their device parameters, but carry only the current
+	// connection identity into drafts/rollback so they cannot restore an old key.
+	s.mu.Lock()
+	oldDraft, oldPrevious := s.draft, s.previous
+	bindConnection := func(c *Config) {
+		c.ServerURL, c.AgentID, c.AgentKey, c.ScaleID = s.active.ServerURL, s.active.AgentID, s.active.AgentKey, s.active.ScaleID
+	}
+	bindConnection(&s.draft)
+	if s.previous.AgentID != "" {
+		bindConnection(&s.previous)
+	}
+	if s.draft != oldDraft || s.previous != oldPrevious {
+		if err := s.persist(); err != nil {
+			s.draft, s.previous = oldDraft, oldPrevious
+			s.mu.Unlock()
+			return nil, err
+		}
+	}
+	s.mu.Unlock()
 	s.SetBusinessConfigValidator(func(_ context.Context, c Config) error {
-		if c.AgentID != initial.AgentID || c.ScaleID != initial.ScaleID || c.AgentKey != initial.AgentKey || c.ServerURL != initial.ServerURL || c.SiteID != initial.SiteID || c.SiteCode != initial.SiteCode || c.ScaleCode != initial.ScaleCode {
+		if c.AgentID != initial.AgentID || c.ScaleID != initial.ScaleID || c.AgentKey != initial.AgentKey || c.ServerURL != initial.ServerURL {
 			return errors.New("设备维护不能修改当前 Agent 的身份、归属或连接地址")
 		}
 		return nil

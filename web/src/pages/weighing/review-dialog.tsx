@@ -44,7 +44,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
   let calculatedWeights: WeightValues | undefined;
   if (value.original) { try { calculatedWeights = adjustedWeights(value.original, finalInput); } catch (error) { deductionError = error instanceof Error ? error.message : '请核对最终重量'; } }
   const calculatedDeduction = value.original && calculatedWeights ? weightDeduction(value.original, calculatedWeights) : undefined;
-  const requiresImage = value.capture?.captureRequired !== false;
+  const requiresImage = !!value.capture && value.capture.captureRequired !== false && value.capture.imageStatus !== 'disabled';
   const ready = !!value.capture && (!requiresImage || imageReady) && !deductionError && !invalidReason;
 
   return <Dialog open onOpenChange={open => { if (!open && !submitting) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen && !submitting} restoreFocus lockScroll closeOnOverlayClick={false}>
@@ -70,7 +70,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
           ]} />
           <div className="space-y-2 border-t border-border pt-3">
             <h4 className="text-sm font-medium">本次抓拍</h4>
-            {value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次抓拍图片，请返回重新采集。</p>}
+            {value.capture ? <CapturePhoto capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <p role="alert" className="text-error">缺少本次采集依据，请返回重新采集。</p>}
             {!requiresImage && <p className="text-sm text-warning">本次未强制抓拍，允许无图确认；请对照现场车辆核对。</p>}
           </div>
 

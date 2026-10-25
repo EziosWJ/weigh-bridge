@@ -1,6 +1,6 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import { Check, Save } from 'lucide-react';
-import type { MaintenanceConfig } from '@/api/agent-maintenance';
+import { Check, RotateCcw } from 'lucide-react';
+import type { CupsQueue, DeviceSettings, MaintenanceConfig } from '@/api/agent-maintenance';
 import { ContentCard } from '@/components/common/content-card';
 import { DetailItem } from '@/components/common/detail-item';
 import { Field } from '@/components/common/field';
@@ -9,119 +9,133 @@ import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { safeDraft } from './config-draft';
+import { formatDateTime } from '@/lib/datetime';
 
-type ConfigField = { key: string; label: string; kind?: 'number' | 'boolean' | 'select' | 'secret'; min?: number; max?: number; options?: string[]; help?: string };
-const connectionFields: ConfigField[] = [
-  { key: 'serverUrl', label: '业务服务地址', help: '填写设备 Agent 可访问的本厂业务服务地址' },
-  { key: 'agentId', label: 'Agent 编号' },
-  { key: 'scaleId', label: '地磅编号', kind: 'number', min: 1 },
-  { key: 'agentKey', label: '连接密钥', kind: 'secret', help: '已设置的密钥不会回显；留空表示保持原值' },
-];
-const serialFields: ConfigField[] = [
-  { key: 'serialEnabled', label: '启用柯力 D12 仪表', kind: 'boolean' },
-  { key: 'serialPort', label: '串口路径', help: '例如 /dev/ttyUSB0，使用 Agent 主机上的路径' },
-  { key: 'serialBaud', label: '仪表波特率', kind: 'number', min: 1200, max: 115200 },
-  { key: 'serialProtocol', label: '仪表协议', kind: 'select', options: ['keli-d12-tf05'] },
-  { key: 'serialWeightUnit', label: '现场源单位', kind: 'select', options: ['t', 'kg'] },
-  { key: 'serialStaleMs', label: '无有效帧故障阈值（ms）', kind: 'number', min: 200, max: 2999 },
-];
-const printFields: ConfigField[] = [
-  { key: 'queue', label: 'CUPS 打印队列' },
-  { key: 'printWidthMm', label: '打印宽度（mm）', kind: 'number', min: 100, max: 210 },
-  { key: 'printScale', label: '整体缩放（倍）', kind: 'number', min: 0.5, max: 1.5 },
-  { key: 'formLengthMm', label: '连续纸表长（mm）', kind: 'number', min: 85, max: 300 },
-  { key: 'offsetXmm', label: '向右偏移（mm）', kind: 'number', min: 0, max: 30 },
-  { key: 'offsetYmm', label: '向下偏移（mm）', kind: 'number', min: 0, max: 30 },
-];
-const cameraFields: ConfigField[] = [
-  { key: 'cameraEnabled', label: '前后摄像头', kind: 'boolean', help: '停用后不能进行新的正式称重采集' },
-  { key: 'cameraTimeoutMs', label: '抓拍超时（ms）', kind: 'number', min: 200, max: 10000 },
-  { key: 'cameraRtspBase', label: 'RTSP 服务入口', help: '例如 rtsp://192.168.1.10:8554；不要填写密码或流名称' },
-  { key: 'cameraWhepBase', label: '实时预览服务入口', help: '例如 http://192.168.1.10:8889；也可使用 HTTPS 入口' },
-  { key: 'cameraFrontPath', label: '车前流名称', help: '例如 front，与 MediaMTX 中配置的名称一致' },
-  { key: 'cameraRearPath', label: '车后流名称', help: '例如 rear，与车前流名称不同' },
-];
-const recognitionField: ConfigField = { key: 'plateRecognitionUrl', label: '车牌识别服务地址', kind: 'secret', help: '留空保持已保存值；不提供独立连通性测试' };
-export function MaintenanceConfigPanel({ config, draft, setDraft, busy, feedback, onSave, onApply, onRestore }: {
+const baudOptions = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
+
+function stateLabel(value: string | undefined) {
+  switch (value) {
+    case 'running': return '运行中';
+    case 'degraded': return '降级运行';
+    case 'unavailable': return '不可用';
+    case 'configured': return '已配置';
+    case 'fault': return '故障';
+    case 'ready': return '就绪';
+    case 'not_configured': return '未配置';
+    default: return value || '未知';
+  }
+}
+
+function tone(value: string | undefined) {
+  if (value === 'running' || value === 'ready' || value === 'configured') return 'success' as const;
+  if (value === 'fault' || value === 'unavailable') return 'error' as const;
+  return 'warning' as const;
+}
+
+export function MaintenanceConfigPanel({ config, settings, setSettings, queues, queuesError, serialHint, busy, feedback, onApply, onRestore }: {
   config: MaintenanceConfig;
-  draft: Record<string, unknown>;
-  setDraft: Dispatch<SetStateAction<Record<string, unknown>>>;
+  settings: DeviceSettings;
+  setSettings: Dispatch<SetStateAction<DeviceSettings>>;
+  queues: CupsQueue[];
+  queuesError?: string;
+  serialHint?: string;
   busy: boolean;
   feedback: ReactNode;
-  onSave: () => void;
   onApply: () => void;
   onRestore: () => void;
 }) {
-  const savedDraft = safeDraft(config.config);
-  const dirty = Object.entries(draft).some(([key, value]) => value !== savedDraft[key]);
+  const effective = config.effective;
+  const backup = config.backup;
+  const queueOptions = queues.map(queue => queue.name);
+  if (settings.print.queue && !queueOptions.includes(settings.print.queue)) queueOptions.unshift(settings.print.queue);
+  const latest = effective?.print.queue ? queues.find(queue => queue.name === effective.print.queue) : undefined;
 
-  function renderField(field: ConfigField) {
-    const id = `maintenance-${field.key}`;
-    const value = draft[field.key];
-    return <Field key={field.key} label={field.label} htmlFor={id} help={field.help}>
-      {field.kind === 'boolean' ? <Select id={id} value={String(Boolean(value))} disabled={busy} onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value === 'true' }))}>
-        <option value="true">启用</option><option value="false">停用</option>
-      </Select> : field.kind === 'select' ? <Select id={id} value={String(value ?? field.options?.[0] ?? '')} disabled={busy} onChange={event => setDraft(current => ({ ...current, [field.key]: event.target.value }))}>
-        {field.options?.map(option => <option key={option} value={option}>{option === 't' ? '吨（t）' : option === 'kg' ? '千克（kg）' : option}</option>)}
-      </Select> : <Input id={id} type={field.kind === 'number' ? 'number' : field.kind === 'secret' ? 'password' : 'text'} min={field.min} max={field.max}
-        step={field.key === 'printScale' || field.key === 'formLengthMm' ? 'any' : undefined}
-        autoComplete={field.kind === 'secret' ? 'new-password' : 'off'} disabled={busy} value={String(value ?? '')}
-        onChange={event => setDraft(current => ({ ...current, [field.key]: field.kind === 'number' ? Number(event.target.value) : event.target.value }))} />}
-    </Field>;
+  function updateSerial(key: keyof DeviceSettings['serial'], value: string | number) {
+    setSettings(current => ({ ...current, serial: { ...current.serial, [key]: value } }));
+  }
+  function updatePrint(key: keyof DeviceSettings['print'], value: string | number) {
+    setSettings(current => ({ ...current, print: { ...current.print, [key]: value } }));
   }
 
   return <div className="space-y-space-4">
-    <ContentCard title="配置状态" extra={<div className="shrink-0"><StatusTag tone={dirty || !config.saved ? 'warning' : 'success'}>{dirty ? '表单有未保存修改' : config.saved ? '没有待应用草稿' : '存在未应用草稿'}</StatusTag></div>}>
-      <div className="grid gap-space-4 sm:grid-cols-2">
-        <DetailItem label="当前生效情况" value={config.runtimeState ?? '运行配置状态未知'} />
-        <DetailItem label="连接密钥" value={`${config.hasAgentKey ? '已设置（不回显）' : '未设置'}${config.keyChanged ? config.hasActiveAgentKey ? '，密钥待替换' : '，待首次应用' : ''}`} />
+    <ContentCard title="当前生效配置" extra={<StatusTag tone={tone(effective?.deviceState)}>{stateLabel(effective?.deviceState)}</StatusTag>}>
+      <div className="grid gap-space-4 sm:grid-cols-3">
+        <DetailItem label="生效版本" value={effective ? `v${effective.configVersion}` : '尚未上报'} />
+        <DetailItem label="最近生效时间" value={formatDateTime(effective?.appliedAt)} />
+        <DetailItem label="仪表／打印" value={`${stateLabel(effective?.serialState)}／${stateLabel(effective?.printerState)}`} />
       </div>
-      <p className="mt-space-4 border-t border-border pt-space-3 text-body-secondary text-text-secondary">保存草稿不会改变设备。保存并应用后将重载设备，需重新采集重量；已有打印作业仍须现场核实。</p>
+      <p className="mt-space-4 border-t border-border pt-space-3 text-body-secondary text-text-secondary">此区域只读，来自 Agent 实际成功生效的参数；修改下方表单并“保存并应用”才会改变设备。</p>
     </ContentCard>
+
+    {serialHint && <div role="alert" className="rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{serialHint}</div>}
+
     <div className="flex flex-wrap items-center gap-x-space-4 gap-y-space-2 text-sm" aria-label="配置分组">
       <span className="text-text-tertiary">快速定位</span>
-      {[['connection', '服务连接'], ['serial', '称重仪表'], ['print', '打印与校准'], ['camera', '摄像头与识别']].map(([id, label]) => <a key={id} href={`#maintenance-config-${id}`} className="rounded text-primary underline-offset-4 hover:underline">{label}</a>)}
+      {[['serial', '称重仪表'], ['print', '打印与校准']].map(([id, label]) => <a key={id} href={`#maintenance-config-${id}`} className="rounded text-primary underline-offset-4 hover:underline">{label}</a>)}
     </div>
-    <div id="maintenance-config-connection" className="scroll-mt-20">
-      <FormSection title="服务连接" description="设备身份与业务服务连接；局域网分机部署时使用可访问的业务服务地址。">{connectionFields.map(renderField)}</FormSection>
-    </div>
+
     <div id="maintenance-config-serial" className="scroll-mt-20">
-      <FormSection title="称重仪表" description="参数需与现场仪表一致，串口由 Agent 独占。">{serialFields.map(renderField)}</FormSection>
-    </div>
-    <div id="maintenance-config-print" className="scroll-mt-20">
-      <FormSection title="打印与校准" description="调整纸张尺寸及偏移后，保存并应用，再到「设备与打印」打印校准样张。">{printFields.map(renderField)}</FormSection>
-    </div>
-    <div id="maintenance-config-camera" className="scroll-mt-20">
-      <FormSection title="摄像头与识别" description="前后流名称同时用于实时预览和称重抓拍；维护测试使用已生效配置。">
-        {draft.cameraMode !== 'mediamtx' ? <div className="space-y-space-3 md:col-span-2">
-          <p className="text-sm text-text-secondary">当前沿用旧抓拍配置，地址不回显。切换后仍须保存并应用。</p>
-          <Button disabled={busy} onClick={() => setDraft(current => ({ ...current, cameraMode: 'mediamtx', cameraEnabled: true, cameraRtspBase: 'rtsp://127.0.0.1:8554', cameraWhepBase: `${location.protocol}//${location.hostname}:8889`, cameraFrontPath: 'front', cameraRearPath: 'rear', cameraTimeoutMs: 6000 }))}>切换为 MediaMTX 配置</Button>
-        </div> : <>
-          {cameraFields.map(renderField)}
-          <details className="min-w-0 rounded-control border border-border bg-neutral-background p-space-3 text-body-secondary md:col-span-2">
-            <summary className="cursor-pointer font-medium">查看草稿中的抓拍与预览地址</summary>
-            <div className="mt-space-3 space-y-space-2 break-all text-text-secondary">
-              {(['front', 'rear'] as const).map(view => {
-                const path = String(draft[view === 'front' ? 'cameraFrontPath' : 'cameraRearPath'] ?? '');
-                const name = view === 'front' ? '车前' : '车后';
-                return <div key={view}><p>{name}抓拍：{String(draft.cameraRtspBase ?? '').replace(/\/$/, '')}/{path}</p><p>{name}预览：{String(draft.cameraWhepBase ?? '').replace(/\/$/, '')}/{path}/whep</p></div>;
-              })}
-              <p>以上为草稿地址；凭据由服务管理，不在页面显示。</p>
-            </div>
-          </details>
-        </>}
-        <div className="border-t border-border pt-space-4 md:col-span-2">{renderField(recognitionField)}</div>
+      <FormSection title="称重仪表" description="固定 D12 tF=05、8N1、吨制与 1 秒数据新鲜度；只填 Agent 主机实际串口与仪表波特率。">
+        <Field label="串口路径" htmlFor="maintenance-serial-port" help="例如 /dev/ttyUSB0，使用 Agent 主机上的实际路径；留空表示尚未配置。">
+          <Input id="maintenance-serial-port" disabled={busy} value={settings.serial.port}
+            onChange={event => updateSerial('port', event.target.value)} autoComplete="off" />
+        </Field>
+        <Field label="仪表波特率" htmlFor="maintenance-serial-baud">
+          <Select id="maintenance-serial-baud" disabled={busy} value={String(settings.serial.baud)}
+            onChange={event => updateSerial('baud', Number(event.target.value))}>
+            {baudOptions.map(value => <option key={value} value={value}>{value}</option>)}
+          </Select>
+        </Field>
       </FormSection>
     </div>
+
+    <div id="maintenance-config-print" className="scroll-mt-20">
+      <FormSection title="打印与校准" description="先节长，再位置，必要时缩放；保存并应用后打印校准样张核对纸面。">
+        <Field label="CUPS 打印队列" htmlFor="maintenance-queue" help={queuesError || '队列由 Agent 主机枚举；不是 Server 主机的队列。'}>
+          <Select id="maintenance-queue" disabled={busy || !queueOptions.length} value={settings.print.queue}
+            onChange={event => updatePrint('queue', event.target.value)}>
+            {!queueOptions.length && <option value="">{queuesError ? '队列不可读取' : '尚未读取到队列'}</option>}
+            {queueOptions.map(name => <option key={name} value={name}>{name}{name === latest?.name ? '（当前）' : ''}{queues.find(queue => queue.name === name)?.isDefault ? '（默认）' : ''}</option>)}
+          </Select>
+        </Field>
+        <Field label="单据节长（mm）" htmlFor="maintenance-form-length" help="相邻横向撕纸线节距，支持小数；用于逐单走纸校准。">
+          <Input id="maintenance-form-length" type="number" min={85} max={300} step="any" disabled={busy}
+            value={settings.print.formLengthMm} onChange={event => updatePrint('formLengthMm', Number(event.target.value))} />
+        </Field>
+        <Field label="水平偏移（mm）" htmlFor="maintenance-offset-x" help="正方向向右；单张内的位置调整。">
+          <Input id="maintenance-offset-x" type="number" min={0} max={30} disabled={busy}
+            value={settings.print.offsetXmm} onChange={event => updatePrint('offsetXmm', Number(event.target.value))} />
+        </Field>
+        <Field label="垂直偏移（mm）" htmlFor="maintenance-offset-y" help="正方向向下；不作为累计走纸误差的替代修正。">
+          <Input id="maintenance-offset-y" type="number" min={0} max={30} disabled={busy}
+            value={settings.print.offsetYmm} onChange={event => updatePrint('offsetYmm', Number(event.target.value))} />
+        </Field>
+        <Field label="内容缩放（倍）" htmlFor="maintenance-print-scale" help="先节长、再位置，必要时才缩放。">
+          <Input id="maintenance-print-scale" type="number" min={0.5} max={1.5} step="any" disabled={busy}
+            value={settings.print.printScale} onChange={event => updatePrint('printScale', Number(event.target.value))} />
+        </Field>
+        <Field label="基准打印宽度（mm）" htmlFor="maintenance-print-width" help="高级校准，维持现有已满意的版面。">
+          <Input id="maintenance-print-width" type="number" min={100} max={210} disabled={busy}
+            value={settings.print.printWidthMm} onChange={event => updatePrint('printWidthMm', Number(event.target.value))} />
+        </Field>
+      </FormSection>
+    </div>
+
+    <ContentCard title="成功配置备份" description="Agent 自动上报成功生效参数；此份副本只读，只有明确发起恢复才会使用。">
+      {backup ? <div className="grid gap-space-4 sm:grid-cols-3">
+        <DetailItem label="备份版本" value={`v${backup.configVersion}`} />
+        <DetailItem label="生效时间" value={formatDateTime(backup.appliedAt)} />
+        <DetailItem label="备份时间" value={formatDateTime(backup.receivedAt)} />
+      </div> : <p className="text-sm text-text-secondary">{config.backupError ? `备份读取失败：${config.backupError}` : '尚无成功配置备份；Agent 上报后自动保存。'}</p>}
+    </ContentCard>
+
     <div className="sticky bottom-0 z-10 space-y-space-3 rounded-admin border border-border bg-surface p-space-4 shadow-admin">
       {feedback}
       <div className="flex flex-wrap items-center justify-between gap-space-3">
-        <p className="text-body-secondary text-text-secondary" aria-live="polite">{busy ? '正在处理，请稍候…' : dirty ? '当前修改尚未保存' : '保存草稿后，需应用才会生效'}</p>
+        <p className="text-body-secondary text-text-secondary" aria-live="polite">{busy ? '正在校验、保存、重载并核实设备，请稍候…' : '一次提交会完成校验、持久化、重载、核实与失败回退。'}</p>
         <div className="flex flex-wrap gap-space-2">
-          <Button disabled={busy || !config.hasPrevious} onClick={onRestore}>恢复上一份配置</Button>
-          <Button disabled={busy} onClick={onSave}><Save className="h-4 w-4" aria-hidden />保存草稿</Button>
-          <Button variant="primary" disabled={busy} onClick={onApply}><Check className="h-4 w-4" aria-hidden />保存并应用配置</Button>
+          <Button disabled={busy || !backup} onClick={onRestore}><RotateCcw className="h-4 w-4" aria-hidden />恢复此备份</Button>
+          <Button variant="primary" disabled={busy} onClick={onApply}><Check className="h-4 w-4" aria-hidden />保存并应用</Button>
         </div>
       </div>
     </div>

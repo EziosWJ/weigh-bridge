@@ -79,7 +79,7 @@ tasks:
       - go run ./cmd/agent-printer --env-file '{{.ROOT_DIR}}/agent.env' --state-dir '{{.ROOT_DIR}}/.task/agent/state' {{.CLI_ARGS}}
 
   agent:mock:
-    desc: 启动独立设备模拟器（8090）
+    desc: 启动本厂 Agent mock（8090，透传 --env-file 等参数）
     dir: server
     cmds:
       - go run ./cmd/agent-mock {{.CLI_ARGS}}
@@ -208,12 +208,6 @@ tasks:
     cmds:
       - go test -tags=integration ./integration -count=1 -timeout=20m
 
-  backend:integration:legacy-sync:
-    summary: Run historical central/site synchronization regression tests (optional)
-    dir: server
-    cmds:
-      - go test -tags=integration,legacy_sync ./integration -run '^TestPostgresLegacyCentralSync$' -count=1 -timeout=5m
-
   db:integration:postgres:
     summary: Run the current local PostgreSQL database integration contract
     dir: server
@@ -288,7 +282,7 @@ tasks:
       - go test -tags=embedweb ./...
       - go vet -tags=embedweb ./...
 
-  standalone:package:
+  local:package:
     aliases: [package]
     desc: 打包本厂三服务（VERSION=<唯一版本>）
     deps:
@@ -305,22 +299,23 @@ tasks:
       - go build -tags=embedweb -trimpath -o ../bin/weighbridge-server ./cmd/api
       - go build -trimpath -o ../bin/weighbridge-migrate ./cmd/migrate
       - go build -trimpath -o ../bin/weighbridge-agent-printer ./cmd/agent-printer
-      - go build -trimpath -o ../bin/weighbridge-standalone-init ./cmd/standalone-init
-      - node ../scripts/package-standalone.mjs '{{.VERSION}}'
+      - go build -trimpath -o ../bin/weighbridge-local-admin-init ./cmd/local-admin-init
+      - go build -trimpath -o ../bin/weighbridge-agent-provision ./cmd/agent-provision
+      - node ../scripts/package-local.mjs '{{.VERSION}}'
 
-  standalone:install:smoke:
-    summary: Verify an unpacked standalone package in temporary directories (pass PACKAGE_DIR=<path>)
+  local:install:smoke:
+    summary: Verify an unpacked local package in temporary directories (pass PACKAGE_DIR=<path>)
     requires:
       vars: [PACKAGE_DIR]
     cmds:
-      - node scripts/check-standalone-install.mjs '{{.PACKAGE_DIR}}'
+      - node scripts/check-local-install.mjs '{{.PACKAGE_DIR}}'
 
-  standalone:release:smoke:
+  local:release:smoke:
     summary: Verify packaged API startup and restart with isolated PostgreSQL (pass PACKAGE_DIR=<path>)
     requires:
       vars: [PACKAGE_DIR]
     cmds:
-      - node scripts/check-standalone-release.mjs '{{.PACKAGE_DIR}}'
+      - node scripts/check-local-release.mjs '{{.PACKAGE_DIR}}'
 
   test:
     summary: Run the default test suite

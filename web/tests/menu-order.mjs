@@ -34,8 +34,9 @@ try {
 
     assert.deepEqual(await labels("tie"), ["称重作业", "单据查询", "基础资料", "业务菜单甲", "系统概览", "业务菜单乙", "消息中心", "开发示例"], "本地入口必须在同序号的业务菜单之前");
     assert.deepEqual(await labels("interleave"), ["业务菜单甲", "固定入口", "业务菜单乙"], "导航必须按 sortOrder 交错排序");
-    assert.equal(await page.getByTestId("system-group-count").textContent(), "1", "设备维护不能生成重复的系统管理分组");
-    assert.deepEqual(await labels("system"), ["用户管理", "角色管理", "菜单管理", "设备维护"], "设备维护必须并入后端系统管理原菜单");
+    assert.equal(await page.getByTestId("system-group-count").textContent(), "1", "系统管理继续复用后端菜单分组");
+    assert.deepEqual(await labels("system"), ["用户管理", "角色管理", "菜单管理"], "后端系统管理菜单保持原样");
+    assert.deepEqual(await labels("local"), ["设备维护"], "本地维护入口按 RBAC 放入本地管理");
     console.log("menu order passed");
   } finally {
     await browser.close();

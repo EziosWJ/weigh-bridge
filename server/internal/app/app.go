@@ -11,13 +11,13 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/agentmaintenance"
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
+	"github.com/EziosWJ/weighbridge/server/internal/camera"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/dept"
 	"github.com/EziosWJ/weighbridge/server/internal/dictionary"
 	"github.com/EziosWJ/weighbridge/server/internal/filemgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/logmgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/monitoring"
-	"github.com/EziosWJ/weighbridge/server/internal/nodesync"
 	"github.com/EziosWJ/weighbridge/server/internal/notification"
 	platformhttp "github.com/EziosWJ/weighbridge/server/internal/platform/http"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
@@ -31,7 +31,6 @@ import (
 // Core management services are required; notification routes are enabled when
 // the optional Notification service is supplied.
 type Dependencies struct {
-	Node                         *nodesync.Service
 	Auth                         *auth.Service
 	RBAC                         *rbac.Service
 	Department                   *dept.Service
@@ -47,6 +46,7 @@ type Dependencies struct {
 	MaintenanceBusinessValidator agentmaintenance.BusinessConfigValidator
 	AuditRecorder                audit.Recorder
 	Weighing                     *weighing.Service
+	Camera                       *camera.Service
 }
 
 // Application is the assembled HTTP application and its process logger.
@@ -63,9 +63,6 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 			return nil, fmt.Errorf("Agent maintenance requires a local identity validator")
 		}
 		deps.Maintenance.SetBusinessConfigValidator(deps.MaintenanceBusinessValidator)
-	}
-	if cfg.Node.Role != "" && deps.Node == nil {
-		return nil, fmt.Errorf("node service is required for independent deployment")
 	}
 	if err := deps.validate(); err != nil {
 		return nil, err
@@ -92,10 +89,6 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 			MaxAge:         cfg.CORS.MaxAge,
 		}),
 	)
-	if deps.Node != nil {
-		router.Use(deps.Node.Boundary)
-		deps.Node.Register(router, deps.Auth)
-	}
 	router.NoRoute(platformhttp.NotFoundHandler)
 
 	platformhttp.RegisterSystemRoutes(router, platformhttp.SystemRoutes{
@@ -106,7 +99,7 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		return nil, fmt.Errorf("create authentication handler: %w", err)
 	}
 	auth.RegisterRoutes(router, authHandler)
-	if deps.Maintenance != nil && deps.Weighing != nil && cfg.Node.Role != "central" {
+	if deps.Maintenance != nil && deps.Weighing != nil {
 		deps.Maintenance.SetOperationGuard(deps.Weighing.BeginMaintenance)
 		deps.Weighing.SetCameraAvailability(deps.Maintenance.CameraAvailable)
 		deps.Weighing.SetCameraConfigSource(deps.Maintenance.CameraConfig)
@@ -119,14 +112,24 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		deps.Weighing.SetCameraConfigSource(deps.RemoteMaintenance.CameraConfig)
 	}
 	if deps.Weighing != nil {
-		deps.Weighing.SetNode(cfg.Node, cfg.Weighing.ImageDir)
+		if deps.Camera != nil {
+			deps.Weighing.SetCamera(deps.Camera)
+		}
+		if err := deps.Weighing.SetLocalRuntime(cfg.Weighing.ImageDir); err != nil {
+			return nil, fmt.Errorf("prepare local identity: %w", err)
+		}
 		deps.Weighing.SetMaintenanceEnabled(deps.Maintenance != nil || deps.RemoteMaintenance != nil)
-		if devices := deps.Weighing.Agent(); devices != nil && cfg.Node.Role != "central" {
+		if devices := deps.Weighing.Agent(); devices != nil {
 			devices.Register(router)
 		}
 		business := router.Group("/api/weighing")
 		business.Use(auth.BearerMiddleware(deps.Auth))
 		weighing.RegisterRoutes(business, weighing.NewHandler(deps.Weighing, deps.RBAC))
+	}
+	if deps.Camera != nil {
+		business := router.Group("/api/weighing")
+		business.Use(auth.BearerMiddleware(deps.Auth))
+		camera.RegisterRoutes(business, camera.NewHandler(deps.Camera, deps.RBAC))
 	}
 
 	system := router.Group("/api/system")

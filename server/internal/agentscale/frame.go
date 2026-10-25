@@ -3,8 +3,9 @@
 // The frame layout and checksum below were verified against the site capture
 // on 2026-10-22. Only that captured firmware/profile is claimed: the checksum
 // is the observed sum(frame[0:16]) & 0xff, not the Toledostyle complement
-// algorithm. The display unit is configured explicitly because the site's
-// status bit B4 says "kg" while the instrument actually displays tonnes.
+// algorithm. The engineering unit is fixed to tonnes after ADR 0030 because
+// the site's status bit B4 says "kg" while the instrument actually displays
+// tonnes; the raw number, decimal position and frame are retained.
 package agentscale
 
 import (

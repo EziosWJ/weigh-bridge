@@ -5,6 +5,7 @@ import {
   ListOrdered,
   LayoutDashboard,
   Bell,
+  Camera,
   Network,
   PanelLeft,
   Table2,
@@ -12,6 +13,7 @@ import {
   Wrench,
   Users,
   Shield,
+  Settings,
   type LucideIcon,
 } from "lucide-react";
 import { getMenuIcon } from "@/lib/menu-icons";
@@ -31,7 +33,7 @@ export const defaultNavItems: NavItem[] = [
   {
     label: "称重作业", path: "/weighing/operations", icon: Scale, sortOrder: -40,
     children: [
-      { label: "厂区工作台", path: "/weighing/sites", icon: Scale },
+      { label: "本厂称重", path: "/weighing/sites", icon: Scale },
       { label: "运输任务", path: "/weighing/tasks", icon: Table2 },
     ],
   },
@@ -42,7 +44,6 @@ export const defaultNavItems: NavItem[] = [
   {
     label: "基础资料", path: "/weighing/references", icon: Table2, sortOrder: -20,
     children: [
-      { label: "厂区配置", path: "/weighing/site-config", icon: Scale },
       { label: "物料资料", path: "/weighing/materials", icon: Table2 },
       { label: "往来主体", path: "/weighing/parties", icon: Network },
       { label: "物料分类", path: "/weighing/categories", icon: ListOrdered },
@@ -78,12 +79,12 @@ export const notificationManageNavItem: NavItem = {
 };
 export const announcementManageNavItem: NavItem = { label: "公告管理", path: "/system/announcement", icon: FileText, sortOrder: 0 };
 export const agentMaintenanceNavItem: NavItem = { label: "设备维护", path: "/system/agent-maintenance", icon: Wrench, sortOrder: 5 };
+export const cameraManagementNavItem: NavItem = { label: "摄像头管理", path: "/weighing/cameras", icon: Camera, sortOrder: 6 };
 export const localManagementNavItem: NavItem = {
   label: "本地管理", path: "/local-management", icon: Shield, sortOrder: 0,
   children: [
     { label: "账号管理", path: "/system/user", icon: Users },
     { label: "角色与权限", path: "/system/role", icon: Shield },
-    { label: "厂区配置", path: "/weighing/site-config", icon: Scale },
     agentMaintenanceNavItem,
   ],
 };
@@ -184,7 +185,6 @@ export function mergeNavItems(
 }
 
 type NavigationCapabilities = {
-  nodeRole?: string;
   maintenanceEnabled?: boolean;
   permissionCodes: string[];
 };
@@ -193,83 +193,70 @@ type BuildAppNavigationOptions = {
   menus: CurrentUserMenu[];
   isAdmin: boolean;
   capabilities?: NavigationCapabilities | null;
-  nodeContextLoaded?: boolean;
 };
-
-function addNavChild(items: NavItem[], parentPath: string, child: NavItem) {
-  let inserted = false;
-
-  const walk = (nodes: NavItem[]): NavItem[] =>
-    nodes.map((item) => {
-      if (item.path === parentPath) {
-        inserted = true;
-        const childPath = child.externalUrl ?? child.path;
-        if (item.children?.some((entry) => (entry.externalUrl ?? entry.path) === childPath)) {
-          return item;
-        }
-        const children = [...(item.children ?? []), child]
-          .map((entry, index) => ({ entry, index }))
-          .sort((a, b) => {
-            const orderA = a.entry.sortOrder ?? Number.MAX_SAFE_INTEGER;
-            const orderB = b.entry.sortOrder ?? Number.MAX_SAFE_INTEGER;
-            return orderA - orderB || a.index - b.index;
-          })
-          .map(({ entry }) => entry);
-        return { ...item, children };
-      }
-
-      if (item.children?.length) {
-        return { ...item, children: walk(item.children) };
-      }
-
-      return item;
-    });
-
-  const nextItems = walk(items);
-  if (inserted) return nextItems;
-
-  return [
-    ...items,
-    {
-      label: "系统管理",
-      path: parentPath,
-      icon: localManagementNavItem.icon,
-      sortOrder: 1,
-      children: [child],
-    },
-  ];
-}
 
 function filterWeighingNavItems(
   items: NavItem[],
   capabilities: NavigationCapabilities | null | undefined,
-  nodeContextLoaded: boolean,
 ): NavItem[] {
   const permissionCodes = capabilities?.permissionCodes ?? [];
   const has = (code: string) => permissionCodes.includes(`weighing:${code}`);
 
   return items.flatMap((item) => {
-    const isLocalNodeStatus =
-      item.path === "/weighing/node-sync" || item.path === "/weighing/node-status";
-    const isCenterWorkflow =
-      !isLocalNodeStatus &&
-      /temporary-parties|sync|center|central|中心|审批|下发/i.test(`${item.path} ${item.label}`);
-    if (!nodeContextLoaded && isCenterWorkflow) return [];
-    if (capabilities?.nodeRole === "standalone" && isCenterWorkflow) return [];
+    if (["/weighing/temporary-parties", "/weighing/node-sync", "/weighing/node-status", "/weighing/site-config"].includes(item.path)) return [];
     if (!item.path.startsWith("/weighing")) return [item];
     if (item.children?.length) {
-      const children = filterWeighingNavItems(item.children, capabilities, nodeContextLoaded);
+      const children = filterWeighingNavItems(item.children, capabilities);
       return children.length ? [{ ...item, children }] : [];
     }
     const path = item.path;
-    if (capabilities?.nodeRole === "central" && ["/weighing/sites", "/weighing/workbench"].includes(path)) return [];
     const allowed = path === "/weighing/workbench" ? has("confirm")
-      : path === "/weighing/site-config" ? has("site:manage") || has("site:export")
       : path === "/weighing/settings" ? false
       : ["/weighing/materials", "/weighing/parties", "/weighing/categories"].includes(path) ? has("master:read")
       : has("read");
     return allowed ? [item] : [];
   });
+}
+
+function hasNavigationPath(items: NavItem[], path: string): boolean {
+  return items.some(
+    (item) =>
+      item.path === path ||
+      (item.children?.length ? hasNavigationPath(item.children, path) : false),
+  );
+}
+
+function sortNavigationItems(items: NavItem[]): NavItem[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const orderA = a.item.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      const orderB = b.item.sortOrder ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB || a.index - b.index;
+    })
+    .map(({ item }) => item);
+}
+
+/**
+ * A role that may maintain the two local names should reach the same
+ * 系统管理 → 配置管理 entry without being granted the generic system:config
+ * permission. The backend still enforces each group's own permission.
+ */
+function withLocalConfigurationEntry(items: NavItem[]): NavItem[] {
+  if (hasNavigationPath(items, "/system/config")) return items;
+  const entry: NavItem = { label: "配置管理", path: "/system/config", icon: Settings };
+  const systemIndex = items.findIndex((item) => item.path === "/system");
+  if (systemIndex >= 0) {
+    return items.map((item, index) =>
+      index === systemIndex
+        ? { ...item, children: sortNavigationItems([...(item.children ?? []), entry]) }
+        : item,
+    );
+  }
+  return sortNavigationItems([
+    ...items,
+    { label: "系统管理", path: "/system", icon: Settings, sortOrder: 1, children: [entry] },
+  ]);
 }
 
 /**
@@ -281,7 +268,6 @@ export function buildAppNavigation({
   menus,
   isAdmin,
   capabilities,
-  nodeContextLoaded = false,
 }: BuildAppNavigationOptions): NavItem[] {
   const base = defaultNavItems.map((item) =>
     item.path === "/messages" && isAdmin
@@ -304,25 +290,23 @@ export function buildAppNavigation({
   const localChildren = [
     permissionCodes.includes("system:user") ? localManagementNavItem.children?.[0] : undefined,
     permissionCodes.includes("system:role") ? localManagementNavItem.children?.[1] : undefined,
-    permissionCodes.includes("weighing:site:manage") ? localManagementNavItem.children?.[2] : undefined,
     maintenanceItem,
+    permissionCodes.includes("weighing:camera:view") ? cameraManagementNavItem : undefined,
   ].filter((item): item is NavItem => Boolean(item));
-  const localItems =
-    capabilities?.nodeRole === "standalone" && localChildren.length
-      ? [...base, { ...localManagementNavItem, children: localChildren }]
-      : base;
+  const localItems = localChildren.length
+    ? [...base, { ...localManagementNavItem, children: localChildren }]
+    : base;
   const userItems = convertUserMenusToNavItems(menus);
-  // Default development keeps the backend 系统管理 group and adds maintenance
-  // to it. Standalone deployments keep the dedicated 本地管理 group instead.
-  const userItemsWithMaintenance =
-    maintenanceItem && capabilities?.nodeRole !== "standalone"
-      ? addNavChild(userItems, "/system", maintenanceItem)
-      : userItems;
+  const userItemsWithMaintenance = userItems;
 
-  return mergeNavItems(
-    filterWeighingNavItems(localItems, capabilities, nodeContextLoaded),
-    filterWeighingNavItems(userItemsWithMaintenance, capabilities, nodeContextLoaded),
+  const merged = mergeNavItems(
+    filterWeighingNavItems(localItems, capabilities),
+    filterWeighingNavItems(userItemsWithMaintenance, capabilities),
   );
+  const canMaintainLocalIdentity = permissionCodes.some(
+    (code) => code === "weighing:site:manage" || code === "weighing:site:export",
+  );
+  return canMaintainLocalIdentity ? withLocalConfigurationEntry(merged) : merged;
 }
 
 export function createUserMenuTitleMap(
@@ -347,8 +331,9 @@ export function createUserMenuTitleMap(
 export const staticRouteTitleMap: Record<string, string> = {
   "/weighing": "称重演示",
   "/weighing/workbench": "称重工作台",
-  "/weighing/sites": "厂区工作台",
-  "/weighing/site-config": "厂区配置",
+  "/weighing/sites": "本厂称重",
+  "/weighing/site-config": "本厂配置",
+  "/weighing/cameras": "摄像头管理",
   "/weighing/tasks": "运输任务",
   "/weighing/tickets": "最终单据",
   "/weighing/originals": "原始称重",

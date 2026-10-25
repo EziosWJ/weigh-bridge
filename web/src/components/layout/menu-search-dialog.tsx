@@ -38,7 +38,6 @@ export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
       menus,
       isAdmin: user?.roles?.some((role) => role.roleCode === "ADMIN") ?? false,
       capabilities,
-      nodeContextLoaded: Boolean(capabilities),
     }),
   ), [menus, user, capabilities]);
   const results = useMemo(() => searchMenus(index, deferredQuery), [index, deferredQuery]);

@@ -36,10 +36,7 @@ func makeD12Frame(b byte, weight string) []byte {
 func startTestScale(t *testing.T) (*agentscale.Monitor, *io.PipeWriter, context.CancelFunc) {
 	t.Helper()
 	pr, pw := io.Pipe()
-	m, err := agentscale.New(agentscale.Config{
-		Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "keli-d12-tf05",
-		Unit: agentscale.UnitTonne, Stale: time.Second,
-	}, func(context.Context) (io.ReadCloser, error) { return pr, nil })
+	m, err := agentscale.New(agentscale.Config{Port: "/dev/ttyS0", Baud: 9600}, func(context.Context) (io.ReadCloser, error) { return pr, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +99,7 @@ func TestUnavailableInstrumentNeverFabricatesWeight(t *testing.T) {
 }
 
 func TestDisabledScaleIsPrintOnly(t *testing.T) {
-	m, err := agentscale.New(agentscale.Config{Enabled: false}, nil)
+	m, err := agentscale.New(agentscale.Config{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,10 +120,7 @@ func TestPrintPendingDoesNotBlockWeightReportingOrKick(t *testing.T) {
 	defer server.Close()
 	dir := t.TempDir()
 	pr, pw := io.Pipe()
-	scale, err := agentscale.New(agentscale.Config{
-		Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "keli-d12-tf05",
-		Unit: agentscale.UnitTonne, Stale: time.Second,
-	}, func(context.Context) (io.ReadCloser, error) { return pr, nil })
+	scale, err := agentscale.New(agentscale.Config{Port: "/dev/ttyS0", Baud: 9600}, func(context.Context) (io.ReadCloser, error) { return pr, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,10 +190,7 @@ func TestCaptureRequestWithoutCameraFailsExplicitly(t *testing.T) {
 	defer server.Close()
 	dir := t.TempDir()
 	pr, pw := io.Pipe()
-	scale, err := agentscale.New(agentscale.Config{
-		Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "keli-d12-tf05",
-		Unit: agentscale.UnitTonne, Stale: time.Second,
-	}, func(context.Context) (io.ReadCloser, error) { return pr, nil })
+	scale, err := agentscale.New(agentscale.Config{Port: "/dev/ttyS0", Baud: 9600}, func(context.Context) (io.ReadCloser, error) { return pr, nil })
 	if err != nil {
 		t.Fatal(err)
 	}

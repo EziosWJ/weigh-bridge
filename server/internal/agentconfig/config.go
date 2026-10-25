@@ -30,6 +30,26 @@ func (c Connection) Validate() error {
 	_, err := agentprinter.CanonicalServerURL(c.ServerURL)
 	return err
 }
+
+// ValidateEndpoint is the keyless ADR 0030 connection contract: the Agent only
+// needs the Server address. Site, scale and Agent identifiers are assigned by
+// the Server and may be absent locally; when present they are diagnostics, not
+// credentials.
+func (c Connection) ValidateEndpoint() error {
+	if _, err := agentprinter.CanonicalServerURL(c.ServerURL); err != nil {
+		return err
+	}
+	if c.AgentID != "" && !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) {
+		return errors.New("Agent 诊断编号格式无效")
+	}
+	if c.ScaleID < 0 || c.SiteID < 0 {
+		return errors.New("厂区或地磅编号无效")
+	}
+	if strings.ContainsAny(c.AgentKey, "\r\n\x00") {
+		return errors.New("旧连接密钥格式无效")
+	}
+	return nil
+}
 func Read(path string) (Connection, error) {
 	var c Connection
 	b, err := os.ReadFile(path)
@@ -42,5 +62,7 @@ func Read(path string) (Connection, error) {
 	if json.Unmarshal(b, &c) != nil {
 		return c, errors.New("厂区配置必须为有效 JSON 文件")
 	}
-	return c, c.Validate()
+	// Keyless ADR 0030: a portable file may only carry the Server address.
+	// Legacy fields remain readable as diagnostics.
+	return c, c.ValidateEndpoint()
 }

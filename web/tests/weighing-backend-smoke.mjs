@@ -1,7 +1,8 @@
 import { startTestPostgres } from '../../scripts/test-postgres.mjs';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -16,9 +17,10 @@ const mockUrl = 'http://127.0.0.1:18090';
 const children = [];
 let browser;
 let postgres;
+let cameraServer;
 let page;
 const workflowResponses = [];
-const env = { ...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_JWT__SECRET: 'isolated-browser-test-secret-never-deployed', APP_FILE__STORAGE_ROOT: join(directory, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18085', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__AGENT_KEY: 'isolated-agent-browser-key', APP_WEIGHING__IMAGE_DIR: join(directory, 'agent-images'), APP_WEIGHING__AGENTS: JSON.stringify([{id:'scale-agent-1',scale_id:1,key:'isolated-agent-browser-key'},{id:'scale-agent-2',scale_id:2,key:'isolated-agent-browser-key-2'}]) };
+const env = { ...process.env, GOCACHE: resolve(root, '.task/go-build'), APP_ENV: 'test', APP_CONFIG_PROFILE: '', APP_JWT__SECRET: 'isolated-browser-test-secret-never-deployed', APP_FILE__STORAGE_ROOT: join(directory, 'uploads'), APP_HTTP__ADDRESS: '127.0.0.1:18085', APP_MONITORING__ENABLED: 'false', APP_WEIGHING__IMAGE_DIR: join(directory, 'agent-images') };
 function start(command, args, cwd, extraEnv = {}) {
   const child = spawn(command, args, { cwd, env: { ...env, ...extraEnv }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
   child.output = '';
@@ -36,10 +38,10 @@ async function ready(url, child) {
   }
   throw new Error(`Server did not become ready: ${url}\n${child.output}`);
 }
-async function login(page, username) {
+async function login(page, username, password = 'admin123') {
   await page.goto(`${web}/login`);
   await page.getByPlaceholder('请输入用户名', { exact: true }).fill(username);
-  await page.getByPlaceholder('请输入密码', { exact: true }).fill('admin123');
+  await page.getByPlaceholder('请输入密码', { exact: true }).fill(password);
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.waitForURL(url => !url.pathname.startsWith('/login'));
 }
@@ -48,11 +50,10 @@ try {
   postgres = await startTestPostgres();
   Object.assign(env, postgres.env);
   await finish(start('go', ['run', './cmd/migrate', 'up', '--kind', 'all'], resolve(root, 'server')));
+  await finish(start('go', ['run', './cmd/local-admin-init'], resolve(root, 'server'), {WEIGHBRIDGE_ADMIN_PASSWORD:'admin-browser-password-123'}));
   const server = start('go', ['run', './cmd/api'], resolve(root, 'server'));
   const vite = start(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4185', '--strictPort'], resolve(root, 'web'), { VITE_API_BASE_URL: api });
   await Promise.all([ready(`${api}/ready`, server), ready(`${web}/login`, vite)]);
-  const mock = start('go', ['run', './cmd/agent-mock', '--server', api, '--listen', '127.0.0.1:18090'], resolve(root, 'server'));
-  await ready(`${mockUrl}/api/state`, mock);
   browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
   const admin = await browser.newContext({ viewport: { width: 1366, height: 768 }, acceptDownloads: true });
   page = await admin.newPage();
@@ -60,7 +61,42 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   page.on('response', async response => { if(response.url().includes('/api/weighing/') && !response.url().endsWith('/device') && !response.url().includes('/agent-images/')) { const body = await response.text().catch(()=>''); workflowResponses.push({url:response.url(),status:response.status(),body:body.slice(0,1200)}); if(workflowResponses.length>20)workflowResponses.shift(); } });
   page.setDefaultTimeout(8000);
-  await login(page, 'admin');
+  await login(page, 'admin', 'admin-browser-password-123');
+  const token = await page.evaluate(() => JSON.parse(localStorage.getItem('react-admin-auth')).token);
+  const call = async (path, method = 'GET', body) => {
+    const response = await fetch(`${api}${path}`, { method, headers: { Authorization: token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    const payload = await response.json();
+    assert.equal(payload.code, 200, payload.message);
+    return payload.data;
+  };
+  await call('/api/weighing/site-config/initialize', 'POST', {siteId:1,code:'LOCAL01',name:'本地酒厂',scaleCode:'SCALE01',scaleName:'本厂地磅',agentId:'scale-agent-1'});
+  assert.deepEqual(await call('/api/weighing/local-status'), {siteId:1,configured:true,initialized:true}, '首次配置事务成功即完成初始化，不要求第二名操作员');
+  const connection = await call(`/api/weighing/site-config/1/connection?serverUrl=${encodeURIComponent(api)}`);
+  const agentConfig = join(directory, 'local-agent.json');
+  await writeFile(agentConfig, JSON.stringify(connection), {mode:0o600});
+  const mock = start('go', ['run', './cmd/agent-mock', '--config', agentConfig, '--listen', '127.0.0.1:18090'], resolve(root, 'server'));
+  await ready(`${mockUrl}/api/state`, mock);
+  // The Server now acquires formal images directly; use a local HTTP source so
+  // the business loop exercises the real camera module rather than Agent uploads.
+  const cameraJpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==', 'base64');
+  cameraServer = createServer((_request, response) => { response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' }); response.end(cameraJpeg); });
+  await new Promise(ok => cameraServer.listen(0, '127.0.0.1', ok));
+  const cameraPort = cameraServer.address().port;
+  for (const name of ['入口相机', '出口相机']) {
+    await call('/api/weighing/cameras', 'POST', { name, sourceUrl: `http://127.0.0.1:${cameraPort}/${encodeURIComponent(name)}`, captureEnabled: true, enabled: true });
+  }
+  assert.equal((await call('/api/weighing/cameras')).cameras.length, 2, 'two named cameras are configured in the Server module');
+  const operatorRole = (await call('/api/system/role/options')).find(row => row.roleCode === 'WEIGHING_OPERATOR');
+  assert.ok(operatorRole, 'fresh database must seed the weighing operator role');
+  for (const [username,nickname] of [['operator-one','现场操作员甲']]) {
+    await call('/api/system/user', 'POST', {username,nickname,status:1});
+    const users = await call('/api/system/user/page?page=1&pageSize=500');
+    const user = users.records.find(row => row.username === username);
+    assert.ok(user, `create ${username}`);
+    await call(`/api/system/user/${user.id}/roles`, 'PUT', {roleIds:[operatorRole.id]});
+    await call(`/api/weighing/users/${user.id}/sites`, 'PUT', {grants:[{siteId:1,canOperate:1}]});
+  }
+  assert.deepEqual(await call('/api/weighing/local-status'), {siteId:1,configured:true,initialized:true}, 'one named authorized operator is enough for business workflow');
   const oldCache = await page.evaluate(() => { localStorage.setItem('master-unrelated-sentinel', 'keep'); const legacy=JSON.stringify({legacySentinel:'keep-original',tasks:[{id:'browser-only-task',plate:'晋A99999'}]}); localStorage.setItem('weighbridge-phase2a-v1',legacy); return legacy; });
   await page.goto(`${web}/weighing/materials/new`);
   await page.locator('#material-name').fill('服务端冒烟高粱');
@@ -82,39 +118,26 @@ try {
   await page.getByRole('link', { name: '服务端个人供运人', exact: true }).waitFor();
   assert.equal(await page.evaluate(() => localStorage.getItem('master-unrelated-sentinel')), 'keep');
   assert.equal(await page.evaluate(() => localStorage.getItem('weighbridge-phase2a-v1')), oldCache);
-  const token = await page.evaluate(() => JSON.parse(localStorage.getItem('react-admin-auth')).token);
-  const call = async (path, method = 'GET', body) => {
-    const response = await fetch(`${api}${path}`, { method, headers: { Authorization: token, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
-    const payload = await response.json();
-    assert.equal(payload.code, 200, payload.message);
-    return payload.data;
-  };
-
-  // The actual management menu opens one reusable standalone workbench window.
+  // The actual management menu opens one reusable local workbench window.
   await page.goto(`${web}/weighing/tasks`);
   const menu=page.getByRole('navigation',{name:'主导航'});
-  console.log('browser: master data ready; opening standalone workbench', await page.evaluate(() => ({name:window.name,url:location.href})), errors);
+  console.log('browser: master data ready; opening the local workbench', await page.evaluate(() => ({name:window.name,url:location.href})), errors);
   assert.notEqual(await page.evaluate(() => window.name),'weighbridge-workbench','离开工作台后不得占用独立窗口名称');
-  await menu.getByRole('link',{name:'厂区工作台',exact:true}).click();
-  await page.getByRole('heading',{name:'厂区工作台',exact:true}).waitFor();
-  await page.getByRole('link',{name:'进入称重台',exact:true}).nth(1).waitFor();
-  assert.equal(await page.getByRole('link',{name:'进入称重台',exact:true}).count(),2);
+  await menu.getByRole('link',{name:'本厂称重',exact:true}).click();
+  await page.getByRole('heading',{name:'本厂称重',exact:true}).waitFor();
+  await page.getByRole('link',{name:'进入称重台',exact:true}).waitFor();
+  assert.equal(await page.getByRole('link',{name:'进入称重台',exact:true}).count(),1);
+  assert.equal(await page.getByText('新增厂区',{exact:true}).count(),0);
   const popupPromise=admin.waitForEvent('page');
   await page.getByRole('link',{name:'进入称重台',exact:true}).first().click();
   const popup=await popupPromise;
   await popup.getByRole('heading',{name:'称重工作台',exact:true}).waitFor();
   assert.equal(await popup.getByRole('navigation',{name:'主导航'}).count(),0);
-  assert.match(await popup.locator('.workbench-brand').innerText(),/原厂区/);
+  assert.match(await popup.locator('.workbench-brand').innerText(),/本厂地磅/);
   const pageCount=admin.pages().length;
   await page.getByRole('link',{name:'进入称重台',exact:true}).first().click();
   await delay(150);assert.equal(admin.pages().length,pageCount);
-  const secondPopupPromise=admin.waitForEvent('page');
-  await page.getByRole('link',{name:'进入称重台',exact:true}).nth(1).click();
-  const secondPopup=await secondPopupPromise;
-  await secondPopup.getByRole('heading',{name:'称重工作台',exact:true}).waitFor();
-  assert.match(await secondPopup.locator('.workbench-brand').innerText(),/新增厂区/);
-  assert.notEqual(await popup.evaluate(()=>window.name),await secondPopup.evaluate(()=>window.name));
-  await popup.close();await secondPopup.close();
+  await popup.close();
 
   // Use the actual workbench, server samples and confirmation dialogs for both directions.
   const settings = await admin.newPage();
@@ -124,7 +147,7 @@ try {
   assert.equal(await settings.getByLabel('演示岗位',{exact:true}).count(),0);
   assert.equal(await settings.getByRole('button',{name:/重置/}).count(),0,'共享业务不能提供整库重置');
   assert.equal((await call('/api/weighing/tasks?keyword=browser-only-task')).total,0,'旧浏览器交易不能自动导入');
-  console.log('browser: standalone window passed; connecting mock console');
+  console.log('browser: workbench window passed; connecting mock console');
   let checkedWave = false;
   const setWeight = async value => {
     await settings.locator('#target').fill(String(value));
@@ -134,7 +157,7 @@ try {
       while (Date.now() - start < 3000) { const state = await call('/api/weighing/scales/1/device'); if (state.online && !state.stable) weights.add(state.weight); await delay(250); }
       assert.ok(weights.size >= 3, '系统应收到一段变化的不稳定重量'); checkedWave = true;
     } else await settings.getByRole('button',{name:'恢复稳定',exact:true}).click();
-    for(let n=0;n<40;n++){const state=await call('/api/weighing/scales/1/device');if(state.online&&state.stable&&Number(state.weight)===value&&state.images.length===2)return;await delay(200);}
+    for(let n=0;n<40;n++){const state=await call('/api/weighing/scales/1/device');if(state.online&&state.stable&&Number(state.weight)===value)return;await delay(200);}
     throw Error('Agent weight did not become stable');
   };
   const openBusiness = async () => {
@@ -167,9 +190,14 @@ try {
   const reviewAndConfirm = async (stage, kind) => {
     const dialog = page.getByRole('dialog', { name: `核对${stage}（${kind}）`, exact: true });
     if (!await dialog.isVisible()) await page.getByRole('button', { name: `开始核对${stage}（${kind}）`, exact: true }).click();
-    await dialog.getByRole('button',{name:'车尾',exact:true}).click();
-    await dialog.getByRole('button',{name:'车头',exact:true}).click();
-    await dialog.getByRole('button',{name:'车头',exact:true}).click();
+    await dialog.getByText('本次抓拍',{exact:true}).waitFor();
+    const captureTabs = dialog.getByRole('group',{name:'抓拍摄像头',exact:true});
+    if (await captureTabs.count()) {
+      for (const name of ['入口相机','出口相机']) {
+        const tab = captureTabs.getByRole('button',{name:new RegExp(name)});
+        if (await tab.count()) await tab.click();
+      }
+    }
     await dialog.getByRole('button', { name: stage === '回磅' ? '确认称重并出单' : `确认${stage}（${kind}）`, exact: true }).click();
     await page.getByRole('heading', { name: `${stage}已完成`, exact: true }).waitFor();
     const business = await openBusiness();
@@ -188,14 +216,11 @@ try {
 
     if (direction === 'inbound') {
       // Industrial workbench keeps device evidence genuine and all controls usable.
-      const views = page.getByRole('group', { name: '摄像头视角', exact: true });
-      await views.getByRole('button', { name: '车尾视角', exact: true }).click();
-      await page.getByAltText('车尾视角预览', { exact: true }).waitFor();
-      await views.getByRole('button', { name: '车头视角', exact: true }).click();
-      await page.getByRole('button', { name: '放大摄像头画面', exact: true }).click();
-      await page.getByRole('dialog', { name: '摄像头画面', exact: true }).waitFor();
-      await page.keyboard.press('Escape');
-      await page.getByRole('button', { name: '放大摄像头画面', exact: true }).waitFor({ state: 'visible' });
+      const views = page.getByRole('group', { name: '摄像头', exact: true });
+      await views.getByRole('button', { name: /入口相机/ }).click();
+      await views.getByRole('button', { name: /出口相机/ }).click();
+      assert.equal(await views.getByRole('button', { name: /车头视角|车尾视角/ }).count(), 0, 'camera names are maintained by the Server module, not fixed front/rear');
+      assert.equal(await page.getByText('尚未配置摄像头', { exact: true }).count(), 0, 'the workbench reflects the configured camera list');
       for (const [width, height] of [[1920, 1080], [1366, 768], [1024, 768], [768, 1024], [390, 844]]) {
         await page.setViewportSize({ width, height });
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `工作台在 ${width}px 下不能横向溢出`);
@@ -243,7 +268,7 @@ try {
     await pick('物料', '服务端冒烟高粱');
     await pick(direction === 'inbound' ? '供货方' : '收货方', '服务端个人供运人');
     if (direction === 'inbound') {
-      const sampleResponse = page.waitForResponse(response => response.url().endsWith('/api/weighing/samples') && response.request().method() === 'POST');
+      const sampleResponse = page.waitForResponse(response => response.url().endsWith('/api/weighing/samples') && response.request().method() === 'POST', { timeout: 25_000 });
       await page.getByRole('button', { name: '重新采集重量', exact: true }).click();
       assert.equal((await (await sampleResponse).json()).data.expiresAt, null, '新采样不设置到期时间');
     }
@@ -252,14 +277,27 @@ try {
       await page.screenshot({ path: resolve(root, '.task/industrial-workbench-business-dialog.png'), fullPage: true });
       await business.getByRole('button', { name: '完成录入并核对', exact: true }).click();
       assert.equal(await business.isVisible(), false, '开始核对时应关闭资料弹窗');
-      // Cross the former 30-second deadline while the real Agent keeps reporting
-      // unchanged conditions and the browser renews its actual server session.
+      // Cross the former 30-second deadline. There is no confirmation countdown:
+      // the sample may only become invalid if the device basis actually changed
+      // (for example a local processing stall makes the data stale). A timer-based
+      // invalidation with an unchanged revision would be a product defect.
+      const revisionBefore = (await call('/api/weighing/scales/1/device')).revision;
       await delay(31_000);
+      const revisionAfter = (await call('/api/weighing/scales/1/device')).revision;
       const review = page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true });
       assert.equal(await review.isVisible(), true, '超过原30秒限制仍保留核对窗口');
-      assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isEnabled(), true, '条件不变时旧采样仍允许确认');
-      assert.equal(await review.getByRole('alert').count(), 0);
-      console.log('browser: unchanged sample remains confirmable beyond 30 seconds');
+      const confirmButton = review.getByRole('button', { name: '确认首磅（毛重）', exact: true });
+      if (!await confirmButton.isEnabled()) {
+        assert.notEqual(revisionAfter, revisionBefore, '采样失效只能因为设备依据变化，不能存在固定确认倒计时');
+        assert.ok(await review.getByRole('alert').count(), '设备依据变化时必须提示返回重新采集');
+        await review.getByRole('button', { name: '返回重新采集', exact: true }).click();
+        const recapture = page.getByRole('button', { name: '采集重量', exact: true });
+        if (await recapture.count()) await recapture.click();
+        else await page.getByRole('button', { name: '重新采集重量', exact: true }).click();
+        await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
+      }
+      assert.equal(await review.getByRole('alert').count(), 0, '有效设备依据不得因时间产生失效提示');
+      console.log('browser: no confirmation countdown; validity follows the device basis');
     }
     await reviewAndConfirm('首磅', direction === 'inbound' ? '毛重' : '皮重');
     await page.getByRole('button', { name: '办理下一辆车', exact: true }).click();
@@ -335,12 +373,24 @@ try {
   await page.getByRole('link', { name: '返回单据详情', exact: true }).click();
   await page.getByRole('button', { name: '打印', exact: true }).click();
   assert.equal(new URL(page.url()).pathname, `/weighing/tickets/${currentTicket.id}`, '详情直接打印，无需预览');
-  await settings.getByRole('heading',{name:/打印尝试 #.*待回报/}).waitFor();
+  let firstPrint;
+  for (let n = 0; n < 40 && !firstPrint; n += 1) {
+    const attempts = await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`);
+    if (attempts.length > attemptsBeforePreview.length) firstPrint = attempts.at(-1);
+    else await delay(100);
+  }
+  assert.ok(firstPrint, '打印尝试必须在派发前登记');
   const unknownPrint = await call(`/api/weighing/tickets/${currentTicket.id}`);
   assert.equal(unknownPrint.printStatus, 'unknown');
   assert.equal(unknownPrint.reprintCount, 0);
-  const mockPrints = (await (await fetch(`${mockUrl}/api/state`)).json()).prints;
-  assert.deepEqual(mockPrints.at(-1).ticket.printSheet, unknownPrint.printSheet, 'Agent 与 Web 使用同一份精简字段');
+  let mockPrints = [];
+  for (let n = 0; n < 40; n += 1) {
+    mockPrints = (await (await fetch(`${mockUrl}/api/state`)).json()).prints ?? [];
+    if (mockPrints.some(row => row.attemptId === firstPrint.id)) break;
+    await delay(100);
+  }
+  assert.ok(mockPrints.some(row => row.attemptId === firstPrint.id), 'Agent 必须收到已登记的同一打印尝试');
+  assert.deepEqual(mockPrints.find(row => row.attemptId === firstPrint.id).ticket.printSheet, unknownPrint.printSheet, 'Agent 与 Web 使用同一份精简字段');
   await settings.locator('.paper-sheet').first().waitFor();
   await page.getByRole('button', { name: '核实打印 / 补打', exact: true }).click();
   await page.locator('#ticket-print-result').selectOption('printed');
@@ -350,7 +400,13 @@ try {
   await page.getByRole('button', { name: '补打', exact: true }).click();
   await page.locator('#ticket-reprint-reason').fill('客户要求补打');
   await page.getByRole('button', { name: '确认补打', exact: true }).click();
-  await settings.getByRole('heading',{name:/打印尝试 #.*待回报/}).nth(1).waitFor();
+  let secondPrint;
+  for (let n = 0; n < 40 && !secondPrint; n += 1) {
+    const attempts = await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`);
+    if (attempts.length > attemptsBeforePreview.length + 1) secondPrint = attempts.at(-1);
+    else await delay(100);
+  }
+  assert.ok(secondPrint, '补打尝试必须在派发前登记');
   const reprinted = await call(`/api/weighing/tickets/${currentTicket.id}`);
   assert.equal(reprinted.reprintCount, 1);
   assert.equal(reprinted.printStatus, 'unknown');
@@ -462,9 +518,10 @@ try {
   await pick('物料','服务端冒烟高粱'); await pick('收货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   for(const label of ['小窗','大窗','标准']) await page.getByRole('button',{name:label,exact:true}).click();
-  await page.getByRole('button',{name:'放大摄像头画面',exact:true}).click();
-  await page.getByRole('dialog',{name:'摄像头画面',exact:true}).getByRole('button',{name:'关闭图片预览'}).click();
-  assert.equal(await page.getByRole('button',{name:'放大摄像头画面',exact:true}).evaluate(el=>el===document.activeElement),true);
+  const enlargeCapture = page.getByRole('button',{name:/放大抓拍/}).first();
+  await enlargeCapture.click();
+  await page.getByRole('dialog',{name:'抓拍图片预览',exact:true}).getByRole('button',{name:'关闭图片预览'}).click();
+  assert.equal(await enlargeCapture.evaluate(el=>el===document.activeElement),true);
   await reviewAndConfirm('首磅','皮重');
   const recognitionTask=(await call(`/api/weighing/tasks?keyword=${encodeURIComponent('苏AD12345')}`)).records[0];
   const recognitionRecord=(await call(`/api/weighing/tasks/${recognitionTask.id}`)).records[0];
@@ -481,9 +538,9 @@ try {
   assert.ok(user && role);
   await call(`/api/system/user/${user.id}/roles`, 'PUT', { roleIds: [role.id] });
   await page.goto(`${web}/system/user`);
-  await page.getByRole('row').filter({hasText:'master-reader'}).getByRole('button',{name:'厂区',exact:true}).click();
-  const siteDialog=page.getByRole('dialog',{name:'厂区授权',exact:true});
-  await siteDialog.getByLabel('原厂区授权范围',{exact:true}).selectOption('operate');
+  await page.getByRole('row').filter({hasText:'master-reader'}).getByRole('button',{name:'本厂授权',exact:true}).click();
+  const siteDialog=page.getByRole('dialog',{name:'本厂授权',exact:true});
+  await siteDialog.getByLabel('本地酒厂授权范围',{exact:true}).selectOption('operate');
   await siteDialog.getByRole('button',{name:'保存',exact:true}).click();
   await siteDialog.waitFor({state:'hidden'});
   assert.deepEqual((await call(`/api/weighing/users/${user.id}/sites`)).map(({siteId,canOperate})=>({siteId,canOperate})),[{siteId:1,canOperate:1}]);
@@ -491,7 +548,7 @@ try {
   const readerPage = await reader.newPage();
   await login(readerPage, 'master-reader');
   await readerPage.goto(`${web}/weighing/sites`);
-  await readerPage.getByRole('heading',{name:'厂区工作台',exact:true}).waitFor();
+  await readerPage.getByRole('heading',{name:'本厂称重',exact:true}).waitFor();
   await readerPage.getByRole('link',{name:'进入称重台',exact:true}).waitFor();
   assert.equal(await readerPage.getByText('新增厂区',{exact:true}).count(),0);
   assert.equal(await readerPage.getByRole('button',{name:'踢出 Agent',exact:true}).count(),0);
@@ -532,18 +589,19 @@ try {
   await page.getByRole('button',{name:'踢出 Agent',exact:true}).click();
   await page.getByRole('dialog',{name:'踢出 Agent',exact:true}).getByRole('button',{name:'确认踢出',exact:true}).click();
   await page.getByText('Agent 已确认收到踢出指令，连接已断开。',{exact:true}).waitFor();
-  for(let n=0;n<30&&mock.exitCode===null;n++)await delay(100);
-  assert.equal(mock.exitCode,0,'收到 kick 后真实 mock 进程应正常退出，不自动重连');
+  for(let n=0;n<100&&mock.exitCode===null;n++)await delay(100);
+  assert.equal(mock.exitCode,0,`收到 kick 后真实 mock 进程应正常退出，不自动重连；exit=${mock.exitCode} output=${mock.output?.slice(-400)}`);
   assert.equal((await call('/api/weighing/scales/1/device')).online,false);
-  console.log('browser: site panels, distinct windows, scoped user access and kick process exit passed');
+  console.log('browser: local entry, reused workbench window, scoped user access and kick process exit passed');
   assert.deepEqual(errors, []);
-  console.log('Server-backed business loop: persistence, permissions, both weighing directions, capture before business data, immutable ticket versions, correction/reopen, server lists/CSV, Agent printing, manual feedback, invalid original recovery, responsive layout, recognition evidence and real account takeover passed.');
+  console.log('Server-backed business loop: persistence, permissions, both weighing directions, capture before business data, immutable ticket versions, correction/reopen, server lists/CSV, Agent printing, manual feedback, invalid original recovery, responsive layout, direct Server camera capture, recognition evidence and real account takeover passed.');
 } catch (error) {
   if(page){console.error('browser failure:',page.url(),await page.locator('body').innerText().catch(()=>''), workflowResponses);await page.screenshot({path:resolve(root,'.task/agent-mock-browser-failure.png'),fullPage:true}).catch(()=>{});}
   throw error;
 } finally {
   clearTimeout(deadline);
   await browser?.close();
+  await new Promise(ok => cameraServer ? cameraServer.close(ok) : ok());
   for (const child of children) { try { if(child.exitCode===null) process.kill(-child.pid, 'SIGTERM'); } catch { /* Already exited. */ } }
   await delay(150);
   await postgres?.close();

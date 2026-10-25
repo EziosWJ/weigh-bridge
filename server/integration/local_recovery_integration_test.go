@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,24 +12,17 @@ import (
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/app"
-	"github.com/EziosWJ/weighbridge/server/internal/config"
-	"github.com/EziosWJ/weighbridge/server/internal/nodesync"
 	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 // This exercises database recovery through the existing business HTTP seam.
-// It does not certify standalone deployment initialization or the filesystem /
-// printer-ledger backup procedure. No central server or sync worker is started.
+// It verifies business and print state recovery with an explicitly initialized local identity.
+// Filesystem images and the Agent printer ledger remain outside this database-only test.
 func TestPostgresLocalBusinessRecovery(t *testing.T) {
 	source := startBusinessPostgres(t)
 	db := openTemporaryDatabase(t, source.dsn)
 	t.Cleanup(func() { _ = db.Close() })
-	// Bind only the existing site data identity allocator, not deployment admission.
-	identity := config.NodeConfig{Role: "site", SiteID: 1}
-	if err := nodesync.Bind(db.GORM, identity); err != nil {
-		t.Fatal(err)
-	}
 	imageDir := t.TempDir()
 	var material weighing.Material
 	var party weighing.Party
@@ -65,9 +59,6 @@ func TestPostgresLocalBusinessRecovery(t *testing.T) {
 	restored.restore(t, backup)
 	restoredDB := openTemporaryDatabase(t, restored.dsn)
 	t.Cleanup(func() { _ = restoredDB.Close() })
-	if err := nodesync.Bind(restoredDB.GORM, identity); err != nil {
-		t.Fatal(err)
-	}
 	t.Run("restore_without_automatic_replay", func(t *testing.T) {
 		router, token, device := recoveryBusinessAPI(t, restoredDB, imageDir)
 		got := weighingData[weighing.TicketView](t, router, "GET", fmt.Sprintf("/api/weighing/tickets/%d", savedTicket.ID), "", token)
@@ -121,14 +112,25 @@ func recoveryBusinessAPI(t *testing.T, db *platformdatabase.Database, imageDir s
 	t.Helper()
 	deps := testDependencies(t, db, t.TempDir())
 	t.Cleanup(deps.Notification.Close)
-	hub := agentbridge.New(agentbridge.Config{ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key", ImageDir: imageDir})
-	deps.Weighing = weighing.NewService(weighing.NewRepository(db.GORM), hub)
+	repo := weighing.NewRepository(db.GORM)
+	hub := agentbridge.NewMultiple(nil)
+	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
+		return repo.AgentConfig(ctx, id, imageDir)
+	})
+	deps.Weighing = weighing.NewService(repo, hub)
+	deps.Camera, _, _ = newCaptureService(t, db, t.TempDir())
 	router, err := app.Build(testAPIConfig(), db, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	token := loginAdmin(t, router)
-	return router, token, startWeighingAgent(t, router, hub)
+	testLocalSetup(t, db, router, token, 1)
+	addCaptureCameras(t, db, "rtsp://camera/recovery-1", "rtsp://camera/recovery-2")
+	deviceConfig, err := repo.AgentConfig(context.Background(), 1, imageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return router, token, startWeighingAgentWithConfig(t, router, hub, deviceConfig)
 }
 
 func recoveryTrip(t *testing.T, router http.Handler, token string, device *weighingAgent, materialID, partyID int64, plate, key string, complete bool) (result struct {

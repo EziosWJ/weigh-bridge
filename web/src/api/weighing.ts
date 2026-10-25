@@ -7,7 +7,7 @@ export interface WeighingSite {id:number;code:string;name:string;enabled:number;
 export interface WeighingScale {id:number;code:string;name:string;enabled:number;siteId:number;siteName:string;canOperate:boolean}
 export interface SiteGrant {siteId:number;canOperate:number}
 export interface WeighingCapabilities {
- nodeRole?: 'central' | 'site' | 'standalone'; nodeSiteId?: number;
+ localSiteId: number; configured: boolean; initialized: boolean;
  maintenanceEnabled?: boolean;
  sites: WeighingSite[];
   userId: number;

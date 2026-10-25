@@ -72,8 +72,15 @@ type Message struct {
 }
 
 func New(kind, id, request string, payload any) Message {
+	return NewVersion(LegacyProtocolVersion, kind, id, request, payload)
+}
+
+// NewVersion builds a message for an explicit protocol revision. Revision 2
+// messages are required for the measurement window and the new maintenance
+// contract; revision 1 remains the compatibility envelope.
+func NewVersion(version int, kind, id, request string, payload any) Message {
 	data, _ := json.Marshal(payload)
-	return Message{1, kind, id, request, time.Now().UTC(), data}
+	return Message{version, kind, id, request, time.Now().UTC(), data}
 }
 
 type DeviceState struct {
@@ -88,11 +95,27 @@ type Plate struct {
 	Failed    bool      `json:"failed"`
 	At        time.Time `json:"at"`
 }
+
+// Image is the shared image reference for both legacy Agent uploads and the
+// Server-owned camera module. Legacy clients send only id/view/url/sha256 and
+// their historical front/rear files stay readable. Server images add the
+// camera snapshot, actual acquisition status and capture time; a failed
+// acquisition keeps an id and status but no URL.
 type Image struct {
-	ID     string `json:"id"`
-	View   string `json:"view"`
-	URL    string `json:"url"`
-	SHA256 string `json:"sha256"`
+	ID             string     `json:"id"`
+	View           string     `json:"view,omitempty"`
+	URL            string     `json:"url"`
+	SHA256         string     `json:"sha256,omitempty"`
+	Source         string     `json:"source,omitempty"`
+	CameraID       int64      `json:"cameraId,omitempty"`
+	CameraPublicID string     `json:"cameraPublicId,omitempty"`
+	CameraName     string     `json:"cameraName,omitempty"`
+	Status         string     `json:"status,omitempty"`
+	Error          string     `json:"error,omitempty"`
+	CapturedAt     *time.Time `json:"capturedAt,omitempty"`
+	Width          int        `json:"width,omitempty"`
+	Height         int        `json:"height,omitempty"`
+	Bytes          int64      `json:"bytes,omitempty"`
 }
 type Camera struct {
 	Images []Image `json:"images"`
@@ -118,6 +141,10 @@ type CaptureRequest struct {
 
 func (r CaptureRequest) RequiresImages() bool { return r.CaptureRequired == nil || *r.CaptureRequired }
 
+// Capture is the legacy v1 capture result. Revision 2 clients use the
+// measurement window and Server-side camera acquisition instead. The
+// measurement fields are retained here so a transitional client can report
+// the basis that belongs to an uploaded legacy image pair.
 type Capture struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
@@ -127,6 +154,12 @@ type Capture struct {
 	CapturedAt  time.Time `json:"capturedAt"`
 	Images      []Image   `json:"images"`
 	Plate       Plate     `json:"plate"`
+	// PlateSource distinguishes a Server recognition candidate from an Agent
+	// scene observation that was reused when recognition was unavailable.
+	PlateSource           string `json:"plateSource,omitempty"`
+	MeasurementGeneration string `json:"measurementGeneration,omitempty"`
+	MeasurementVerified   bool   `json:"measurementVerified,omitempty"`
+	CameraConfigVersion   int64  `json:"cameraConfigVersion,omitempty"`
 }
 type PrintRequest struct {
 	AttemptID int64 `json:"attemptId"`

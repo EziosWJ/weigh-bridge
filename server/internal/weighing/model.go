@@ -138,7 +138,7 @@ type Store interface {
 	AgentSettings(context.Context) (AgentSetting, error)
 	SaveAgentSettings(context.Context, string, audit.Event) error
 	SaveSiteConfiguration(context.Context, int64, SiteConfigurationInput, audit.Event, func(int64) bool) (SiteConfiguration, error)
-	ExportAgentConnection(context.Context, int64, audit.Event) (agentconfig.Connection, error)
+	ExportAgentConnection(context.Context, int64, string, audit.Event) (agentconfig.Connection, error)
 
 	RecordAgentKick(context.Context, audit.Event) error
 	Sites(context.Context, int64) ([]Site, error)
@@ -173,6 +173,7 @@ type Store interface {
 	Session(context.Context, int64) (ScaleSession, error)
 	ChangeSession(context.Context, int64, string, SessionInput, audit.Event) (SessionResult, error)
 	Capture(context.Context, CaptureInput, audit.Event) (Sample, error)
+	Sample(context.Context, int64) (Sample, error)
 	InvalidateSample(context.Context, int64, SessionInput, int64) error
 	ConfirmFirst(context.Context, ConfirmationInput, audit.Event) (CommandResult, error)
 	Operation(context.Context, int64, string) (Operation, error)

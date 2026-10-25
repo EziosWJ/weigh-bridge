@@ -32,6 +32,7 @@ type Ticket struct {
 	IssuedAt              time.Time     `json:"issuedAt"`
 	IssuedBy              int64         `json:"issuedBy"`
 	IssuerName            string        `json:"issuerName"`
+	TicketTitle           string        `json:"ticketTitle"`
 	VoidedAt              *time.Time    `json:"voidedAt"`
 	VoidedBy              *int64        `json:"voidedBy"`
 	VoidReason            string        `json:"voidReason"`
@@ -45,9 +46,8 @@ type PriorFinalWeights struct {
 	Net   Tonnes `json:"net" swaggertype:"string"`
 }
 type TicketView struct {
-	ImagesComplete *bool              `json:"imagesComplete,omitempty"`
-	PrintSheet     *PrintSheet        `json:"printSheet,omitempty"`
-	PreviousFinal  *PriorFinalWeights `json:"previousFinal"`
+	PrintSheet    *PrintSheet        `json:"printSheet,omitempty"`
+	PreviousFinal *PriorFinalWeights `json:"previousFinal"`
 	Ticket
 	OriginalNet     Tonnes           `json:"originalNet" swaggertype:"string"`
 	FinalNet        Tonnes           `json:"finalNet" swaggertype:"string"`

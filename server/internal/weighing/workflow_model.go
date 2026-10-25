@@ -17,6 +17,11 @@ var (
 	ErrSession              = errors.New("地磅操作会话已失效，请重新取得操作权")
 	ErrRequestKey           = errors.New("同一请求编号不能用于不同操作或内容")
 	ErrWeight               = errors.New("毛重必须大于皮重，原始与最终净重均须大于零")
+	// New formal-capture failures. They are transport-visible business errors,
+	// never a silent downgrade to the legacy Agent image pair.
+	ErrCaptureCameraRequired = errors.New("强制抓拍已开启但未指定称重抓拍摄像头")
+	ErrMeasurementCapability = errors.New("Agent 不支持所需的测量有效性检查，请升级设备 Agent")
+	ErrCameraConfigChanged   = errors.New("称重抓拍配置已变更，请重新采集")
 )
 
 // Tonnes is an exact thousandth of a tonne shared with the Agent contract.
@@ -160,6 +165,12 @@ type Sample struct {
 	PlateEvidence     JSON         `json:"plateEvidence" swaggertype:"object"`
 	DeviceRevision    int64        `json:"-" gorm:"column:conditions_version"`
 	InvalidatedAt     *time.Time   `json:"invalidatedAt"`
+
+	// Measurement evidence for the new formal-capture window. Historical rows
+	// keep an empty generation and the original device revision rule.
+	MeasurementGeneration string     `json:"measurementGeneration,omitempty"`
+	MeasurementVerifiedAt *time.Time `json:"measurementVerifiedAt,omitempty"`
+	CameraConfigVersion   int64      `json:"cameraConfigVersion,omitempty"`
 }
 
 func (Sample) TableName() string { return "wb_sample" }
@@ -231,18 +242,17 @@ type WeighRecord struct {
 func (WeighRecord) TableName() string { return "wb_weigh_record" }
 
 type Operation struct {
-	ID              int64     `json:"id" gorm:"primaryKey"`
-	ActorID         int64     `json:"-"`
-	RequestID       string    `json:"requestId"`
-	OriginRequestID string    `json:"originRequestId,omitempty"`
-	Command         string    `json:"command"`
-	RequestHash     string    `json:"-"`
-	Status          string    `json:"status"`
-	TaskID          *int64    `json:"taskId"`
-	TicketID        *int64    `json:"ticketId"`
-	Result          JSON      `json:"result" gorm:"column:result_snapshot" swaggertype:"object"`
-	ErrorSnapshot   string    `json:"error"`
-	CommittedAt     time.Time `json:"committedAt"`
+	ID            int64     `json:"id" gorm:"primaryKey"`
+	ActorID       int64     `json:"-"`
+	RequestID     string    `json:"requestId"`
+	Command       string    `json:"command"`
+	RequestHash   string    `json:"-"`
+	Status        string    `json:"status"`
+	TaskID        *int64    `json:"taskId"`
+	TicketID      *int64    `json:"ticketId"`
+	Result        JSON      `json:"result" gorm:"column:result_snapshot" swaggertype:"object"`
+	ErrorSnapshot string    `json:"error"`
+	CommittedAt   time.Time `json:"committedAt"`
 }
 
 func (Operation) TableName() string { return "wb_operation" }

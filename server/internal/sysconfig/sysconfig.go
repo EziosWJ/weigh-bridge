@@ -226,15 +226,30 @@ func (s *Service) Update(c context.Context, m audit.Metadata, id int64, in Input
 }
 
 func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config, in Input) error {
-	if old.ConfigKey != LogClearEnabledKey && old.ConfigKey != CaptureRequiredKey {
+	var value string
+	switch old.ConfigKey {
+	case LogClearEnabledKey, CaptureRequiredKey:
+		if old.ValueType != "BOOLEAN" {
+			return ErrInvalid
+		}
+		normalized, ok := normalizeBooleanValue(in.ConfigValue)
+		if !ok {
+			return ErrInvalid
+		}
+		value = normalized
+	case TicketTitleKey:
+		// The ticket title is a protected text key: only its value may change,
+		// and it must stay a non-empty single-line title.
+		if old.ValueType != "TEXT" {
+			return ErrInvalid
+		}
+		normalized, ok := normalizeTicketTitle(in.ConfigValue)
+		if !ok {
+			return ErrInvalid
+		}
+		value = normalized
+	default:
 		return ErrBuiltin
-	}
-	if old.ValueType != "BOOLEAN" {
-		return ErrInvalid
-	}
-	value, ok := normalizeBooleanValue(in.ConfigValue)
-	if !ok {
-		return ErrInvalid
 	}
 	before := old.ConfigValue
 	old.ConfigValue = value
@@ -286,7 +301,7 @@ func (s *Service) Status(c context.Context, m audit.Metadata, id, st int64) erro
 	if e != nil {
 		return e
 	}
-	if old.ConfigKey == CaptureRequiredKey {
+	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey {
 		return ErrBuiltin
 	}
 	return s.store.SetStatus(c, id, int(st), event(m, "config.status", "config", id, "更新配置状态"))

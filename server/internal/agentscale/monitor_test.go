@@ -76,7 +76,7 @@ func (o *scriptedOpener) Calls() int {
 }
 
 func testConfig() Config {
-	return Config{Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "keli-d12-tf05", Unit: UnitTonne, Stale: 300 * time.Millisecond}
+	return Config{Port: "/dev/ttyS0", Baud: 9600}
 }
 
 func newTestMonitor(t *testing.T, cfg Config, opener Opener) (*Monitor, *testClock) {
@@ -122,9 +122,9 @@ func TestFreshnessComesFromValidFramesNotOpenOrSnapshot(t *testing.T) {
 	if s.WeightMilliTonnes != 1550 || s.Weight != "1.55" || s.SourceWeight != "1.550" || s.ChecksumStatus != "ok" {
 		t.Fatalf("snapshot: %+v", s)
 	}
-	clock.Advance(400 * time.Millisecond)
+	clock.Advance(1100 * time.Millisecond)
 	stale := m.Snapshot(clock.Now())
-	if !stale.Stale || stale.DeviceOK || stale.Stable || !strings.Contains(stale.Fault, "300 ms") {
+	if !stale.Stale || stale.DeviceOK || stale.Stable || !strings.Contains(stale.Fault, "1000 ms") {
 		t.Fatalf("stale snapshot: %+v", stale)
 	}
 	// Repeated snapshots cannot refresh the old reading.
@@ -220,20 +220,18 @@ func TestCancellationClosesPortAndStops(t *testing.T) {
 	}
 }
 
-func TestDisabledMonitorIsExplicitlyUnavailable(t *testing.T) {
-	m, clock := newTestMonitor(t, Config{Enabled: false}, nil)
+func TestUnconfiguredMonitorIsExplicitlyUnavailable(t *testing.T) {
+	m, clock := newTestMonitor(t, Config{}, nil)
 	s := m.Snapshot(clock.Now())
-	if s.Enabled || s.DeviceOK || s.Stable || !strings.Contains(s.Fault, "未启用") {
-		t.Fatalf("disabled snapshot: %+v", s)
+	if s.Enabled || s.DeviceOK || s.Stable || !strings.Contains(s.Fault, "未配置") {
+		t.Fatalf("unconfigured snapshot: %+v", s)
 	}
-	if err := (Config{Enabled: true, Port: "ttyS0", Baud: 9600, Protocol: "keli-d12-tf05", Unit: UnitTonne, Stale: time.Second}).Validate(); err == nil {
+	if err := (Config{Port: "ttyS0", Baud: 9600}).Validate(); err == nil {
 		t.Fatal("relative device path accepted")
 	}
 	for _, cfg := range []Config{
-		{Enabled: true, Port: "/dev/ttyS0", Baud: 1234, Protocol: "keli-d12-tf05", Unit: UnitTonne, Stale: time.Second},
-		{Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "other", Unit: UnitTonne, Stale: time.Second},
-		{Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "keli-d12-tf05", Unit: Unit("lb"), Stale: time.Second},
-		{Enabled: true, Port: "/dev/ttyS0", Baud: 9600, Protocol: "keli-d12-tf05", Unit: UnitTonne, Stale: 3 * time.Second},
+		{Port: "/dev/ttyS0", Baud: 1234},
+		{Port: "/dev/../etc/passwd", Baud: 9600},
 	} {
 		if err := cfg.Validate(); err == nil {
 			t.Fatalf("invalid config accepted: %+v", cfg)

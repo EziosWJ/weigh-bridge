@@ -109,6 +109,8 @@ type Service struct {
 	cameraTester            func(context.Context, int64) (p.CameraTest, error)
 	environment             string
 	deviceOwned             bool
+	configVersion           int64
+	appliedAt               time.Time
 }
 
 func (s *Service) SetBusinessConfigValidator(v BusinessConfigValidator) {
@@ -161,8 +163,10 @@ func open(dir string, runner Runner, initialDraft *Config, deviceOwned bool) (*S
 			Active   Config `json:"active"`
 			Config   Config `json:"config"`
 			Saved    Config `json:"saved"`
-			Previous Config `json:"previous"`
-			Password string `json:"passwordHash"`
+			Previous      Config    `json:"previous"`
+			Password      string    `json:"passwordHash"`
+			ConfigVersion int64     `json:"configVersion"`
+			AppliedAt     time.Time `json:"appliedAt"`
 		}
 		if json.Unmarshal(b, &v) != nil {
 			return nil, errors.New("invalid maintenance config")
@@ -177,6 +181,8 @@ func open(dir string, runner Runner, initialDraft *Config, deviceOwned bool) (*S
 		}
 		s.previous = agentprinter.NormalizeConfig(v.Previous)
 		s.password = v.Password
+		s.configVersion = v.ConfigVersion
+		s.appliedAt = v.AppliedAt
 	} else if !os.IsNotExist(e) {
 		return nil, e
 	}
@@ -209,6 +215,21 @@ func open(dir string, runner Runner, initialDraft *Config, deviceOwned bool) (*S
 	if _, err := s.reloadEnvironment(); err != nil {
 		s.startupError = "既有 Agent 配置导入失败，请登录检查并修正配置：" + err.Error()
 	}
+	// Existing installations already have an applied configuration but no
+	// version yet. Record it once so the Server can store the first recovery
+	// copy without inventing a newer version on every reconnect.
+	s.mu.Lock()
+	if s.appliedAt.IsZero() {
+		s.appliedAt = time.Now().UTC()
+		if s.configVersion < 1 {
+			s.configVersion = 1
+		}
+		if err := s.persist(); err != nil {
+			s.mu.Unlock()
+			return nil, err
+		}
+	}
+	s.mu.Unlock()
 	s.page = []byte(pageHTML)
 	return s, nil
 }
@@ -239,11 +260,13 @@ func hashPassword(p string) string {
 }
 func (s *Service) persist() error {
 	b, e := json.MarshalIndent(struct {
-		Draft    Config `json:"draft"`
-		Active   Config `json:"active"`
-		Password string `json:"passwordHash"`
-		Previous Config `json:"previous"`
-	}{s.draft, s.active, s.password, s.previous}, "", "  ")
+		Draft         Config    `json:"draft"`
+		Active        Config    `json:"active"`
+		Password      string    `json:"passwordHash"`
+		Previous      Config    `json:"previous"`
+		ConfigVersion int64     `json:"configVersion"`
+		AppliedAt     time.Time `json:"appliedAt"`
+	}{s.draft, s.active, s.password, s.previous, s.configVersion, s.appliedAt}, "", "  ")
 	if e != nil {
 		return e
 	}
@@ -502,7 +525,7 @@ func (s *Service) status(w http.ResponseWriter, r *http.Request) {
 		camera["enabled"], camera["mode"] = cfg.CameraEnabled, cfg.CameraMode
 		camera["frontConfigured"], camera["rearConfigured"] = cfg.CameraFrontPath != "", cfg.CameraRearPath != ""
 	}
-	s.json(w, map[string]any{"checkedAt": now.Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil, "scale": scaleView, "camera": camera})
+	s.json(w, map[string]any{"checkedAt": now.Format(time.RFC3339), "maintenance": "运行中", "agent": agentState, "cups": cupsState, "cloud": cloud, "server": cfg.ServerURL, "queue": cfg.Queue, "queueState": queue, "queues": nonNilStrings(q), "queueDetails": queueDetails, "jobs": nonNilJobs(summary), "jobsKnown": jobs.Err == nil, "lastError": s.redactLog(last), "agentKnown": strings.TrimSpace(agent.Output) != "", "cupsKnown": strings.TrimSpace(cups.Output) != "", "queueKnown": queues.Err == nil, "scale": scaleView, "camera": camera})
 }
 func cloudStatus(path string) string {
 	b, e := os.ReadFile(path)
@@ -723,7 +746,7 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 			cfg = s.previous
 		}
 		s.mu.Unlock()
-		if cfg.AgentID == "" {
+		if cfg.ServerURL == "" {
 			s.fail(w, errors.New("尚无可恢复的上一份配置"))
 			return
 		}
@@ -737,10 +760,6 @@ func (s *Service) action(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := s.validateBusinessConfig(r, cfg); err != nil {
 			s.fail(w, err)
-			return
-		}
-		if cfg.AgentKey == "" {
-			s.fail(w, errors.New("Agent 连接密钥尚未设置"))
 			return
 		}
 		skipPrintChecks := s.deviceOwned && samePrinter(before, cfg)
@@ -1298,12 +1317,19 @@ func BuildAgentEnvironmentAt(path string, c Config) error {
 	if err := validate(c); err != nil {
 		return err
 	}
-	if c.AgentKey == "" || strings.ContainsAny(c.AgentKey, "\r\n\x00") {
-		return errors.New("Agent 连接密钥未设置或格式无效")
+	// ADR 0030: the key is no longer required. A legacy key is retained only
+	// so an in-place upgrade does not lose the existing local file before the
+	// old keyed deployment is retired.
+	data := fmt.Sprintf("WEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
+	if c.AgentKey != "" {
+		if strings.ContainsAny(c.AgentKey, "\r\n\x00") {
+			return errors.New("旧连接密钥格式无效")
+		}
+		data = fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\n", strconv.Quote(c.AgentKey)) + data
 	}
-	data := fmt.Sprintf("APP_WEIGHING__AGENT_KEY=%s\nWEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.AgentKey), strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
-	data += fmt.Sprintf("WEIGHBRIDGE_SITE_ID=%d\nWEIGHBRIDGE_SITE_CODE=%s\nWEIGHBRIDGE_SITE_NAME=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_SCALE_NAME=%s\n", c.SiteID, strconv.Quote(c.SiteCode), strconv.Quote(c.SiteName), strconv.Quote(c.ScaleCode), strconv.Quote(c.ScaleName))
-	data += fmt.Sprintf("WEIGHBRIDGE_SERIAL_ENABLED=%t\nWEIGHBRIDGE_SERIAL_PORT=%s\nWEIGHBRIDGE_SERIAL_BAUD=%d\nWEIGHBRIDGE_SERIAL_PROTOCOL=%s\nWEIGHBRIDGE_SERIAL_WEIGHT_UNIT=%s\nWEIGHBRIDGE_SERIAL_STALE_MS=%d\n", c.SerialEnabled, strconv.Quote(c.SerialPort), c.SerialBaud, strconv.Quote(c.SerialProtocol), strconv.Quote(c.SerialWeightUnit), c.SerialStaleMS)
+	// D12 tF=05, 8N1, tonne parsing and the 1 s freshness limit are fixed;
+	// only the Agent host's serial port and baud are persisted.
+	data += fmt.Sprintf("WEIGHBRIDGE_SERIAL_PORT=%s\nWEIGHBRIDGE_SERIAL_BAUD=%d\n", strconv.Quote(c.SerialPort), c.SerialBaud)
 	data += fmt.Sprintf("WEIGHBRIDGE_CAMERA_FRONT_URL=%s\nWEIGHBRIDGE_CAMERA_REAR_URL=%s\nWEIGHBRIDGE_PLATE_RECOGNITION_URL=%s\nWEIGHBRIDGE_CAMERA_TIMEOUT_MS=%d\n", strconv.Quote(c.CameraFrontURL), strconv.Quote(c.CameraRearURL), strconv.Quote(c.PlateRecognitionURL), c.CameraTimeoutMS)
 	media, _ := json.Marshal(c.CameraSettings())
 	data += "WEIGHBRIDGE_CAMERA_CONFIG=" + strconv.Quote(string(media)) + "\n"

@@ -53,7 +53,6 @@ export function WeighingTicketsPage() {
   const summary = useWeighingSummary('tickets', deferred, result.revision);
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const canReopenTicket = (row: WireTicket) => row.status === 'void'
-    && capabilities?.nodeRole !== 'central'
     && can('reopen')
     && (capabilities?.sites.some(site => site.id === row.siteId && site.canOperate) ?? false);
   const download = (kind: string) => void downloadWeighingCsv(kind, filter).catch(error => setDownloadError(error.message));
@@ -63,9 +62,9 @@ export function WeighingTicketsPage() {
     { title: '方向 / 物料规格', key: 'business', width: 180, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span> },
-    { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag>{row.imagesComplete===false&&<span className="ml-2 text-warning">图片待同步</span>}<div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
+    { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag><div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
     { title: '出单时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
-    { title: '操作', key: 'actions', width: 168, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{capabilities?.nodeRole!=='central'&&can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
+    { title: '操作', key: 'actions', width: 168, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
   ];
   if (params.get('ticket')) return <Navigate replace to={`/weighing/tickets/${encodeURIComponent(params.get('ticket')!)}`} />;
   return <div className="weighing-list-page"><PageHeader title="最终单据" description="" /><DeviceBanner compact />
@@ -88,14 +87,14 @@ export function WeighingTicketDetailPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const ticket = data.tickets.find((item) => item.id === id);
-  const canOperate = capabilities?.nodeRole!=='central'&&!!capabilities?.permissionCodes.some(code => ["weighing:void","weighing:reopen","weighing:print","weighing:reprint"].includes(code));
-  const canPrint = capabilities?.nodeRole!=='central' && (capabilities?.permissionCodes.includes("weighing:print") ?? false);
+  const canOperate = !!capabilities?.permissionCodes.some(code => ["weighing:void","weighing:reopen","weighing:print","weighing:reprint"].includes(code));
+  const canPrint = capabilities?.permissionCodes.includes("weighing:print") ?? false;
 
   useEffect(() => {
     if (!id) return;
     void (async () => { await loadTicket(id); const found=useWeighingStore.getState().data.tickets.find(t=>t.id===id);if(found) await loadTask(found.taskId); })().catch(failure=>setError(failure instanceof Error?failure.message:'详情加载失败'));
   }, [id, loadTicket, loadTask]);
-  const can = (code: string) => (capabilities?.nodeRole!=='central'&&(code==='print'||!!capabilities?.sites.some(s=>s.id===ticket?.siteId&&s.canOperate)))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
+  const can = (code: string) => (code==='print'||!!capabilities?.sites.some(s=>s.id===ticket?.siteId&&s.canOperate))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
 
   function startOperation(next: TicketOperation) {
     if (!ticket) return;
@@ -155,7 +154,7 @@ export function WeighingTicketPreviewPage() {
   const { id } = useParams();
   const { data, capabilities, loadPreview } = useWeighingStore();
   const [error, setError] = useState('');
-  const canPrint = capabilities?.nodeRole!=='central' && (capabilities?.permissionCodes.includes('weighing:print') ?? false);
+  const canPrint = capabilities?.permissionCodes.includes('weighing:print') ?? false;
   useEffect(() => {
     if (id && canPrint) void loadPreview(id).catch(failure => setError(failure instanceof Error ? failure.message : '预览加载失败'));
   }, [id, canPrint, loadPreview]);

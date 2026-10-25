@@ -13,9 +13,10 @@ export const emptyTaskInput = (): TaskInput => ({ plate: '', direction: 'inbound
 export interface BusinessInfo { plate: string; direction: Direction; materialId: string; materialName: string; partyId: string; partyName: string; driver: string; remark: string; materialCode?: string; materialSpec?: string; materialCategoryName?: string; partyCode?: string; partyNature?: PartyNature; partyPhone?: string; partyAddress?: string; carrierId?: string; carrierName?: string; carrierCode?: string; contactName?: string; contactPhone?: string; driverPhone?: string }
 export type TaskInput = Pick<BusinessInfo, 'plate' | 'direction' | 'materialId' | 'partyId' | 'driver' | 'remark' | 'carrierId' | 'contactName' | 'contactPhone' | 'driverPhone'>;
 export type CameraPreset = 'front' | 'rear';
-export interface PlateEvidence { source: 'agent' | 'simulated' | 'manual'; scenePlate?: string; candidate?: string; confirmedPlate: string; at: string }
-export interface CaptureSnapshot { captureRequired?: boolean; capturePolicyRevision?: string; imageStatus?: 'complete' | 'disabled' | 'capture_failed' | 'upload_failed'; imageError?: string; stage?: 'first' | 'second'; plateEvidence?: PlateEvidence; id: string; preset: CameraPreset; imageSrc: string; source?: 'agent' | 'simulated'; images?: DeviceImage[]; cameraLabel: string; at: string; weight: number; sourceWeightKg?: number; plate?: string }
-export interface WeighRecord { actor?: string; role?: OperatorRole; retainedRecordId?: string; id: string; stage: 'first' | 'second'; kind: 'gross' | 'tare'; weight: number; sourceWeightKg?: number; at: string; evidence: 'agent' | 'simulated'; capture?: CaptureSnapshot; replaces?: string; reason?: string }
+export interface PlateEvidence { source: 'agent' | 'simulated' | 'manual' | 'server'; scenePlate?: string; candidate?: string; confirmedPlate: string; at: string; observedAt?: string }
+export interface CaptureFailure { cameraId: number; cameraPublicId?: string; cameraName: string; code: string; message: string }
+export interface CaptureSnapshot { captureRequired?: boolean; capturePolicyRevision?: string; imageStatus?: 'complete' | 'disabled' | 'capture_failed' | 'upload_failed'; imageError?: string; stage?: 'first' | 'second'; plateEvidence?: PlateEvidence; id: string; preset?: CameraPreset; imageSrc?: string; source?: 'agent' | 'simulated' | 'server'; images?: DeviceImage[]; failures?: CaptureFailure[]; cameraConfigVersion?: number; cameraLabel?: string; at: string; weight: number; sourceWeightKg?: number; plate?: string }
+export interface WeighRecord { actor?: string; role?: OperatorRole; retainedRecordId?: string; id: string; stage: 'first' | 'second'; kind: 'gross' | 'tare'; weight: number; sourceWeightKg?: number; at: string; evidence: 'agent' | 'simulated' | 'server'; capture?: CaptureSnapshot; replaces?: string; reason?: string }
 export interface HistoryEntry { actor?: string; at: string; role?: OperatorRole; action: string; reason?: string }
 export interface TransportTask extends BusinessInfo { siteId?:number;scaleId?:number; taskNo?: string; version?: number; id: string; createdAt: string; status: TaskStatus; records: WeighRecord[]; history: HistoryEntry[]; verifiedDate?: string; crossDayDoubt?: boolean; example?: boolean }
 export type PrintStatus = 'unprinted' | 'failed' | 'unknown' | 'printed';
@@ -25,7 +26,23 @@ export type FinalWeightInput = Pick<WeightValues, 'gross' | 'tare'> & { reason?:
 export interface WeightAdjustment extends WeightDeduction { source?: 'manual' | 'collected'; actor: string; role?: OperatorRole; at: string; original: WeightValues; before: WeightValues; after: WeightValues }
 export interface PrintSheet { template: string; widthMm: number; heightMm: number; layers: number; title: string; marks: string[]; rows: { label: string; value: string }[][] }
 export interface WeighingTicket extends BusinessInfo { siteId?:number;siteName?:string; printSheet?: PrintSheet; legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
-export interface DeviceImage { id: string; view: 'front' | 'rear'; url: string; sha256: string }
+export interface DeviceImage {
+  id: string;
+  /** Legacy Agent images keep front/rear; Server images use cameraName instead. */
+  view?: CameraPreset;
+  url: string;
+  sha256?: string;
+  source?: 'server' | 'agent' | string;
+  cameraId?: number;
+  cameraPublicId?: string;
+  cameraName?: string;
+  status?: string;
+  error?: string;
+  capturedAt?: string;
+  width?: number;
+  height?: number;
+  bytes?: number;
+}
 export interface DeviceState { captureRequired?: boolean; capturePolicyRevision?: string; captureBlockedReason?: string; connectionId?:string; agentId: string; scaleId: number; weight: string; stable: boolean; deviceOk: boolean; online: boolean; revision: string; receivedAt: string; plate: { candidate: string; failed: boolean; at: string }; images: DeviceImage[] }
 export interface DeviceConfig { role: OperatorRole; weight: number; stable: boolean; timedOut: boolean; deviceError: boolean; online: boolean; evidence: boolean }
 

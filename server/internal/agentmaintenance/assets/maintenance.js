@@ -20,12 +20,8 @@ const fields = [
   ['offsetXmm', '向右偏移 (mm)', 'number', 0, 30, '允许 0～30 mm'],
   ['offsetYmm', '向下偏移 (mm)', 'number', 0, 30, '允许 0～30 mm'],
   ['formLengthMm', '连续纸表长 (mm)', 'number', 85, 300, '允许 85～300 mm，支持小数；量相邻横向撕纸线间距，不直接按 99 mm 推定'],
-  ['serialEnabled', '启用柯力 D12 仪表', 'checkbox', null, null, '关闭时保持原打印能力；启用后由打印 Agent 独占串口'],
   ['serialPort', '串口路径', 'text', null, null, '例如 /dev/ttyS0；不得与诊断工具同时占用'],
   ['serialBaud', '仪表波特率', 'number', 1200, 115200, '必须与仪表 bt 一致；现场为 9600'],
-  ['serialProtocol', '仪表协议', 'select', null, null, '当前仅支持 D12 tF=05 连续输出', ['keli-d12-tf05']],
-  ['serialWeightUnit', '现场源单位', 'select', null, null, '按现场核对结果选择；本机已确认 t，不得依据单位位自动换算', ['t', 'kg']],
-  ['serialStaleMs', '无有效帧故障阈值 (ms)', 'number', 200, 2999, '须早于 Server 的 3000 ms 采集保鲜门限'],
 ];
 let cfg = {};
 let configData;
@@ -34,7 +30,7 @@ function displayField(key, value) {
   return field?.[2] === 'checkbox' ? (value ? '启用' : '停用') : String(value ?? '');
 }
 function scaleSummary(c) {
-  return c.serialEnabled ? `D12 ${c.serialProtocol}，${c.serialPort}，${c.serialBaud} 8N1，源单位 ${c.serialWeightUnit}，陈旧阈值 ${c.serialStaleMs} ms` : '称重仪表未启用（仅打印）';
+  return c.serialPort ? `D12 tF=05，${c.serialPort}，${c.serialBaud} 8N1，吨制，1 秒无有效帧阈值` : '称重仪表尚未配置串口（仅打印）';
 }
 
 let lastState;

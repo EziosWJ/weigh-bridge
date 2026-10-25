@@ -67,3 +67,17 @@ func TestManagedPrinterRejectsIncompleteIdentityInsteadOfUsingDefaults(t *testin
 		t.Fatal("incomplete identity silently defaulted")
 	}
 }
+
+func TestManagedPrinterAcceptsKeylessServerAddress(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "agent.env")
+	if err := os.WriteFile(file, []byte("WEIGHBRIDGE_SERVER_URL=https://site.example\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, _, err := printerOptions([]string{"--env-file", file, "--state-dir", "state"}, func(string) string { return "" })
+	if err != nil {
+		t.Fatalf("keyless Agent must start from a Server address alone: %v", err)
+	}
+	if c.ServerURL != "https://site.example" || c.AgentKey != "" {
+		t.Fatalf("keyless configuration changed: %+v", c)
+	}
+}

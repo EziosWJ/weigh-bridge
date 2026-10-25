@@ -42,37 +42,39 @@ type Config struct {
 	CameraFrontPath     string `json:"cameraFrontPath"`
 	CameraRearPath      string `json:"cameraRearPath"`
 
-	SerialEnabled    bool   `json:"serialEnabled"`
-	SerialPort       string `json:"serialPort"`
-	SerialBaud       int    `json:"serialBaud"`
-	SerialProtocol   string `json:"serialProtocol"`
-	SerialWeightUnit string `json:"serialWeightUnit"`
-	SerialStaleMS    int    `json:"serialStaleMs"`
+	SerialPort string `json:"serialPort"`
+	SerialBaud int    `json:"serialBaud"`
 }
 
 func Defaults() Config {
 	return Config{
 		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99, PrintScale: 1,
 		CameraTimeoutMS: 2000,
-		SerialPort:      "/dev/ttyS0", SerialBaud: 9600, SerialProtocol: "keli-d12-tf05", SerialWeightUnit: "t", SerialStaleMS: 1000,
+		SerialBaud:      9600,
 	}
 }
 
 func ValidateConfig(c Config) error {
-	if c.ScaleID < 1 || !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) {
-		return errors.New("Agent 编号或地磅编号无效")
+	// ADR 0030: the Agent only needs the Server address. Site/scale/Agent ids
+	// are assigned by the Server in agent.hello.ack; when present locally they
+	// are diagnostics, never an admission requirement.
+	if c.AgentID != "" && !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) {
+		return errors.New("Agent 诊断编号格式无效")
+	}
+	if c.ScaleID < 0 {
+		return errors.New("地磅编号无效")
 	}
 	if _, err := CanonicalServerURL(c.ServerURL); err != nil {
 		return err
 	}
 	if strings.ContainsAny(c.AgentKey, "\r\n\x00") {
-		return errors.New("Agent 连接密钥格式无效")
+		return errors.New("旧连接密钥格式无效")
 	}
 	u, e := url.Parse(c.ServerURL)
 	if e != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Fragment != "" || strings.ContainsAny(c.ServerURL, "\r\n\x00") {
 		return errors.New("Server 地址必须为 HTTP(S) URL")
 	}
-	if !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`).MatchString(c.Queue) {
+	if c.Queue != "" && !regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`).MatchString(c.Queue) {
 		return errors.New("打印队列名称无效")
 	}
 	if err := c.Calibration().Validate(); err != nil {
@@ -113,22 +115,19 @@ func validateCamera(c Config) error {
 }
 
 func validateSerial(c Config) error {
-	if c.SerialPort == "" || !strings.HasPrefix(c.SerialPort, "/dev/") || strings.Contains(c.SerialPort, "..") || strings.ContainsAny(c.SerialPort, "\r\n\x00") {
+	// An empty port means "not configured yet": maintenance stays available and
+	// the Agent reports an explicit unconfigured reason instead of failing to
+	// start. The D12 profile, 8N1, tonne parsing and 1 s freshness are fixed.
+	if c.SerialPort == "" {
+		return nil
+	}
+	if !strings.HasPrefix(c.SerialPort, "/dev/") || strings.Contains(c.SerialPort, "..") || strings.ContainsAny(c.SerialPort, "\r\n\x00") {
 		return errors.New("称重仪表串口路径无效，须为 /dev 下的设备路径")
 	}
 	switch c.SerialBaud {
 	case 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200:
 	default:
 		return errors.New("称重仪表波特率无效")
-	}
-	if c.SerialProtocol != "keli-d12-tf05" {
-		return errors.New("称重仪表协议无效，当前仅支持 keli-d12-tf05")
-	}
-	if c.SerialWeightUnit != "t" && c.SerialWeightUnit != "kg" {
-		return errors.New("称重仪表现场源单位须为 t 或 kg，并按实际仪表核对")
-	}
-	if c.SerialStaleMS < 200 || c.SerialStaleMS >= 3000 {
-		return errors.New("称重仪表陈旧阈值须在 200～2999 ms 之间，并早于 Server 的 3000 ms 门限")
 	}
 	return nil
 }
@@ -167,10 +166,10 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 		}
 		values[key] = value
 	}
-	for _, key := range []string{"WEIGHBRIDGE_SERVER_URL", "WEIGHBRIDGE_AGENT_ID", "WEIGHBRIDGE_SCALE_ID", "WEIGHBRIDGE_PRINT_QUEUE"} {
-		if strings.TrimSpace(values[key]) == "" {
-			return cfg, fmt.Errorf("agent.env 缺少 %s，请先迁入旧启动参数，避免使用默认身份", key)
-		}
+	// ADR 0030: only the Server address is required. Existing agents may still
+	// carry diagnostic ids and print settings; missing values are not gates.
+	if strings.TrimSpace(values["WEIGHBRIDGE_SERVER_URL"]) == "" {
+		return cfg, errors.New("agent.env 缺少 WEIGHBRIDGE_SERVER_URL")
 	}
 	for key, dst := range map[string]*string{"APP_WEIGHING__AGENT_KEY": &cfg.AgentKey, "WEIGHBRIDGE_SERVER_URL": &cfg.ServerURL, "WEIGHBRIDGE_AGENT_ID": &cfg.AgentID, "WEIGHBRIDGE_PRINT_QUEUE": &cfg.Queue} {
 		if value, ok := values[key]; ok {
@@ -201,23 +200,17 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 		}
 	}
 
-	for key, dst := range map[string]*string{"WEIGHBRIDGE_CAMERA_FRONT_URL": &cfg.CameraFrontURL, "WEIGHBRIDGE_CAMERA_REAR_URL": &cfg.CameraRearURL, "WEIGHBRIDGE_PLATE_RECOGNITION_URL": &cfg.PlateRecognitionURL, "WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName, "WEIGHBRIDGE_SERIAL_PORT": &cfg.SerialPort, "WEIGHBRIDGE_SERIAL_PROTOCOL": &cfg.SerialProtocol, "WEIGHBRIDGE_SERIAL_WEIGHT_UNIT": &cfg.SerialWeightUnit} {
+	for key, dst := range map[string]*string{"WEIGHBRIDGE_CAMERA_FRONT_URL": &cfg.CameraFrontURL, "WEIGHBRIDGE_CAMERA_REAR_URL": &cfg.CameraRearURL, "WEIGHBRIDGE_PLATE_RECOGNITION_URL": &cfg.PlateRecognitionURL, "WEIGHBRIDGE_SITE_CODE": &cfg.SiteCode, "WEIGHBRIDGE_SITE_NAME": &cfg.SiteName, "WEIGHBRIDGE_SCALE_CODE": &cfg.ScaleCode, "WEIGHBRIDGE_SCALE_NAME": &cfg.ScaleName, "WEIGHBRIDGE_SERIAL_PORT": &cfg.SerialPort} {
 		if value, ok := values[key]; ok {
 			*dst = value
 		}
 	}
-	for key, dst := range map[string]*int{"WEIGHBRIDGE_CAMERA_TIMEOUT_MS": &cfg.CameraTimeoutMS, "WEIGHBRIDGE_SERIAL_BAUD": &cfg.SerialBaud, "WEIGHBRIDGE_SERIAL_STALE_MS": &cfg.SerialStaleMS} {
+	for key, dst := range map[string]*int{"WEIGHBRIDGE_CAMERA_TIMEOUT_MS": &cfg.CameraTimeoutMS, "WEIGHBRIDGE_SERIAL_BAUD": &cfg.SerialBaud} {
 		if value, ok := values[key]; ok {
 			*dst, err = strconv.Atoi(value)
 			if err != nil {
 				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
 			}
-		}
-	}
-	if value, ok := values["WEIGHBRIDGE_SERIAL_ENABLED"]; ok {
-		cfg.SerialEnabled, err = strconv.ParseBool(value)
-		if err != nil {
-			return cfg, errors.New("agent.env 参数 WEIGHBRIDGE_SERIAL_ENABLED 无效")
 		}
 	}
 	if value := values["WEIGHBRIDGE_SITE_ID"]; value != "" {
@@ -246,8 +239,9 @@ func ConfigDigest(c Config) string {
 }
 
 // NormalizeConfig keeps pre-scaling maintenance files equivalent to 100% scale
-// and fills serial fields absent from older drafts. SerialEnabled is not
-// defaulted: an old file means "printing only".
+// and fills the fixed serial defaults absent from older drafts. An empty serial
+// port remains empty: the Agent stays in maintenance/printing mode until an
+// administrator saves an actual port.
 func NormalizeConfig(c Config) Config {
 	c.ResolveCameraURLs()
 	if c.PrintScale == 0 {
@@ -257,20 +251,8 @@ func NormalizeConfig(c Config) Config {
 	if c.CameraTimeoutMS == 0 {
 		c.CameraTimeoutMS = d.CameraTimeoutMS
 	}
-	if c.SerialPort == "" {
-		c.SerialPort = d.SerialPort
-	}
 	if c.SerialBaud == 0 {
 		c.SerialBaud = d.SerialBaud
-	}
-	if c.SerialProtocol == "" {
-		c.SerialProtocol = d.SerialProtocol
-	}
-	if c.SerialWeightUnit == "" {
-		c.SerialWeightUnit = d.SerialWeightUnit
-	}
-	if c.SerialStaleMS == 0 {
-		c.SerialStaleMS = d.SerialStaleMS
 	}
 	return c
 }

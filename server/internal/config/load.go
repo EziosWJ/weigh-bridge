@@ -61,6 +61,10 @@ func LoadFromDir(dir string) (*Config, error) {
 		return nil, fmt.Errorf("load APP_ environment: %w", err)
 	}
 
+	if k.Exists("node") {
+		return nil, errors.New("node configuration has been removed; configure the local factory in 本厂配置")
+	}
+
 	var cfg Config
 	if err := k.Unmarshal("", &cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
@@ -101,7 +105,7 @@ func envKeyValue(key, value string) (string, interface{}) {
 	key = strings.ToLower(strings.ReplaceAll(key, "__", delimiter))
 
 	switch key {
-	case "weighing.agents", "node.peers":
+	case "weighing.agents":
 		var bindings []map[string]any
 		if json.Unmarshal([]byte(value), &bindings) == nil {
 			return key, bindings

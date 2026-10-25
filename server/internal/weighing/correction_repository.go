@@ -278,7 +278,7 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 		if err != nil {
 			return out, err
 		}
-		if err := insertTicket(tx, &ticket); err != nil {
+		if err := insertTicket(ctx, tx, &ticket); err != nil {
 			return out, err
 		}
 		task.Version++

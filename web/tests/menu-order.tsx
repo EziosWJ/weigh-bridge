@@ -49,13 +49,12 @@ const systemNavigation = buildAppNavigation({
   menus: systemMenus,
   isAdmin: false,
   capabilities: {
-    nodeRole: "",
     maintenanceEnabled: true,
     permissionCodes: ["agent:maintenance:view"],
   },
-  nodeContextLoaded: true,
 });
 const systemGroup = systemNavigation.find((item) => item.path === "/system");
+const localManagement = systemNavigation.find((item) => item.path === "/local-management");
 
 const scenarios: Record<string, NavItem[]> = {
   // 本地入口与业务菜单 sortOrder 相同时，本地入口保持在前
@@ -84,6 +83,11 @@ createRoot(document.getElementById("root")!).render(
     </p>
     <ul data-testid="scenario-system">
       {systemGroup?.children?.map((item) => (
+        <li key={item.path}>{item.label}</li>
+      ))}
+    </ul>
+    <ul data-testid="scenario-local">
+      {localManagement?.children?.map((item) => (
         <li key={item.path}>{item.label}</li>
       ))}
     </ul>

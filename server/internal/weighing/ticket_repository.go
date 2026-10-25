@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"strings"
 	"time"
 
@@ -55,7 +56,7 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAd
 	// Validation completes before any fact or number is written.
 	return ticket, nil
 }
-func insertTicket(tx *gorm.DB, ticket *Ticket) error {
+func insertTicket(ctx context.Context, tx *gorm.DB, ticket *Ticket) error {
 	number, err := nextNumber(tx, "ticket", "GB")
 	if err != nil {
 		return err
@@ -64,7 +65,14 @@ func insertTicket(tx *gorm.DB, ticket *Ticket) error {
 	if err != nil {
 		return err
 	}
+	// The title is frozen in the same transaction that creates the ticket, so
+	// later configuration edits never change this ticket's view or reprint.
+	title, err := sysconfig.ReadTicketTitle(ctx, tx, true)
+	if err != nil {
+		return err
+	}
 	ticket.SiteName = site.Name
+	ticket.TicketTitle = title
 	ticket.TicketNo = number
 	return tx.Create(ticket).Error
 }
@@ -106,7 +114,7 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 		}
 		ticket.SecondRecordID = second.ID
 		ticket.Basis[1] = second
-		if err := insertTicket(tx, &ticket); err != nil {
+		if err := insertTicket(ctx, tx, &ticket); err != nil {
 			return out, err
 		}
 		now := time.Now().UTC()
@@ -144,7 +152,17 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 			ticket.SiteName = site.Name
 		}
 		view = ticketView(ticket)
-		view.PrintSheet = compactPrintSheet(view, r.ticketTitle)
+		// ADR 0030: each ticket keeps the title frozen when it was generated.
+		// Tickets created before snapshots existed fall back to the current
+		// effective title until the API start freezes their upgrade baseline.
+		title := ticket.TicketTitle
+		if title == "" {
+			title, err = sysconfig.ReadTicketTitle(ctx, tx, false)
+			if err != nil {
+				return err
+			}
+		}
+		view.PrintSheet = compactPrintSheet(view, title)
 		if ticket.PreviousTicketID != nil {
 			previous, err := findOne[Ticket](tx, *ticket.PreviousTicketID)
 			if err != nil {
@@ -156,6 +174,21 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 	}, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	return view, err
 }
+
+// FreezeLegacyTicketTitles writes the upgrade-time effective title onto tickets
+// that predate title snapshots. It is safe to call on every start: only rows
+// still carrying the empty marker are changed.
+func FreezeLegacyTicketTitles(ctx context.Context, db *gorm.DB, title string) error {
+	if !db.Migrator().HasTable("wb_ticket") {
+		return nil
+	}
+	title = strings.TrimSpace(title)
+	if title == "" {
+		title = sysconfig.DefaultTicketTitle
+	}
+	return db.WithContext(ctx).Exec("UPDATE wb_ticket SET ticket_title=? WHERE ticket_title=''", title).Error
+}
+
 func (r *Repository) Tasks(ctx context.Context, q PageQuery) (Page[Task], error) {
 	query, err := taskQuery(r.db.WithContext(ctx), q)
 	if err != nil {

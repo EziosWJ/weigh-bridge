@@ -54,7 +54,7 @@ export function WeighingTasksPage() {
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
   return <div className="weighing-list-page">
-    <PageHeader title="运输任务" description="" actions={capabilities?.nodeRole!=='central'&&<WorkbenchLink className={linkClass} to="/weighing/workbench">返回称重工作台</WorkbenchLink>} />
+    <PageHeader title="运输任务" description="" actions={<WorkbenchLink className={linkClass} to="/weighing/workbench">返回称重工作台</WorkbenchLink>} />
     <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} />
     {downloadError && <p role="alert" className="text-error">{downloadError}</p>}
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).catch(error => setDownloadError(error.message))}>导出筛选明细 CSV</Button>}</>} />
@@ -82,7 +82,7 @@ export function WeighingTaskDetailPage() {
   const targetRecord = task && [...task.records].reverse().find(record => record.stage === reweighStage);
   const retainedRecord = task && [...task.records].reverse().find(record => record.stage !== reweighStage);
   const pending = !!task && data.pending?.taskId === task.id;
-  const canOperate = capabilities?.nodeRole!=='central'&&!!capabilities?.permissionCodes.some(code => ["weighing:correct", "weighing:terminate", "weighing:reweigh"].includes(code));
+  const canOperate = !!capabilities?.permissionCodes.some(code => ["weighing:correct", "weighing:terminate", "weighing:reweigh"].includes(code));
   const siteCanOperate=capabilities?.sites.some(s=>s.id===task?.siteId&&s.canOperate)??false;
   const canWeigh = siteCanOperate&&(capabilities?.permissionCodes.includes("weighing:confirm") ?? false);
   const reweighCapture = data.sampleReady && data.capture?.plate === task?.plate && data.capture?.stage === reweighStage ? data.capture : undefined;

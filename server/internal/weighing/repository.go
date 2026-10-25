@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"slices"
 	"time"
 
@@ -15,13 +16,11 @@ import (
 )
 
 type Repository struct {
-	db          *gorm.DB
-	sessionTTL  time.Duration
-	ticketTitle string
+	db         *gorm.DB
+	sessionTTL time.Duration
 }
 type RuntimeOptions struct {
-	SessionTTL  time.Duration
-	TicketTitle string
+	SessionTTL time.Duration
 }
 
 type maintenanceIdentity struct {
@@ -38,33 +37,10 @@ var _ Store = (*Repository)(nil)
 
 func NewRepository(db *gorm.DB, options ...RuntimeOptions) *Repository {
 	r := &Repository{db: db, sessionTTL: time.Minute}
-	if len(options) > 0 {
-		r.ticketTitle = options[0].TicketTitle
-		if options[0].SessionTTL > 0 {
-			r.sessionTTL = options[0].SessionTTL
-		}
+	if len(options) > 0 && options[0].SessionTTL > 0 {
+		r.sessionTTL = options[0].SessionTTL
 	}
 	return r
-}
-
-// ValidateMaintenanceConfig ensures the local maintenance UI cannot rebind
-// its Agent to another site, scale, server, or credential. Site and scale
-// display names are intentionally mutable and do not form part of identity.
-func (r *Repository) ValidateMaintenanceConfig(ctx context.Context, candidate agentprinter.Config, localSiteID int64) error {
-	if candidate.SiteID != localSiteID {
-		return fmt.Errorf("Agent 配置厂区身份与本机不符")
-	}
-	var identity maintenanceIdentity
-	result := r.db.WithContext(ctx).Table("wb_site s").Select(
-		"s.id AS site_id, s.code AS site_code, s.server_url, sc.id AS scale_id, sc.code AS scale_code, a.agent_id, a.agent_key",
-	).Joins("JOIN wb_scale sc ON sc.site_id=s.id").Joins("JOIN wb_agent_binding a ON a.scale_id=sc.id").Where("s.id = ?", localSiteID).Order("sc.id ASC").Take(&identity)
-	if result.Error != nil {
-		return fmt.Errorf("读取本厂 Agent 身份失败: %w", result.Error)
-	}
-	if !matchesMaintenanceIdentity(candidate, identity) {
-		return fmt.Errorf("Agent 配置不能修改本机厂区、地磅、服务地址或身份密钥")
-	}
-	return nil
 }
 
 func matchesMaintenanceIdentity(candidate agentprinter.Config, identity maintenanceIdentity) bool {
@@ -108,30 +84,6 @@ func (r *Repository) Materials(ctx context.Context, q PageQuery) (Page[Material]
 }
 func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], error) {
 	db := masterFilter(r.db.WithContext(ctx).Model(&Party{}), q)
-	var node struct {
-		Role   string
-		SiteID int64
-	}
-	if err := r.db.WithContext(ctx).Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
-		return Page[Party]{}, err
-	}
-	if node.Role == "site" {
-		db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party WHERE site_id<>?)", node.SiteID)
-	}
-	if node.Role == "standalone" {
-		// Legacy centrally-reviewed parties remain available through their historic
-		// records, but are not active local master data after center retirement.
-		db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party)")
-	}
-	if node.Role == "central" {
-		if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok {
-			if len(scope.Read) == 0 {
-				db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party)")
-			} else {
-				db = db.Where("id NOT IN (SELECT party_id FROM wb_temporary_party WHERE site_id NOT IN ?)", scope.Read)
-			}
-		}
-	}
 	if q.Keyword != "" {
 		v := "%" + q.Keyword + "%"
 		db = db.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?) OR LOWER(short_name) LIKE LOWER(?) OR phone LIKE ?", v, v, v, v)
@@ -166,21 +118,8 @@ func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], err
 	for _, c := range contacts {
 		byParty[c.PartyID] = append(byParty[c.PartyID], c)
 	}
-	temporary := []TemporaryParty{}
-	states := map[int64]string{}
-	if len(ids) > 0 {
-		if err := r.db.WithContext(ctx).Where("party_id IN ?", ids).Find(&temporary).Error; err != nil {
-			return p, err
-		}
-	}
-	for _, v := range temporary {
-		states[v.PartyID] = v.State
-	}
 	for i := range p.Records {
 		decorateParty(&p.Records[i], byParty[p.Records[i].ID])
-		if state := states[p.Records[i].ID]; state != "" && state != "pending" {
-			p.Records[i].Enabled = 0
-		}
 	}
 	return p, nil
 }
@@ -199,13 +138,6 @@ func (r *Repository) FindMaterial(ctx context.Context, id int64) (Material, erro
 	return findOne[Material](r.db.WithContext(ctx), id)
 }
 func (r *Repository) FindParty(ctx context.Context, id int64) (Party, error) {
-	var temporary struct{ SiteID int64 }
-	if err := r.db.WithContext(ctx).Table("wb_temporary_party").Where("party_id=?", id).Find(&temporary).Error; err != nil {
-		return Party{}, err
-	}
-	if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok && temporary.SiteID > 0 && !slices.Contains(scope.Read, temporary.SiteID) {
-		return Party{}, ErrForbidden
-	}
 	v, err := findOne[Party](r.db.WithContext(ctx), id)
 	if err != nil {
 		return v, err
@@ -256,23 +188,23 @@ func meta(old MasterMeta, id, version, actor int64) (MasterMeta, error) {
 	return old, nil
 }
 func nextNumber(tx *gorm.DB, kind, prefix string) (string, error) {
-	var node struct {
-		Role   string
-		SiteID int64
-	}
-	if err := tx.Table("wb_node_identity").Where("id=1").Find(&node).Error; err != nil {
+	identity, err := localsite.Read(tx.Statement.Context, tx)
+	if err != nil {
 		return "", err
 	}
-	if (node.Role == "site" || node.Role == "standalone") && (kind == "task" || kind == "ticket" || kind == "party") {
+	if identity.SiteID == 0 {
+		return "", localsite.ErrNotConfigured
+	}
+	if kind == "task" || kind == "ticket" || kind == "party" {
 		var site Site
-		if err := tx.First(&site, node.SiteID).Error; err != nil {
+		if err := tx.First(&site, identity.SiteID).Error; err != nil {
 			return "", err
 		}
 		return prefix + "-" + site.Code + "-" + agentbridge.ID(), nil
 	}
 	date := time.Now().UTC().Add(8 * time.Hour).Format("20060102")
 	var number int64
-	err := tx.Raw("INSERT INTO wb_number_sequence (kind,business_date,next_value) VALUES (?,?,1) ON CONFLICT (kind,business_date) DO UPDATE SET next_value=wb_number_sequence.next_value+1 RETURNING next_value", kind, date).Scan(&number).Error
+	err = tx.Raw("INSERT INTO wb_number_sequence (kind,business_date,next_value) VALUES (?,?,1) ON CONFLICT (kind,business_date) DO UPDATE SET next_value=wb_number_sequence.next_value+1 RETURNING next_value", kind, date).Scan(&number).Error
 	return fmt.Sprintf("%s%s%04d", prefix, date, number), err
 }
 func (r *Repository) SaveCategory(ctx context.Context, id int64, in CategoryInput, e audit.Event) (Category, error) {
@@ -354,11 +286,6 @@ func (r *Repository) SaveParty(ctx context.Context, id int64, in PartyInput, e a
 			}
 		}
 		before := v
-		if id > 0 {
-			if err := preservePartyRoles(tx, id, in); err != nil {
-				return err
-			}
-		}
 		v.MasterMeta, err = meta(v.MasterMeta, id, in.Version, e.Metadata.ActorID)
 		if err != nil {
 			return err

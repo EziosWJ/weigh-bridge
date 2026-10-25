@@ -26,15 +26,15 @@ try {
   await page.route('**/api/weighing/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const ok = data => route.fulfill({ json: { code: 200, data } });
-    if (path.endsWith('/camera-preview')) return ok({ mode: 'legacy' });
+    if (path === '/api/weighing/cameras') return ok({ cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { apiUrl: '', apiUsername: '', hasApiPassword: false, whepBaseUrl: '', version: 1, syncState: 'pending', syncedVersion: 0, updateTime: new Date().toISOString() } });
     if (path.includes('/agent-images/')) return route.fulfill({ contentType: 'image/png', body: png });
     if (path.includes('/session/')) return ok({ scaleId: 1, holderUserId: 1, generation: 1, sessionToken: 'isolated-session', expiresAt: new Date(Date.now() + 60000).toISOString() });
     if (path.endsWith('/samples')) {
       captures++;
-      if (failCapture) return route.fulfill({ status: 409, json: { code: 409, message: '后摄像头抓拍失败' } });
-      const images = optionalCapture ? [] : ['front', 'rear'].map(view => ({ id: view, view, url: `/api/weighing/agent-images/${view}`, sha256: 'test-digest' }));
+      if (failCapture) return route.fulfill({ status: 409, json: { code: 409, message: '装车区摄像头抓拍失败' } });
+      const images = optionalCapture ? [] : [{ id: 'entry', url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22320%22 height=%22180%22%3E%3Crect width=%22320%22 height=%22180%22 fill=%22%23245e86%22/%3E%3C/svg%3E', source: 'server', cameraId: 11, cameraName: '入口' }, { id: 'yard', url: 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22320%22 height=%22180%22%3E%3Crect width=%22320%22 height=%22180%22 fill=%22%23245e36%22/%3E%3C/svg%3E', source: 'server', cameraId: 12, cameraName: '装车区' }];
       return ok({ id: 901, taskId: null, stage: 'first', weight: '18.665', expiresAt: null,
-        evidence: { id: '901', preset: 'front', source: 'agent', captureRequired: !optionalCapture, capturePolicyRevision: 'policy-1', imageStatus: optionalCapture ? 'disabled' : 'complete', imageSrc: images[0]?.url ?? '', images, cameraLabel: '车头视角', at: new Date().toISOString(), weight: '18.665', plate: '晋A12345' },
+        evidence: { id: '901', source: 'server', captureRequired: !optionalCapture, capturePolicyRevision: 'policy-1', imageStatus: optionalCapture ? 'disabled' : 'complete', images, at: new Date().toISOString(), weight: '18.665', plate: '晋A12345', cameraConfigVersion: 1 },
         plateEvidence: { source: 'manual', confirmedPlate: '晋A12345', at: new Date().toISOString() },
       });
     }
@@ -52,14 +52,14 @@ try {
   assert.equal(confirmations, 0, '采集不能自动确认正式称重');
   const business = page.getByRole('dialog', { name: '录入运输资料', exact: true });
   if (await business.isVisible()) await page.getByRole('button', { name: '关闭运输资料', exact: true }).click();
-  await page.getByRole('img', { name: '车头视角预览', exact: true }).waitFor();
-  await page.getByRole('button', { name: '车尾视角', exact: true }).click();
-  await page.getByRole('img', { name: '车尾视角预览', exact: true }).waitFor();
+  await page.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
+  await page.getByRole('group', { name: '抓拍摄像头', exact: true }).getByRole('button', { name: '装车区', exact: true }).click();
+  await page.getByRole('img', { name: '装车区抓拍', exact: true }).waitFor();
 
   failCapture = true;
   await open('ready');
   await capture.click();
-  await page.getByText('后摄像头抓拍失败', { exact: true }).waitFor();
+  await page.getByText('装车区摄像头抓拍失败', { exact: true }).waitFor();
   assert.equal(JSON.parse(await page.locator('output').textContent()).sampleReady, false);
   assert.equal(confirmations, 0);
   assert.equal(await capture.isEnabled(), true, '抓拍失败后可以人工重试');
@@ -89,7 +89,7 @@ try {
   await confirm.waitFor();
   assert.equal(await confirm.isDisabled(), true, '策略变更后旧核对窗口必须失效');
   assert.deepEqual(errors, []);
-  console.log('首次抓拍回归通过：无预览可请求采集、双视角展示、失败不生成采样、不自动确认、设备与权限限制保留；可选无图采集及人工确认可用，强制和策略失效仍阻断。');
+  console.log('首次抓拍回归通过：无预览可请求采集、按真实摄像头名称展示多图、失败不生成采样、不自动确认、设备与权限限制保留；可选无图采集及人工确认可用，强制和策略失效仍阻断。');
 } finally {
   clearTimeout(deadline);
   await browser?.close();

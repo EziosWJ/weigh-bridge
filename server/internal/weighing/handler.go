@@ -24,10 +24,9 @@ func NewHandler(s *Service, permissions *rbac.Service) *Handler {
 func RegisterRoutes(router gin.IRouter, h *Handler) {
 	router.Use(h.siteScope)
 	registerSiteRoutes(router, h)
-	registerTemporaryRoutes(router, h)
-	registerConfigurationApplication(router, h)
 	registerSiteConfigurationRoutes(router, h)
 	router.GET("/capabilities", h.capabilities)
+	router.GET("/local-status", func(c *gin.Context) { v, e := h.service.LocalStatus(c); writeResult(c, v, e) })
 	registerWorkflowRoutes(router, h)
 	registerCorrectionRoutes(router, h)
 	registerQueryRoutes(router, h)
@@ -62,8 +61,13 @@ func (h *Handler) capabilities(c *gin.Context) {
 		writeResult(c, nil, err)
 		return
 	}
+	status, statusErr := h.service.LocalStatus(c)
+	if statusErr != nil {
+		writeResult(c, nil, statusErr)
+		return
+	}
 	sites, err := h.service.Sites(c, principal.UserID)
-	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "nodeRole": h.service.node.Role, "nodeSiteId": h.service.node.SiteID}, err)
+	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteId": status.SiteID, "configured": status.Configured, "initialized": status.Initialized}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}
@@ -320,7 +324,7 @@ func writeResult(c *gin.Context, value any, err error) {
 		platformhttp.WriteError(c, 403, 403, err.Error(), nil)
 	case errors.Is(err, ErrNotFound):
 		platformhttp.WriteError(c, 404, 404, err.Error(), nil)
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrConflict), errors.Is(err, ErrReferenced), errors.Is(err, ErrCapturePolicyChanged), errors.Is(err, ErrConditions), errors.Is(err, ErrOccupied), errors.Is(err, ErrSession), errors.Is(err, ErrRequestKey), errors.Is(err, ErrWeight), isRejection(err):
+	case errors.Is(err, ErrInvalid), errors.Is(err, ErrConflict), errors.Is(err, ErrReferenced), errors.Is(err, ErrCapturePolicyChanged), errors.Is(err, ErrCaptureCameraRequired), errors.Is(err, ErrMeasurementCapability), errors.Is(err, ErrCameraConfigChanged), errors.Is(err, ErrConditions), errors.Is(err, ErrOccupied), errors.Is(err, ErrSession), errors.Is(err, ErrRequestKey), errors.Is(err, ErrWeight), isRejection(err):
 		platformhttp.WriteError(c, 200, 400, err.Error(), nil)
 	default:
 		platformhttp.WriteError(c, 500, 500, "业务处理失败", nil)

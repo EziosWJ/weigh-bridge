@@ -58,31 +58,3 @@ func usedByBusiness(tx *gorm.DB, kind string, id int64) (bool, error) {
 	}
 	return false, nil
 }
-func preservePartyRoles(tx *gorm.DB, id int64, in PartyInput) error {
-	var count int64
-	if err := tx.Table("wb_node_identity").Where("role<>''").Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-	for _, role := range []struct{ name, condition string }{{"supplier", "party_id=? AND direction='inbound'"}, {"customer", "party_id=? AND direction='outbound'"}, {"carrier", "carrier_id=?"}} {
-		present := false
-		for _, value := range in.Roles {
-			if value == role.name {
-				present = true
-			}
-		}
-		if present {
-			continue
-		}
-		var count int64
-		if err := tx.Model(&Task{}).Where("status='awaiting_second'").Where(role.condition, id).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return ErrReferenced
-		}
-	}
-	return nil
-}

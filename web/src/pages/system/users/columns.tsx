@@ -153,7 +153,7 @@ export function createUserColumns({
             <Pencil className="h-4 w-4" aria-hidden />
             编辑
           </Button>
-          <Button size="sm" variant="ghost" onClick={()=>onAssignSites(user)}>厂区</Button>
+          <Button size="sm" variant="ghost" onClick={()=>onAssignSites(user)}>本厂授权</Button>
           <Button size="sm" variant="ghost" onClick={() => onAssignRoles(user)}>
             <ShieldCheck className="h-4 w-4" aria-hidden />
             角色

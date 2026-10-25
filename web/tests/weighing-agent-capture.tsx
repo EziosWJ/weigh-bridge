@@ -12,6 +12,7 @@ const plate = '晋A12345';
 useWeighingStore.setState({
   ready: true,
   capabilities: {
+    localSiteId: 1, configured: true, initialized: true,
     userId: 1,
     permissionCodes: scenario === 'forbidden' ? ['weighing:read'] : ['weighing:read', 'weighing:confirm'],
     sites: [{ id: 1, code: 'site', name: '测试厂区', enabled: 1, canOperate: true }],
@@ -38,7 +39,7 @@ useWeighingStore.setState({
 function ReviewFixture() {
  const [confirmed, setConfirmed] = useState(false);
  const required = scenario === 'required-review';
- return <><WeighingReviewDialog title="首磅（毛重）" value={{ plate: '晋A12345', direction: '入厂卸货', material: '高粱', partyLabel: '供货方', party: '测试供货方', weight: 18.665, kind: '毛重', supplementary: [], capture: { id: 'optional-review', preset: 'front', imageSrc: '', images: [], cameraLabel: '车头视角', at: new Date().toISOString(), weight: 18.665, captureRequired: required, imageStatus: 'disabled' } }} invalidReason={scenario === 'changed-review' ? '强制抓拍配置已变更，请重新采集' : ''} onCancel={() => {}} onMismatch={() => {}} onConfirm={() => setConfirmed(true)} /><output hidden>{confirmed ? 'confirmed' : 'waiting'}</output></>;
+ return <><WeighingReviewDialog title="首磅（毛重）" value={{ plate: '晋A12345', direction: '入厂卸货', material: '高粱', partyLabel: '供货方', party: '测试供货方', weight: 18.665, kind: '毛重', supplementary: [], capture: { id: 'optional-review', source: 'server', imageSrc: '', images: [], at: new Date().toISOString(), weight: 18.665, captureRequired: required, imageStatus: required ? 'capture_failed' : 'disabled' } }} invalidReason={scenario === 'changed-review' ? '强制抓拍配置已变更，请重新采集' : ''} onCancel={() => {}} onMismatch={() => {}} onConfirm={() => setConfirmed(true)} /><output hidden>{confirmed ? 'confirmed' : 'waiting'}</output></>;
 }
 
 export function Fixture() {

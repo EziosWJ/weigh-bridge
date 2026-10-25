@@ -27,7 +27,7 @@ func TestPrinterKickEndsRunNormally(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		scale, err := agentscale.New(agentscale.Config{Enabled: false}, nil)
+		scale, err := agentscale.New(agentscale.Config{}, nil)
 		if err != nil {
 			done <- err
 			return

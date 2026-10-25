@@ -33,7 +33,8 @@ func TestPostgresWeighingFoundation(t *testing.T) {
 	database := openTemporaryDatabase(t, temporary.dsn)
 	defer func() { _ = database.Close() }()
 	checkWeighingFoundation(t, database, testDependencies(t, database, t.TempDir()))
-	// Exercise Down against populated ticket revisions, self references and print history.
+	// The local-only cutover is intentionally not reversible in place. The
+	// migration must refuse rollback and leave confirmed history untouched.
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
@@ -44,29 +45,16 @@ func TestPostgresWeighingFoundation(t *testing.T) {
 	if err := database.GORM.Table("wb_ticket").Count(&ticketsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.DownToContext(context.Background(), database.SQL, schema, 11); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.UpContext(context.Background(), database.SQL, schema); err != nil {
-		t.Fatal(err)
+	if err := goose.DownToContext(context.Background(), database.SQL, schema, 11); err == nil || !strings.Contains(err.Error(), "restoring the previous database backup") {
+		t.Fatalf("schema 17 rollback should require restoring the previous database backup, got %v", err)
 	}
 	var ticketsAfter int64
-	if err := database.GORM.Table("wb_ticket").Count(&ticketsAfter).Error; err != nil || ticketsBefore != ticketsAfter {
-		t.Fatalf("Agent migration changed history: %d -> %d %v", ticketsBefore, ticketsAfter, err)
-	}
-	if err := goose.DownToContext(context.Background(), database.SQL, schema, 10); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.UpContext(context.Background(), database.SQL, schema); err != nil {
-		t.Fatal(err)
-	}
-	var remaining int64
-	if err := database.GORM.Table("wb_ticket").Count(&remaining).Error; err != nil || remaining != 0 {
-		t.Fatalf("workflow round trip: %d %v", remaining, err)
+	if err := database.GORM.Table("wb_ticket").Count(&ticketsAfter).Error; err != nil || ticketsBefore == 0 || ticketsBefore != ticketsAfter {
+		t.Fatalf("refused local-only rollback changed ticket history: %d -> %d %v", ticketsBefore, ticketsAfter, err)
 	}
 }
 
-func TestPostgresWeighingMasterMigrationRoundTrip(t *testing.T) {
+func TestPostgresWeighingMasterMigrationRollbackRequiresRestore(t *testing.T) {
 	temporary := startPostgres(t)
 	runMigrations(t, projectRoot(t), temporary.dsn)
 	database := openTemporaryDatabase(t, temporary.dsn)
@@ -80,29 +68,20 @@ func TestPostgresWeighingMasterMigrationRoundTrip(t *testing.T) {
 	if err := goose.SetDialect("postgres"); err != nil {
 		t.Fatal(err)
 	}
-	seed := filepath.Join(projectRoot(t), "migrations/seed")
 	schema := filepath.Join(projectRoot(t), "migrations/schema")
-	goose.SetTableName("goose_seed_db_version")
-	if err := goose.DownToContext(context.Background(), database.SQL, seed, 5); err != nil {
-		t.Fatal(err)
-	}
 	goose.SetTableName("goose_schema_db_version")
-	if err := goose.DownToContext(context.Background(), database.SQL, schema, 9); err != nil {
-		t.Fatal(err)
+	if err := goose.DownToContext(context.Background(), database.SQL, schema, 9); err == nil || !strings.Contains(err.Error(), "restoring the previous database backup") {
+		t.Fatalf("schema 17 rollback should be explicitly unsupported, got %v", err)
 	}
-	if err := goose.UpContext(context.Background(), database.SQL, schema); err != nil {
-		t.Fatal(err)
+	var categories, materials, version int64
+	if err := database.GORM.Table("wb_material_category").Count(&categories).Error; err != nil || categories != 1 {
+		t.Fatalf("refused rollback changed material categories: count=%d err=%v", categories, err)
 	}
-	goose.SetTableName("goose_seed_db_version")
-	if err := goose.UpContext(context.Background(), database.SQL, seed); err != nil {
-		t.Fatal(err)
+	if err := database.GORM.Table("wb_material").Count(&materials).Error; err != nil || materials != 1 {
+		t.Fatalf("refused rollback changed materials: count=%d err=%v", materials, err)
 	}
-	var count int64
-	if err := database.GORM.Table("wb_scale").Count(&count).Error; err != nil || count != 2 {
-		t.Fatalf("scale identity after round trip: %d %v", count, err)
-	}
-	if err := database.GORM.Table("wb_material").Count(&count).Error; err != nil || count != 0 {
-		t.Fatalf("empty material catalog after full schema rollback: %d %v", count, err)
+	if err := database.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&version).Error; err != nil || version != 17 {
+		t.Fatalf("schema version after refused rollback=%d err=%v", version, err)
 	}
 }
 
@@ -115,18 +94,31 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 		}
 	}
 	var scales int64
-	if err := database.GORM.Table("wb_scale").Count(&scales).Error; err != nil || scales != 2 {
+	if err := database.GORM.Table("wb_scale").Count(&scales).Error; err != nil || scales != 0 {
 		t.Fatalf("scale identity: count=%d error=%v", scales, err)
 	}
-	hub := agentbridge.New(agentbridge.Config{ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key", ImageDir: t.TempDir()})
-	deps.Weighing = weighing.NewService(weighing.NewRepository(database.GORM), hub)
+	repo := weighing.NewRepository(database.GORM)
+	imageDir := t.TempDir()
+	hub := agentbridge.NewMultiple(nil)
+	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
+		return repo.AgentConfig(ctx, id, imageDir)
+	})
+	deps.Weighing = weighing.NewService(repo, hub)
+	deps.Camera, _, _ = newCaptureService(t, database, t.TempDir())
 	router, err := app.Build(testAPIConfig(), database, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
 	adminToken := loginAdmin(t, router)
+	ensureLocalSite(t, router, adminToken, 1, "SITE01", "原厂区", "SCALE01", "一号地磅", "integration-agent")
+	testLocalSetup(t, database, router, adminToken, 1)
+	addCaptureCameras(t, database, "rtsp://camera/foundation-1", "rtsp://camera/foundation-2")
 	checkWeighingMasters(t, router, adminToken)
-	device := startWeighingAgent(t, router, hub)
+	deviceConfig, err := repo.AgentConfig(context.Background(), 1, imageDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	device := startWeighingAgentWithConfig(t, router, hub, deviceConfig)
 	checkWeighingFirstConfirmation(t, router, adminToken, database, device)
 	created := serveJSON(router, http.MethodPost, "/api/system/user", `{"username":"weighing-operator","nickname":"操作员","status":1}`, adminToken)
 	assertEnvelopeCode(t, created, 200, 200, "success")
@@ -137,8 +129,8 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	if err := database.GORM.Exec("INSERT INTO sys_user_role (user_id, role_id) SELECT ?, id FROM sys_role WHERE role_code='WEIGHING_OPERATOR'", userID).Error; err != nil {
 		t.Fatal(err)
 	}
-	repo := rbac.NewRepository(database.GORM)
-	codes, err := repo.PermissionCodes(context.Background(), userID)
+	rbacRepo := rbac.NewRepository(database.GORM)
+	codes, err := rbacRepo.PermissionCodes(context.Background(), userID)
 	if err != nil || !slices.Contains(codes, "weighing:confirm") || slices.Contains(codes, "weighing:master:write") || slices.Contains(codes, "system:role") {
 		t.Fatalf("operator grants=%v, error=%v", codes, err)
 	}
@@ -184,7 +176,7 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 		t.Fatal(err)
 	}
 	assertEnvelopeCode(t, serveJSON(disabledRouter, "POST", "/api/weighing/samples", `{"scaleId":1,"clientId":"disabled-test"}`, adminToken), 200, 400, weighing.ErrConditions.Error())
-	codes, err = repo.PermissionCodes(context.Background(), userID)
+	codes, err = rbacRepo.PermissionCodes(context.Background(), userID)
 	if err != nil || slices.Contains(codes, "weighing:confirm") {
 		t.Fatalf("revoked grant retained: %v %v", codes, err)
 	}
@@ -206,7 +198,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		return string(data)
 	}
 	sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "source": "device"}), token)
-	if sample.Source != "agent" || sample.Weight != 30000 || sample.Kind != "gross" {
+	if sample.Source != "server" || sample.Weight != 30000 || sample.Kind != "gross" {
 		t.Fatalf("sample source and weight: %+v", sample)
 	}
 
@@ -300,8 +292,27 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tasks/first-confirmation", encode(input), token), 200, 400, weighing.ErrRequestKey.Error())
 	used := serveJSON(router, "DELETE", "/api/weighing/materials/"+itoa(material.ID), `{"version":1}`, token)
 	assertEnvelopeCode(t, used, 200, 400, weighing.ErrReferenced.Error())
-	removeRole := serveJSON(router, "PUT", "/api/weighing/parties/"+itoa(party.ID), `{"name":"删除供方身份","nature":"enterprise","roles":["customer"],"version":1}`, token)
-	assertEnvelopeCode(t, removeRole, 200, 400, weighing.ErrReferenced.Error())
+	partyUpdate := fmt.Sprintf(`{"name":"首磅供收方已调整","nature":"enterprise","roles":["customer"],"version":%d}`, party.Version)
+	partyUpdateResponse := serveJSON(router, "PUT", "/api/weighing/parties/"+itoa(party.ID), partyUpdate, token)
+	if partyUpdateResponse.Code != 200 || !strings.Contains(partyUpdateResponse.Body.String(), `"code":200`) {
+		t.Fatalf("party update failed: party=%+v input=%s response=%s", party, partyUpdate, partyUpdateResponse.Body.String())
+	}
+	assertEnvelopeCode(t, partyUpdateResponse, 200, 200, "success")
+	var partyUpdateEnvelope struct {
+		Data weighing.Party `json:"data"`
+	}
+	if err := json.Unmarshal(partyUpdateResponse.Body.Bytes(), &partyUpdateEnvelope); err != nil {
+		t.Fatal(err)
+	}
+	updatedParty := partyUpdateEnvelope.Data
+	if len(updatedParty.Roles) != 1 || updatedParty.Roles[0] != "customer" {
+		t.Fatalf("party roles were not editable for future tasks: %+v", updatedParty)
+	}
+	firstSnapshot := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(first.TaskID), "", token)
+	if firstSnapshot.Business.PartyName != party.Name || firstSnapshot.Business.PartyVersion != 1 {
+		t.Fatalf("editing current party changed an existing task snapshot: %+v", firstSnapshot.Business)
+	}
+	assertEnvelopeCode(t, serveJSON(router, "DELETE", "/api/weighing/parties/"+itoa(party.ID), fmt.Sprintf(`{"version":%d}`, updatedParty.Version), token), 200, 400, weighing.ErrReferenced.Error())
 
 	// A crossed date keeps the same task and first basis; current sample must still be fresh.
 	if err := database.GORM.Exec("UPDATE wb_weigh_record SET confirmed_at=? WHERE id=?", time.Now().UTC().Add(-24*time.Hour), first.RecordID).Error; err != nil {
@@ -347,7 +358,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("second result: %+v %+v", completed, completedReplay)
 	}
 	ticket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(completed.TicketID), "", token)
-	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 31000 || ticket.FinalTare != 11000 || ticket.GrossDifference != -1000 || ticket.AdjustmentRemark != "磅精度调整" || len(ticket.Basis) != 2 || !strings.HasPrefix(ticket.TicketNo, "GB") {
+	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 31000 || ticket.FinalTare != 11000 || ticket.GrossDifference != -1000 || ticket.AdjustmentRemark != "磅精度调整" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !strings.HasPrefix(ticket.TicketNo, "GB") {
 		t.Fatalf("test ticket weights: %+v", ticket)
 	}
 	finalTask := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(first.TaskID), "", token)
@@ -363,6 +374,11 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	// Start another trip of the same plate before correcting the completed one.
 	voidBody := map[string]any{"requestId": "void-old-ticket-0001", "reason": "测试更正"}
 	voided := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/void", encode(voidBody), token)
+	futureBusiness := map[string]any{"plate": "川A67890", "direction": "inbound", "materialId": material.ID, "partyId": party.ID}
+	futureSampleBody := map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": futureBusiness}
+	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/samples", encode(futureSampleBody), token), 200, 400, weighing.ErrInvalid.Error())
+	partyRestore := fmt.Sprintf(`{"name":"首磅供收方已调整","nature":"enterprise","roles":["supplier","customer"],"version":%d}`, updatedParty.Version)
+	weighingData[weighing.Party](t, router, "PUT", "/api/weighing/parties/"+itoa(party.ID), partyRestore, token)
 	conditions["weight"] = "30"
 	device.weight(conditions["weight"].(string))
 	nextSample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": business}), token)
@@ -430,7 +446,9 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 func weighingData[T any](t *testing.T, router http.Handler, method, path, body, token string) T {
 	t.Helper()
 	response := serveJSON(router, method, path, body, token)
-	assertEnvelopeCode(t, response, 200, 200, "success")
+	if response.Code != http.StatusOK || envelopeCode(t, response) != http.StatusOK {
+		t.Fatalf("%s %s: status=%d body=%s, want success", method, path, response.Code, response.Body.String())
+	}
 	var result struct {
 		Data T `json:"data"`
 	}
@@ -550,10 +568,14 @@ type weighingAgent struct {
 }
 
 func startWeighingAgent(t *testing.T, router http.Handler, hub *agentbridge.Hub) *weighingAgent {
+	return startWeighingAgentWithConfig(t, router, hub, agentbridge.Config{ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key"})
+}
+
+func startWeighingAgentWithConfig(t *testing.T, router http.Handler, hub *agentbridge.Hub, device agentbridge.Config) *weighingAgent {
 	t.Helper()
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key"})
+	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: device.ID, ScaleID: device.ScaleID, Key: device.Key})
 	control := httptest.NewServer(mock.Handler())
 	t.Cleanup(control.Close)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -599,7 +621,7 @@ func (a *weighingAgent) weight(weight string) {
 	a.controlAction(fmt.Sprintf(`{"action":"up","weight":%q}`, weight))
 	a.controlAction(`{"action":"stable"}`)
 	a.wait(func(v agentbridge.State) bool {
-		return v.Online && v.Stable && v.Weight.String() == weight && len(v.Images) == 2
+		return v.Online && v.Stable && v.Weight.String() == weight
 	})
 }
 func (a *weighingAgent) plate(candidate string) {

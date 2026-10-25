@@ -15,16 +15,18 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentmaintenance"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
+	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"github.com/EziosWJ/weighbridge/server/internal/app"
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"github.com/EziosWJ/weighbridge/server/internal/auth"
+	"github.com/EziosWJ/weighbridge/server/internal/camera"
 	"github.com/EziosWJ/weighbridge/server/internal/config"
 	"github.com/EziosWJ/weighbridge/server/internal/dept"
 	"github.com/EziosWJ/weighbridge/server/internal/dictionary"
 	"github.com/EziosWJ/weighbridge/server/internal/filemgmt"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"github.com/EziosWJ/weighbridge/server/internal/logmgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/monitoring"
-	"github.com/EziosWJ/weighbridge/server/internal/nodesync"
 	"github.com/EziosWJ/weighbridge/server/internal/notification"
 	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
@@ -49,6 +51,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	if len(cfg.Weighing.Agents) > 0 || cfg.Weighing.AgentKey != "" {
+		slog.Error("Agent bindings must be configured in 本厂配置; remove weighing.agents and weighing.agent_key from the business API configuration")
+		os.Exit(1)
+	}
 	database, err := platformdatabase.Open(context.Background(), cfg.Database)
 	if err != nil {
 		slog.Error("open database", "error", err)
@@ -61,9 +67,23 @@ func main() {
 		}
 	}()
 
-	nodeService, err := nodesync.New(database.GORM, cfg.Node, cfg.Weighing.ImageDir)
+	if cfg.Environment == config.EnvironmentProd {
+		if err := localsite.CheckAdminBootstrap(context.Background(), database.GORM); err != nil {
+			slog.Error("prepare local administrator", "error", err)
+			os.Exit(1)
+		}
+	}
+	// ADR 0030: capture the previous YAML ticket title once, before any page or
+	// ticket can read or edit the sys_config value.
+	legacyTitle, err := sysconfig.InstallLegacyTicketTitle(context.Background(), database.GORM, cfg.Weighing.TicketTitle)
 	if err != nil {
-		slog.Error("bind deployment identity; run migrations first", "error", err)
+		slog.Error("install ticket title configuration", "error", err)
+		os.Exit(1)
+	}
+	// Freeze the upgrade-time display baseline for tickets created before
+	// snapshots existed. Later title edits never rewrite those tickets.
+	if err := weighing.FreezeLegacyTicketTitles(context.Background(), database.GORM, legacyTitle); err != nil {
+		slog.Error("freeze legacy ticket titles", "error", err)
 		os.Exit(1)
 	}
 	authService, err := newAuthService(database, cfg.JWT, cfg.Auth.LoginGuard)
@@ -127,68 +147,70 @@ func main() {
 	}
 	monitoringService := monitoring.NewService(monitoring.NewRepository(database.GORM), collector, nil, monitoring.WithTimeout(cfg.Monitoring.Timeout), monitoring.WithEnabled(cfg.Monitoring.Enabled))
 
-	weighRepo := weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL, TicketTitle: cfg.Weighing.TicketTitle})
-	initial := []agentbridge.Config{}
-	for _, v := range cfg.Weighing.Agents {
-		initial = append(initial, agentbridge.Config{ID: v.ID, ScaleID: v.ScaleID, Key: v.Key})
-	}
-	if len(initial) == 0 && cfg.Weighing.AgentKey != "" {
-		initial = append(initial, agentbridge.Config{ID: cfg.Weighing.AgentID, ScaleID: cfg.Weighing.ScaleID, Key: cfg.Weighing.AgentKey})
-	}
-	if cfg.Node.Role == "standalone" {
-		for _, binding := range initial {
-			site, e := weighRepo.ResourceSite(context.Background(), "scales", binding.ScaleID)
-			if e != nil || site != cfg.Node.SiteID {
-				slog.Error("configured Agent is outside standalone site", "agent", binding.ID)
-				os.Exit(1)
-			}
-		}
-	}
-	if err := weighRepo.ImportAgentBindings(context.Background(), initial); err != nil {
-		slog.Error("import Agent bindings; run migrations first", "error", err)
-		os.Exit(1)
-	}
+	weighRepo := weighing.NewRepository(database.GORM, weighing.RuntimeOptions{SessionTTL: cfg.Weighing.SessionTTL})
 	managed, err := weighRepo.AgentConfigs(context.Background(), cfg.Weighing.ImageDir)
 	if err != nil {
-		slog.Error("load Agent bindings", "error", err)
+		slog.Error("load local Agent binding", "error", err)
 		os.Exit(1)
-	}
-	if cfg.Node.Role == "standalone" {
-		local := managed[:0]
-		for _, binding := range managed {
-			site, e := weighRepo.ResourceSite(context.Background(), "scales", binding.ScaleID)
-			if e == nil && site == cfg.Node.SiteID {
-				local = append(local, binding)
-			}
-		}
-		managed = local
 	}
 	agents := agentbridge.NewMultiple(managed)
 	agents.SetResolver(func(ctx context.Context, scale int64) (agentbridge.Config, error) {
-		if cfg.Node.Role == "central" {
-			return agentbridge.Config{}, fmt.Errorf("central has no local Agent")
+		status, err := localsite.ReadStatus(ctx, database.GORM)
+		if err != nil || !status.Configured {
+			return agentbridge.Config{}, fmt.Errorf("local factory is not configured")
 		}
-		if cfg.Node.Role == "site" || cfg.Node.Role == "standalone" {
-			site, e := weighRepo.ResourceSite(ctx, "scales", scale)
-			if e != nil || site != cfg.Node.SiteID {
-				return agentbridge.Config{}, fmt.Errorf("Agent outside local site")
-			}
+		site, e := weighRepo.ResourceSite(ctx, "scales", scale)
+		if e != nil || site != status.SiteID {
+			return agentbridge.Config{}, fmt.Errorf("Agent outside local factory")
 		}
 		return weighRepo.AgentConfig(ctx, scale, cfg.Weighing.ImageDir)
 	})
-	weighService := weighing.NewService(weighRepo, agents)
-	var remoteMaintenance *agentmaintenance.Remote
-	if cfg.Node.Role != "central" && cfg.Maintenance.IsEnabled(cfg.Node.Role == "standalone") {
-		remoteMaintenance = agentmaintenance.NewRemote(agents, func(ctx context.Context) (agentprinter.Config, error) {
-			scaleID := cfg.Weighing.ScaleID
-			if len(cfg.Weighing.Agents) > 0 {
-				scaleID = cfg.Weighing.Agents[0].ScaleID
+	// ADR 0030: a keyless Agent only knows the Server address. The local
+	// factory and its sole scale are resolved here, never created by a device.
+	agents.SetLocalResolver(func(ctx context.Context) (agentbridge.Config, error) {
+		status, err := localsite.ReadStatus(ctx, database.GORM)
+		if err != nil {
+			return agentbridge.Config{}, err
+		}
+		if !status.Configured {
+			return agentbridge.Config{}, agentbridge.ErrSiteNotInitialized
+		}
+		return weighRepo.LocalAgentConfig(ctx, cfg.Weighing.ImageDir)
+	})
+	// Successful Agent configuration is persisted as the last recovery copy.
+	// A storage failure never rolls back an already applied device fact; the
+	// next reconnect report retries the backup.
+	maintenanceStore := agentmaintenance.NewRepository(database.GORM)
+	agents.SetConfigStateHandler(func(ctx context.Context, scale int64, effective *p.EffectiveConfig, backup *p.ConfigBackup) {
+		if effective != nil {
+			if err := maintenanceStore.SaveEffectiveConfig(ctx, scale, *effective); err != nil {
+				slog.Warn("persist effective Agent configuration", "scale", scale, "error", err)
 			}
-			return weighRepo.BoundMaintenanceConfig(ctx, cfg.Node.SiteID, scaleID, "http://127.0.0.1"+apiPort(cfg.HTTP.Address))
+		}
+		if backup != nil {
+			if _, err := maintenanceStore.SaveConfigBackup(ctx, scale, *backup, "auto", 0); err != nil {
+				slog.Warn("persist Agent configuration backup", "scale", scale, "error", err)
+			}
+		}
+	})
+	weighService := weighing.NewService(weighRepo, agents)
+	cameraService := camera.NewServiceWithDefaults(camera.NewRepository(database.GORM), cfg.Weighing.ImageDir)
+	weighService.SetCamera(cameraService)
+	var remoteMaintenance *agentmaintenance.Remote
+	if cfg.Maintenance.IsEnabled() {
+		remoteMaintenance = agentmaintenance.NewRemote(agents, func(ctx context.Context) (agentprinter.Config, error) {
+			status, err := weighService.LocalStatus(ctx)
+			if err != nil {
+				return agentprinter.Config{}, err
+			}
+			if !status.Configured {
+				return agentprinter.Config{}, fmt.Errorf("请先完成本厂配置")
+			}
+			return weighRepo.BoundMaintenanceConfig(ctx, status.SiteID, 0, "http://127.0.0.1"+apiPort(cfg.HTTP.Address))
 		}, weighService.BeginMaintenance)
+		remoteMaintenance.SetStore(maintenanceStore)
 	}
 	application, err := app.New(*cfg, database, app.Dependencies{
-		Node:              nodeService,
 		Auth:              authService,
 		RBAC:              rbacService,
 		Department:        deptService,
@@ -202,12 +224,14 @@ func main() {
 		RemoteMaintenance: remoteMaintenance,
 		AuditRecorder:     audit.NewRecorder(database.GORM),
 		Weighing:          weighService,
+		Camera:            cameraService,
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)
 		os.Exit(1)
 	}
 	monitoringContext, stopMonitoring := context.WithCancel(context.Background())
+	cameraService.Start(monitoringContext)
 	monitoringDone := make(chan struct{})
 	if cfg.Monitoring.Enabled {
 		go func() {
@@ -218,12 +242,6 @@ func main() {
 		close(monitoringDone)
 	}
 	defer stopMonitoring()
-	syncDone := make(chan struct{})
-	if cfg.Node.Role == "site" {
-		go func() { defer close(syncDone); nodeService.Run(monitoringContext) }()
-	} else {
-		close(syncDone)
-	}
 
 	server := &http.Server{
 		Addr:              cfg.HTTP.Address,
@@ -248,7 +266,6 @@ func main() {
 	notificationService.Close()
 	stopMonitoring()
 	<-monitoringDone
-	<-syncDone
 
 	shutdownContext, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 	defer cancel()
@@ -283,15 +300,4 @@ func newAuthService(database *platformdatabase.Database, jwtConfig config.JWTCon
 		return nil, fmt.Errorf("build login guard: %w", err)
 	}
 	return auth.NewService(auth.NewRepository(database.GORM), tokens, loginGuard)
-}
-
-func configuredAgents(cfg config.WeighingConfig) *agentbridge.Hub {
-	if len(cfg.Agents) == 0 {
-		return agentbridge.New(agentbridge.Config{ID: cfg.AgentID, ScaleID: cfg.ScaleID, Key: cfg.AgentKey, ImageDir: cfg.ImageDir})
-	}
-	bindings := make([]agentbridge.Config, 0, len(cfg.Agents))
-	for _, v := range cfg.Agents {
-		bindings = append(bindings, agentbridge.Config{ID: v.ID, ScaleID: v.ScaleID, Key: v.Key, ImageDir: cfg.ImageDir})
-	}
-	return agentbridge.NewMultiple(bindings)
 }

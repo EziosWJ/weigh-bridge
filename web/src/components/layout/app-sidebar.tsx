@@ -52,7 +52,6 @@ function collectActiveGroupPaths(pathname: string, items: NavItem[]) {
 export function AppSidebar({ collapsed }: AppSidebarProps) {
   const location = useLocation();
   const [expandedPaths, setExpandedPaths] = useState<string[]>([]);
-  const [nodeContextLoaded, setNodeContextLoaded] = useState(false);
   const hasRequestedMenusRef = useRef(false);
   const menus = useAuthStore((state) => state.menus);
   const weighingCapabilities = useWeighingStore(state => state.capabilities);
@@ -67,9 +66,8 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
       menus,
       isAdmin: user?.roles?.some((role) => role.roleCode === "ADMIN") ?? false,
       capabilities: weighingCapabilities,
-      nodeContextLoaded,
     }),
-    [menus, user, weighingCapabilities, nodeContextLoaded],
+    [menus, user, weighingCapabilities],
   );
 
   const activeGroupPaths = useMemo(
@@ -88,11 +86,11 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
   }, [activeGroupPaths]);
 
   useEffect(() => {
-    if (weighingCapabilities) { setNodeContextLoaded(true); return; }
+    if (weighingCapabilities) return;
     let active = true;
     void weighingApi.capabilities().then((capabilities) => {
-      if (active) { useWeighingStore.setState({ capabilities }); setNodeContextLoaded(true); }
-    }).catch(() => { if (active) setNodeContextLoaded(true); });
+      if (active) useWeighingStore.setState({ capabilities });
+    }).catch(() => {});
     return () => { active = false; };
   }, [weighingCapabilities]);
 

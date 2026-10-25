@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,12 +16,8 @@ func TestBuildAgentEnvironmentRoundTripsSerialAndPrint(t *testing.T) {
 	dir := t.TempDir()
 	c := Defaults()
 	c.AgentKey = "secret"
-	c.SerialEnabled = true
 	c.SerialPort = "/dev/ttyS0"
 	c.SerialBaud = 9600
-	c.SerialProtocol = "keli-d12-tf05"
-	c.SerialWeightUnit = "t"
-	c.SerialStaleMS = 1000
 	if err := BuildAgentEnvironment(dir, c); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +80,7 @@ func TestScaleViewNeverPresentsStoppedOrStaleDataAsCurrent(t *testing.T) {
 	disabled.Enabled, disabled.DeviceOK, disabled.Stable = false, false, false
 	writeScaleSnapshot(t, path, now, disabled)
 	v = readScaleView(path, now, true)
-	if v.State != "未启用" || v.DeviceOK || v.Stable {
+	if v.State != "未配置串口" || v.DeviceOK || v.Stable {
 		t.Fatalf("disabled: %+v", v)
 	}
 
@@ -119,5 +116,23 @@ func TestStatusResponseIncludesScaleView(t *testing.T) {
 	}
 	if body.Scale.State != "稳定" || body.Scale.Weight != "1.48" {
 		t.Fatalf("status scale: %s", w.Body)
+	}
+}
+
+func TestSerialPermissionFaultNamesAgentAccountAndPort(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "scale-status.json")
+	now := time.Now()
+	if err := agentscale.WriteStatus(path, agentscale.Snapshot{
+		Enabled: true, Port: "/dev/ttyUSB0", DeviceOK: false,
+		Fault: "串口打开失败：permission denied",
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	view := readScaleView(path, now, true)
+	if !strings.Contains(view.Fault, "UID") || !strings.Contains(view.Fault, "/dev/ttyUSB0") {
+		t.Fatalf("permission hint missing account or port: %q", view.Fault)
+	}
+	if !strings.Contains(view.Fault, "dialout") {
+		t.Fatalf("permission hint missing grant guidance: %q", view.Fault)
 	}
 }

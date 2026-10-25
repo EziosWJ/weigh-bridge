@@ -4,7 +4,8 @@ import (
 	"context"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
-	"github.com/EziosWJ/weighbridge/server/internal/config"
+	"github.com/EziosWJ/weighbridge/server/internal/camera"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"slices"
 	"strings"
 	"sync"
@@ -16,13 +17,13 @@ import (
 type Service struct {
 	imageDir           string
 	maintenanceEnabled bool
-	node               config.NodeConfig
 	printMu            sync.Mutex
 	store              Store
 	devices            *agentbridge.Hub
 	maintenance        maintenanceGate
 	cameraAvailable    func(int64) bool
 	cameraConfig       func() (agentprinter.Config, error)
+	camera             *camera.Service
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {
@@ -36,6 +37,12 @@ func NewService(store Store, devices *agentbridge.Hub) *Service {
 }
 func (s *Service) SetMaintenanceEnabled(enabled bool) { s.maintenanceEnabled = enabled }
 func (s *Service) Agent() *agentbridge.Hub            { return s.devices }
+
+// SetCamera supplies the Server-owned camera module used by formal capture.
+// Without it a formal capture is refused rather than falling back to the old
+// Agent-uploaded image pair.
+func (s *Service) SetCamera(service *camera.Service) { s.camera = service }
+func (s *Service) Camera() *camera.Service           { return s.camera }
 func (s *Service) Categories(ctx context.Context, q PageQuery) (Page[Category], error) {
 	return s.store.Categories(ctx, q)
 }
@@ -74,17 +81,6 @@ func (s *Service) SaveMaterial(ctx context.Context, id int64, in MaterialInput, 
 	return s.store.SaveMaterial(ctx, id, in, e)
 }
 func (s *Service) SaveParty(ctx context.Context, id int64, in PartyInput, e audit.Event) (Party, error) {
-	if s.node.Role == "central" && id > 0 {
-		if repo, ok := s.store.(*Repository); ok {
-			var n int64
-			if err := repo.db.WithContext(ctx).Table("wb_temporary_party").Where("party_id=?", id).Count(&n).Error; err != nil {
-				return Party{}, err
-			}
-			if n > 0 {
-				return Party{}, ErrForbidden
-			}
-		}
-	}
 	in.Name = strings.TrimSpace(in.Name)
 	if !validName(in.Name) || (id > 0 && in.Version < 1) || !slices.Contains([]string{"enterprise", "individual"}, in.Nature) || len(in.Roles) == 0 || len(in.Roles) > 3 || !maxLength(in.ShortName, 100) || !maxLength(in.Phone, 50) || !maxLength(in.Address, 500) || !maxLength(in.CreditCode, 50) || !maxLength(in.Remark, 2000) || len(in.Contacts) > 100 {
 		return Party{}, ErrInvalid
@@ -149,7 +145,23 @@ func enabled(v *bool) int {
 	return flag(*v)
 }
 
-func (s *Service) SetNode(cfg config.NodeConfig, imageDir string) {
-	s.node = cfg
+func (s *Service) SetLocalRuntime(imageDir string) error {
 	s.imageDir = imageDir
+	if repo, ok := s.store.(*Repository); ok {
+		return localsite.Bind(repo.db)
+	}
+	return nil
+}
+func (s *Service) LocalStatus(ctx context.Context) (localsite.Status, error) {
+	if repo, ok := s.store.(*Repository); ok {
+		return localsite.ReadStatus(ctx, repo.db)
+	}
+	return localsite.Status{}, nil
+}
+func (s *Service) LocalSiteID(ctx context.Context) (int64, error) {
+	if repo, ok := s.store.(*Repository); ok {
+		identity, err := localsite.Read(ctx, repo.db)
+		return identity.SiteID, err
+	}
+	return 0, nil
 }

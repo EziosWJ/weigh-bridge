@@ -81,7 +81,7 @@ async function release(original?: PendingRequest) {
 async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') {
   const state = useWeighingStore.getState();
   const scale = selectedScale(state.capabilities);
-  if (!scale?.canOperate) throw new Error('请从已授权厂区进入对应地磅');
+  if (!scale?.canOperate) throw new Error('请从本厂称重入口进入已授权地磅');
   try { lease = await workflowApi.post<WireSession>(`/scales/${scale.id}/session/${action}`, { clientId, reason }); }
   catch (error) { updateData({ owner: 'other' }); throw error; }
   updateData({ owner: 'self' });
@@ -136,7 +136,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
   loadTask: async id => {
     const token = useAuthStore.getState().token;
     const value = taskView(await workflowApi.task(id));
- if(isWorkbench&&value.scaleId!==selectedScaleId) throw new Error('该任务属于其他厂区，请从对应厂区工作台办理');
+ if(isWorkbench&&value.scaleId!==selectedScaleId) throw new Error('该任务不属于当前地磅，请核对本厂任务与地磅归属');
  if(!isWorkbench) selectedScaleId=value.scaleId??0;
     const versions: WireTicket[] = [];
     for (let page = 1;; page++) {
@@ -346,7 +346,7 @@ setInterval(() => {
  void workflowApi.get<DeviceState>(`/scales/${scale.id}/device`).then(device => {
   if (useAuthStore.getState().token !== token) return;
   const previous = useWeighingStore.getState().device;
-  const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.capturePolicyRevision !== device.capturePolicyRevision || previous.captureRequired !== device.captureRequired || previous.captureBlockedReason !== device.captureBlockedReason || JSON.stringify(previous.images) !== JSON.stringify(device.images);
+  const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.capturePolicyRevision !== device.capturePolicyRevision || previous.captureRequired !== device.captureRequired || previous.captureBlockedReason !== device.captureBlockedReason;
   useWeighingStore.setState({ device });
   const policyChanged = !!sample && sample.evidence.capturePolicyRevision !== device.capturePolicyRevision;
   if (sample && (device.captureBlockedReason || !device.online || !device.stable || !device.deviceOk || (previous && previous.revision !== device.revision) || policyChanged)) {
@@ -355,7 +355,7 @@ setInterval(() => {
   }
   if (!meaningful) return;
   const config = useWeighingStore.getState().data.config;
-  updateData({ config: { ...config, weight: Number(device.weight), stable: device.stable, online: device.online, timedOut: !device.online, deviceError: !device.deviceOk, evidence: device.captureRequired === false || device.images.length === 2 } });
+  updateData({ config: { ...config, weight: Number(device.weight), stable: device.stable, online: device.online, timedOut: !device.online, deviceError: !device.deviceOk, evidence: device.captureRequired === false || useWeighingStore.getState().data.capture?.imageStatus === 'complete' } });
  }).catch(() => {
   if (useAuthStore.getState().token !== token) return;
   clearSample(); const config = useWeighingStore.getState().data.config;
