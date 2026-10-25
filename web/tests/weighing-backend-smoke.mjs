@@ -69,8 +69,7 @@ try {
     assert.equal(payload.code, 200, payload.message);
     return payload.data;
   };
-  await call('/api/weighing/site-config/initialize', 'POST', {siteId:1,code:'LOCAL01',name:'本地酒厂',scaleCode:'SCALE01',scaleName:'本厂地磅',agentId:'scale-agent-1'});
-  assert.deepEqual(await call('/api/weighing/local-status'), {siteId:1,configured:true,initialized:true}, '首次配置事务成功即完成初始化，不要求第二名操作员');
+  assert.deepEqual(await call('/api/weighing/local-status'), {siteId:1,configured:true,initialized:true}, 'API 首次启动自动建立本厂身份，不要求网页填写名称或第二名操作员');
   const connection = await call(`/api/weighing/site-config/1/connection?serverUrl=${encodeURIComponent(api)}`);
   const agentConfig = join(directory, 'local-agent.json');
   await writeFile(agentConfig, JSON.stringify(connection), {mode:0o600});
@@ -118,24 +117,19 @@ try {
   await page.getByRole('link', { name: '服务端个人供运人', exact: true }).waitFor();
   assert.equal(await page.evaluate(() => localStorage.getItem('master-unrelated-sentinel')), 'keep');
   assert.equal(await page.evaluate(() => localStorage.getItem('weighbridge-phase2a-v1')), oldCache);
-  // The actual management menu opens one reusable local workbench window.
+  // The header shortcut opens one reusable local workbench window.
   await page.goto(`${web}/weighing/tasks`);
-  const menu=page.getByRole('navigation',{name:'主导航'});
   console.log('browser: master data ready; opening the local workbench', await page.evaluate(() => ({name:window.name,url:location.href})), errors);
   assert.notEqual(await page.evaluate(() => window.name),'weighbridge-workbench','离开工作台后不得占用独立窗口名称');
-  await menu.getByRole('link',{name:'本厂称重',exact:true}).click();
-  await page.getByRole('heading',{name:'本厂称重',exact:true}).waitFor();
-  await page.getByRole('link',{name:'进入称重台',exact:true}).waitFor();
-  assert.equal(await page.getByRole('link',{name:'进入称重台',exact:true}).count(),1);
-  assert.equal(await page.getByText('新增厂区',{exact:true}).count(),0);
+  await page.locator('header').getByRole('link',{name:'称重工作台',exact:true}).waitFor();
   const popupPromise=admin.waitForEvent('page');
-  await page.getByRole('link',{name:'进入称重台',exact:true}).first().click();
+  await page.locator('header').getByRole('link',{name:'称重工作台',exact:true}).click();
   const popup=await popupPromise;
   await popup.getByRole('heading',{name:'称重工作台',exact:true}).waitFor();
   assert.equal(await popup.getByRole('navigation',{name:'主导航'}).count(),0);
   assert.match(await popup.locator('.workbench-brand').innerText(),/本厂地磅/);
   const pageCount=admin.pages().length;
-  await page.getByRole('link',{name:'进入称重台',exact:true}).first().click();
+  await page.locator('header').getByRole('link',{name:'称重工作台',exact:true}).click();
   await delay(150);assert.equal(admin.pages().length,pageCount);
   await popup.close();
 
@@ -540,7 +534,7 @@ try {
   await page.goto(`${web}/system/user`);
   await page.getByRole('row').filter({hasText:'master-reader'}).getByRole('button',{name:'本厂授权',exact:true}).click();
   const siteDialog=page.getByRole('dialog',{name:'本厂授权',exact:true});
-  await siteDialog.getByLabel('本地酒厂授权范围',{exact:true}).selectOption('operate');
+  await siteDialog.getByLabel('本厂授权范围',{exact:true}).selectOption('operate');
   await siteDialog.getByRole('button',{name:'保存',exact:true}).click();
   await siteDialog.waitFor({state:'hidden'});
   assert.deepEqual((await call(`/api/weighing/users/${user.id}/sites`)).map(({siteId,canOperate})=>({siteId,canOperate})),[{siteId:1,canOperate:1}]);
@@ -548,8 +542,8 @@ try {
   const readerPage = await reader.newPage();
   await login(readerPage, 'master-reader');
   await readerPage.goto(`${web}/weighing/sites`);
-  await readerPage.getByRole('heading',{name:'本厂称重',exact:true}).waitFor();
-  await readerPage.getByRole('link',{name:'进入称重台',exact:true}).waitFor();
+  await readerPage.waitForURL('**/weighing/tasks');
+  await readerPage.locator('header').getByRole('link',{name:'称重工作台',exact:true}).waitFor();
   assert.equal(await readerPage.getByText('新增厂区',{exact:true}).count(),0);
   assert.equal(await readerPage.getByRole('button',{name:'踢出 Agent',exact:true}).count(),0);
   await readerPage.goto(`${web}/weighing/materials`);
@@ -584,11 +578,8 @@ try {
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54325')}`)).total,0);
   await readerPage.getByRole('button',{name:'释放操作权',exact:true}).click();
 
-  await page.goto(`${web}/weighing/sites`);
-  await page.getByRole('button',{name:'踢出 Agent',exact:true}).waitFor();
-  await page.getByRole('button',{name:'踢出 Agent',exact:true}).click();
-  await page.getByRole('dialog',{name:'踢出 Agent',exact:true}).getByRole('button',{name:'确认踢出',exact:true}).click();
-  await page.getByText('Agent 已确认收到踢出指令，连接已断开。',{exact:true}).waitFor();
+  const deviceBeforeKick=await call('/api/weighing/scales/1/device');
+  await call('/api/weighing/scales/1/agent/kick','POST',{connectionId:deviceBeforeKick.connectionId});
   for(let n=0;n<100&&mock.exitCode===null;n++)await delay(100);
   assert.equal(mock.exitCode,0,`收到 kick 后真实 mock 进程应正常退出，不自动重连；exit=${mock.exitCode} output=${mock.output?.slice(-400)}`);
   assert.equal((await call('/api/weighing/scales/1/device')).online,false);

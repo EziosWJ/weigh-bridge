@@ -14,6 +14,7 @@ let browser;
 const deadline = setTimeout(() => { void browser?.close(); vite.kill('SIGTERM'); }, 90_000);
 const user = {id: 1, username: 'admin', nickname: '管理员', roles: []};
 const capabilities = {
+  localSiteId: 1, configured: true, initialized: true,
   userId: 1, permissionCodes: ['weighing:read', 'weighing:confirm', 'weighing:export', 'weighing:print', 'weighing:master:read', 'weighing:master:write', 'weighing:site:manage', 'weighing:site:export'],
   sites: [{id: 1, name: '一厂区', code: 'SITE01', enabled: 1, canOperate: true}],
   scales: [{id: 1, name: '一号地磅', code: 'SCALE01', siteId: 1, siteName: '一厂区', enabled: 1, canOperate: true}],
@@ -35,6 +36,7 @@ const pages = [
   ['materials', '物料列表', 7], ['parties', '往来主体列表', 7],
   ['categories', '物料分类列表', 3],
 ];
+const taskQueries = [];
 
 try {
   for (let i = 0; i < 80; i++) {
@@ -48,11 +50,15 @@ try {
   await context.addInitScript(value => localStorage.setItem('react-admin-auth', JSON.stringify({token: 'layout-fixture', user: value})), user);
   await context.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/weighing/tasks' || path === '/api/weighing/tasks/export') taskQueries.push(new URL(route.request().url()));
     if (!path.startsWith('/api/')) return route.continue();
     let data = pageResult([]);
     if (path.endsWith('/capabilities')) data = capabilities;
     else if (path === '/api/auth/me') data = user;
-    else if (path === '/api/auth/menus') data = [];
+    else if (path === '/api/auth/menus') data = [{id: 1, menuName: '地磅业务', menuType: 'DIR', path: '/weighing', visible: 1, sortOrder: -40, children: [
+      {id: 2, menuName: '本厂称重', menuType: 'MENU', path: '/weighing/workbench', visible: 1, sortOrder: 0},
+      {id: 3, menuName: '运输任务', menuType: 'MENU', path: '/weighing/tasks', visible: 1, sortOrder: 1},
+    ]}];
     else if (path.endsWith('/unread-count')) data = 0;
     else if (path.endsWith('/summary')) data = {taskCount: 12, gross: '421.5', tare: '150', net: '271.5', rows: []};
     else if (path.endsWith('/material-categories')) data = pageResult(rows.map(row => ({id: row.id, enabled: 1, name: `原粮分类${row.id}`})));
@@ -74,6 +80,41 @@ try {
       assert.equal(await page.getByLabel('筛选厂区', {exact: true}).count(), 0, 'local lists have no cross-site filter');
       const region = page.getByRole('region', {name: label, exact: true});
       await region.locator('tbody tr').first().waitFor();
+      const workbench = page.locator('header').getByRole('link', {name: '称重工作台', exact: true});
+      assert.equal(await workbench.getAttribute('href'), '/weighing/workbench?scaleId=1');
+      const bellBox = await page.getByRole('button', {name: '站内通知', exact: true}).boundingBox();
+      const workbenchBox = await workbench.boundingBox();
+      assert.ok(workbenchBox.x >= bellBox.x + bellBox.width, 'workbench entry is right of the notification bell');
+      if (path === 'tasks') {
+        await page.getByRole('heading', {name: '待回磅任务', exact: true}).waitFor();
+        assert.equal(await page.getByLabel('筛选状态', {exact: true}).inputValue(), 'second');
+        assert.equal(taskQueries.at(-1).searchParams.get('status'), 'awaiting_second');
+        if (viewport.width === 1366) {
+          const nav = page.getByRole('navigation', {name: '主导航', exact: true});
+          assert.equal(await nav.getByRole('button', {name: '称重作业', exact: true}).count(), 0);
+          assert.equal(await nav.getByRole('button', {name: '地磅业务', exact: true}).count(), 0, 'legacy backend menus do not restore retired navigation');
+          assert.equal(await nav.getByRole('link', {name: '待回磅任务', exact: true}).count(), 1);
+          assert.equal(await nav.getByRole('link', {name: '运输任务', exact: true}).count(), 0);
+          assert.equal(await nav.getByRole('button', {name: '单据查询', exact: true}).getAttribute('aria-expanded'), 'true');
+          await Promise.all([
+            page.waitForResponse(response => response.url().includes('/api/weighing/tasks?') && new URL(response.url()).searchParams.get('status') === 'terminated'),
+            page.getByLabel('筛选状态', {exact: true}).selectOption('terminated'),
+          ]);
+          await Promise.all([
+            page.waitForResponse(response => response.url().includes('/api/weighing/tasks?') && new URL(response.url()).searchParams.get('status') === 'awaiting_second'),
+            page.getByRole('button', {name: '清空筛选', exact: true}).click(),
+          ]);
+          const popupPromise = page.waitForEvent('popup');
+          await workbench.click();
+          const popup = await popupPromise;
+          await popup.waitForURL('**/weighing/workbench?scaleId=1');
+          assert.equal(await popup.evaluate(() => window.name), 'weighbridge-workbench-1');
+          await page.bringToFront();
+          await workbench.click();
+          assert.equal(context.pages().length, 2, 'reopening reuses the scale workbench window');
+          await popup.close();
+        }
+      }
       assert.equal(await region.locator('thead th').count(), count, `${path}: all columns retained`);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${path}: page overflow at ${viewport.width}`);
       const metrics = await region.evaluate(el => {
@@ -120,6 +161,15 @@ try {
       }
     }
   }
+  capabilities.scales.push({...capabilities.scales[0], id: 2});
+  await page.reload();
+  await page.locator('header').getByRole('button', {name: '称重工作台', exact: true}).waitFor();
+  assert.equal(await page.locator('header').getByRole('button', {name: '称重工作台', exact: true}).isDisabled(), true, 'ambiguous scale does not open a guessed target');
+  capabilities.permissionCodes = ['weighing:read'];
+  await page.goto(`${base}/weighing/tasks`);
+  await page.getByRole('region', {name: '运输任务列表', exact: true}).waitFor();
+  assert.equal(await page.locator('header').getByRole('link', {name: '称重工作台', exact: true}).count(), 0, 'query-only account has no workbench shortcut');
+  assert.equal(await page.locator('header').getByRole('button', {name: '称重工作台', exact: true}).count(), 0);
   assert.deepEqual(errors, []);
   console.log('PASS: six business lists at 1366×768 / 1280×720 / 1024×768 / 390px; all columns, fixed edges, sticky headers, unclipped long text, visible pagination, keyboard scrolling');
 } finally {

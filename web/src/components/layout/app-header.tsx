@@ -1,9 +1,13 @@
-import { Menu, Search } from "lucide-react";
+import { Menu, Scale, Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Breadcrumbs } from "@/components/layout/breadcrumbs";
 import { UserMenu } from "@/components/layout/user-menu";
 import { NotificationBell } from "@/components/layout/notification-bell";
 import { Button } from "@/components/ui/button";
+import { buttonStyles } from "@/components/ui/button-styles";
+import { WorkbenchLink } from "@/components/common/workbench-link";
+import { localSiteId } from "@/lib/local-site";
+import { useWeighingStore } from "@/store/weighing-store";
 
 const MenuSearchDialog = lazy(() => import("./menu-search-dialog"));
 
@@ -13,6 +17,14 @@ type AppHeaderProps = {
 
 export function AppHeader({ onToggleSidebar }: AppHeaderProps) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const capabilities = useWeighingStore((state) => state.capabilities);
+  const siteId = capabilities ? localSiteId(capabilities) : undefined;
+  const site = capabilities?.sites.find((item) => item.id === siteId);
+  const scales = capabilities?.scales.filter((item) => item.siteId === siteId && item.enabled === 1) ?? [];
+  const scale = scales.length === 1 ? scales[0] : undefined;
+  const canConfirm = capabilities?.permissionCodes.includes("weighing:confirm");
+  const canOpenWorkbench = site?.enabled === 1 && site.canOperate && scale?.canOperate;
+  const workbenchLabel = <><Scale className="h-4 w-4" aria-hidden /><span className="hidden sm:inline">称重工作台</span></>;
   const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";
 
   useEffect(() => {
@@ -71,6 +83,20 @@ export function AppHeader({ onToggleSidebar }: AppHeaderProps) {
           <Search className="h-4 w-4" aria-hidden />
         </Button>
         <NotificationBell />
+        {canConfirm && (canOpenWorkbench && scale ? (
+          <WorkbenchLink
+            to={`/weighing/workbench?scaleId=${scale.id}`}
+            className={buttonStyles({ variant: "primary", className: "px-space-2 sm:px-space-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" })}
+            aria-label="称重工作台"
+            title="打开称重工作台"
+          >
+            {workbenchLabel}
+          </WorkbenchLink>
+        ) : (
+          <Button variant="primary" disabled aria-label="称重工作台" title="本厂地磅未就绪或当前账号无操作权限，请联系管理员检查" className="px-space-2 sm:px-space-4">
+            {workbenchLabel}
+          </Button>
+        ))}
         <UserMenu />
       </div>
       {searchOpen && (

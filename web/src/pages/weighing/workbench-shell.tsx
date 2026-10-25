@@ -29,8 +29,8 @@ export function WorkbenchShell() {
     document.addEventListener('fullscreenchange', update);
     return () => { document.removeEventListener('fullscreenchange', update); if (window.name === name) window.name = previousName; };
   }, [scaleId]);
-  if(!scaleId)return <Navigate to="/weighing/sites" replace/>;
-  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/sites" className="text-primary underline">返回本厂称重</a></div>;
+  if(!scaleId)return <Navigate to="/weighing/tasks" replace/>;
+  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/tasks" className="text-primary underline">返回后台查询</a></div>;
   if(!ready)return <p role="status" className="p-6">正在核对本厂操作权限…</p>;
   return <div className="weighing-workbench min-h-screen bg-background">
     <a href="#main-content" className="workbench-skip">跳转到称重操作</a>

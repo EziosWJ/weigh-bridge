@@ -34,7 +34,7 @@ const operationTitles: Record<TaskOperation, string> = { correct: "业务纠错"
 export function WeighingTasksPage() {
   const capabilities = useWeighingStore(state => state.capabilities);
   const [params] = useSearchParams();
-  const [filter, setFilter] = useState<WeighingFilter>({});
+  const [filter, setFilter] = useState<WeighingFilter>({ status: 'second' });
   const deferred = useDeferredValue(filter);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -54,8 +54,8 @@ export function WeighingTasksPage() {
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
   return <div className="weighing-list-page">
-    <PageHeader title="运输任务" description="" actions={<WorkbenchLink className={linkClass} to="/weighing/workbench">返回称重工作台</WorkbenchLink>} />
-    <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} />
+    <PageHeader title="待回磅任务" description="默认显示待二次称重的车辆，可切换状态查询历史任务。" />
+    <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(Object.keys(value).length ? value : { status: 'second' }); setPage(1); }} />
     {downloadError && <p role="alert" className="text-error">{downloadError}</p>}
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).catch(error => setDownloadError(error.message))}>导出筛选明细 CSV</Button>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1352} />

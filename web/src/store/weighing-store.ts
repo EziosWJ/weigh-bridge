@@ -81,7 +81,7 @@ async function release(original?: PendingRequest) {
 async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') {
   const state = useWeighingStore.getState();
   const scale = selectedScale(state.capabilities);
-  if (!scale?.canOperate) throw new Error('请从本厂称重入口进入已授权地磅');
+  if (!scale?.canOperate) throw new Error('请从顶部称重工作台入口进入已授权地磅');
   try { lease = await workflowApi.post<WireSession>(`/scales/${scale.id}/session/${action}`, { clientId, reason }); }
   catch (error) { updateData({ owner: 'other' }); throw error; }
   updateData({ owner: 'self' });

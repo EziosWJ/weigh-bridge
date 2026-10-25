@@ -30,11 +30,11 @@ export const router = createBrowserRouter([
       </RequireAuth>
     ),
     children: [
-      { path: "weighing", element: <Navigate to="/weighing/sites" replace /> },
+      { path: "weighing", element: <Navigate to="/weighing/tasks" replace /> },
       // Legacy link from the retired independent menu; the only editable entry
       // is 系统管理 → 配置管理.
       { path: "weighing/site-config", element: <Navigate to="/system/config" replace /> },
-      { path: "weighing/sites", lazy: () => import("@/pages/weighing/sites").then(module => ({Component:module.WeighingSitesPage})) },
+      { path: "weighing/sites", element: <Navigate to="/weighing/tasks" replace /> },
       { path: "weighing/cameras", lazy: () => import("@/pages/cameras").then(module => ({ Component: module.CamerasPage })) },
       { path: "weighing/tasks", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTasksPage })) },
       { path: "weighing/tasks/:id", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTaskDetailPage })) },

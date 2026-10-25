@@ -1,5 +1,4 @@
 import {
-  Scale,
   FileSearch,
   FileText,
   ListOrdered,
@@ -31,15 +30,8 @@ export type NavItem = {
 
 export const defaultNavItems: NavItem[] = [
   {
-    label: "称重作业", path: "/weighing/operations", icon: Scale, sortOrder: -40,
-    children: [
-      { label: "本厂称重", path: "/weighing/sites", icon: Scale },
-      { label: "运输任务", path: "/weighing/tasks", icon: Table2 },
-    ],
-  },
-  {
     label: "单据查询", path: "/weighing/documents", icon: FileSearch, sortOrder: -30,
-    children: [{ label: "原始称重", path: "/weighing/originals", icon: FileSearch }, { label: "最终单据", path: "/weighing/tickets", icon: FileText }],
+    children: [{ label: "待回磅任务", path: "/weighing/tasks", icon: Table2 }, { label: "原始称重", path: "/weighing/originals", icon: FileSearch }, { label: "最终单据", path: "/weighing/tickets", icon: FileText }],
   },
   {
     label: "基础资料", path: "/weighing/references", icon: Table2, sortOrder: -20,
@@ -203,6 +195,7 @@ function filterWeighingNavItems(
   const has = (code: string) => permissionCodes.includes(`weighing:${code}`);
 
   return items.flatMap((item) => {
+    if (["/weighing/operations", "/weighing/sites", "/weighing/workbench"].includes(item.path)) return [];
     if (["/weighing/temporary-parties", "/weighing/node-sync", "/weighing/node-status", "/weighing/site-config"].includes(item.path)) return [];
     if (!item.path.startsWith("/weighing")) return [item];
     if (item.children?.length) {
@@ -238,11 +231,10 @@ function sortNavigationItems(items: NavItem[]): NavItem[] {
 }
 
 /**
- * A role that may maintain the two local names should reach the same
- * 系统管理 → 配置管理 entry without being granted the generic system:config
- * permission. The backend still enforces each group's own permission.
+ * Keep configuration discoverable when the account has system:config but the
+ * backend menu tree does not yet contain the entry.
  */
-function withLocalConfigurationEntry(items: NavItem[]): NavItem[] {
+function withConfigurationEntry(items: NavItem[]): NavItem[] {
   if (hasNavigationPath(items, "/system/config")) return items;
   const entry: NavItem = { label: "配置管理", path: "/system/config", icon: Settings };
   const systemIndex = items.findIndex((item) => item.path === "/system");
@@ -303,10 +295,7 @@ export function buildAppNavigation({
     filterWeighingNavItems(localItems, capabilities),
     filterWeighingNavItems(userItemsWithMaintenance, capabilities),
   );
-  const canMaintainLocalIdentity = permissionCodes.some(
-    (code) => code === "weighing:site:manage" || code === "weighing:site:export",
-  );
-  return canMaintainLocalIdentity ? withLocalConfigurationEntry(merged) : merged;
+  return permissionCodes.includes("system:config") ? withConfigurationEntry(merged) : merged;
 }
 
 export function createUserMenuTitleMap(
@@ -334,7 +323,7 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/weighing/sites": "本厂称重",
   "/weighing/site-config": "本厂配置",
   "/weighing/cameras": "摄像头管理",
-  "/weighing/tasks": "运输任务",
+  "/weighing/tasks": "待回磅任务",
   "/weighing/tickets": "最终单据",
   "/weighing/originals": "原始称重",
   "/weighing/materials": "物料资料",

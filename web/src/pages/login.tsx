@@ -44,10 +44,10 @@ export function LoginPage() {
   const requested = (location.state as { from?: { pathname: string; search?: string } } | null)?.from;
   const stateFrom = requested ? requested.pathname + (requested.search || "") : undefined;
   const queryRedirect = new URLSearchParams(location.search).get("redirect");
-  let from = stateFrom ?? queryRedirect ?? "/weighing/sites";
+  let from = stateFrom ?? queryRedirect ?? "/weighing/tasks";
 
   if (from.includes("://") || from.startsWith("//")) {
-    from = "/weighing/sites";
+    from = "/weighing/tasks";
   }
 
   useEffect(() => {

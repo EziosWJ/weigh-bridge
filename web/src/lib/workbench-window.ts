@@ -1,10 +1,10 @@
 export const WORKBENCH_PATH = '/weighing/workbench';
 export const WORKBENCH_WINDOW = 'weighbridge-workbench';
-export const SITES_PATH = '/weighing/sites';
+export const MANAGEMENT_PATH = '/weighing/tasks';
 export function workbenchWindow(scaleId: string | number) { return `${WORKBENCH_WINDOW}-${scaleId}`; }
 
 /** Each physical scale has an independent reusable window. */
-export function openWorkbench(to = SITES_PATH): boolean {
+export function openWorkbench(to = WORKBENCH_PATH): boolean {
  const destination=new URL(to,window.location.origin);
  if(destination.origin!==window.location.origin||destination.pathname!==WORKBENCH_PATH)return false;
  const scaleId=destination.searchParams.get('scaleId');

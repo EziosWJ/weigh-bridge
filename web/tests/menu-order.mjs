@@ -32,7 +32,7 @@ try {
     await page.goto(`${baseUrl}/tests/menu-order.html`, { waitUntil: "networkidle" });
     const labels = (scenario) => page.locator(`[data-testid="scenario-${scenario}"] li`).allTextContents();
 
-    assert.deepEqual(await labels("tie"), ["称重作业", "单据查询", "基础资料", "业务菜单甲", "系统概览", "业务菜单乙", "消息中心", "开发示例"], "本地入口必须在同序号的业务菜单之前");
+    assert.deepEqual(await labels("tie"), ["单据查询", "基础资料", "业务菜单甲", "系统概览", "业务菜单乙", "消息中心", "开发示例"], "本地入口必须在同序号的业务菜单之前");
     assert.deepEqual(await labels("interleave"), ["业务菜单甲", "固定入口", "业务菜单乙"], "导航必须按 sortOrder 交错排序");
     assert.equal(await page.getByTestId("system-group-count").textContent(), "1", "系统管理继续复用后端菜单分组");
     assert.deepEqual(await labels("system"), ["用户管理", "角色管理", "菜单管理"], "后端系统管理菜单保持原样");
