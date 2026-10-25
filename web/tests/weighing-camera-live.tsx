@@ -17,13 +17,15 @@ const capture: CaptureSnapshot = {
 };
 
 export function Fixture() {
+  const [captureMode, setCaptureMode] = useState('complete');
+  const currentCapture = captureMode === 'waiting' ? undefined : captureMode === 'optional' ? { ...capture, id: 'optional', captureRequired: false, images: [], imageStatus: 'disabled' as const } : captureMode === 'partial' ? { ...capture, id: 'partial', captureRequired: false, images: capture.images?.slice(0, 1), imageStatus: 'capture_failed' as const, failures: [{ cameraId: 12, cameraName: '装车区', code: 'capture_failed', message: '摄像头连接超时' }] } : capture;
   const [mounted, setMounted] = useState(true);
   const [scaleId, setScaleId] = useState(1);
   const [size, setSize] = useState<CameraSize>('standard');
   return <main className="weighing-workbench">
-    <nav><button onClick={() => setMounted(value => !value)}>切换挂载</button><button onClick={() => setScaleId(value => value === 1 ? 2 : 1)}>切换地磅</button></nav>
+    <nav><button onClick={() => setMounted(value => !value)}>切换挂载</button><button onClick={() => setScaleId(value => value === 1 ? 2 : 1)}>切换地磅</button><button onClick={() => setCaptureMode('waiting')}>等待抓拍</button><button onClick={() => setCaptureMode('optional')}>无图抓拍</button><button onClick={() => setCaptureMode('partial')}>部分失败</button><button onClick={() => setCaptureMode('complete')}>完整抓拍</button></nav>
     <div className={`weighing-station weighing-camera-${size}`}>
-      {mounted && <DeviceCameraPanel scaleId={scaleId} size={size} onSizeChange={setSize} capture={capture} />}
+      {mounted && <DeviceCameraPanel scaleId={scaleId} size={size} onSizeChange={setSize} capture={currentCapture} />}
     </div>
   </main>;
 }

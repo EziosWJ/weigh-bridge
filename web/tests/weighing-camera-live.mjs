@@ -139,11 +139,34 @@ try {
   await live();
   assert.equal(await sessions(), 1);
 
-  // Capture evidence switches by the real camera names, without a fixed pair.
-  await page.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
+  // All camera evidence is visible together and each thumbnail opens its own image.
   const captureGroup = page.getByRole('group', { name: '抓拍摄像头', exact: true });
-  await captureGroup.getByRole('button', { name: '装车区', exact: true }).click();
+  await page.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
   await page.getByRole('img', { name: '装车区抓拍', exact: true }).waitFor();
+  await page.getByText('已取得 2/2 张', { exact: true }).waitFor();
+  await captureGroup.getByRole('button', { name: '放大抓拍 装车区', exact: true }).click();
+  const photoDialog = page.getByRole('dialog', { name: '抓拍图片预览', exact: true });
+  await photoDialog.getByRole('img', { name: '装车区抓拍大图', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await photoDialog.waitFor({ state: 'hidden' });
+  assert.equal(await captureGroup.getByRole('button', { name: '放大抓拍 装车区', exact: true }).evaluate(button => button === document.activeElement), true);
+  for (const width of [1864, 1366, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '抓拍缩略图不得撑破视口');
+  }
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.getByRole('button', { name: '等待抓拍', exact: true }).click();
+  await page.getByText('等待采集', { exact: true }).waitFor();
+  assert.ok((await page.locator('.workbench-camera-evidence').boundingBox()).height <= 128, '等待空态保持紧凑');
+  assert.equal(await page.locator('.workbench-camera-evidence [role="alert"]').count(), 0, '等待采集不是故障');
+  await page.getByRole('button', { name: '无图抓拍', exact: true }).click();
+  await page.getByText('本次无图', { exact: true }).waitFor();
+  await page.getByText('本次无抓拍图片，请核对现场车辆和重量。', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '部分失败', exact: true }).click();
+  await page.getByText('已取得 1 张 · 抓拍不完整', { exact: true }).waitFor();
+  await page.getByText('装车区：摄像头连接超时', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '完整抓拍', exact: true }).click();
+  await page.getByText('已取得 2/2 张', { exact: true }).waitFor();
 
   await page.getByRole('button', { name: '放大实时画面', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '入口实时画面', exact: true });
@@ -182,7 +205,7 @@ try {
   await cameraGroup().getByRole('button', { name: /^装车区/ }).click();
   await page.getByText('预览信息读取失败', { exact: false }).waitFor();
   await page.waitForFunction(() => window.mediaSessions.size === 0);
-  assert.equal(await page.getByRole('img', { name: '入口抓拍', exact: true }).count() + await page.getByRole('img', { name: '装车区抓拍', exact: true }).count(), 1, '预览失败仍保留本次抓拍证据');
+  assert.equal(await page.getByRole('img', { name: '入口抓拍', exact: true }).count() + await page.getByRole('img', { name: '装车区抓拍', exact: true }).count(), 2, '预览失败仍保留全部本次抓拍证据');
   previewAccess = true;
   await page.getByRole('button', { name: '重新读取预览', exact: true }).click();
   await live();
@@ -240,7 +263,7 @@ try {
   assert.equal(samples, 1);
   assert.equal(confirmations, 0);
   assert.deepEqual(errors, []);
-  console.log('实时监控通过：动态摄像头真实名称、WHEP 协商与解码、抓拍多图切换、放大复用、冻结/失败重连、隐藏暂停、台账隔离、预览失败/停用/待同步/同步失败表达、卸载清理、窄屏及视频故障不阻塞采集。');
+  console.log('实时监控通过：动态摄像头真实名称、WHEP 协商与解码、抓拍多图并排、等待/无图/部分失败状态、逐图放大与焦点恢复、放大复用、冻结/失败重连、隐藏暂停、台账隔离、预览失败/停用/待同步/同步失败表达、卸载清理、窄屏及视频故障不阻塞采集。');
 } finally {
   clearTimeout(deadline);
   await browser?.close();

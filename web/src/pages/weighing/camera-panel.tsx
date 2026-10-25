@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { AlertTriangle, Camera, RefreshCw, VideoOff, X } from 'lucide-react';
+import { Camera, RefreshCw, VideoOff, X } from 'lucide-react';
 import { PlateCloseup, PlateEvidenceInfo } from './plate-evidence';
 import { Button } from '@/components/ui/button';
 import { ContentCard } from '@/components/common/content-card';
@@ -75,12 +75,30 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
   const failures = capture.failures?.length ? <ul role="alert" className="space-y-1 text-xs text-error">{capture.failures.map(failure => <li key={`${failure.cameraId}-${failure.code}`}>{failure.cameraName || `摄像头 ${failure.cameraId}`}：{failure.message}</li>)}</ul> : null;
   const sourceLabel = capture.source === 'server' ? '图片来源：Server 直连抓拍' : capture.source === 'simulated' ? '图片来源：历史模拟数据' : capture.source === 'agent' ? '图片来源：历史 Agent 上传' : '';
   const metadata = <div className="space-y-1 text-xs text-text-secondary"><p>关联人工确认车牌：{capture.plate || '待确认时关联'}</p>{images.length === 1 && <p>摄像头：{cameraLabel}</p>}<p>{!hideWeight && <>{formatWeight(capture.weight)} · </>}{beijingTime(capture.at)}</p>{sourceLabel && <p>{sourceLabel}</p>}</div>;
+  if (compact) {
+    const photos = images.length ? images : imageSrc ? [{ id: 'legacy', url: imageSrc, cameraName: cameraLabel, capturedAt: capture.at }] : [];
+    return <div className="workbench-capture-content">
+      {photos.length > 0 ? <div className="workbench-capture-gallery" role="group" aria-label="抓拍摄像头">{photos.map(image => <div className="workbench-capture-photo" key={image.id}>
+        <button type="button" className="workbench-capture-thumbnail" aria-label={`放大抓拍 ${imageLabel(image, capture)}`} onClick={() => { setActiveId(image.id); preview(true); }}>
+          <AgentImage src={image.url} alt={`${imageLabel(image, capture)}抓拍`} className="aspect-video w-full object-contain" onLoadState={ok => mark(image.id, ok)} />
+          <span>点击放大</span>
+        </button>
+        <p className="text-sm">{imageLabel(image, capture)}</p>
+        <p className="text-xs text-text-tertiary">{beijingTime(image.capturedAt || capture.at)}</p>
+        {failed[image.id] && <p role="alert" className="text-sm text-error">图片加载失败，请重新加载或重新采集。</p>}
+      </div>)}</div> : <p className={capture.captureRequired === false ? 'text-sm text-warning' : 'text-sm text-error'} role={capture.captureRequired === false ? undefined : 'alert'}>{capture.captureRequired === false ? '本次无抓拍图片，请核对现场车辆和重量。' : '缺少本次抓拍图片，请重新采集。'}</p>}
+      {failures}
+      {capture.imageError && <p role="alert" className="text-sm text-error">{capture.imageError}</p>}
+      {sourceLabel && capture.source !== 'server' && <p className="text-xs text-text-secondary">{sourceLabel}</p>}
+      {photos.length > 0 && <CameraImagePreview open={open} title="抓拍图片预览" description="称重当次保存的图片；请核对车牌与车辆上磅情况。" src={imageSrc} alt={`${cameraLabel}抓拍大图`} onClose={() => preview(false)}>{failures}{metadata}<PlateEvidenceInfo evidence={capture.plateEvidence} /></CameraImagePreview>}
+    </div>;
+  }
   if (!imageSrc) return <div className="space-y-2 text-sm text-text-secondary">{policy}{failures}
     {capture.captureRequired === false ? <p>本次无抓拍图片，请核对现场车辆和重量。</p> : <p role="alert" className="text-error">缺少本次抓拍图片，请返回重新采集。</p>}{metadata}</div>;
-  return <div className={compact ? 'grid grid-cols-[120px_minmax(0,1fr)] items-center gap-3' : 'space-y-2'}>
+  return <div className="space-y-2">
     <button type="button" className="relative block w-full overflow-hidden rounded-control border border-border bg-neutral-background text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label={`放大抓拍 ${cameraLabel}`} onClick={() => preview(true)}>
       <AgentImage key={imageSrc} src={imageSrc} alt={`${cameraLabel}抓拍`} className="aspect-video w-full object-contain" onLoadState={ok => mark(active?.id ?? 'legacy', ok)} />
-      {!compact && <span className="absolute left-2 top-2 max-w-[70%] truncate rounded bg-black/70 px-2 py-1 text-xs text-white">抓拍图片 · {cameraLabel}</span>}
+      <span className="absolute left-2 top-2 max-w-[70%] truncate rounded bg-black/70 px-2 py-1 text-xs text-white">抓拍图片 · {cameraLabel}</span>
       <span className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1 text-xs text-white">点击放大</span>
     </button>
     <div className="min-w-0 space-y-2">
@@ -92,7 +110,7 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
     </div>
     {anyFailed && <p role="alert" className="text-sm text-error">有抓拍图片加载失败；请重新加载或重新采集后再确认。</p>}
     {metadata}
-    {!compact && <PlateEvidenceInfo evidence={capture.plateEvidence} />}
+    <PlateEvidenceInfo evidence={capture.plateEvidence} />
     </div>
     <CameraImagePreview open={open} title="抓拍图片预览" description="称重当次由 Server 保存的图片；车牌经操作员核对后关联。" src={imageSrc} alt={`${cameraLabel}抓拍大图`} onClose={() => preview(false)}>{failures}{metadata}<PlateEvidenceInfo evidence={capture.plateEvidence} /></CameraImagePreview>
   </div>;
@@ -173,9 +191,12 @@ export function DeviceCameraPanel({ scaleId, scenePlate, capture, saved = false,
   const activeStream = streamError ? null : stream ?? selected?.stream ?? null;
   const playbackURL = !streamError && selected?.enabled && activeStream?.state === 'synced' ? activeStream.playbackUrl : '';
   const message = selected ? previewMessage(selected, activeStream, streamError) : '';
-  const policy = capture
-    ? capture.captureRequired == null ? '按当时记录展示本次抓拍结果。' : capture.captureRequired ? '本次强制抓拍，指定摄像头须全部取得新图。' : '本厂已关闭强制抓拍，按实际结果保留图片和缺图状态。'
-    : device ? (device.captureRequired === false ? '本厂已关闭强制抓拍，允许无图确认。' : '本厂强制抓拍，采集时须取得全部指定摄像头的新图。') : '';
+  // A saved sample uses its frozen policy, never the current device policy.
+  const captureRequired = capture ? capture.captureRequired : device?.captureRequired;
+  const imageCount = capture ? capture.images?.length || (capture.imageSrc ? 1 : 0) : 0;
+  const failureCount = capture?.failures?.length ?? 0;
+  const captureIssue = !!capture && (failureCount > 0 || !!capture.imageError || capture.imageStatus === 'capture_failed' || capture.imageStatus === 'upload_failed' || imageCount === 0);
+  const captureStatus = !capture ? '等待采集' : imageCount === 0 ? '本次无图' : captureIssue ? `已取得 ${imageCount} 张 · 抓拍不完整` : `已取得 ${imageCount}/${imageCount} 张`;
 
   return <ContentCard className="weighing-camera shadow-none" bodyClassName="p-0">
     <div className="workbench-camera-toolbar flex flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -194,10 +215,15 @@ export function DeviceCameraPanel({ scaleId, scenePlate, capture, saved = false,
     {selected?.enabled && playbackURL ? <CameraLive key={`${selected.id}:${activeStream?.syncedVersion ?? ''}:${playbackURL}`} url={playbackURL} title={selected.name} /> : <div className="workbench-camera-feed relative">
       <span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>{selected ? (message || '视频映射待同步') : cameras?.length ? '请选择摄像头' : cameraError ? '无法读取摄像头预览' : '尚未配置摄像头'}</strong><span>{selected ? '实时预览不代替本次称重抓拍；可在摄像头管理中重试同步或测试抓拍。' : cameraError ? '当前账号可能没有摄像头查看权限；本次称重抓拍仍由正式采集完成。' : '在摄像头管理中添加摄像头后即可预览；正式抓拍不依赖 Agent 在线。'}</span>{selected && <Button size="sm" variant="secondary" disabled={streamLoading} onClick={() => { void loadCameras(); void loadStream(selected.id); }}><RefreshCw className="h-4 w-4" aria-hidden />重新读取预览</Button>}</span>
     </div>}
-    <div className="workbench-camera-evidence space-y-3 p-4">
-      {policy && <p className={capture?.captureRequired === false || device?.captureRequired === false ? 'text-sm text-warning' : 'text-sm text-text-secondary'}>{policy}</p>}
-      <div className="workbench-camera-plate">{scenePlate ? <PlateCloseup plate={scenePlate} /> : <div className="rounded-control border border-border bg-neutral-background p-3 text-sm text-text-secondary">请核对现场车牌，图片不能替代人工确认。</div>}<p className="mt-2 text-xs text-text-tertiary">预览用于监看；下方抓拍随本次称重保存并保留当时摄像头名称。</p></div>
-      <div className="workbench-camera-capture border-t border-border pt-3"><h3 className="mb-3 text-sm font-medium">{saved ? '已保存抓拍' : '本次抓拍'}</h3>{capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : <div className="flex items-center gap-3 py-2 text-sm text-text-tertiary"><AlertTriangle className="h-5 w-5 shrink-0" aria-hidden /><p>采集重量时由 Server 直接抓拍，图片与本次重量一起保留。</p></div>}</div>
-    </div>
+    <section className="workbench-camera-evidence" aria-label={saved ? '已保存抓拍' : '本次抓拍'}>
+      <header className="workbench-capture-heading">
+        <h3>{saved ? '已保存抓拍' : '本次抓拍'}</h3>
+        {captureRequired != null && <span className={`workbench-capture-policy${captureRequired ? '' : ' is-optional'}`}>{captureRequired ? '强制抓拍' : '非强制抓拍'}</span>}
+        <span role="status" className={`workbench-capture-status${capture ? captureIssue ? ' text-warning' : ' text-success' : ''}`}>{captureStatus}</span>
+      </header>
+      {capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : <div className="workbench-capture-empty"><Camera className="h-5 w-5 shrink-0" aria-hidden /><p>采集重量时自动抓拍，请核对现场车牌。</p></div>}
+      {scenePlate && <div className="workbench-camera-plate"><PlateCloseup plate={scenePlate} /></div>}
+      <p className="workbench-capture-hint">{capture ? '请核对车牌与车辆上磅情况。' : captureRequired === false ? '本厂未强制抓拍，允许无图确认；实时预览仅用于监看。' : '实时预览仅用于监看；抓拍图片随确认称重保存。'}</p>
+    </section>
   </ContentCard>;
 }
