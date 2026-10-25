@@ -9,6 +9,7 @@ import { FormDialog } from '@/components/common/form-dialog';
 import { DetailDialog } from '@/components/common/detail-dialog';
 import { Field } from '@/components/common/field';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/common/toast-store';
 import { Input } from '@/components/ui/input';
 import { formatDateTime } from '@/lib/datetime';
 import { getErrorMessage } from '@/lib/api-error';
@@ -38,7 +39,6 @@ export function MaintenanceBackupPanel({ canManage, onApplied }: { canManage: bo
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
@@ -57,31 +57,31 @@ export function MaintenanceBackupPanel({ canManage, onApplied }: { canManage: bo
 
   async function create() {
     if (!effective || !live) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       await agentMaintenanceApi.createBackup({ name: name.trim(), notes: notes.trim(), baseVersion: effective.configVersion, digest: effective.digest });
-      setCreateOpen(false); setName(''); setNotes(''); setNotice('备份已创建，保存的是 Agent 已核实生效的参数。');
+      setCreateOpen(false); setName(''); setNotes(''); toast.success('备份已创建，保存的是 Agent 已核实生效的参数。');
       if (page !== 1) setPage(1); else await load();
     } catch (failure) { setError(getErrorMessage(failure, '创建备份失败，请刷新列表核实后再操作')); }
     finally { setBusy(false); }
   }
   async function remove(record: BackupRecord) {
     if (!window.confirm(`删除备份“${backupName(record)}”？当前设备参数不受影响。`)) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
-      await agentMaintenanceApi.deleteBackup(record.id); setNotice('备份已删除。');
+      await agentMaintenanceApi.deleteBackup(record.id); toast.success('备份已删除。');
       if (records.length === 1 && page > 1) setPage(page - 1); else await load();
     } catch (failure) { setError(getErrorMessage(failure, '删除备份失败')); }
     finally { setBusy(false); }
   }
   async function restore() {
     if (!selected || !effective || !live) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const result = await agentMaintenanceApi.restore(selected.id, effective.configVersion);
       if (result.status === 'applied') {
         setSelected(undefined); setRestoring(false);
-        setNotice('已明确发起恢复并核对设备结果；未新增备份，连接地址与运行状态未被覆盖。');
+        toast.success({ title: '已明确发起恢复并核对设备结果', description: '未新增备份，连接地址与运行状态未被覆盖。' });
         await onApplied();
       } else setError(`恢复未完成（${result.status}）：${result.message || '请核对设备实际状态'}。`);
       await load();
@@ -92,7 +92,6 @@ export function MaintenanceBackupPanel({ canManage, onApplied }: { canManage: bo
   }
   const feedback = <>
     {error && <p role="alert" className="rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{error}</p>}
-    {notice && <p role="status" className="rounded-control border border-info-border bg-info-background p-space-3 text-sm">{notice}</p>}
   </>;
   const comparison = selected && <div className="overflow-x-auto"><table className="w-full min-w-[480px] text-left text-sm">
     <caption className="sr-only">备份与当前生效参数对比</caption>

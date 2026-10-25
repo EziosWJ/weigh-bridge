@@ -1,3 +1,5 @@
+import { formatDateTime } from "@/lib/datetime";
+
 export type TrendPoint = { time: string; values: Record<string, number | null>; gap?: boolean };
 export type TrendSeries = { key: string; label: string; color: string };
 
@@ -30,8 +32,8 @@ export function TrendChart({ points, series, unit }: TrendChartProps) {
       <svg viewBox="0 0 780 210" role="img" aria-label="最近30分钟资源趋势，采集缺口不连接" className="w-full">
         {[0, 0.5, 1].map((fraction) => <g key={fraction}><line x1="50" x2="740" y1={y(maximum * fraction)} y2={y(maximum * fraction)} stroke="#e2e8f0" /><text x="44" y={y(maximum * fraction) + 4} textAnchor="end" fontSize="11" fill="#64748b">{(maximum * fraction).toFixed(1)}</text></g>)}
         {series.flatMap((item) => paths(item.key).map((path, index) => <path key={`${item.key}-${index}`} data-series={item.key} data-segment={index} d={path} fill="none" stroke={item.color} strokeWidth="2" />))}
-        {series.flatMap((item) => points.map((point, index) => !point.gap && point.values[item.key] != null ? <circle key={`${item.key}-${index}`} cx={x(index)} cy={y(point.values[item.key]!)} r="2" fill={item.color}><title>{new Date(point.time).toLocaleTimeString()} {item.label}: {point.values[item.key]?.toFixed(2)} {unit}</title></circle> : null))}
-        <text x="50" y="199" fontSize="11" fill="#64748b">{new Date(first).toLocaleTimeString()}</text><text x="740" y="199" textAnchor="end" fontSize="11" fill="#64748b">{new Date(last).toLocaleTimeString()}</text>
+        {series.flatMap((item) => points.map((point, index) => !point.gap && point.values[item.key] != null ? <circle key={`${item.key}-${index}`} cx={x(index)} cy={y(point.values[item.key]!)} r="2" fill={item.color}><title>{formatDateTime(point.time)} {item.label}: {point.values[item.key]?.toFixed(2)} {unit}</title></circle> : null))}
+        <text x="50" y="199" fontSize="11" fill="#64748b">{formatDateTime(new Date(first).toISOString())}</text><text x="740" y="199" textAnchor="end" fontSize="11" fill="#64748b">{formatDateTime(new Date(last).toISOString())}</text>
       </svg>
       <p className="text-xs text-text-tertiary">实际历史 {points.length} 个样本；最多保留30分钟。空值和采集中断形成缺口，API 重启后重新积累。</p>
     </>}

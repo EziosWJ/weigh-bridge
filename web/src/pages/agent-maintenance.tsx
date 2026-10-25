@@ -10,6 +10,7 @@ import { DataTableCard } from '@/components/common/data-table-card';
 import { TableToolbar } from '@/components/common/table-toolbar';
 import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/common/toast-store';
 import { MaintenanceBackupPanel } from './agent-maintenance/backup-panel';
 import { MaintenanceConfigPanel } from './agent-maintenance/config-panel';
 import { formatDateTime } from '@/lib/datetime';
@@ -67,7 +68,6 @@ export function AgentMaintenancePage() {
   const [busy, setBusy] = useState(false);
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [tab, setTab] = useState<'overview' | 'printer' | 'instrument' | 'backups' | 'records'>('overview');
   const deviceOffline = !status || status?.agentProcessOnline === false || status?.maintenanceAvailable === false;
@@ -100,21 +100,25 @@ export function AgentMaintenancePage() {
   useEffect(() => { void refresh(); }, [refresh]);
 
   async function runAction(action: string, extra: Record<string, unknown> = {}) {
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     const actionLabel = actionLabels[action] ?? action;
     try {
       let preflight: Awaited<ReturnType<typeof agentMaintenanceApi.jobs>> | undefined;
       if (action !== 'start-agent') {
         preflight = await agentMaintenanceApi.jobs();
         if (preflight.unknown) {
-          if (!window.confirm(`无法读取未结束打印作业。继续“${actionLabel}”后，请现场核实打印结果。是否继续？`)) { setNotice('操作已取消，设备状态未改变。'); return; }
+          if (!window.confirm(`无法读取未结束打印作业。继续“${actionLabel}”后，请现场核实打印结果。是否继续？`)) { toast.info('操作已取消，设备状态未改变。'); return; }
         } else if (preflight.jobs?.length) {
           const items = preflight.jobs.map((job) => `${job.id}（${job.queue}）`).join('、');
-          if (!window.confirm(`发现未结束作业：${items}。继续后仍需现场核实纸面结果。是否继续“${actionLabel}”？`)) { setNotice('操作已取消，设备状态未改变。'); return; }
+          if (!window.confirm(`发现未结束作业：${items}。继续后仍需现场核实纸面结果。是否继续“${actionLabel}”？`)) { toast.info('操作已取消，设备状态未改变。'); return; }
         }
       }
       const result = await agentMaintenanceApi.action({ action, ...extra, ...(preflight ? { previewToken: preflight.previewToken, disposition: preflight.unknown ? 'unknown-confirmed' : 'keep', jobIds: [] } : {}) });
-      setNotice(result.needsDisposition ? 'Agent 发现未结束打印作业，尚未执行。请先核实打印后再操作。' : result.output || '维护操作已完成；请检查设备实际状态及纸面结果。');
+      if (result.needsDisposition) {
+        toast.warning({ title: 'Agent 发现未结束打印作业，尚未执行。请先核实打印后再操作。', duration: 6000 });
+      } else {
+        toast.success(result.output || '维护操作已完成；请检查设备实际状态及纸面结果。');
+      }
       await refresh();
     } catch (failure) {
       setError(`${getErrorMessage(failure, '维护操作失败')}。请刷新状态核实设备执行结果。`);
@@ -124,11 +128,11 @@ export function AgentMaintenancePage() {
 
   async function applySettings() {
     if (!settings || !configData) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const result = await agentMaintenanceApi.apply(settings, configData.effective?.configVersion ?? 0);
       if (result.status === 'applied') {
-        setNotice('配置已保存并应用，设备重载结果已核实。已有打印作业仍须现场核实。');
+        toast.success({ title: '配置已保存并应用', description: '设备重载结果已核实。已有打印作业仍须现场核实。' });
       } else {
         setError(`配置未生效（${result.status}）：${result.message || '请核对设备实际状态'}。维护连接保持，可修正后重试。`);
       }
@@ -153,10 +157,10 @@ export function AgentMaintenancePage() {
 
   async function printSample() {
     if (!window.confirm('将提交一份固定校准样张，不会重打业务单据。是否继续？')) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const result = await agentMaintenanceApi.testPrint();
-      setNotice(result.message || '校准样张请求已提交，请核对纸面效果。');
+      toast.info(result.message || '校准样张请求已提交，请核对纸面效果。');
       await refresh();
     } catch (failure) {
       setError(`${getErrorMessage(failure, '测试打印失败')}。结果可能未知，请先核实是否出纸。`);
@@ -173,14 +177,15 @@ export function AgentMaintenancePage() {
   ];
   const weight = typeof scale.weight === 'string' && scale.weight.trim() !== '' || typeof scale.weight === 'number' ? Number(scale.weight) : NaN;
   const weightAvailable = !deviceOffline && status?.agent === '运行中' && scale.known === true && scale.deviceOk === true && scale.stale === false && Number.isFinite(weight);
-  const lastError = typeof status?.lastError === 'string' ? status.lastError : '';
-  const statusIncomplete = !status || status.agentKnown !== true || status.cupsKnown !== true || status.queueKnown !== true;
+  const reportedError = typeof status?.lastError === 'string' ? status.lastError.trim() : '';
+  // Older Agents return a no-error placeholder in lastError.
+  const lastError = reportedError === '暂无可读取错误' ? '' : reportedError;
+  const statusIncomplete = deviceOffline || status?.agentKnown !== true || status?.cupsKnown !== true || status?.queueKnown !== true || status?.jobsKnown !== true;
   const DiagnosisIcon = lastError ? AlertTriangle : statusIncomplete ? CircleHelp : CheckCircle2;
   const fault = typeof scale.fault === 'string' ? scale.fault : '';
   const serialHint = /权限|permission/i.test(fault) ? fault : '';
   const feedback = <>
     {error && <p role="alert" className="rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{error}</p>}
-    {notice && <p role="status" className="rounded-control border border-info-border bg-info-background p-space-3 text-sm text-text-primary">{notice}</p>}
   </>;
 
   const overview = <div className="space-y-space-4">
@@ -193,31 +198,29 @@ export function AgentMaintenancePage() {
         </div>)}
       </div>
     </ContentCard>
-    <div className="grid items-start gap-space-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      <ContentCard title="现场诊断" description="查看异常和未结束作业，再执行相应维护操作。">
-        <div className="flex items-start gap-space-3">
-          <DiagnosisIcon className={`mt-0.5 h-5 w-5 shrink-0 ${lastError ? 'text-warning' : statusIncomplete ? 'text-text-tertiary' : 'text-success'}`} aria-hidden />
-          <div className="min-w-0"><p className="break-words text-sm font-medium">{!status ? '尚未读取设备状态' : lastError || (statusIncomplete ? '部分运行状态尚未确认' : '未报告设备错误')}</p><p className="mt-space-1 text-body-secondary text-text-tertiary">{deviceOffline ? '请检查 Agent 主机上的服务运行状态，恢复连接后刷新。' : '状态来自最近一次检查；需要时刷新以核实现场变化。'}</p></div>
+    <ContentCard title="设备执行控制" description="控制重量采集与打印执行，Agent 维护连接保留。" className="min-w-0">
+      <DetailItem label="当前执行状态" value={<StatusValue value={status?.agentKnown ? status.agent : '未知'} />} />
+      {canManage ? <>
+        <div className="mt-space-4 flex flex-wrap gap-space-2">
+          <Button variant="primary" disabled={busy || deviceOffline || status?.agent === '运行中'} onClick={() => void runAction('start-agent')}><Play className="h-4 w-4" aria-hidden />启动设备</Button>
+          <Button disabled={busy || deviceOffline || status?.agent !== '运行中'} onClick={() => void runAction('stop-agent')}><Square className="h-4 w-4" aria-hidden />停止设备</Button>
+          <Button disabled={busy || deviceOffline} onClick={() => void runAction('restart-agent')}><RotateCw className="h-4 w-4" aria-hidden />重载设备</Button>
         </div>
-        {serialHint && <p className="mt-space-4 break-words rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{serialHint}</p>}
-        <div className="mt-space-5 border-t border-border pt-space-4">
-          <div className="flex flex-wrap items-center justify-between gap-space-2"><h3 className="text-sm font-medium">未结束打印作业</h3><StatusTag tone={status?.jobsKnown !== true || statusJobs.length ? 'warning' : 'neutral'}>{status?.jobsKnown !== true ? '状态未知' : statusJobs.length ? `${statusJobs.length} 项待核实` : '未发现'}</StatusTag></div>
-          {status?.jobsKnown !== true ? <p className="mt-space-2 text-body-secondary text-text-secondary">未能确认作业状态，请先检查队列和现场纸面结果。</p> : statusJobs.length ? <ul className="mt-space-3 divide-y divide-border">{statusJobs.map(job => <li key={job.id} className="flex flex-wrap justify-between gap-space-2 py-space-2 text-sm"><span className="break-all font-medium">{job.id}</span><span className="break-all text-text-secondary">{job.queue ?? '队列未知'}，纸面结果需核实</span></li>)}</ul> : <p className="mt-space-2 text-body-secondary text-text-tertiary">本次检查未发现未结束的打印作业。</p>}
-        </div>
-      </ContentCard>
-      <ContentCard title="设备执行控制" description="控制重量采集与打印执行，Agent 维护连接保留。" className="min-w-0">
-        <DetailItem label="当前执行状态" value={<StatusValue value={status?.agentKnown ? status.agent : '未知'} />} />
-        {canManage ? <>
-          <div className="mt-space-4 flex flex-wrap gap-space-2">
-            <Button variant="primary" disabled={busy || deviceOffline || status?.agent === '运行中'} onClick={() => void runAction('start-agent')}><Play className="h-4 w-4" aria-hidden />启动设备</Button>
-            <Button disabled={busy || deviceOffline || status?.agent !== '运行中'} onClick={() => void runAction('stop-agent')}><Square className="h-4 w-4" aria-hidden />停止设备</Button>
-            <Button disabled={busy || deviceOffline} onClick={() => void runAction('restart-agent')}><RotateCw className="h-4 w-4" aria-hidden />重载设备</Button>
-          </div>
-          <p className="mt-space-3 text-body-secondary text-text-tertiary">{deviceOffline ? 'Agent 维护连接不可用，请在其主机恢复服务后刷新。' : '停止设备后暂停采集和打印，可在此重新启动。'}</p>
-        </> : <p className="mt-space-4 text-body-secondary text-text-tertiary">当前为只读维护权限；设备控制需由维护管理员操作。</p>}
-      </ContentCard>
-    </div>
+        <p className="mt-space-3 text-body-secondary text-text-tertiary">{deviceOffline ? 'Agent 维护连接不可用，请在其主机恢复服务后刷新。' : '停止设备后暂停采集和打印，可在此重新启动。'}</p>
+      </> : <p className="mt-space-4 text-body-secondary text-text-tertiary">当前为只读维护权限；设备控制需由维护管理员操作。</p>}
+    </ContentCard>
   </div>;
+
+  const printerDiagnosis = <ContentCard title="打印诊断" description="查看设备执行、打印服务异常和未结束作业，再处理队列或打印样张。">
+    <div className="flex items-start gap-space-3">
+      <DiagnosisIcon className={`mt-0.5 h-5 w-5 shrink-0 ${lastError ? 'text-warning' : statusIncomplete ? 'text-text-tertiary' : 'text-success'}`} aria-hidden />
+      <div className="min-w-0"><p className="break-words text-sm font-medium">{!status ? '尚未读取设备状态' : lastError || (deviceOffline ? 'Agent 维护连接不可用' : statusIncomplete ? '部分运行状态尚未确认' : '未报告设备或打印服务错误')}</p><p className="mt-space-1 text-body-secondary text-text-tertiary">{deviceOffline ? '请检查 Agent 主机上的服务运行状态，恢复连接后刷新。' : '状态来自最近一次检查；需要时刷新以核实现场变化。'}</p></div>
+    </div>
+    <div className="mt-space-5 border-t border-border pt-space-4">
+      <div className="flex flex-wrap items-center justify-between gap-space-2"><h3 className="text-sm font-medium">未结束打印作业</h3><StatusTag tone={status?.jobsKnown !== true || statusJobs.length ? 'warning' : 'neutral'}>{status?.jobsKnown !== true ? '状态未知' : statusJobs.length ? `${statusJobs.length} 项待核实` : '未发现'}</StatusTag></div>
+      {status?.jobsKnown !== true ? <p className="mt-space-2 text-body-secondary text-text-secondary">未能确认作业状态，请先检查队列和现场纸面结果。</p> : statusJobs.length ? <ul className="mt-space-3 divide-y divide-border">{statusJobs.map(job => <li key={job.id} className="flex flex-wrap justify-between gap-space-2 py-space-2 text-sm"><span className="break-all font-medium">{job.id}</span><span className="break-all text-text-secondary">{job.queue ?? '队列未知'}，纸面结果需核实</span></li>)}</ul> : <p className="mt-space-2 text-body-secondary text-text-tertiary">本次检查未发现未结束的打印作业。</p>}
+    </div>
+  </ContentCard>;
 
   const instrumentStatus = <ContentCard title="称重仪表" description="查看仪表上报数据；维护页不直接操作串口。" className="min-w-0">
     <div className="rounded-control bg-neutral-background p-space-4">
@@ -283,7 +286,7 @@ export function AgentMaintenancePage() {
       <div className="flex flex-wrap items-center justify-between gap-space-2 text-body-secondary text-text-tertiary"><p>最近检查：<span className="tabular-nums">{formatDateTime(typeof status?.checkedAt === 'string' ? status.checkedAt : undefined)}</span></p><span>{canManage ? '设备维护管理' : '只读维护'}</span></div>
       <SectionTabs label="设备维护页面" value={tab} onValueChange={value => { setTab(value as typeof tab); if (value === 'records' && !recordsLoaded && !busy) void loadRecords(); }} items={[
         { value: 'overview', label: '运行总览', content: tab === 'overview' ? overview : null },
-        { value: 'printer', label: '打印机管理', content: tab === 'printer' ? <div className="grid items-start gap-space-4 xl:grid-cols-2">{printerStatus}{configuration}</div> : null },
+        { value: 'printer', label: '打印机管理', content: tab === 'printer' ? <div className="grid items-start gap-space-4 xl:grid-cols-2"><div className="min-w-0 space-y-space-4">{printerDiagnosis}{printerStatus}</div>{configuration}</div> : null },
         { value: 'instrument', label: '仪表管理', content: tab === 'instrument' ? <div className="grid items-start gap-space-4 xl:grid-cols-2">{instrumentStatus}{configuration}</div> : null },
         { value: 'backups', label: '配置备份', content: tab === 'backups' ? <MaintenanceBackupPanel canManage={canManage} onApplied={refresh} /> : null },
         { value: 'records', label: '维护记录', content: tab === 'records' ? records : null },

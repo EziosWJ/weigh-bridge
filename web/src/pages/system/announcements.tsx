@@ -37,7 +37,7 @@ export function AnnouncementManagePage() {
   const reset = () => { setForm(empty); setEditing(undefined); setExpiry(""); };
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    const date = expiry ? new Date(expiry) : null;
+    const date = expiry ? new Date(`${expiry.length === 16 ? `${expiry}:00` : expiry}+08:00`) : null;
     if (date && (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now())) { toast.error("到期时间必须晚于当前时间"); return; }
     setBusy(true);
     try { await saveAnnouncement({ ...form, expiresAt: date?.toISOString() ?? null }, editing); reset(); toast.success("草稿已保存"); await load(); }
@@ -53,7 +53,7 @@ export function AnnouncementManagePage() {
   };
   const edit = (item: Announcement) => {
     setEditing(item.id); setForm({ title: item.title, content: item.content, scope: item.scope, expiresAt: item.expiresAt });
-    if (item.expiresAt) { const date = new Date(item.expiresAt); setExpiry(new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16)); } else setExpiry("");
+    if (item.expiresAt) setExpiry(formatDateTime(item.expiresAt).replace(" ", "T").slice(0, 16)); else setExpiry("");
     window.scrollTo({ top: 0, behavior: "instant" });
   };
   const columns: DataTableColumn<Announcement>[] = [
@@ -69,7 +69,7 @@ export function AnnouncementManagePage() {
       <Field label="标题" htmlFor="announcement-title" required><Input id="announcement-title" value={form.title} maxLength={200} required onChange={(event) => setForm({ ...form, title: event.target.value })} /></Field>
       <Field label="可见范围" htmlFor="announcement-scope"><select id="announcement-scope" className="h-9 w-full rounded-md border border-border bg-surface px-3 text-sm" value={form.scope} onChange={(event) => setForm({ ...form, scope: event.target.value as Announcement["scope"] })}><option value="INTERNAL">站内公告（登录后可见）</option><option value="PUBLIC">公开公告（无需登录）</option></select></Field>
       <div className="md:col-span-2"><Field label="正文" htmlFor="announcement-content" required><Textarea id="announcement-content" rows={5} maxLength={5000} required value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} /></Field></div>
-      <Field label="到期时间" htmlFor="announcement-expiry" help="留空表示长期有效；填写本地时间"><Input id="announcement-expiry" type="datetime-local" value={expiry} onChange={(event) => setExpiry(event.target.value)} /></Field>
+      <Field label="到期时间" htmlFor="announcement-expiry" help="留空表示长期有效；按北京时间填写"><Input id="announcement-expiry" type="datetime-local" value={expiry} onChange={(event) => setExpiry(event.target.value)} /></Field>
       <div className="flex items-end gap-2 pb-6"><Button type="submit" variant="primary" disabled={busy}>{busy ? "保存中…" : "保存草稿"}</Button><Button type="button" variant="secondary" disabled={busy} onClick={reset}>取消编辑</Button></div>
     </FormSection></form>
     <DataTableCard><DataTable columns={columns} dataSource={items} rowKey="id" loading={loading} /><Pagination page={page} pageSize={10} total={total} onPageChange={setPage} /></DataTableCard>

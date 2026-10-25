@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/common/page-header";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { getErrorMessage, isApiError } from "@/lib/api-error";
+import { formatDateTime } from "@/lib/datetime";
 import type { FilesystemMetrics, MonitorHistory, MonitorResource, MonitorSnapshot } from "@/types/monitoring";
 import { ResourceSection, ResourceTable } from "./resource-status";
 import { TrendChart, type TrendSeries } from "./trend-chart";
@@ -171,8 +172,8 @@ export function ServerMonitoringPage() {
   return <div className="space-y-6">{header}
     {error && <p role="alert" className="rounded-admin border border-warning-border bg-warning-background p-4 text-sm text-warning">{error}；保留已有数据，各区域鲜度按有效采集时间判断。</p>}
     {!snapshot ? <p role="status">监控数据加载中…</p> : <>
-      <ResourceSection title="主机信息" state={snapshot.host} now={now}><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><DetailItem label="主机名" value={host?.hostname} /><DetailItem label="操作系统" value={host?.os} /><DetailItem label="内核" value={host?.kernel} /><DetailItem label="运行时长" value={host ? `${Math.floor(host.uptimeSeconds / 86400)} 天 ${Math.floor(host.uptimeSeconds % 86400 / 3600)} 小时` : null} /></div><p className="mt-4 break-all text-xs text-text-tertiary">样本时间：{Date.parse(snapshot.sampledAt) > 0 ? new Date(snapshot.sampledAt).toLocaleString() : "采集中"}</p></ResourceSection>
-      {(snapshot.warnings ?? []).length > 0 && <div role="alert" className="rounded-admin border border-warning-border bg-warning-background p-4 text-sm text-warning"><h2 className="font-semibold">资源异常提示</h2>{(snapshot.warnings ?? []).map((warning) => <p key={`${warning.resource}:${warning.device}`} className="mt-2"><span className="font-semibold">{warningTarget(warning)}</span>：{warning.message} · {new Date(warning.since).toLocaleString()}</p>)}</div>}
+      <ResourceSection title="主机信息" state={snapshot.host} now={now}><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"><DetailItem label="主机名" value={host?.hostname} /><DetailItem label="操作系统" value={host?.os} /><DetailItem label="内核" value={host?.kernel} /><DetailItem label="运行时长" value={host ? `${Math.floor(host.uptimeSeconds / 86400)} 天 ${Math.floor(host.uptimeSeconds % 86400 / 3600)} 小时` : null} /></div><p className="mt-4 break-all text-xs text-text-tertiary">样本时间：{Date.parse(snapshot.sampledAt) > 0 ? formatDateTime(snapshot.sampledAt) : "采集中"}</p></ResourceSection>
+      {(snapshot.warnings ?? []).length > 0 && <div role="alert" className="rounded-admin border border-warning-border bg-warning-background p-4 text-sm text-warning"><h2 className="font-semibold">资源异常提示</h2>{(snapshot.warnings ?? []).map((warning) => <p key={`${warning.resource}:${warning.device}`} className="mt-2"><span className="font-semibold">{warningTarget(warning)}</span>：{warning.message} · {formatDateTime(warning.since)}</p>)}</div>}
       <div className="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
         <ResourceSection title="CPU" state={snapshot.cpu} now={now} className="flex h-full flex-col" bodyClassName="flex flex-1 flex-col">
           {cpu && <>

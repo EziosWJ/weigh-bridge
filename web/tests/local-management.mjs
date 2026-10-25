@@ -219,6 +219,10 @@ try {
   const backups = [{ id: 11, name: '', notes: '', configVersion: 2, digest: 'sha256:v2', settings: structuredClone(currentSettings), appliedAt: '2026-10-23T10:20:30+08:00', source: 'auto', receivedAt: '2026-10-23T10:20:31+08:00' }];
   let agentRunning = false;
   let unknownJobs = false;
+  let printerKnown = false;
+  let diagnosticError = '暂无可读取错误';
+  let diagnosticJobs = [];
+  let deviceOnline = true;
   let emptyAudit = false;
   let auditReads = 0;
   const maintenanceErrors = [];
@@ -232,10 +236,10 @@ try {
     if (path === '/api/auth/menus') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
     if (path === '/api/weighing/capabilities') return data({ localSiteId: 1, configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 });
     if (path.endsWith('/status')) return route.fulfill({ json: ({
-      checkedAt: new Date().toISOString(), maintenance: '运行中', maintenanceAvailable: true, agentProcessOnline: true,
+      checkedAt: new Date().toISOString(), maintenance: '运行中', maintenanceAvailable: deviceOnline, agentProcessOnline: deviceOnline,
       agent: agentRunning ? '运行中' : '已停止', agentKnown: true,
-      cups: '未知', cupsKnown: false, queue: 'unknown', queueState: '未知', queueKnown: false,
-      jobsKnown: !unknownJobs, jobs: [], lastError: '',
+      cups: printerKnown ? '运行中' : '未知', cupsKnown: printerKnown, queue: 'Aisino-SK820-raw', queueState: printerKnown ? '已启用' : '未知', queueKnown: printerKnown,
+      jobsKnown: !unknownJobs, jobs: diagnosticJobs, lastError: diagnosticError,
       server: 'http://127.0.0.1:8900',
       scale: agentRunning
         ? { known: true, deviceOk: true, stale: false, state: '稳定', weight: '0.000', port: currentSettings.serial.port, baud: currentSettings.serial.baud }
@@ -302,6 +306,45 @@ try {
   assert.equal(await managed.page.getByRole('tab', { name: '打印机管理', exact: true }).getAttribute('aria-selected'), 'true');
   await managed.page.getByRole('tab', { name: '打印机管理', exact: true }).press('Home');
   assert.equal(await managed.page.getByRole('tabpanel').count(), 1, 'only the active maintenance panel should be visible');
+
+  // The legacy no-error text must not produce a warning; diagnostics live with printing.
+  assert.equal(await managed.page.getByRole('heading', { name: '现场诊断', exact: true }).count(), 0);
+  assert.equal(await managed.page.getByRole('heading', { name: '打印诊断', exact: true }).count(), 0);
+  assert.equal(await managed.page.getByRole('heading', { name: '未结束打印作业', exact: true }).count(), 0);
+  await managed.page.getByRole('tab', { name: '打印机管理', exact: true }).click();
+  const diagnosis = managed.page.locator('section').filter({ has: managed.page.getByRole('heading', { name: '打印诊断', exact: true }) });
+  await diagnosis.waitFor();
+  await diagnosis.getByText('部分运行状态尚未确认', { exact: true }).waitFor();
+  assert.equal(await diagnosis.locator('svg.text-warning').count(), 0, 'no-error placeholder must not show a warning');
+  assert.equal(await diagnosis.getByText('暂无可读取错误', { exact: true }).count(), 0);
+  printerKnown = true;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await diagnosis.getByText('未报告设备或打印服务错误', { exact: true }).waitFor();
+  assert.equal(await diagnosis.locator('svg.text-success').count(), 1);
+  diagnosticError = 'CUPS：打印服务不可用';
+  diagnosticJobs = [{ id: 'Aisino-SK820-raw-42', queue: 'Aisino-SK820-raw' }];
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await diagnosis.getByText(diagnosticError, { exact: true }).waitFor();
+  assert.equal(await diagnosis.locator('svg.text-warning').count(), 1, 'real errors remain visible as warnings');
+  await diagnosis.getByText('1 项待核实', { exact: true }).waitFor();
+  await diagnosis.getByText(diagnosticJobs[0].id, { exact: true }).waitFor();
+  diagnosticError = '';
+  diagnosticJobs = [];
+  unknownJobs = true;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await diagnosis.getByText('部分运行状态尚未确认', { exact: true }).waitFor();
+  await diagnosis.getByText('未能确认作业状态，请先检查队列和现场纸面结果。', { exact: true }).waitFor();
+  assert.equal(await diagnosis.locator('svg.text-success').count(), 0, 'unknown jobs must not imply a successful check');
+  unknownJobs = false;
+  deviceOnline = false;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await diagnosis.getByText('Agent 维护连接不可用', { exact: true }).waitFor();
+  assert.equal(await diagnosis.locator('svg.text-success').count(), 0, 'offline devices must not imply a successful check');
+  deviceOnline = true;
+  diagnosticError = '暂无可读取错误';
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await diagnosis.getByText('未报告设备或打印服务错误', { exact: true }).waitFor();
+  await managed.page.getByRole('tab', { name: '运行总览', exact: true }).click();
 
   // Configuration contains exactly serial and print settings, submitted once.
   await managed.page.getByRole('tab', { name: '仪表管理', exact: true }).click();
@@ -386,10 +429,24 @@ try {
   await managed.page.getByRole('button', { name: '启动设备', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '操作已执行' }).waitFor();
   assert.equal(actionPayload?.action, 'start-agent');
+  const notifications = managed.page.getByRole('region', { name: '消息通知', exact: true });
+  const startedToast = notifications.getByRole('status').filter({ hasText: '操作已执行' });
+  await startedToast.waitFor();
+  assert.equal(await managed.page.getByRole('tabpanel').getByRole('status').filter({ hasText: '操作已执行' }).count(), 0, 'operation feedback must not occupy a page banner');
+  await managed.page.screenshot({ path: '/tmp/weighbridge-maintenance-toast-desktop.png', fullPage: true });
+  await startedToast.getByRole('button', { name: '关闭通知', exact: true }).click();
+  await startedToast.waitFor({ state: 'hidden' });
+
   await managed.page.getByRole('tab', { name: '打印机管理', exact: true }).click();
   await managed.page.getByRole('button', { name: '打印校准样张', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '校准样张请求已提交' }).waitFor();
   assert.equal(await managed.page.getByText('测试前后抓拍', { exact: true }).count(), 0, 'camera testing moved to the Server camera module');
+  const printToast = notifications.getByRole('status').filter({ hasText: '校准样张请求已提交' });
+  await printToast.getByRole('button', { name: '关闭通知', exact: true }).waitFor();
+  await managed.page.getByRole('tab', { name: '仪表管理', exact: true }).click();
+  await printToast.waitFor();
+  await printToast.waitFor({ state: 'hidden', timeout: 6000 });
+
 
   // Unknown print jobs require explicit confirmation and never auto-replay.
   unknownJobs = true;
@@ -397,6 +454,12 @@ try {
   await managed.page.getByRole('button', { name: '重载设备', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '操作已执行' }).waitFor();
   assert.equal(actionPayload?.action, 'restart-agent');
+  await managed.page.setViewportSize({ width: 390, height: 844 });
+  await managed.page.screenshot({ path: '/tmp/weighbridge-maintenance-toast-mobile.png', fullPage: true });
+  assert.equal(await managed.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'toast fits a narrow viewport');
+  await notifications.getByRole('status').filter({ hasText: '操作已执行' }).getByRole('button', { name: '关闭通知', exact: true }).click();
+  await managed.page.setViewportSize({ width: 1366, height: 900 });
+
   assert.equal(actionPayload?.disposition, 'unknown-confirmed', 'unknown job state is explicitly acknowledged');
 
   // Records and logs are read on demand.
