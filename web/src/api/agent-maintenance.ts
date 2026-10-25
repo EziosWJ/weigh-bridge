@@ -52,6 +52,9 @@ export type EffectiveConfig = {
 };
 export type BackupRecord = {
   id: number;
+  name: string;
+  notes: string;
+  createdBy?: number;
   configVersion: number;
   digest: string;
   settings: DeviceSettings;
@@ -88,6 +91,9 @@ export type MaintenanceConfig = {
 };
 
 export const agentMaintenanceApi = {
+  backups: (page = 1) => request<{ records: BackupRecord[]; total: number; effective?: EffectiveConfig; live: boolean }>(`/backups?offset=${(page - 1) * 10}&limit=10`),
+  createBackup: (body: { name: string; notes: string; baseVersion: number; digest: string }) => request<{ id: number }>('/backups', { method: 'POST', body: JSON.stringify(body) }),
+  deleteBackup: (id: number) => request<void>(`/backups/${id}`, { method: 'DELETE' }),
   status: () => request<Record<string, unknown>>('/status'),
   config: () => request<MaintenanceConfig>('/config'),
   apply: (settings: DeviceSettings, baseVersion: number) => request<ApplyResult>('/apply', {

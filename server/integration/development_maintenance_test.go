@@ -125,20 +125,16 @@ func TestPostgresDevelopmentMaintenanceProcessStartup(t *testing.T) {
 	if err != nil || login.Data.Token == "" {
 		t.Fatal("runtime login failed")
 	}
-	initializeBody, _ := json.Marshal(weighing.LocalSiteInput{SiteID: 1, SiteConfigurationInput: weighing.SiteConfigurationInput{
-		Code: "RUNTIME01", Name: "运行测试厂", ScaleCode: "RUNTIME-SCALE", ScaleName: "运行测试磅", AgentID: "runtime-dev-agent", ServerURL: "http://" + address,
-	}})
-	initializeRequest, _ := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/weighing/site-config/initialize", strings.NewReader(string(initializeBody)))
-	initializeRequest.Header.Set("Content-Type", "application/json")
-	initializeRequest.Header.Set("Authorization", login.Data.Token)
-	initializeResponse, err := client.Do(initializeRequest)
+	statusRequest, _ := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/weighing/local-status", nil)
+	statusRequest.Header.Set("Authorization", login.Data.Token)
+	statusResponse, err := client.Do(statusRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	initializePayload, _ := io.ReadAll(initializeResponse.Body)
-	_ = initializeResponse.Body.Close()
-	if initializeResponse.StatusCode != 200 || !strings.Contains(string(initializePayload), `"code":200`) {
-		t.Fatalf("initialize local identity through running API: %d %s", initializeResponse.StatusCode, initializePayload)
+	statusPayload, _ := io.ReadAll(statusResponse.Body)
+	_ = statusResponse.Body.Close()
+	if statusResponse.StatusCode != 200 || !strings.Contains(string(statusPayload), `"configured":true`) {
+		t.Fatalf("API did not automatically prepare local identity: %d %s", statusResponse.StatusCode, statusPayload)
 	}
 	deviceDB := openTemporaryDatabase(t, temporary.dsn)
 	defer deviceDB.Close()

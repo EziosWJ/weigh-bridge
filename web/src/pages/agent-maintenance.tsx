@@ -10,6 +10,7 @@ import { DataTableCard } from '@/components/common/data-table-card';
 import { TableToolbar } from '@/components/common/table-toolbar';
 import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
+import { MaintenanceBackupPanel } from './agent-maintenance/backup-panel';
 import { MaintenanceConfigPanel } from './agent-maintenance/config-panel';
 import { formatDateTime } from '@/lib/datetime';
 import { formatWeightValue } from '@/lib/weighing/weights';
@@ -68,7 +69,7 @@ export function AgentMaintenancePage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [recordsLoaded, setRecordsLoaded] = useState(false);
-  const [tab, setTab] = useState<'overview' | 'devices' | 'config' | 'records'>('overview');
+  const [tab, setTab] = useState<'overview' | 'printer' | 'instrument' | 'backups' | 'records'>('overview');
   const deviceOffline = !status || status?.agentProcessOnline === false || status?.maintenanceAvailable === false;
   const canManage = maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:manage');
   const canView = canManage || (maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:view'));
@@ -135,20 +136,6 @@ export function AgentMaintenancePage() {
     } catch (failure) {
       setError(`${getErrorMessage(failure, '配置应用失败')}。结果未知时请先读取实际状态核实，不要重复盲写。`);
       try { setConfigData(await agentMaintenanceApi.config()); } catch { /* Keep entered values for correction. */ }
-    } finally { setBusy(false); }
-  }
-
-  async function restoreBackup() {
-    if (!configData?.backup) return;
-    if (!window.confirm(`将把设备参数恢复为 v${configData.backup.configVersion} 的成功备份，并核对 Agent 实际端口与队列。是否继续？`)) return;
-    setBusy(true); setError(''); setNotice('');
-    try {
-      const result = await agentMaintenanceApi.restore(configData.backup.id, configData.effective?.configVersion ?? 0);
-      if (result.status === 'applied') setNotice('已明确发起恢复并核对设备结果；连接地址与运行状态未被覆盖。');
-      else setError(`恢复未完成（${result.status}）：${result.message || '请核对设备实际状态'}。维护连接保持。`);
-      await refresh();
-    } catch (failure) {
-      setError(`${getErrorMessage(failure, '配置恢复失败')}。请先读取实际状态核实。`);
     } finally { setBusy(false); }
   }
 
@@ -232,33 +219,30 @@ export function AgentMaintenancePage() {
     </div>
   </div>;
 
-  const devices = <div className="space-y-space-4">
-    <div className="grid items-start gap-space-4 xl:grid-cols-2">
-      <ContentCard title="称重仪表" description="查看仪表上报数据；维护页不直接操作串口。" className="min-w-0">
-        <div className="rounded-control bg-neutral-background p-space-4">
-          <div className="flex flex-wrap items-center justify-between gap-space-2"><p className="text-body-secondary text-text-secondary">最近检查重量</p><StatusValue value={scale.state} /></div>
-          <p className="mt-space-1 text-2xl font-semibold tabular-nums">{weightAvailable ? formatWeightValue(weight) : '—'}<span className="ml-space-2 text-sm font-normal text-text-secondary">吨</span></p>
-          <p className="mt-space-2 text-body-secondary text-text-tertiary">{weightAvailable ? '仅供维护诊断，以称重工作台的当次采集为准。' : '暂无可用重量，请检查设备执行状态和仪表连接。'}</p>
-        </div>
-        <div className="mt-space-4 grid grid-cols-2 gap-space-4"><DetailItem label="串口" value={stateValue(scale.port)} /><DetailItem label="波特率" value={stateValue(scale.baud)} /></div>
-        <p className={`mt-space-4 break-words border-t border-border pt-space-3 text-body-secondary ${scale.fault ? 'text-warning' : 'text-text-tertiary'}`}>{String(scale.fault || '暂无仪表故障信息')}</p>
-      </ContentCard>
-      <ContentCard title="打印队列与校准" description="检查队列后打印样张，核对纸张尺寸和位置。" className="min-w-0">
-        <div className="grid grid-cols-2 gap-space-4">
-          <DetailItem label="目标队列" value={status?.queueKnown ? stateValue(status.queue) : '未知'} />
-          <DetailItem label="队列状态" value={<StatusValue value={status?.queueKnown ? status.queueState : '未知'} />} />
-          <DetailItem label="CUPS 服务" value={<StatusValue value={status?.cupsKnown ? status.cups : '未知'} />} />
-          <DetailItem label="未结束作业" value={status?.jobsKnown === true ? `${statusJobs.length} 项` : '状态未知'} />
-        </div>
-        {canManage && <div className="mt-space-5 flex flex-wrap gap-space-2 border-t border-border pt-space-4">
-          <Button variant="primary" disabled={busy || deviceOffline} onClick={() => void printSample()}><Printer className="h-4 w-4" aria-hidden />打印校准样张</Button>
-          <Button disabled={busy || deviceOffline} onClick={() => void runAction('enable-queue')}>恢复目标队列</Button>
-          <Button disabled={busy || deviceOffline} onClick={() => void runAction('restart-cups')}>重启 CUPS</Button>
-        </div>}
-        <p className="mt-space-3 text-body-secondary text-text-tertiary">样张不属于业务单据。打印结果未知时先核实是否出纸；取消作业不代表此前没有出纸。</p>
-      </ContentCard>
+  const instrumentStatus = <ContentCard title="称重仪表" description="查看仪表上报数据；维护页不直接操作串口。" className="min-w-0">
+    <div className="rounded-control bg-neutral-background p-space-4">
+      <div className="flex flex-wrap items-center justify-between gap-space-2"><p className="text-body-secondary text-text-secondary">最近检查重量</p><StatusValue value={scale.state} /></div>
+      <p className="mt-space-1 text-2xl font-semibold tabular-nums">{weightAvailable ? formatWeightValue(weight) : '—'}<span className="ml-space-2 text-sm font-normal text-text-secondary">吨</span></p>
+      <p className="mt-space-2 text-body-secondary text-text-tertiary">{weightAvailable ? '仅供维护诊断，以称重工作台的当次采集为准。' : '暂无可用重量，请检查设备执行状态和仪表连接。'}</p>
     </div>
-  </div>;
+    <div className="mt-space-4 grid grid-cols-2 gap-space-4"><DetailItem label="串口" value={stateValue(scale.port)} /><DetailItem label="波特率" value={stateValue(scale.baud)} /></div>
+    <p className={`mt-space-4 break-words border-t border-border pt-space-3 text-body-secondary ${scale.fault ? 'text-warning' : 'text-text-tertiary'}`}>{String(scale.fault || '暂无仪表故障信息')}</p>
+  </ContentCard>;
+
+  const printerStatus = <ContentCard title="打印队列与校准" description="检查队列后打印样张，核对纸张尺寸和位置。" className="min-w-0">
+    <div className="grid grid-cols-2 gap-space-4">
+      <DetailItem label="目标队列" value={status?.queueKnown ? stateValue(status.queue) : '未知'} />
+      <DetailItem label="队列状态" value={<StatusValue value={status?.queueKnown ? status.queueState : '未知'} />} />
+      <DetailItem label="CUPS 服务" value={<StatusValue value={status?.cupsKnown ? status.cups : '未知'} />} />
+      <DetailItem label="未结束作业" value={status?.jobsKnown === true ? `${statusJobs.length} 项` : '状态未知'} />
+    </div>
+    {canManage && <div className="mt-space-5 flex flex-wrap gap-space-2 border-t border-border pt-space-4">
+      <Button variant="primary" disabled={busy || deviceOffline} onClick={() => void printSample()}><Printer className="h-4 w-4" aria-hidden />打印校准样张</Button>
+      <Button disabled={busy || deviceOffline} onClick={() => void runAction('enable-queue')}>恢复目标队列</Button>
+      <Button disabled={busy || deviceOffline} onClick={() => void runAction('restart-cups')}>重启 CUPS</Button>
+    </div>}
+    <p className="mt-space-3 text-body-secondary text-text-tertiary">样张不属于业务单据。打印结果未知时先核实是否出纸；取消作业不代表此前没有出纸。</p>
+  </ContentCard>;
 
   const configuration = !canManage ? <ContentCard title="只读维护权限">
     <DetailItem label="Agent 连接的业务服务地址" value={typeof status?.server === 'string' && status.server ? status.server : '未知'} className="[&>div]:break-all" />
@@ -267,7 +251,7 @@ export function AgentMaintenancePage() {
   </ContentCard>
     : deviceOffline ? <ContentCard title="Agent 维护暂不可用"><p className="text-sm text-text-secondary">配置保存在 Agent 主机，当前无法读取或修改。请检查该主机的 Agent 运行状态和版本后刷新。</p></ContentCard>
     : !configData || !settings ? <ContentCard title="配置尚未读取"><p className="text-sm text-text-secondary">请刷新状态重试；读取成功后可编辑设备参数。</p></ContentCard>
-    : <MaintenanceConfigPanel config={configData} settings={settings} setSettings={value => setSettings(current => typeof value === 'function' ? value(current ?? settings) : value)} queues={queues} queuesError={queuesError} serialHint={serialHint} busy={busy} feedback={feedback} onApply={() => void applySettings()} onRestore={() => void restoreBackup()} />;
+    : <MaintenanceConfigPanel section={tab === 'instrument' ? 'serial' : 'print'} config={configData} settings={settings} setSettings={value => setSettings(current => typeof value === 'function' ? value(current ?? settings) : value)} queues={queues} queuesError={queuesError} serialHint={serialHint} busy={busy} feedback={feedback} onApply={() => void applySettings()} />;
 
   const records = <div className="space-y-space-4">
     <DataTableCard toolbar={<TableToolbar title="维护记录" description="最近 100 条维护操作，按时间核对操作目标及执行结果。" actions={<Button disabled={busy} onClick={() => void loadRecords()}><RefreshCw className="h-4 w-4" aria-hidden />刷新记录</Button>} />}>
@@ -294,13 +278,14 @@ export function AgentMaintenancePage() {
     {!initialLoaded && <ContentCard><p role="status" className="text-sm text-text-secondary">正在检查 Agent 维护状态…</p></ContentCard>}
     {initialLoaded && maintenanceEnabled === false && <ContentCard title="设备维护未启用"><p>当前业务服务未启用设备维护，请联系管理员检查本机维护配置。</p></ContentCard>}
     {initialLoaded && maintenanceEnabled === true && !canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
-    {(tab !== 'config' || !canManage || deviceOffline || !configData) && feedback}
+    {((tab !== 'printer' && tab !== 'instrument') || !canManage || deviceOffline || !configData) && feedback}
     {canView && <>
       <div className="flex flex-wrap items-center justify-between gap-space-2 text-body-secondary text-text-tertiary"><p>最近检查：<span className="tabular-nums">{formatDateTime(typeof status?.checkedAt === 'string' ? status.checkedAt : undefined)}</span></p><span>{canManage ? '设备维护管理' : '只读维护'}</span></div>
       <SectionTabs label="设备维护页面" value={tab} onValueChange={value => { setTab(value as typeof tab); if (value === 'records' && !recordsLoaded && !busy) void loadRecords(); }} items={[
         { value: 'overview', label: '运行总览', content: tab === 'overview' ? overview : null },
-        { value: 'devices', label: '设备与打印', content: tab === 'devices' ? devices : null },
-        { value: 'config', label: '配置', content: tab === 'config' ? configuration : null },
+        { value: 'printer', label: '打印机管理', content: tab === 'printer' ? <div className="grid items-start gap-space-4 xl:grid-cols-2">{printerStatus}{configuration}</div> : null },
+        { value: 'instrument', label: '仪表管理', content: tab === 'instrument' ? <div className="grid items-start gap-space-4 xl:grid-cols-2">{instrumentStatus}{configuration}</div> : null },
+        { value: 'backups', label: '配置备份', content: tab === 'backups' ? <MaintenanceBackupPanel canManage={canManage} onApplied={refresh} /> : null },
         { value: 'records', label: '维护记录', content: tab === 'records' ? records : null },
       ]} />
     </>}

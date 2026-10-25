@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
@@ -26,6 +27,9 @@ type backupView struct {
 	Source         string           `json:"source"`
 	RestoredFromID *int64           `json:"restoredFromId,omitempty"`
 	ReceivedAt     time.Time        `json:"receivedAt"`
+	Name           string           `json:"name"`
+	Notes          string           `json:"notes"`
+	CreatedBy      *int64           `json:"createdBy"`
 }
 
 func toBackupView(record BackupRecord) backupView {
@@ -33,17 +37,22 @@ func toBackupView(record BackupRecord) backupView {
 		ID: record.ID, ConfigVersion: record.ConfigVersion, Digest: record.Digest,
 		Settings: record.Settings, AppliedAt: record.AppliedAt, Source: record.Source,
 		RestoredFromID: record.RestoredFromID, ReceivedAt: record.ReceivedAt,
+		Name: record.Name, Notes: record.Notes, CreatedBy: record.CreatedBy,
 	}
 }
 
 // effectiveFromRuntime lets the page show the last persisted success while the
 // Agent is offline. It never substitutes for a live read when one is possible.
 func effectiveFromRuntime(record RuntimeRecord) p.EffectiveConfig {
-	return p.EffectiveConfig{
+	effective := p.EffectiveConfig{
 		ConfigVersion: record.EffectiveConfigVersion, Digest: record.EffectiveConfigDigest,
 		Serial: record.EffectiveSettings.Serial, Print: record.EffectiveSettings.Print,
 		DeviceState: record.DeviceState,
 	}
+	if record.EffectiveAppliedAt != nil {
+		effective.AppliedAt = *record.EffectiveAppliedAt
+	}
+	return effective
 }
 
 func (r *Remote) decorateConfig(ctx context.Context, scale int64, raw json.RawMessage) json.RawMessage {
@@ -58,14 +67,17 @@ func (r *Remote) decorateConfig(ctx context.Context, scale int64, raw json.RawMe
 			payload["effective"] = effectiveFromRuntime(runtime)
 		}
 	}
+	// Preserve the read-only fields for existing API consumers; the Web now
+	// manages restore points through the dedicated backups tab and endpoints.
 	if backup, ok := r.hub.ConfigBackup(scale); ok {
 		payload["liveBackup"] = backup
 	}
 	if r.store != nil {
-		if record, err := r.store.LatestConfigBackup(ctx, scale); err == nil {
-			payload["backup"] = toBackupView(record)
-		} else if !errors.Is(err, ErrNoBackup) {
+		records, _, err := r.store.ListConfigBackups(ctx, scale, 0, 1)
+		if err != nil {
 			payload["backupError"] = err.Error()
+		} else if len(records) > 0 {
+			payload["backup"] = toBackupView(records[0])
 		}
 	}
 	payload["capabilities"] = map[string]bool{
@@ -115,17 +127,8 @@ func (r *Remote) commandResult(c *gin.Context, cfg Config, kind string, payload 
 	return message, true
 }
 
-func (r *Remote) persistApplied(ctx context.Context, scale int64, settings p.DeviceSettings, result p.ConfigApplyResult, source string, restoredFrom int64) {
-	if r.store == nil || result.Status != p.ConfigApplyApplied {
-		return
-	}
-	appliedAt := time.Now().UTC()
-	if result.AppliedAt != nil {
-		appliedAt = *result.AppliedAt
-	}
-	backup := p.ConfigBackup{ConfigVersion: result.ConfigVersion, Digest: result.Digest, Settings: settings, AppliedAt: appliedAt}
-	_, _ = r.store.SaveConfigBackup(ctx, scale, backup, source, restoredFrom)
-	if result.Effective != nil {
+func (r *Remote) persistApplied(ctx context.Context, scale int64, result p.ConfigApplyResult) {
+	if r.store != nil && result.Status == p.ConfigApplyApplied && result.Effective != nil {
 		_ = r.store.SaveEffectiveConfig(ctx, scale, *result.Effective)
 	}
 }
@@ -178,7 +181,7 @@ func (r *Remote) applyConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "Agent 配置应用结果格式无效，请核对设备实际状态", nil)
 			return
 		}
-		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleID, in.Settings, result, "auto", 0)
+		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleID, result)
 		r.recordMaintenance(c, recorder, "maintenance.config.apply", "保存并应用设备参数")
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, result)
@@ -234,8 +237,8 @@ func (r *Remote) restoreConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "Agent 配置恢复结果格式无效，请核对设备实际状态", nil)
 			return
 		}
-		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleID, record.Settings, result, "restore", record.ID)
-		r.recordMaintenance(c, recorder, "maintenance.config.restore", "恢复成功配置备份")
+		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleID, result)
+		r.recordMaintenance(c, recorder, "maintenance.config.restore", "恢复设备配置备份 #"+strconv.FormatInt(record.ID, 10))
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, result)
 	}

@@ -21,6 +21,9 @@ type BackupRecord struct {
 	Source         string
 	RestoredFromID *int64
 	ReceivedAt     time.Time
+	Name           string
+	Notes          string
+	CreatedBy      *int64
 }
 
 // RuntimeRecord is the persisted last-known Agent runtime report. Online state
@@ -42,12 +45,13 @@ type RuntimeRecord struct {
 }
 
 // ConfigStore persists the Agent-reported effective configuration and the
-// success backup. Remote maintenance depends only on this small interface so
+// manually created restore points. Remote maintenance depends on this interface so
 // tests can substitute it.
 type ConfigStore interface {
 	SaveEffectiveConfig(ctx context.Context, scale int64, effective p.EffectiveConfig) error
-	SaveConfigBackup(ctx context.Context, scale int64, backup p.ConfigBackup, source string, restoredFrom int64) (int64, error)
-	LatestConfigBackup(ctx context.Context, scale int64) (BackupRecord, error)
+	CreateConfigBackup(ctx context.Context, scale int64, backup p.ConfigBackup, name, notes string, actor int64) (int64, error)
+	ListConfigBackups(ctx context.Context, scale int64, offset, limit int) ([]BackupRecord, int64, error)
+	DeleteConfigBackup(ctx context.Context, scale, id int64) error
 	ConfigBackupByID(ctx context.Context, scale, id int64) (BackupRecord, error)
 	AgentRuntime(ctx context.Context, scale int64) (RuntimeRecord, bool, error)
 }
@@ -85,97 +89,75 @@ ON CONFLICT (scale_id) DO UPDATE SET
 		scale, effective.ConfigVersion, effective.Digest, string(settings), applied, deviceState).Error
 }
 
-func (r *Repository) SaveConfigBackup(ctx context.Context, scale int64, backup p.ConfigBackup, source string, restoredFrom int64) (int64, error) {
-	if source != "restore" {
-		source = "auto"
-	}
+type backupRow struct {
+	ID             int64
+	ConfigVersion  int64
+	Digest         string
+	Settings       []byte
+	AppliedAt      time.Time
+	Source         string
+	RestoredFromID *int64
+	ReceivedAt     time.Time
+	Name           string
+	Notes          string
+	CreatedBy      *int64
+}
+
+func (row backupRow) record() (BackupRecord, error) {
+	record := BackupRecord{ID: row.ID, ConfigVersion: row.ConfigVersion, Digest: row.Digest, AppliedAt: row.AppliedAt, Source: row.Source, RestoredFromID: row.RestoredFromID, ReceivedAt: row.ReceivedAt, Name: row.Name, Notes: row.Notes, CreatedBy: row.CreatedBy}
+	err := json.Unmarshal(row.Settings, &record.Settings)
+	return record, err
+}
+func (r *Repository) CreateConfigBackup(ctx context.Context, scale int64, backup p.ConfigBackup, name, notes string, actor int64) (int64, error) {
 	settings, err := json.Marshal(backup.Settings)
 	if err != nil {
 		return 0, err
 	}
-	appliedAt := backup.AppliedAt
-	if appliedAt.IsZero() {
-		appliedAt = time.Now().UTC()
-	}
-	var restored, requested any
-	if restoredFrom > 0 {
-		restored, requested = appliedAt, time.Now().UTC()
-	}
-	if err := r.db.WithContext(ctx).Exec(`
-INSERT INTO wb_agent_config_backup
-    (scale_id, config_version, digest, settings, applied_at, source, restored_from_id, restore_requested_at, restored_at)
-VALUES (?, ?, ?, CAST(? AS jsonb), ?, ?, NULLIF(?, 0), ?, ?)
-ON CONFLICT (scale_id, config_version, digest) DO UPDATE SET
-    source = CASE WHEN EXCLUDED.source='restore' THEN 'restore' ELSE wb_agent_config_backup.source END,
-    restored_from_id = COALESCE(EXCLUDED.restored_from_id, wb_agent_config_backup.restored_from_id),
-    restore_requested_at = COALESCE(EXCLUDED.restore_requested_at, wb_agent_config_backup.restore_requested_at),
-    restored_at = COALESCE(EXCLUDED.restored_at, wb_agent_config_backup.restored_at)`,
-		scale, backup.ConfigVersion, backup.Digest, string(settings), appliedAt, source, restoredFrom, requested, restored).Error; err != nil {
-		return 0, err
-	}
-	var row struct{ ID int64 }
-	err = r.db.WithContext(ctx).Raw(`
-SELECT id FROM wb_agent_config_backup
-WHERE scale_id=? AND config_version=? AND digest=?
-ORDER BY id DESC LIMIT 1`, scale, backup.ConfigVersion, backup.Digest).Scan(&row).Error
-	return row.ID, err
+	var id int64
+	err = r.db.WithContext(ctx).Raw(`INSERT INTO wb_agent_config_backup
+ (scale_id, config_version, digest, settings, applied_at, source, name, notes, created_by)
+ VALUES (?, ?, ?, CAST(? AS jsonb), ?, 'manual', ?, ?, ?) RETURNING id`,
+		scale, backup.ConfigVersion, backup.Digest, string(settings), backup.AppliedAt, name, notes, actor).Scan(&id).Error
+	return id, err
 }
-
-func (r *Repository) LatestConfigBackup(ctx context.Context, scale int64) (BackupRecord, error) {
-	var row struct {
-		ID             int64
-		ConfigVersion  int64
-		Digest         string
-		Settings       []byte
-		AppliedAt      time.Time
-		Source         string
-		RestoredFromID *int64
-		ReceivedAt     time.Time
+func (r *Repository) ListConfigBackups(ctx context.Context, scale int64, offset, limit int) ([]BackupRecord, int64, error) {
+	var total int64
+	if err := r.db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM wb_agent_config_backup WHERE scale_id=? AND deleted_at IS NULL`, scale).Scan(&total).Error; err != nil {
+		return nil, 0, err
 	}
-	err := r.db.WithContext(ctx).Raw(`
-SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at
-FROM wb_agent_config_backup WHERE scale_id=?
-ORDER BY applied_at DESC, id DESC LIMIT 1`, scale).Scan(&row).Error
-	if err != nil {
-		return BackupRecord{}, err
+	var rows []backupRow
+	if err := r.db.WithContext(ctx).Raw(`SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at, name, notes, created_by FROM wb_agent_config_backup WHERE scale_id=? AND deleted_at IS NULL ORDER BY received_at DESC, id DESC OFFSET ? LIMIT ?`, scale, offset, limit).Scan(&rows).Error; err != nil {
+		return nil, 0, err
 	}
-	if row.ID == 0 {
-		return BackupRecord{}, ErrNoBackup
-	}
-	return backupFromRow(row.ID, row.ConfigVersion, row.Digest, row.Settings, row.AppliedAt, row.Source, row.RestoredFromID, row.ReceivedAt)
-}
-
-func (r *Repository) ConfigBackupByID(ctx context.Context, scale, id int64) (BackupRecord, error) {
-	var row struct {
-		ID             int64
-		ConfigVersion  int64
-		Digest         string
-		Settings       []byte
-		AppliedAt      time.Time
-		Source         string
-		RestoredFromID *int64
-		ReceivedAt     time.Time
-	}
-	err := r.db.WithContext(ctx).Raw(`
-SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at
-FROM wb_agent_config_backup WHERE scale_id=? AND id=?`, scale, id).Scan(&row).Error
-	if err != nil {
-		return BackupRecord{}, err
-	}
-	if row.ID == 0 {
-		return BackupRecord{}, ErrNoBackup
-	}
-	return backupFromRow(row.ID, row.ConfigVersion, row.Digest, row.Settings, row.AppliedAt, row.Source, row.RestoredFromID, row.ReceivedAt)
-}
-
-func backupFromRow(id, version int64, digest string, raw []byte, appliedAt time.Time, source string, restoredFrom *int64, receivedAt time.Time) (BackupRecord, error) {
-	record := BackupRecord{ID: id, ConfigVersion: version, Digest: digest, AppliedAt: appliedAt, Source: source, RestoredFromID: restoredFrom, ReceivedAt: receivedAt}
-	if len(raw) > 0 {
-		if err := json.Unmarshal(raw, &record.Settings); err != nil {
-			return BackupRecord{}, err
+	records := make([]BackupRecord, 0, len(rows))
+	for _, row := range rows {
+		record, err := row.record()
+		if err != nil {
+			return nil, 0, err
 		}
+		records = append(records, record)
 	}
-	return record, nil
+	return records, total, nil
+}
+func (r *Repository) ConfigBackupByID(ctx context.Context, scale, id int64) (BackupRecord, error) {
+	var row backupRow
+	if err := r.db.WithContext(ctx).Raw(`SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at, name, notes, created_by FROM wb_agent_config_backup WHERE scale_id=? AND id=? AND deleted_at IS NULL`, scale, id).Scan(&row).Error; err != nil {
+		return BackupRecord{}, err
+	}
+	if row.ID == 0 {
+		return BackupRecord{}, ErrNoBackup
+	}
+	return row.record()
+}
+func (r *Repository) DeleteConfigBackup(ctx context.Context, scale, id int64) error {
+	result := r.db.WithContext(ctx).Exec(`UPDATE wb_agent_config_backup SET deleted_at=CURRENT_TIMESTAMP WHERE scale_id=? AND id=? AND deleted_at IS NULL`, scale, id)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNoBackup
+	}
+	return nil
 }
 
 func (r *Repository) AgentRuntime(ctx context.Context, scale int64) (RuntimeRecord, bool, error) {

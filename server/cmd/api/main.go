@@ -177,19 +177,13 @@ func main() {
 		}
 		return weighRepo.LocalAgentConfig(ctx, cfg.Weighing.ImageDir)
 	})
-	// Successful Agent configuration is persisted as the last recovery copy.
-	// A storage failure never rolls back an already applied device fact; the
-	// next reconnect report retries the backup.
+	// Runtime reports update only the last-known effective state. Restore points
+	// are created explicitly through the configuration-backup API.
 	maintenanceStore := agentmaintenance.NewRepository(database.GORM)
-	agents.SetConfigStateHandler(func(ctx context.Context, scale int64, effective *p.EffectiveConfig, backup *p.ConfigBackup) {
+	agents.SetConfigStateHandler(func(ctx context.Context, scale int64, effective *p.EffectiveConfig, _ *p.ConfigBackup) {
 		if effective != nil {
 			if err := maintenanceStore.SaveEffectiveConfig(ctx, scale, *effective); err != nil {
 				slog.Warn("persist effective Agent configuration", "scale", scale, "error", err)
-			}
-		}
-		if backup != nil {
-			if _, err := maintenanceStore.SaveConfigBackup(ctx, scale, *backup, "auto", 0); err != nil {
-				slog.Warn("persist Agent configuration backup", "scale", scale, "error", err)
 			}
 		}
 	})

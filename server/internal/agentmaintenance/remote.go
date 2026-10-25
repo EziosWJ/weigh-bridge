@@ -31,7 +31,7 @@ func NewRemote(hub *agentbridge.Hub, resolve func(context.Context) (Config, erro
 }
 
 // SetStore attaches the PostgreSQL persistence used for effective configuration
-// and success backups. Without a store the page can still apply, but read-only
+// and manual backups. Without a store the page can still apply, but read-only
 // restore points and offline display are unavailable.
 func (r *Remote) SetStore(store ConfigStore) { r.store = store }
 func (r *Remote) CameraConfig() (Config, error) {
@@ -69,6 +69,9 @@ func (r *Remote) RegisterBusinessRoutes(group *gin.RouterGroup, a auth.Authentic
 		}
 		routes.Handle(entry.method, entry.path, rbac.RequireAnyPermission(permissions, permission, PermissionManage), r.forward(recorder))
 	}
+	routes.GET("/backups", rbac.RequireAnyPermission(permissions, PermissionView, PermissionManage), r.listBackups)
+	routes.POST("/backups", rbac.RequireAnyPermission(permissions, PermissionManage), r.createBackup(recorder))
+	routes.DELETE("/backups/:id", rbac.RequireAnyPermission(permissions, PermissionManage), r.deleteBackup(recorder))
 	routes.POST("/apply", rbac.RequireAnyPermission(permissions, PermissionManage), r.applyConfig(recorder))
 	routes.POST("/restore", rbac.RequireAnyPermission(permissions, PermissionManage), r.restoreConfig(recorder))
 	routes.GET("/queues", rbac.RequireAnyPermission(permissions, PermissionView, PermissionManage), r.queues)
