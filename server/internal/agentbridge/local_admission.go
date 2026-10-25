@@ -26,11 +26,11 @@ func (e *AdmissionError) Error() string { return e.Message }
 
 var (
 	// ErrSiteNotInitialized means the local factory has no identity yet. The
-	// Agent must not create a site or scale; it retries after Web initialization.
-	ErrSiteNotInitialized = &AdmissionError{Code: p.ErrorSiteNotInitialized, Message: "本厂尚未完成初始化，请在网页完成厂区与地磅配置后重试"}
+	// Agent must not create a site or scale; Server startup owns preparation.
+	ErrSiteNotInitialized = &AdmissionError{Code: p.ErrorSiteNotInitialized, Message: "本厂内部身份未就绪，请检查 Server 启动日志与数据库后重试"}
 	// ErrScaleNotInitialized means the site identity exists but its sole scale
 	// is missing or disabled.
-	ErrScaleNotInitialized = &AdmissionError{Code: p.ErrorScaleNotInitialized, Message: "本厂地磅尚未配置或已停用，请检查本厂配置"}
+	ErrScaleNotInitialized = &AdmissionError{Code: p.ErrorScaleNotInitialized, Message: "本厂地磅身份异常或已停用，请联系管理员检查"}
 	// ErrCapabilityMissing is returned instead of silently weakening a formal
 	// capture when the connected client does not advertise the required check.
 	ErrCapabilityMissing = errors.New("Agent 不支持所需的测量有效性检查，请升级设备 Agent")

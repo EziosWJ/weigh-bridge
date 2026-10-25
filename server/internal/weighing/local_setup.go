@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -18,10 +19,8 @@ type LocalSiteInput struct {
 }
 
 // InitializeLocalSite creates the sole factory and its scale in one transaction.
-// The operator supplies only the site and scale names; identity numbers, codes
-// and the Agent binding are generated here and stay fixed afterwards. Legacy
-// request fields (siteId, code, scaleCode, agentId) are accepted but ignored so
-// older clients cannot invent identities.
+// Names default to internal labels. The legacy endpoint still accepts explicit
+// names and a siteId prefix; codes and the Agent binding are generated once.
 // The existing setting singleton serializes simultaneous first-time submissions.
 func (s *Service) InitializeLocalSite(ctx context.Context, actor int64, in LocalSiteInput, e audit.Event) (SiteConfiguration, error) {
 	repo, ok := s.store.(*Repository)
@@ -30,6 +29,12 @@ func (s *Service) InitializeLocalSite(ctx context.Context, actor int64, in Local
 	}
 	in.Name = strings.TrimSpace(in.Name)
 	in.ScaleName = strings.TrimSpace(in.ScaleName)
+	if in.Name == "" {
+		in.Name = "本厂"
+	}
+	if in.ScaleName == "" {
+		in.ScaleName = "本厂地磅"
+	}
 	if !validName(in.Name) || !validName(in.ScaleName) {
 		return SiteConfiguration{}, ErrInvalid
 	}
@@ -55,7 +60,7 @@ func (s *Service) InitializeLocalSite(ctx context.Context, actor int64, in Local
 				return err
 			}
 			if count > 0 {
-				return RejectionError("本厂首次配置要求新业务库，请先核实并清理旧联调数据")
+				return RejectionError("缺少本厂身份但已有业务数据，请检查数据库与备份，不可自动重建身份")
 			}
 		}
 		secret := make([]byte, 32)
@@ -100,4 +105,28 @@ func (s *Service) InitializeLocalSite(ctx context.Context, actor int64, in Local
 		return audit.RecordOn(ctx, tx, e)
 	})
 	return out, err
+}
+
+// EnsureLocalSite prepares a fresh installation before serving HTTP or Agent
+// connections. Existing identities (including disabled sites and grants) are
+// untouched. The seeded administrator keeps the initial scope formerly given
+// by the setup form; role permissions and other accounts are never changed.
+func (s *Service) EnsureLocalSite(ctx context.Context) error {
+	status, err := s.LocalStatus(ctx)
+	if err != nil || status.Configured {
+		return err
+	}
+	_, err = s.InitializeLocalSite(ctx, 1, LocalSiteInput{}, audit.Event{
+		Metadata: audit.Metadata{RequestMethod: "SYSTEM", RequestURL: "startup:local-identity"},
+	})
+	if errors.Is(err, ErrConflict) {
+		status, statusErr := s.LocalStatus(ctx)
+		if statusErr != nil {
+			return statusErr
+		}
+		if status.Configured {
+			return nil
+		}
+	}
+	return err
 }

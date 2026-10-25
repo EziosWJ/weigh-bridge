@@ -6,4 +6,4 @@ export function localSiteId(capabilities: Pick<WeighingCapabilities, 'localSiteI
   return capabilities.localSiteId > 0 ? capabilities.localSiteId : undefined;
 }
 
-export const localSiteSetupMessage = '请由本厂管理员完成首次配置。配置后厂区、地磅编号及 Agent 身份将固定保存。';
+export const localSiteSetupMessage = '本厂内部身份应在服务启动时自动建立，请检查服务日志与数据库。';

@@ -188,6 +188,10 @@ func main() {
 		}
 	})
 	weighService := weighing.NewService(weighRepo, agents)
+	if err := weighService.EnsureLocalSite(context.Background()); err != nil {
+		slog.Error("prepare local identity", "error", err)
+		os.Exit(1)
+	}
 	cameraService := camera.NewServiceWithDefaults(camera.NewRepository(database.GORM), cfg.Weighing.ImageDir)
 	weighService.SetCamera(cameraService)
 	var remoteMaintenance *agentmaintenance.Remote

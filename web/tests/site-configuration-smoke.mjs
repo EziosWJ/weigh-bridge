@@ -37,28 +37,24 @@ try {
  const errors = []; page.on('pageerror', e => errors.push(e.message));
  await page.goto(`${web}/login`); await page.getByPlaceholder('请输入用户名', {exact: true}).fill('admin'); await page.getByPlaceholder('请输入密码', {exact: true}).fill('local-browser-password-123'); await page.getByRole('button', {name: '登录', exact: true}).click(); await page.waitForURL(u => !u.pathname.startsWith('/login'));
  await page.goto(`${web}/system/config`); await page.getByRole('heading', {name: '配置管理', exact: true}).waitFor();
- await page.getByRole('button', {name: '首次配置', exact: true}).waitFor();
+ await page.getByLabel('打印标题', {exact: true}).waitFor();
  const token = await page.evaluate(() => JSON.parse(localStorage.getItem('react-admin-auth')).token);
  const call = async (path, method = 'GET', body, expectedCode = 200) => {
   const response = await fetch(`${api}/api/weighing/${path}`, {method, headers: {Authorization: token, 'Content-Type': 'application/json'}, ...(body ? {body: JSON.stringify(body)} : {})});
   const result = await response.json(); assert.equal(result.code, expectedCode, result.message); return result.data;
  };
- assert.deepEqual(await call('local-status'), {siteId: 0, configured: false, initialized: false});
- assert.deepEqual(await call('site-config'), []);
- assert.equal(await page.getByRole('button', {name: '新增厂区', exact: true}).count(), 0);
- assert.equal(await page.getByRole('button', {name: '下载启动配置', exact: true}).count(), 0);
- assert.equal(await page.getByText('新增厂区', {exact: true}).count(), 0);
- await page.getByRole('button', {name: '首次配置', exact: true}).click();
- assert.equal(await page.locator('#initial-serverUrl').count(), 0, '首次配置不再填写 Server 地址');
- await page.locator('#initial-name').fill('本地酒厂'); await page.locator('#initial-scaleName').fill('本厂地磅');
- await page.getByRole('dialog').getByRole('button', {name: '保存并初始化', exact: true}).click();
- await page.getByRole('dialog').waitFor({state: 'hidden'});
- await page.getByRole('button', {name: '编辑本厂配置', exact: true}).waitFor();
- assert.equal(await page.getByRole('button', {name:'首次配置',exact:true}).count(),0,'configured identity cannot be initialized twice');
- await page.getByText('已配置',{exact:true}).waitFor();
- await page.getByText('设备连接与运行状态以设备维护页为准').waitFor();
- assert.equal(await page.getByText(/两名实名操作员/).count(), 0);
- assert.equal(await page.getByText('本厂 Server 地址', {exact:true}).count(), 0);
+ assert.deepEqual(await call('local-status'), {siteId: 1, configured: true, initialized: true});
+ for (const name of ['首次配置', '编辑本厂配置', '新增厂区', '下载启动配置']) assert.equal(await page.getByRole('button', {name, exact: true}).count(), 0);
+ await page.getByLabel('打印标题', {exact: true}).fill('自动初始化测试过磅单');
+ await page.getByRole('button', {name: '预览标题', exact: true}).click();
+ const preview = page.getByRole('dialog', {name: '过磅单标题预览', exact: true});
+ await preview.getByRole('heading', {name: '自动初始化测试过磅单', exact: true}).waitFor();
+ await preview.getByRole('button', {name: '关闭详情弹窗', exact: true}).click();
+ await page.getByRole('button', {name: '保存标题', exact: true}).click();
+ await page.getByText('过磅单标题已保存，将用于之后生成的单据。', {exact: true}).waitFor();
+ await page.reload();
+ await page.getByLabel('打印标题', {exact: true}).waitFor();
+ assert.equal(await page.getByLabel('打印标题', {exact: true}).inputValue(), '自动初始化测试过磅单');
  const repeatedResponse = await fetch(`${api}/api/weighing/site-config/initialize`, {method:'POST',headers:{Authorization:token,'Content-Type':'application/json'},body:JSON.stringify({siteId:18,code:'OTHER',name:'第二厂',scaleCode:'SCALE18',scaleName:'第二磅',agentId:'other-agent'})});
  const repeatedResult = await repeatedResponse.json(); assert.notEqual(repeatedResult.code,200,'repeat initialize must fail rather than return a second site');
  const configs = await call('site-config'); assert.equal(configs.length, 1); assert.equal(configs[0].id, 1);
@@ -68,20 +64,15 @@ try {
  assert.notEqual((await createAnother.json()).code,200,'generic site creation must remain unavailable');
  const editAnother = await fetch(`${api}/api/weighing/site-config/18`, {method:'PUT',headers:{Authorization:token,'Content-Type':'application/json'},body:JSON.stringify({...configs[0],name:'不应改动'})});
  assert.notEqual((await editAnother.json()).code,200,'a different site identity must not be writable');
- await page.getByRole('button', {name: '编辑本厂配置', exact: true}).click();
- for (const key of ['code', 'scaleCode', 'agentId']) assert.equal(await page.locator(`#site-${key}`).count(), 0, 'internal identity is not an editable form field');
- await page.locator('#site-name').fill('本厂配置冒烟');
- await page.locator('#site-scaleName').fill('本厂一号地磅');
- assert.equal(await page.locator('#site-serverUrl').count(), 0, '编辑表单不再维护 Server 地址');
- await page.getByRole('dialog').getByRole('button', {name: '保存', exact: true}).click();
- await page.getByRole('dialog').waitFor({state: 'hidden'}); await page.getByText('本厂配置冒烟', {exact: true}).waitFor();
+ // The compatibility API still preserves names and fixed identities for old clients.
+ await call('site-config/1', 'PUT', {...configs[0], name: '本厂配置冒烟', scaleName: '本厂一号地磅'});
  const saved = (await call('site-config'))[0]; assert.equal(saved.name, '本厂配置冒烟'); assert.equal(saved.scaleName, '本厂一号地磅'); assert.equal(saved.serverUrl, '', '旧 serverUrl 字段不作为地址来源或被写入');
  assert.equal(saved.code, 'SITE-01'); assert.equal(saved.scaleCode, 'SCALE-01'); assert.equal(saved.agentId, 'agent-01');
  const forgedResponse = await fetch(`${api}/api/weighing/site-config/${saved.id}`, {method:'PUT',headers:{Authorization:token,'Content-Type':'application/json'},body:JSON.stringify({...saved,code:'FORGED',scaleCode:'FORGED-SCALE',agentId:'forged-agent'})});
  const forged = await forgedResponse.json();
  if (forged.code === 200) assert.deepEqual([forged.data.code,forged.data.scaleCode,forged.data.agentId],['SITE-01','SCALE-01','agent-01'],'server must keep configured hardware identity locked');
  else assert.notEqual(forged.code,200,'identity changes are rejected when sent directly to the API');
- await page.reload(); await page.getByRole('button', {name:'编辑本厂配置',exact:true}).waitFor();
+ await page.reload(); await page.getByLabel('打印标题', {exact: true}).waitFor();
  // The historical connection API remains compatible; the current page has no
  // download/import provisioning workflow or exposed connection credentials.
  const connection = await call(`site-config/${saved.id}/connection?serverUrl=${encodeURIComponent(api)}`);
@@ -91,13 +82,16 @@ try {
  const mock = start('go', ['run', './cmd/agent-mock', '--config', configPath, '--listen', '127.0.0.1:18091'], resolve(root, 'server'));
  await ready('http://127.0.0.1:18091/api/state', mock);
  for (let i = 0; i < 60; i++) { const state = await (await fetch('http://127.0.0.1:18091/api/state')).json(); if (state.online) {assert.equal(state.siteName, '本厂配置冒烟'); break;} if (i === 59) throw Error('mock failed to connect'); await delay(100); }
- await page.getByRole('button', {name: '编辑本厂配置', exact: true}).click(); await page.locator('#site-enabled').selectOption('0'); await page.getByRole('dialog').getByRole('button', {name: '保存', exact: true}).click(); await page.getByRole('alert').filter({hasText: 'Agent 尚未离线'}).waitFor();
+ await call('site-config/1', 'PUT', {...saved, enabled: 0}, 400);
  stop(mock);
  for (let i = 0; i < 60; i++) { if (!(await call(`scales/${connection.scaleId}/device`)).online) break; if (i === 59) throw Error('mock did not disconnect'); await delay(100); }
- await page.getByRole('dialog').getByRole('button', {name: '保存', exact: true}).click(); await page.getByRole('dialog').waitFor({state: 'hidden'}); const localCard = page.locator('section').filter({hasText: '本厂配置'}); await localCard.getByText('停用', {exact: true}).waitFor();
- await page.getByRole('button', {name: '编辑本厂配置', exact: true}).click(); await page.locator('#site-enabled').selectOption('1'); await page.getByRole('dialog').getByRole('button', {name: '保存', exact: true}).click(); await page.getByRole('dialog').waitFor({state: 'hidden'}); await localCard.getByText('启用', {exact: true}).waitFor();
- await page.reload(); await page.getByText('本厂配置冒烟', {exact: true}).waitFor();
+ const disabled = await call('site-config/1', 'PUT', {...saved, enabled: 0});
+ assert.equal(disabled.enabled, 0);
+ const enabled = await call('site-config/1', 'PUT', {...disabled, enabled: 1});
+ assert.equal(enabled.enabled, 1);
+ await page.goto(`${web}/weighing/sites`); await page.waitForURL('**/weighing/tasks');
+ await page.goto(`${web}/system/config`); await page.getByLabel('打印标题', {exact: true}).waitFor();
  await page.setViewportSize({width: 390, height: 844}); await page.waitForTimeout(250);
  assert.ok(await page.getByRole('heading', {name: '配置管理', exact: true}).isVisible()); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true); assert.deepEqual(errors, []);
- console.log('PASS: 新库首次配置、重复初始化失败、配置与身份持久化、仅本厂配置、Agent 连接、在线阻止停用、离线停用与重新启用、窄屏页面');
+ console.log('PASS: 启动自动初始化、重复初始化拒绝、标题编辑预览与持久化、旧入口退役、身份兼容、Agent 连接及停用保护、窄屏页面');
 } finally {clearTimeout(deadline); await browser?.close(); children.forEach(stop); await delay(500); await postgres?.close(); await rm(dir, {recursive: true, force: true});}

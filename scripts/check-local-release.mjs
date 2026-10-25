@@ -84,19 +84,7 @@ try {
     assert.ok(token, 'missing local login token')
     const local = await fetch(baseURL+'/api/weighing/local-status', { headers: { Authorization: token }, signal: AbortSignal.timeout(3000) })
     assert.equal(local.status, 200)
-    if (cycle === 0) {
-      assert.deepEqual((await local.json()).data, { siteId: 0, configured: false, initialized: false })
-      const initialized = await fetch(baseURL+'/api/weighing/site-config/initialize', {
-        method: 'POST', headers: { Authorization: token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteId: 2, code: 'RELEASE02', name: '发布验证二厂', scaleCode: 'SCALE02', scaleName: '发布验证地磅', agentId: 'release-agent-2' }),
-        signal: AbortSignal.timeout(5000),
-      })
-      assert.equal(initialized.status, 200, await initialized.text())
-    } else {
-      assert.deepEqual((await local.json()).data, { siteId: 2, configured: true, initialized: true })
-    }
-    const afterInit = await fetch(baseURL+'/api/weighing/local-status', { headers: { Authorization: token }, signal: AbortSignal.timeout(3000) })
-    assert.deepEqual((await afterInit.json()).data, { siteId: 2, configured: true, initialized: true })
+    assert.deepEqual((await local.json()).data, { siteId: 1, configured: true, initialized: true }, 'API startup prepares the internal identity without a setup form')
     if (cycle === 0) {
       const agentEnvPath = join(root, 'agent/agent.env')
       // The installer creates a keyless same-host default. Remove it so this
@@ -136,7 +124,7 @@ try {
     assert.equal(await readFile(join(root, 'agent/state/unknown-attempt.json'), 'utf8'), '{"status":"unknown"}\n')
     assert.equal(await readFile(join(root, 'data/agent-images/preserved-evidence.txt'), 'utf8'), 'preserved image evidence\n')
   }
-  console.log('PASS: 本地管理员一次性初始化、HTTP 本厂身份初始化、Agent 配对与受控保留设备配置、真实 API 内嵌页面、health/ready、重启保留现场身份/证据/未知账本；未启动真实设备。')
+  console.log('PASS: 本地管理员一次性初始化、启动自动建立本厂身份、Agent 配对与受控保留设备配置、真实 API 内嵌页面、health/ready、重启保留现场身份/证据/未知账本；未启动真实设备。')
 } finally {
   await stop()
   await database?.close()

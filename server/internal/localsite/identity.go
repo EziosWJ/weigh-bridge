@@ -12,7 +12,7 @@ import (
 
 const idBlock int64 = 1 << 45
 
-var ErrNotConfigured = errors.New("请先在本厂配置中完成现场身份设置")
+var ErrNotConfigured = errors.New("本厂内部身份未就绪，请检查服务启动日志与数据库")
 
 type Identity struct {
 	ID          int64 `gorm:"primaryKey;autoIncrement:false"`

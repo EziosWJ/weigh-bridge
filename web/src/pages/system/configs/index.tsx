@@ -54,7 +54,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { weighingApi } from "@/api/weighing";
 import { useAuthStore } from "@/store/auth-store";
-import { LocalSiteConfiguration } from "./local-site-configuration";
+import { TicketTitleConfiguration } from "./ticket-title-configuration";
 import type {
   ApiStatus,
   DataTableColumn,
@@ -280,17 +280,6 @@ export function SystemConfigsPage() {
     };
   }, []);
 
-  const canViewLocalSite =
-    permissionCodes === null
-      ? isAdmin
-      : permissionCodes.some(
-          (code) =>
-            code === "weighing:site:manage" || code === "weighing:site:export",
-        );
-  const canManageLocalSite =
-    permissionCodes === null
-      ? isAdmin
-      : permissionCodes.includes("weighing:site:manage");
   const canManageSystemConfig =
     permissionCodes === null
       ? isAdmin
@@ -623,6 +612,7 @@ export function SystemConfigsPage() {
       align: "center",
       width: 260,
       render: (_, record) => {
+        if (record.configKey === TICKET_TITLE_KEY) return <a href="#ticket-title" className="text-primary hover:underline">设置过磅单标题</a>;
         const builtin = isBuiltinConfig(record);
         const editableBuiltin = isEditableBuiltinConfig(record);
         const nextStatus = getConfigStatus(record) === 1 ? 0 : 1;
@@ -692,7 +682,7 @@ export function SystemConfigsPage() {
     <>
       <PageHeader
         title="配置管理"
-        description="本厂资料、单据标题与系统参数统一在此维护。"
+        description="维护过磅单标题、称重策略与系统参数。"
         actions={
           canManageSystemConfig ? (
             <Button variant="primary" onClick={openCreateForm}>
@@ -703,12 +693,9 @@ export function SystemConfigsPage() {
         }
       />
 
-      {canViewLocalSite && (
-        <LocalSiteConfiguration canManage={canManageLocalSite} />
-      )}
-
       {canManageSystemConfig ? (
         <>
+      <TicketTitleConfiguration onSaved={loadConfigs} />
       <SearchFilterBar
         actions={
           <>
@@ -857,14 +844,10 @@ export function SystemConfigsPage() {
         />
       )}
         </>
-      ) : canViewLocalSite ? (
-        <p role="status" className="mt-space-4 text-sm text-text-tertiary">
-          当前账号仅可维护本厂配置；通用系统配置需要系统配置权限。
-        </p>
       ) : (
         <EmptyState
           title="无权访问配置管理"
-          description="请联系管理员分配本厂配置或系统配置权限。"
+          description="请联系管理员分配系统配置权限。"
         />
       )}
     </>
