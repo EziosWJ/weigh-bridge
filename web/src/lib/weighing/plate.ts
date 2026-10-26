@@ -1,5 +1,13 @@
 export const provinces = [...'晋京津冀蒙辽吉黑沪苏浙皖闽赣鲁豫鄂湘粤桂琼渝川贵云藏陕甘青宁新'];
 export const normalizePlate = (value: string) => value.replace(/[\s·•]/g, '').toUpperCase();
+export const PLATE_MAX_LENGTH = 8;
+
+/** 普通车牌 7 位、新能源 8 位；输入阶段就按完整车牌截断。 */
+export function limitPlate(value: string, province = '') {
+  const normalized = normalizePlate(value);
+  if (provinces.includes(normalized[0])) return normalized.slice(0, PLATE_MAX_LENGTH);
+  return province + normalized.slice(0, PLATE_MAX_LENGTH - 1);
+}
 
 /** 新录入覆盖普通及新能源号牌；旧特殊测试值由原记录显式兼容。 */
 export function plateError(value: string) {
