@@ -51,10 +51,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if len(cfg.Weighing.Agents) > 0 || cfg.Weighing.AgentKey != "" {
-		slog.Error("Agent bindings must be configured in 本厂配置; remove weighing.agents and weighing.agent_key from the business API configuration")
-		os.Exit(1)
-	}
 	database, err := platformdatabase.Open(context.Background(), cfg.Database)
 	if err != nil {
 		slog.Error("open database", "error", err)
@@ -73,16 +69,13 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	// ADR 0030: capture the previous YAML ticket title once, before any page or
-	// ticket can read or edit the sys_config value.
-	legacyTitle, err := sysconfig.InstallLegacyTicketTitle(context.Background(), database.GORM, cfg.Weighing.TicketTitle)
+	// Freeze the database-backed title onto any legacy tickets without a snapshot.
+	ticketTitle, err := sysconfig.ReadTicketTitle(context.Background(), database.GORM, false)
 	if err != nil {
-		slog.Error("install ticket title configuration", "error", err)
+		slog.Error("read ticket title configuration", "error", err)
 		os.Exit(1)
 	}
-	// Freeze the upgrade-time display baseline for tickets created before
-	// snapshots existed. Later title edits never rewrite those tickets.
-	if err := weighing.FreezeLegacyTicketTitles(context.Background(), database.GORM, legacyTitle); err != nil {
+	if err := weighing.FreezeLegacyTicketTitles(context.Background(), database.GORM, ticketTitle); err != nil {
 		slog.Error("freeze legacy ticket titles", "error", err)
 		os.Exit(1)
 	}

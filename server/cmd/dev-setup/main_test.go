@@ -50,7 +50,7 @@ func TestInitializeBackfillsMaintenanceWithoutChangingCredentials(t *testing.T) 
 	if updated.Maintenance.Enabled == nil || !*updated.Maintenance.Enabled {
 		t.Fatal("existing development config did not enable Agent maintenance")
 	}
-	if updated.JWT != original.JWT || updated.Weighing.AgentKey != original.Weighing.AgentKey || updated.Database != original.Database {
+	if updated.JWT != original.JWT || updated.Database != original.Database {
 		t.Fatal("backfill changed existing credentials or database configuration")
 	}
 	before, _ := os.ReadFile(path)
@@ -128,9 +128,6 @@ func TestInitializePostgresAndPreserveConfiguration(t *testing.T) {
 			}
 			if len(cfg.JWT.Secret) != 64 || strings.Contains(output, cfg.JWT.Secret) {
 				t.Fatal("JWT must be randomly generated and excluded from output")
-			}
-			if cfg.Weighing.AgentKey != "" || len(cfg.Weighing.Agents) != 0 {
-				t.Fatal("initialization must leave Agent bindings to 本厂配置")
 			}
 			if !strings.Contains(output, "task dev") {
 				t.Fatal("initialization must include the matching startup task")
@@ -273,7 +270,7 @@ func TestInvalidArgumentsDoNotCreateConfiguration(t *testing.T) {
 	}
 }
 
-func TestInitializeKeepsAgentBindingsOutOfBusinessConfig(t *testing.T) {
+func TestInitializeOmitsLegacyAgentBindings(t *testing.T) {
 	checkout(t)
 	if _, err := invoke(t, "init", "--database", "postgres"); err != nil {
 		t.Fatal(err)
@@ -282,11 +279,13 @@ func TestInitializeKeepsAgentBindingsOutOfBusinessConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if original.Weighing.AgentKey != "" || len(original.Weighing.Agents) != 0 {
-		t.Fatal("development config must not carry Agent bindings; configure them in 本厂配置")
-	}
 	path := filepath.Join("configs", "config.dev.yaml")
 	contents, _ := os.ReadFile(path)
+	for _, legacyKey := range []string{"agents:", "agent_id:", "agent_key:", "scale_id:"} {
+		if bytes.Contains(contents, []byte(legacyKey)) {
+			t.Fatalf("development config contains legacy Agent field %q", legacyKey)
+		}
+	}
 	legacy := string(contents) + "# Keep my local settings verbatim.\n"
 	if err := os.WriteFile(path, []byte(legacy), 0600); err != nil {
 		t.Fatal(err)
@@ -297,9 +296,6 @@ func TestInitializeKeepsAgentBindingsOutOfBusinessConfig(t *testing.T) {
 	updated, err := config.Load()
 	if err != nil {
 		t.Fatal(err)
-	}
-	if updated.Weighing.AgentKey != "" || len(updated.Weighing.Agents) != 0 {
-		t.Fatal("repeated init added Agent bindings to the business config")
 	}
 	if updated.JWT.Secret != original.JWT.Secret || updated.Database != original.Database || updated.File != original.File {
 		t.Fatal("init changed existing settings")

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -105,12 +104,6 @@ func envKeyValue(key, value string) (string, interface{}) {
 	key = strings.ToLower(strings.ReplaceAll(key, "__", delimiter))
 
 	switch key {
-	case "weighing.agents":
-		var bindings []map[string]any
-		if json.Unmarshal([]byte(value), &bindings) == nil {
-			return key, bindings
-		}
-		return key, value
 	case "env":
 		return key, strings.ToLower(strings.TrimSpace(value))
 	case "cors.allowed_origins", "cors.allowed_methods", "cors.allowed_headers", "cors.exposed_headers", "http.trusted_proxies":
@@ -176,10 +169,6 @@ func defaultValues() map[string]interface{} {
 		"log.add_source":                         false,
 		"monitoring.enabled":                     false,
 		"weighing.session_ttl":                   "60s",
-		"weighing.ticket_title":                  "酒厂过磅单",
-		"weighing.agent_id":                      "scale-agent-1",
-		"weighing.agent_key":                     "",
-		"weighing.scale_id":                      1,
 		"weighing.image_dir":                     "data/agent-images",
 		"monitoring.source":                      "native",
 		"monitoring.socket_path":                 "/run/weighbridge/host-monitor.sock",

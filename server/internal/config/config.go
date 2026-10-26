@@ -52,23 +52,9 @@ func (m MaintenanceConfig) IsEnabled() bool {
 	return true
 }
 
-type AgentBinding struct {
-	ID      string `koanf:"id"`
-	ScaleID int64  `koanf:"scale_id"`
-	Key     string `koanf:"key"`
-}
 type WeighingConfig struct {
-	Agents []AgentBinding `koanf:"agents"`
-	// TicketTitle is the legacy YAML value. Since ADR 0030 the editable
-	// sys_config row is authoritative; this field is read once at upgrade to
-	// preserve the previously printed title and is never read by ticket
-	// rendering afterwards.
-	TicketTitle string        `koanf:"ticket_title"`
-	AgentID     string        `koanf:"agent_id"`
-	AgentKey    string        `koanf:"agent_key"`
-	ScaleID     int64         `koanf:"scale_id"`
-	ImageDir    string        `koanf:"image_dir"`
-	SessionTTL  time.Duration `koanf:"session_ttl"`
+	ImageDir   string        `koanf:"image_dir"`
+	SessionTTL time.Duration `koanf:"session_ttl"`
 }
 
 type MonitoringConfig struct {
@@ -152,27 +138,6 @@ type LogConfig struct {
 func (c Config) Validate() error {
 	var errs []error
 
-	seenScales := map[int64]bool{}
-	seenAgents := map[string]bool{}
-	for _, v := range c.Weighing.Agents {
-		if v.ScaleID < 1 || strings.TrimSpace(v.ID) == "" || strings.TrimSpace(v.Key) == "" || seenScales[v.ScaleID] || seenAgents[v.ID] {
-			errs = append(errs, errors.New("weighing.agents requires unique positive scale_id, unique id and nonempty key"))
-		}
-		seenScales[v.ScaleID] = true
-		seenAgents[v.ID] = true
-	}
-	if len(c.Weighing.Agents) > 0 && strings.TrimSpace(c.Weighing.ImageDir) == "" {
-		errs = append(errs, errors.New("weighing.image_dir is required when Agent is enabled"))
-	}
-	if c.Weighing.ScaleID < 1 {
-		errs = append(errs, errors.New("weighing.scale_id must be positive"))
-	}
-	if strings.TrimSpace(c.Weighing.AgentID) == "" {
-		errs = append(errs, errors.New("weighing.agent_id is required"))
-	}
-	if c.Weighing.AgentKey != "" && strings.TrimSpace(c.Weighing.ImageDir) == "" {
-		errs = append(errs, errors.New("weighing.image_dir is required when Agent is enabled"))
-	}
 	if c.Weighing.SessionTTL < time.Second {
 		errs = append(errs, errors.New("weighing.session_ttl must be at least 1s"))
 	}

@@ -11,27 +11,16 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 )
 
-func TestPostgresTicketTitleUpgradeAndProtectedTextKey(t *testing.T) {
+func TestPostgresTicketTitleDefaultAndProtectedTextKey(t *testing.T) {
 	temporary := startBusinessPostgres(t)
 	db := openTemporaryDatabase(t, temporary.dsn)
 	t.Cleanup(func() { _ = db.Close() })
 	ctx := context.Background()
 
-	// The migration seeds an empty marker so the first API start can preserve
-	// the previous YAML title without inventing a value in SQL.
+	// Fresh installs seed the default title directly in the database.
 	title, err := sysconfig.ReadTicketTitle(ctx, db.GORM, false)
 	if err != nil || title != sysconfig.DefaultTicketTitle {
-		t.Fatalf("uninstalled title=%q err=%v", title, err)
-	}
-
-	title, err = sysconfig.InstallLegacyTicketTitle(ctx, db.GORM, "示例酒厂过磅单")
-	if err != nil || title != "示例酒厂过磅单" {
-		t.Fatalf("upgrade title=%q err=%v", title, err)
-	}
-	// Re-running the upgrade handoff must not replace the preserved value.
-	title, err = sysconfig.InstallLegacyTicketTitle(ctx, db.GORM, "另一个标题")
-	if err != nil || title != "示例酒厂过磅单" {
-		t.Fatalf("repeated upgrade title=%q err=%v", title, err)
+		t.Fatalf("default title=%q err=%v", title, err)
 	}
 
 	var row sysconfig.Config
