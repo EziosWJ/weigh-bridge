@@ -188,7 +188,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
               title="本次抓拍"
               extra={value.capture ? <span className="review-section-extra">{imageCount} 张 · {capturePolicy}</span> : undefined}
             >
-              {value.capture ? <CapturePhoto compact capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <div className="review-empty" role="alert">
+              {value.capture ? <CapturePhoto gallery capture={value.capture} onReady={setImageReady} onPreviewChange={setPreviewOpen} /> : <div className="review-empty" role="alert">
                 <Camera className="h-5 w-5" aria-hidden />
                 <div><strong>缺少本次采集依据</strong><p>请返回重新采集称重与抓拍后再确认。</p></div>
               </div>}

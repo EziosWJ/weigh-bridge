@@ -1,5 +1,6 @@
 import { WorkbenchLink } from "@/components/common/workbench-link";
 import { useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { ArrowRight, Info } from 'lucide-react';
 import { Field } from '@/components/common/field';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
 import { SectionTabs } from '@/components/common/section-tabs';
@@ -71,13 +72,37 @@ export function BusinessFields({ value, onChange, lockDirection = false, hidePla
     <Field label="司机电话（选填）" htmlFor="business-driver-phone"><Input id="business-driver-phone" type="tel" value={value.driverPhone ?? ''} onChange={e => update({ driverPhone: e.target.value })} /></Field>
     <Field label="备注（选填）" htmlFor="business-remark"><Textarea id="business-remark" value={value.remark} onChange={e => update({ remark: e.target.value })} rows={2} /></Field>
   </>;
+  const directionInbound = value.direction === 'inbound';
+  const directionFirst = directionInbound ? '毛重' : '皮重';
+  const directionSecond = directionInbound ? '皮重' : '毛重';
+  const directionTitle = directionInbound ? '入厂卸货 · 先毛后皮' : '出厂装货 · 先皮后毛';
+  const directionDetail = directionInbound
+    ? '车辆进厂后先称车辆和货物的总重量（毛重），卸货完成后再称空车重量（皮重）。'
+    : '车辆进厂后先称空车重量（皮重），装货完成后再称车辆和货物的总重量（毛重）。';
+  const directionNote = '首磅确认后建立运输任务；回磅确认后生成正式过磅单。净重 = 毛重 − 皮重。';
   const basic = <>
     {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></Field>}
-    {compact ? <div className="mb-3 flex flex-wrap items-center gap-3 border-b border-border pb-3 md:col-span-2">
-      <label htmlFor="business-direction" className="shrink-0 text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
-      <Select id="business-direction" className="w-auto min-w-[140px]" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
-      <span className="text-xs text-text-tertiary">{value.direction === 'inbound' ? '先毛后皮' : '先皮后毛'}</span>
-    </div> : <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定' : '入厂先毛后皮，出厂先皮后毛'}><Select id="business-direction" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select></Field>}
+    {compact ? <div className="business-direction-row md:col-span-2">
+      <div className="business-direction-control">
+        <label htmlFor="business-direction" className="shrink-0 text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
+        <Select id="business-direction" className="w-auto min-w-[140px]" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
+        <span className="business-direction-chip">{directionInbound ? '先毛后皮' : '先皮后毛'}</span>
+        {lockDirection && <span className="business-direction-lock">方向已锁定</span>}
+      </div>
+      <div className="business-direction-help" role="note">
+        <Info className="h-4 w-4" aria-hidden />
+        <div>
+          <strong>{directionTitle}</strong>
+          <p>{lockDirection ? '首次称重后方向不可变更；回磅沿用原方向继续办理。' : directionDetail}</p>
+          <div className="business-direction-steps" aria-label="称重顺序">
+            <span className="business-direction-step"><b>首磅</b>{directionFirst}</span>
+            <ArrowRight className="h-3.5 w-3.5 business-direction-arrow" aria-hidden />
+            <span className="business-direction-step is-second"><b>回磅</b>{directionSecond}</span>
+          </div>
+          <p>{directionNote}</p>
+        </div>
+      </div>
+    </div> : <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定；回磅沿用原方向，净重 = 毛重 − 皮重。' : '入厂卸货先称毛重、卸货后称皮重；出厂装货先称皮重、装货后称毛重。首磅建立任务，回磅确认后出单；净重 = 毛重 − 皮重。'}><Select id="business-direction" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select></Field>}
     <Field label="物料" required><WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials} onChange={materialId => update({ materialId })} /></Field>
     <div className="min-w-0">
     <Field label={value.direction === 'inbound' ? '供货方' : '收货方'} required><WeighingLookup label={value.direction === 'inbound' ? '供货方' : '收货方'} value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} onChange={partyId => { const p = useWeighingStore.getState().data.parties.find(p => p.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} /></Field>

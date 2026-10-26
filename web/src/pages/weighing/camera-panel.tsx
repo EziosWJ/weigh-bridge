@@ -46,7 +46,7 @@ function imageStatusText(status?: string) {
   return '抓拍完整';
 }
 
-export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = false, compact = false }: { capture: CaptureSnapshot; onReady?: (ready: boolean) => void; onPreviewChange?: (open: boolean) => void; hideWeight?: boolean; compact?: boolean }) {
+export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = false, compact = false, gallery = false }: { capture: CaptureSnapshot; onReady?: (ready: boolean) => void; onPreviewChange?: (open: boolean) => void; hideWeight?: boolean; compact?: boolean; gallery?: boolean }) {
   const images = useMemo(() => capture.images ?? [], [capture.images]);
   const [activeId, setActiveId] = useState(images[0]?.id ?? '');
   useEffect(() => { if (!images.some(image => image.id === activeId)) setActiveId(images[0]?.id ?? ''); }, [capture.id, images, activeId]);
@@ -75,10 +75,11 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
   const failures = capture.failures?.length ? <ul role="alert" className="space-y-1 text-xs text-error">{capture.failures.map(failure => <li key={`${failure.cameraId}-${failure.code}`}>{failure.cameraName || `摄像头 ${failure.cameraId}`}：{failure.message}</li>)}</ul> : null;
   const sourceLabel = capture.source === 'server' ? '图片来源：Server 直连抓拍' : capture.source === 'simulated' ? '图片来源：历史模拟数据' : capture.source === 'agent' ? '图片来源：历史 Agent 上传' : '';
   const metadata = <div className="space-y-1 text-xs text-text-secondary"><p>关联人工确认车牌：{capture.plate || '待确认时关联'}</p>{images.length === 1 && <p>摄像头：{cameraLabel}</p>}<p>{!hideWeight && <>{formatWeight(capture.weight)} · </>}{beijingTime(capture.at)}</p>{sourceLabel && <p>{sourceLabel}</p>}</div>;
-  if (compact) {
+  if (compact || gallery) {
     const photos = images.length ? images : imageSrc ? [{ id: 'legacy', url: imageSrc, cameraName: cameraLabel, capturedAt: capture.at }] : [];
     return <div className="workbench-capture-content">
-      {photos.length > 0 ? <div className="workbench-capture-gallery" role="group" aria-label="抓拍摄像头">{photos.map(image => <div className="workbench-capture-photo" key={image.id}>
+      {gallery && images.length > 1 && <div className="review-capture-tabs" role="group" aria-label="抓拍摄像头">{images.map(image => <Button key={image.id} size="sm" variant="ghost" aria-pressed={active?.id === image.id} onClick={() => setActiveId(image.id)}>{imageLabel(image, capture)}</Button>)}</div>}
+      {photos.length > 0 ? <div className="workbench-capture-gallery" role="group" aria-label={gallery ? '本次抓拍图片' : '抓拍摄像头'}>{photos.map(image => <div className="workbench-capture-photo" key={image.id}>
         <button type="button" className="workbench-capture-thumbnail" aria-label={`放大抓拍 ${imageLabel(image, capture)}`} onClick={() => { setActiveId(image.id); preview(true); }}>
           <AgentImage src={image.url} alt={`${imageLabel(image, capture)}抓拍`} className="aspect-video w-full object-contain" onLoadState={ok => mark(image.id, ok)} />
           <span>点击放大</span>

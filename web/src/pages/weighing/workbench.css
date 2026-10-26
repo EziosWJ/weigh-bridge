@@ -348,7 +348,8 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .review-stage-step > span.done { border-color: #24634f; background: #10382f; color: #41d8a0; }
 
 .review-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(320px, .85fr); align-items: start; gap: 12px; }
-.review-main, .review-side { display: grid; min-width: 0; gap: 12px; }
+.review-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, .9fr); align-items: start; min-width: 0; gap: 12px; }
+.review-side { display: grid; min-width: 0; gap: 12px; }
 .review-section { overflow: hidden; border: 1px solid #315065; border-radius: 8px; background: #0b1d29; }
 .review-section-header {
   display: flex;
@@ -400,8 +401,9 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .review-empty strong { display: block; font-size: 13px; }
 .review-empty p { margin-top: 2px; font-size: 12px; line-height: 1.5; }
 .review-hint { margin-top: 10px; color: #ffb454; font-size: 12px; line-height: 1.6; }
-.weighing-review .workbench-capture-gallery { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); max-height: 270px; }
-.weighing-review .workbench-capture-thumbnail img { height: 98px; }
+.weighing-review .workbench-capture-gallery { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); max-height: 240px; }
+.weighing-review .workbench-capture-thumbnail img { height: 86px; }
+.review-capture-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .weighing-review .workbench-capture-photo p { font-size: 12px; }
 
 .weighing-review .weighing-review-footer {
@@ -430,6 +432,9 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .review-actions > button { min-width: 150px; }
 
+@media (max-width: 1100px) {
+  .review-main { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 900px) {
   .review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-hero--stage { grid-column: 1 / -1; }
@@ -454,4 +459,82 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .review-actions { width: 100%; flex-direction: column; }
   .review-actions > button { width: 100%; min-width: 0; }
   .review-final-summary { width: 100%; max-width: none; }
+}
+
+/* 运输方向说明：明确首磅／回磅顺序及净重口径 */
+.business-direction-row {
+  display: grid;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+.business-direction-control { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.business-direction-control label { white-space: nowrap; }
+.business-direction-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 1px 8px;
+  border: 1px solid #24617b;
+  border-radius: 4px;
+  background: #10344a;
+  color: #65d9fb;
+  font-size: 12px;
+  line-height: 18px;
+}
+.business-direction-lock {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 1px 8px;
+  border: 1px solid #71512e;
+  border-radius: 4px;
+  background: #392b1b;
+  color: #ffb454;
+  font-size: 12px;
+  line-height: 18px;
+}
+.business-direction-help {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid #24617b;
+  border-radius: 7px;
+  background: #0d2a3a;
+}
+.business-direction-help > svg { flex-shrink: 0; margin-top: 2px; color: #65d9fb; }
+.business-direction-help strong { display: block; color: #edf8ff; font-size: 13px; line-height: 1.5; }
+.business-direction-help p { margin-top: 3px; color: #afc5d5; font-size: 12px; line-height: 1.65; }
+.business-direction-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 8px; }
+.business-direction-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid #315065;
+  border-radius: 4px;
+  background: #0a1b27;
+  color: #d8e9f3;
+  font-size: 12px;
+  line-height: 18px;
+}
+.business-direction-step b { color: #65d9fb; font-weight: 600; }
+.business-direction-step.is-second b { color: #41d8a0; }
+.business-direction-arrow { color: #91aabb; }
+@media (max-width: 639px) {
+  .business-direction-control { align-items: flex-start; }
+  .business-direction-control label { width: 100%; }
+  .business-direction-help { padding: 10px; }
+}
+
+/* 核对窗口保留可切换的主抓拍图，同时压缩高度，避免首屏只看到图片顶部。 */
+.weighing-review .workbench-capture-content > button > img {
+  width: 100%;
+  height: 220px;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+@media (max-width: 639px) {
+  .weighing-review .workbench-capture-content > button > img { height: 160px; }
 }
