@@ -153,6 +153,7 @@ type Store interface {
 	OriginalsAll(context.Context, PageQuery) ([]OriginalView, error)
 	TicketsAll(context.Context, PageQuery) ([]Ticket, error)
 	Summary(context.Context, string, PageQuery) (Summary, error)
+	Overview(context.Context, time.Time) (Overview, error)
 	RecordExport(context.Context, string, PageQuery, int64, audit.Event) error
 
 	PrintAttempts(context.Context, int64) ([]PrintAttempt, error)

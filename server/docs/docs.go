@@ -4720,6 +4720,27 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/overview": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "本厂今日有效单、净重、待回磅与最近有效单据",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Overview"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/parties": {
             "get": {
                 "security": [
@@ -7717,6 +7738,20 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-weighing_Overview": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Overview"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.HTTPEnvelope-weighing_Page-weighing_BusinessEvent": {
             "type": "object",
             "properties": {
@@ -7847,6 +7882,135 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.Overview": {
+            "type": "object",
+            "properties": {
+                "awaitingCount": {
+                    "type": "integer"
+                },
+                "awaitingTasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.OverviewTask"
+                    }
+                },
+                "checkedAt": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "inbound": {
+                    "$ref": "#/definitions/weighing.OverviewDirection"
+                },
+                "outbound": {
+                    "$ref": "#/definitions/weighing.OverviewDirection"
+                },
+                "overnightCount": {
+                    "type": "integer"
+                },
+                "recentTickets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.TicketView"
+                    }
+                },
+                "validTickets": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.OverviewDirection": {
+            "type": "object",
+            "properties": {
+                "net": {
+                    "type": "string"
+                },
+                "taskCount": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.OverviewTask": {
+            "type": "object",
+            "properties": {
+                "actorId": {
+                    "type": "integer"
+                },
+                "actorName": {
+                    "type": "string"
+                },
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInfo"
+                },
+                "carrierId": {
+                    "type": "integer"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "createTime": {
+                    "type": "string"
+                },
+                "currentFirstRecordId": {
+                    "type": "integer"
+                },
+                "currentSecondRecordId": {
+                    "type": "integer"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "firstConfirmedAt": {
+                    "type": "string"
+                },
+                "firstWeight": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "materialId": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "scaleId": {
+                    "type": "integer"
+                },
+                "secondWeight": {
+                    "type": "string"
+                },
+                "siteId": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskNo": {
+                    "type": "string"
+                },
+                "terminateReason": {
+                    "type": "string"
+                },
+                "terminatedAt": {
+                    "type": "string"
+                },
+                "updateTime": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "weighing.Page-weighing_BusinessEvent": {
             "type": "object",
             "properties": {
@@ -7864,6 +8028,17 @@ const docTemplate = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "weighing.PrintField": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
                 }
             }
         },
@@ -7892,6 +8067,41 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "weighing.PrintSheet": {
+            "type": "object",
+            "properties": {
+                "heightMm": {
+                    "type": "integer"
+                },
+                "layers": {
+                    "type": "integer"
+                },
+                "marks": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "rows": {
+                    "type": "array",
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/definitions/weighing.PrintField"
+                        }
+                    }
+                },
+                "template": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "widthMm": {
+                    "type": "integer"
                 }
             }
         },
@@ -8025,6 +8235,9 @@ const docTemplate = `{
                 "businessHash": {
                     "type": "string"
                 },
+                "cameraConfigVersion": {
+                    "type": "integer"
+                },
                 "capturedAt": {
                     "type": "string"
                 },
@@ -8035,6 +8248,7 @@ const docTemplate = `{
                     "type": "object"
                 },
                 "expiresAt": {
+                    "description": "Legacy field; new samples have no time limit.",
                     "type": "string"
                 },
                 "id": {
@@ -8044,6 +8258,13 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "kind": {
+                    "type": "string"
+                },
+                "measurementGeneration": {
+                    "description": "Measurement evidence for the new formal-capture window. Historical rows\nkeep an empty generation and the original device revision rule.",
+                    "type": "string"
+                },
+                "measurementVerifiedAt": {
                     "type": "string"
                 },
                 "plate": {
@@ -8197,6 +8418,9 @@ const docTemplate = `{
                 "partyName": {
                     "type": "string"
                 },
+                "siteId": {
+                    "type": "integer"
+                },
                 "tare": {
                     "type": "string"
                 },
@@ -8284,6 +8508,9 @@ const docTemplate = `{
                 },
                 "secondWeight": {
                     "type": "string"
+                },
+                "siteId": {
+                    "type": "integer"
                 },
                 "status": {
                     "type": "string"
@@ -8377,6 +8604,9 @@ const docTemplate = `{
                 "previousTicketId": {
                     "type": "integer"
                 },
+                "printSheet": {
+                    "$ref": "#/definitions/weighing.PrintSheet"
+                },
                 "printStatus": {
                     "type": "string"
                 },
@@ -8388,6 +8618,12 @@ const docTemplate = `{
                 },
                 "secondRecordId": {
                     "type": "integer"
+                },
+                "siteId": {
+                    "type": "integer"
+                },
+                "siteName": {
+                    "type": "string"
                 },
                 "snapshotSchemaVersion": {
                     "type": "integer"
@@ -8405,6 +8641,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "ticketNo": {
+                    "type": "string"
+                },
+                "ticketTitle": {
                     "type": "string"
                 },
                 "voidReason": {

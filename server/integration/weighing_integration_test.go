@@ -180,6 +180,7 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	if err != nil || slices.Contains(codes, "weighing:confirm") {
 		t.Fatalf("revoked grant retained: %v %v", codes, err)
 	}
+	checkBusinessOverview(t, database, router, adminToken, tokenResponse.Data.TokenValue)
 }
 
 func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token string, database *platformdatabase.Database, device *weighingAgent) {

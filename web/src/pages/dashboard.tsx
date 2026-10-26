@@ -1,144 +1,88 @@
-import { Activity, AlertTriangle, CheckCircle2, Clock3 } from "lucide-react";
-import { ContentCard } from "@/components/common/content-card";
-import { PageHeader } from "@/components/common/page-header";
-import { StatusTag } from "@/components/common/status-tag";
+import { useCallback, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { RefreshCw } from 'lucide-react';
+import { overviewApi, type BusinessOverview } from '@/api/overview';
+import { weighingApi } from '@/api/weighing';
+import { cameraApi } from '@/api/camera';
+import { agentMaintenanceApi } from '@/api/agent-maintenance';
+import { ContentCard } from '@/components/common/content-card';
+import { DataTable } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { StatusTag } from '@/components/common/status-tag';
+import { Button } from '@/components/ui/button';
+import { beijingTime } from '@/lib/weighing/query';
+import { formatWeightValue } from '@/lib/weighing/weights';
+import { directionLabels } from '@/types/weighing';
+import type { DataTableColumn } from '@/types';
+import { DeviceOverview } from './dashboard/device-overview';
+import { useOverviewResource } from './dashboard/use-overview-resource';
 
-const kpis = [
-  { label: "今日访问", value: "24,560", change: "+12.4%", tone: "success" },
-  { label: "新增用户", value: "1,248", change: "+8.2%", tone: "success" },
-  { label: "待处理工单", value: "36", change: "-4", tone: "warning" },
-  { label: "系统可用率", value: "99.96%", change: "稳定", tone: "info" },
-] as const;
-
-const activities = [
-  "管理员更新了用户角色配置",
-  "系统完成每日数据同步任务",
-  "用户导出了一份运营报表",
-  "新增 12 条待审核记录",
-];
-
-const todoItems = [
-  { label: "待审核用户", count: 18, tone: "warning" as const },
-  { label: "异常登录告警", count: 3, tone: "error" as const },
-  { label: "配置待发布", count: 5, tone: "info" as const },
-];
+const linkClass = 'text-sm text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary';
 
 export function DashboardPage() {
-  return (
-    <>
-      <PageHeader
-        title="工作台"
-        description=""
-      />
+  const [revision, setRevision] = useState(0);
+  const caps = useOverviewResource(weighingApi.capabilities, revision);
+  const permissions = caps.data?.permissionCodes ?? [];
+  const canRead = permissions.includes('weighing:read');
+  const canMaintain = caps.data?.maintenanceEnabled === true && permissions.some(code => ['agent:maintenance:view', 'agent:maintenance:manage'].includes(code));
+  const canViewCamera = permissions.includes('weighing:camera:view');
+  const business = useOverviewResource(canRead ? overviewApi.business : null, revision);
+  const scale = caps.data?.scales[0];
+  const scaleId = scale?.id;
+  const loadDevice = useCallback(() => scaleId ? overviewApi.device(scaleId) : Promise.reject(new Error('未找到可查询的本厂地磅')), [scaleId]);
+  const device = useOverviewResource(canRead ? loadDevice : null, revision);
+  const printer = useOverviewResource(canMaintain ? agentMaintenanceApi.status : null, revision);
+  const cameras = useOverviewResource(canViewCamera ? cameraApi.list : null, revision);
+  const refresh = () => setRevision(value => value + 1);
+  const busy = caps.loading || business.loading || device.loading || printer.loading || cameras.loading;
+  const data = business.data;
+  const date = data?.date;
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((item) => (
-          <ContentCard key={item.label} bodyClassName="p-4">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-sm text-text-tertiary">{item.label}</p>
-                <p className="mt-2 text-2xl font-semibold leading-8">
-                  {item.value}
-                </p>
-              </div>
-              <StatusTag tone={item.tone}>{item.change}</StatusTag>
-            </div>
-          </ContentCard>
-        ))}
+  const taskColumns: DataTableColumn<BusinessOverview['awaitingTasks'][number]>[] = [
+    { title: '车牌', key: 'plate', render: (_, row) => <Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.business.plate}</Link> },
+    { title: '方向', key: 'direction', render: (_, row) => directionLabels[row.business.direction] },
+    { title: '物料', key: 'material', render: (_, row) => [row.business.materialName, row.business.materialSpec].filter(Boolean).join(' / ') },
+    { title: '首次称重时间', key: 'first', width: 230, render: (_, row) => <div className="flex items-center gap-2 whitespace-nowrap"><span className="tabular-nums">{beijingTime(row.firstConfirmedAt)}</span>{date && beijingTime(row.firstConfirmedAt).slice(0, 10) < date && <span className="shrink-0"><StatusTag>隔日</StatusTag></span>}</div> },
+    { title: '操作', key: 'action', render: (_, row) => <Link className={linkClass} to={`/weighing/tasks/${row.id}`}>查看任务</Link> },
+  ];
+  const ticketColumns: DataTableColumn<BusinessOverview['recentTickets'][number]>[] = [
+    { title: '单号', key: 'ticketNo', render: (_, row) => <Link className={linkClass} to={`/weighing/tickets/${row.id}`}>{row.ticketNo}</Link> },
+    { title: '车牌', key: 'plate', render: (_, row) => row.business.plate },
+    { title: '方向', key: 'direction', render: (_, row) => directionLabels[row.business.direction] },
+    { title: '物料', key: 'material', render: (_, row) => [row.business.materialName, row.business.materialSpec].filter(Boolean).join(' / ') },
+    { title: '最终净重（吨）', key: 'net', align: 'right', render: (_, row) => <span className="tabular-nums">{formatWeightValue(Number(row.finalNet))}</span> },
+    { title: '出单时间', key: 'issuedAt', render: (_, row) => <span className="tabular-nums">{beijingTime(row.issuedAt)}</span> },
+    { title: '操作', key: 'action', render: (_, row) => <Link className={linkClass} to={`/weighing/tickets/${row.id}`}>查看单据</Link> },
+  ];
+  const cards = [
+    { label: '今日有效单', value: data?.validTickets, unit: '张', detail: '今日出单且当前有效' },
+    { label: '今日入厂卸货净重', value: data ? formatWeightValue(Number(data.inbound.net)) : undefined, unit: '吨', detail: data ? `${data.inbound.taskCount} 趟` : '— 趟' },
+    { label: '今日出厂装货净重', value: data ? formatWeightValue(Number(data.outbound.net)) : undefined, unit: '吨', detail: data ? `${data.outbound.taskCount} 趟` : '— 趟' },
+    { label: '当前待回磅', value: data?.awaitingCount, unit: '趟', detail: data ? `其中隔日 ${data.overnightCount} 趟` : '其中隔日 — 趟' },
+  ];
+
+  return <>
+    <h1 className="sr-only">系统概览</h1>
+    <div className="mb-space-4 flex justify-end"><Button onClick={refresh} disabled={busy}><RefreshCw className="mr-2 h-4 w-4" aria-hidden />{busy ? '刷新中…' : '刷新'}</Button></div>
+    {caps.error && <ContentCard><p role="alert" className="text-error">权限与本厂信息读取失败：{caps.error}</p></ContentCard>}
+    {caps.loading && !caps.data && <p role="status" className="text-text-tertiary">正在读取本厂信息…</p>}
+    {caps.data && <div className="space-y-space-6">
+      {canRead && <>
+        <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4" aria-busy={business.loading}>
+          {cards.map(card => <ContentCard key={card.label} bodyClassName="p-space-4"><p className="text-sm text-text-secondary">{card.label}</p><p className="mt-2 flex items-baseline gap-2"><span className="text-2xl font-semibold tabular-nums">{card.value ?? '—'}</span><span className="text-sm text-text-tertiary">{card.unit}</span></p><p className="mt-2 text-sm text-text-tertiary">{card.detail}</p></ContentCard>)}
+        </div>
+        {business.error && <p role="alert" className="text-sm text-error">业务概览读取失败：{business.error} <button className={linkClass} onClick={refresh}>重试</button></p>}
+      </>}
+      <div className={`grid items-stretch gap-space-6 ${canRead ? 'xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]' : ''}`}>
+        {canRead && <ContentCard title="待回磅任务" description="全部日期中最早的 5 趟，按首次称重时间排列。" extra={<Link className={`${linkClass} whitespace-nowrap`} to="/weighing/tasks">查看全部</Link>} bodyClassName="!p-0" className="min-w-0 overflow-hidden">
+          <DataTable columns={taskColumns} dataSource={data?.awaitingTasks ?? []} rowKey="id" minWidth={680} compact loading={business.loading} error={business.error} empty={<EmptyState title="暂无待回磅任务" description="首次称重确认后，待二次称重的任务会显示在这里。" />} ariaLabel="待回磅任务" />
+        </ContentCard>}
+        {(canRead || canMaintain || canViewCamera) && <DeviceOverview device={device} printer={printer} cameras={cameras} canRead={canRead} canMaintain={canMaintain} canViewCamera={canViewCamera} scaleEnabled={scale?.enabled} />}
       </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-        <ContentCard
-          title="业务趋势"
-          description="第一版使用占位图形，后续可接入图表库。"
-        >
-          <div className="h-72 rounded-lg border border-dashed border-border bg-slate-50 p-5">
-            <div className="flex h-full items-end gap-3">
-              {[48, 64, 52, 78, 70, 88, 74, 92, 84, 98, 90, 104].map(
-                (height, index) => (
-                  <div
-                    key={index}
-                    className="flex flex-1 items-end rounded-t-md bg-blue-100"
-                    style={{ height }}
-                    aria-hidden
-                  >
-                    <div className="h-2/3 w-full rounded-t-md bg-primary" />
-                  </div>
-                ),
-              )}
-            </div>
-          </div>
-        </ContentCard>
-
-        <ContentCard title="系统状态 / 待办">
-          <div className="space-y-4">
-            <div className="grid gap-3">
-              <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-3">
-                <CheckCircle2 className="h-5 w-5 text-success" aria-hidden />
-                <div>
-                  <div className="font-medium">核心服务运行正常</div>
-                  <div className="text-xs text-text-tertiary">
-                    最近检查 2 分钟前
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-3 rounded-lg border border-border px-3 py-3">
-                <Activity className="h-5 w-5 text-info" aria-hidden />
-                <div>
-                  <div className="font-medium">接口平均响应 126ms</div>
-                  <div className="text-xs text-text-tertiary">
-                    过去 1 小时统计
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              {todoItems.map((item) => (
-                <div
-                  key={item.label}
-                  className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2"
-                >
-                  <span className="text-sm">{item.label}</span>
-                  <StatusTag tone={item.tone}>{String(item.count)}</StatusTag>
-                </div>
-              ))}
-            </div>
-          </div>
-        </ContentCard>
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <ContentCard title="最近操作">
-          <ul className="space-y-3">
-            {activities.map((item, index) => (
-              <li key={item} className="flex items-start gap-3">
-                <Clock3 className="mt-0.5 h-4 w-4 text-text-tertiary" />
-                <div>
-                  <div className="text-sm text-text-primary">{item}</div>
-                  <div className="text-xs text-text-tertiary">
-                    {index + 1}0 分钟前
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </ContentCard>
-
-        <ContentCard title="风险提示">
-          <div className="flex items-start gap-3 rounded-lg border border-amber-100 bg-amber-50 px-4 py-3">
-            <AlertTriangle className="mt-0.5 h-5 w-5 text-warning" />
-            <div>
-              <div className="font-medium text-text-primary">
-                有 3 条异常登录告警待确认
-              </div>
-              <p className="mt-1 text-sm text-text-secondary">
-                建议检查近期登录日志和管理员账号安全策略。
-              </p>
-            </div>
-          </div>
-        </ContentCard>
-      </div>
-    </>
-  );
+      {canRead && <ContentCard title="最近有效单据" description="最近 5 张当前有效的单据，包含历史日期。" extra={<Link className={`${linkClass} whitespace-nowrap`} to="/weighing/tickets">查看全部</Link>} bodyClassName="!p-0" className="min-w-0 overflow-hidden">
+        <DataTable columns={ticketColumns} dataSource={data?.recentTickets ?? []} rowKey="id" minWidth={960} compact loading={business.loading} error={business.error} empty={<EmptyState title="暂无有效单据" description="完成二次称重并生成有效过磅单后显示。" />} ariaLabel="最近有效单据" />
+      </ContentCard>}
+      {!canRead && !canMaintain && !canViewCamera && <ContentCard><EmptyState title="暂无可查看的概览内容" description="当前账号没有称重查询、设备维护或摄像头查看权限。" /></ContentCard>}
+    </div>}
+  </>;
 }

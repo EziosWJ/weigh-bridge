@@ -1077,6 +1077,15 @@ definitions:
       message:
         type: string
     type: object
+  weighing.HTTPEnvelope-weighing_Overview:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Overview'
+      message:
+        type: string
+    type: object
   weighing.HTTPEnvelope-weighing_Page-weighing_BusinessEvent:
     properties:
       code:
@@ -1161,6 +1170,91 @@ definitions:
       ticketId:
         type: integer
     type: object
+  weighing.Overview:
+    properties:
+      awaitingCount:
+        type: integer
+      awaitingTasks:
+        items:
+          $ref: '#/definitions/weighing.OverviewTask'
+        type: array
+      checkedAt:
+        type: string
+      date:
+        type: string
+      inbound:
+        $ref: '#/definitions/weighing.OverviewDirection'
+      outbound:
+        $ref: '#/definitions/weighing.OverviewDirection'
+      overnightCount:
+        type: integer
+      recentTickets:
+        items:
+          $ref: '#/definitions/weighing.TicketView'
+        type: array
+      validTickets:
+        type: integer
+    type: object
+  weighing.OverviewDirection:
+    properties:
+      net:
+        type: string
+      taskCount:
+        type: integer
+    type: object
+  weighing.OverviewTask:
+    properties:
+      actorId:
+        type: integer
+      actorName:
+        type: string
+      business:
+        $ref: '#/definitions/weighing.BusinessInfo'
+      carrierId:
+        type: integer
+      completedAt:
+        type: string
+      createTime:
+        type: string
+      currentFirstRecordId:
+        type: integer
+      currentSecondRecordId:
+        type: integer
+      direction:
+        type: string
+      firstConfirmedAt:
+        type: string
+      firstWeight:
+        type: string
+      id:
+        type: integer
+      materialId:
+        type: integer
+      mode:
+        type: string
+      partyId:
+        type: integer
+      plate:
+        type: string
+      scaleId:
+        type: integer
+      secondWeight:
+        type: string
+      siteId:
+        type: integer
+      status:
+        type: string
+      taskNo:
+        type: string
+      terminateReason:
+        type: string
+      terminatedAt:
+        type: string
+      updateTime:
+        type: string
+      version:
+        type: integer
+    type: object
   weighing.Page-weighing_BusinessEvent:
     properties:
       page:
@@ -1173,6 +1267,13 @@ definitions:
         type: array
       total:
         type: integer
+    type: object
+  weighing.PrintField:
+    properties:
+      label:
+        type: string
+      value:
+        type: string
     type: object
   weighing.PrintInput:
     properties:
@@ -1191,6 +1292,29 @@ definitions:
         type: string
       status:
         type: string
+    type: object
+  weighing.PrintSheet:
+    properties:
+      heightMm:
+        type: integer
+      layers:
+        type: integer
+      marks:
+        items:
+          type: string
+        type: array
+      rows:
+        items:
+          items:
+            $ref: '#/definitions/weighing.PrintField'
+          type: array
+        type: array
+      template:
+        type: string
+      title:
+        type: string
+      widthMm:
+        type: integer
     type: object
   weighing.PriorFinalWeights:
     properties:
@@ -1277,6 +1401,8 @@ definitions:
         $ref: '#/definitions/weighing.BusinessInfo'
       businessHash:
         type: string
+      cameraConfigVersion:
+        type: integer
       capturedAt:
         type: string
       deviceOk:
@@ -1284,12 +1410,20 @@ definitions:
       evidence:
         type: object
       expiresAt:
+        description: Legacy field; new samples have no time limit.
         type: string
       id:
         type: integer
       invalidatedAt:
         type: string
       kind:
+        type: string
+      measurementGeneration:
+        description: |-
+          Measurement evidence for the new formal-capture window. Historical rows
+          keep an empty generation and the original device revision rule.
+        type: string
+      measurementVerifiedAt:
         type: string
       plate:
         type: string
@@ -1390,6 +1524,8 @@ definitions:
         type: string
       partyName:
         type: string
+      siteId:
+        type: integer
       tare:
         type: string
       taskCount:
@@ -1448,6 +1584,8 @@ definitions:
         type: integer
       secondWeight:
         type: string
+      siteId:
+        type: integer
       status:
         type: string
       taskNo:
@@ -1509,6 +1647,8 @@ definitions:
         $ref: '#/definitions/weighing.PriorFinalWeights'
       previousTicketId:
         type: integer
+      printSheet:
+        $ref: '#/definitions/weighing.PrintSheet'
       printStatus:
         type: string
       reprintCount:
@@ -1517,6 +1657,10 @@ definitions:
         type: integer
       secondRecordId:
         type: integer
+      siteId:
+        type: integer
+      siteName:
+        type: string
       snapshotSchemaVersion:
         type: integer
       status:
@@ -1528,6 +1672,8 @@ definitions:
       taskId:
         type: integer
       ticketNo:
+        type: string
+      ticketTitle:
         type: string
       voidReason:
         type: string
@@ -4498,6 +4644,18 @@ paths:
       security:
       - BearerAuth: []
       summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
+  /api/weighing/overview:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Overview'
+      security:
+      - BearerAuth: []
+      summary: 本厂今日有效单、净重、待回磅与最近有效单据
       tags:
       - 称重业务
   /api/weighing/parties:

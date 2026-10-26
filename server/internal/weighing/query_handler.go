@@ -12,6 +12,7 @@ func registerQueryRoutes(router gin.IRouter, h *Handler) {
 	read := rbac.RequirePermission(h.permissions, "weighing:read")
 	print := rbac.RequirePermission(h.permissions, "weighing:print")
 	export := rbac.RequirePermission(h.permissions, "weighing:export")
+	router.GET("/overview", read, h.overview)
 	router.GET("/originals", read, h.originals)
 	for _, kind := range []string{"originals", "tickets"} {
 		router.GET("/"+kind+"/summary", read, h.summary(kind))
