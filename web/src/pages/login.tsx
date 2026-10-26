@@ -10,6 +10,8 @@ import { useAuthStore } from "@/store/auth-store";
 import type { LoginErrors } from "@/types";
 import { MessageConnections } from "@/components/layout/message-connections";
 import { AnnouncementPanel } from "@/components/layout/announcement-panel";
+import { loginDestination } from "@/lib/user-home";
+import { WORKBENCH_PATH } from "@/lib/workbench-window";
 
 const REMEMBERED_USERNAME_KEY = "react-admin-remembered-username";
 
@@ -34,6 +36,9 @@ export function LoginPage() {
   const location = useLocation();
   const login = useAuthStore((state) => state.login);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const user = useAuthStore((state) => state.user);
+  const isLoadingUser = useAuthStore((state) => state.isLoadingUser);
+  const fetchCurrentUser = useAuthStore((state) => state.fetchCurrentUser);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -44,11 +49,13 @@ export function LoginPage() {
   const requested = (location.state as { from?: { pathname: string; search?: string } } | null)?.from;
   const stateFrom = requested ? requested.pathname + (requested.search || "") : undefined;
   const queryRedirect = new URLSearchParams(location.search).get("redirect");
-  let from = stateFrom ?? queryRedirect ?? "/weighing/tasks";
+  const requestedDestination = stateFrom ?? queryRedirect;
 
-  if (from.includes("://") || from.startsWith("//")) {
-    from = "/weighing/tasks";
-  }
+  useEffect(() => {
+    if (isAuthenticated && !user && !isLoadingUser && !submitting) {
+      void fetchCurrentUser().catch(() => undefined);
+    }
+  }, [fetchCurrentUser, isAuthenticated, isLoadingUser, submitting, user]);
 
   useEffect(() => {
     try {
@@ -62,8 +69,8 @@ export function LoginPage() {
     }
   }, []);
 
-  if (isAuthenticated) {
-    return <Navigate to={from} replace />;
+  if (isAuthenticated && user && !submitting) {
+    return <Navigate to={loginDestination(user, requestedDestination)} replace />;
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -84,7 +91,7 @@ export function LoginPage() {
 
     try {
       setSubmitting(true);
-      await login(username.trim(), password);
+      const currentUser = await login(username.trim(), password);
       try {
         if (rememberMe) {
           localStorage.setItem(REMEMBERED_USERNAME_KEY, username.trim());
@@ -94,7 +101,12 @@ export function LoginPage() {
       } catch {
         // 本地存储不可用时仍以登录结果为准。
       }
-      navigate(from, { replace: true });
+      const destination = loginDestination(currentUser, requestedDestination);
+      if (new URL(destination, window.location.origin).pathname === WORKBENCH_PATH) {
+        window.location.replace(destination);
+      } else {
+        navigate(destination, { replace: true });
+      }
     } catch (error) {
       setErrors({
         account: isApiError(error)

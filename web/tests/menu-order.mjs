@@ -37,6 +37,10 @@ try {
     assert.equal(await page.getByTestId("system-group-count").textContent(), "1", "系统管理继续复用后端菜单分组");
     assert.deepEqual(await labels("system"), ["用户管理", "角色管理", "菜单管理"], "后端系统管理菜单保持原样");
     assert.deepEqual(await labels("local"), ["设备维护"], "本地维护入口按 RBAC 放入本地管理");
+    assert.deepEqual(await labels('operator'), ['单据查询', '基础资料', '日志管理', '系统概览', '称重工作台'], '操作员展示系统概览及原四类菜单');
+    assert.deepEqual(await labels('operator-children'), ['待回磅任务', '原始称重', '最终单据', '物料资料', '往来主体', '物料分类', '登录日志', '操作日志']);
+    assert.deepEqual(await labels('operator-no-permission'), ['系统概览'], '概览入口默认可见，业务菜单仍遵守已有权限');
+    assert.ok((await labels('admin-operator')).includes('系统概览'), 'ADMIN 优先于操作员菜单限制');
     console.log("menu order passed");
   } finally {
     await browser.close();

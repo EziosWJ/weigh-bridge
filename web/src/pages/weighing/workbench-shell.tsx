@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Maximize, Minimize, Monitor } from 'lucide-react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -8,6 +8,7 @@ import { useWeighingStore } from '@/store/weighing-store';
 import { roleLabels } from '@/types/weighing';
 import { WORKBENCH_WINDOW,workbenchWindow } from '@/lib/workbench-window';
 import './workbench.css';
+import { WorkbenchEntry } from './workbench-entry';
 
 export function WorkbenchShell() {
   const capabilities=useWeighingStore(s=>s.capabilities);
@@ -29,7 +30,7 @@ export function WorkbenchShell() {
     document.addEventListener('fullscreenchange', update);
     return () => { document.removeEventListener('fullscreenchange', update); if (window.name === name) window.name = previousName; };
   }, [scaleId]);
-  if(!scaleId)return <Navigate to="/weighing/tasks" replace/>;
+  if(!scaleId)return <WorkbenchEntry />;
   if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/tasks" className="text-primary underline">返回后台查询</a></div>;
   if(!ready)return <p role="status" className="p-6">正在核对本厂操作权限…</p>;
   return <div className="weighing-workbench min-h-screen bg-background">

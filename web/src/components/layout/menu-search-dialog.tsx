@@ -19,6 +19,8 @@ import { buildMenuSearchIndex, searchMenus, type MenuSearchItem } from "@/lib/me
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 import { useWeighingStore } from "@/store/weighing-store";
+import { isWeighingOperator } from "@/lib/user-home";
+import { localSiteId } from "@/lib/local-site";
 
 export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
   const navigate = useNavigate();
@@ -37,6 +39,7 @@ export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
     buildAppNavigation({
       menus,
       isAdmin: user?.roles?.some((role) => role.roleCode === "ADMIN") ?? false,
+      isOperator: isWeighingOperator(user),
       capabilities,
     }),
   ), [menus, user, capabilities]);
@@ -53,7 +56,8 @@ export default function MenuSearchDialog({ onClose }: { onClose: () => void }) {
   const openItem = (item: MenuSearchItem) => {
     if (pending || composingRef.current) return;
     if (item.path === "/weighing/workbench") {
-      if (!openWorkbench(item.path)) { setBlockedWorkbench(true); return; }
+      const scales = capabilities?.scales.filter(scale => scale.siteId === localSiteId(capabilities) && scale.enabled === 1 && scale.canOperate) ?? [];
+      if (scales.length !== 1 || !openWorkbench(`${item.path}?scaleId=${scales[0].id}`)) { setBlockedWorkbench(true); return; }
     } else if (item.externalUrl) {
       window.open(item.externalUrl, "_blank", "noopener,noreferrer");
     } else if (item.path !== `${location.pathname}${location.search}${location.hash}`) {

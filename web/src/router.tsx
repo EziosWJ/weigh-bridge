@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { LoginPage } from "@/pages/login";
 import { NotFoundPage } from "@/pages/not-found";
 import { RequireMessageAdmin } from "@/components/auth/require-message-admin";
+import { HomeRedirect } from "@/components/auth/home-redirect";
 
 export const router = createBrowserRouter([
   { path: "/weighing/design-demo", hydrateFallbackElement: <main role="status" className="p-4 text-sm">正在加载设计预览…</main>,
@@ -57,7 +58,7 @@ export const router = createBrowserRouter([
       { path: "weighing/categories", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingCategoriesPage })) },
       {
         index: true,
-        element: <Navigate to="/weighing/tasks" replace />,
+        element: <HomeRedirect />,
       },
       {
         path: "dashboard",

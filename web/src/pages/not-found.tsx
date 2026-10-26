@@ -13,7 +13,7 @@ export function NotFoundPage() {
           当前访问的页面不存在，可能已被移动或删除。
         </p>
         <Link
-          to="/dashboard"
+          to="/"
           className="mt-5 inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-primary bg-primary px-4 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden />

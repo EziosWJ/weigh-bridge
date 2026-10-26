@@ -13,6 +13,7 @@ import {
   Users,
   Shield,
   Settings,
+  Scale,
   type LucideIcon,
 } from "lucide-react";
 import { getMenuIcon } from "@/lib/menu-icons";
@@ -184,6 +185,7 @@ type NavigationCapabilities = {
 type BuildAppNavigationOptions = {
   menus: CurrentUserMenu[];
   isAdmin: boolean;
+  isOperator?: boolean;
   capabilities?: NavigationCapabilities | null;
 };
 
@@ -259,6 +261,7 @@ function withConfigurationEntry(items: NavItem[]): NavItem[] {
 export function buildAppNavigation({
   menus,
   isAdmin,
+  isOperator = false,
   capabilities,
 }: BuildAppNavigationOptions): NavItem[] {
   const base = defaultNavItems.map((item) =>
@@ -295,6 +298,25 @@ export function buildAppNavigation({
     filterWeighingNavItems(localItems, capabilities),
     filterWeighingNavItems(userItemsWithMaintenance, capabilities),
   );
+  if (isOperator && !isAdmin) {
+    const allowedPaths = new Set([
+      "/weighing/documents", "/weighing/tasks", "/weighing/originals", "/weighing/tickets",
+      "/weighing/references", "/weighing/materials", "/weighing/parties", "/weighing/categories",
+      "/log", "/system/login-log", "/system/oper-log",
+      "/dashboard",
+    ]);
+    const restrict = (items: NavItem[]): NavItem[] => items.flatMap(item => {
+      if (!allowedPaths.has(item.path)) return [];
+      const children = item.children ? restrict(item.children) : undefined;
+      if (item.children && !children?.length) return [];
+      return [{ ...item, children }];
+    });
+    const items = restrict(merged);
+    if (permissionCodes.includes("weighing:confirm")) {
+      items.push({ label: "称重工作台", path: "/weighing/workbench", icon: Scale, sortOrder: 30 });
+    }
+    return sortNavigationItems(items);
+  }
   return permissionCodes.includes("system:config") ? withConfigurationEntry(merged) : merged;
 }
 

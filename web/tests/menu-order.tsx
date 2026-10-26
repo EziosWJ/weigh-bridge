@@ -55,8 +55,24 @@ const systemNavigation = buildAppNavigation({
 });
 const systemGroup = systemNavigation.find((item) => item.path === "/system");
 const localManagement = systemNavigation.find((item) => item.path === "/local-management");
+const logMenu: CurrentUserMenu = {
+  ...menu(10, '日志管理', '/log', 2), menuType: 'DIR',
+  children: [menu(11, '登录日志', '/system/login-log', 1), menu(12, '操作日志', '/system/oper-log', 2)],
+};
+const operatorNavigation = buildAppNavigation({
+  menus: [...systemMenus, logMenu, menu(13, '外部菜单', '/external', 3)],
+  isAdmin: false,
+  isOperator: true,
+  capabilities: { maintenanceEnabled: true, permissionCodes: ['weighing:read', 'weighing:master:read', 'weighing:confirm', 'system:user', 'system:config', 'agent:maintenance:view', 'weighing:camera:view'] },
+});
+const noPermissionNavigation = buildAppNavigation({ menus: [], isAdmin: false, isOperator: true });
+const adminNavigation = buildAppNavigation({ menus: systemMenus, isAdmin: true, isOperator: true });
 
 const scenarios: Record<string, NavItem[]> = {
+  operator: operatorNavigation,
+  'operator-children': operatorNavigation.flatMap(item => item.children ?? []),
+  'operator-no-permission': noPermissionNavigation,
+  'admin-operator': adminNavigation,
   // 本地入口与业务菜单 sortOrder 相同时，本地入口保持在前
   tie: mergeNavItems(
     defaultNavItems,

@@ -29,7 +29,7 @@ export function Breadcrumbs() {
   return (
     <nav aria-label="面包屑" className="flex items-center text-sm">
       <Link
-        to="/weighing/workbench"
+        to="/"
         className="inline-flex items-center gap-1 text-text-tertiary hover:text-primary"
       >
         <Home className="h-4 w-4" aria-hidden />

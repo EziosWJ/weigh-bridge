@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 import { useWeighingStore } from "@/store/weighing-store";
 import { weighingApi } from "@/api/weighing";
+import { isWeighingOperator } from "@/lib/user-home";
 
 type AppSidebarProps = {
   collapsed: boolean;
@@ -65,6 +66,7 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
     () => buildAppNavigation({
       menus,
       isAdmin: user?.roles?.some((role) => role.roleCode === "ADMIN") ?? false,
+      isOperator: isWeighingOperator(user),
       capabilities: weighingCapabilities,
     }),
     [menus, user, weighingCapabilities],
