@@ -45,6 +45,7 @@ DataTableCard
 
 | 页面 | Pattern | 当前差异或说明 |
 | --- | --- | --- |
+| 系统概览 `src/pages/dashboard.tsx` | Detail + Standard List 变体 | 本厂业务指标、待回磅、紧凑设备摘要与最近有效单据；[页面覆盖规则](../pages/dashboard.md) |
 | 称重业务 `src/pages/weighing/` | Standard List / Form / Detail 变体 | 独立工作台、资料、任务和单据；[页面覆盖规则](../pages/weighing.md) |
 | 过磅单标题 `src/pages/system/configs/ticket-title-configuration.tsx` | Standard Form + DetailDialog 变体 | 配置管理顶部编辑、样张预览，沿用系统配置权限；内部身份自动建立，旧名称入口退役 |
 | 摄像头管理 `src/pages/cameras/index.tsx` | Standard List Page + FormDialog 变体 | 动态列表、测试预览、识别与视频同步；[页面覆盖规则](../pages/cameras.md) |
