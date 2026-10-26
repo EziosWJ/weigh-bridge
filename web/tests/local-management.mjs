@@ -100,7 +100,7 @@ try {
   assert.equal(writes.length, 0, 'preview must not save or print');
   await preview.getByRole('button', {name: '关闭详情弹窗', exact: true}).click();
   await factory.page.getByRole('button', {name: '保存标题', exact: true}).click();
-  await factory.page.getByText('过磅单标题已保存，将用于之后生成的单据。', {exact: true}).waitFor();
+  await factory.page.getByText('过磅单标题已保存', {exact: true}).waitFor();
   assert.equal(writes[0].configValue, '本厂新过磅单');
   assert.equal(writes[0].configKey, 'weighing.ticket-title');
   await factory.page.reload();

@@ -13,14 +13,14 @@ func TestCompactPrintSheetUsesTicketSnapshotAndSelectedBasis(t *testing.T) {
 			first := time.Date(2026, 10, 18, 15, 59, 0, 0, time.UTC)
 			second := first.Add(2 * time.Hour)
 			view := ticketView(Ticket{
-				TicketNo: "GB0001", Status: "valid", FirstRecordID: 2, SecondRecordID: 3,
+				SiteName: "内部厂名", TicketNo: "GB0001", Status: "valid", FirstRecordID: 2, SecondRecordID: 3,
 				Business:      BusinessInfo{BusinessInput: BusinessInput{Plate: "晋A12345", Direction: direction}, PartyName: "出单时供收方", MaterialName: "高粱", MaterialSpec: "一级"},
 				OriginalGross: 32123, OriginalTare: 12123, FinalGross: 31000, FinalTare: 12250,
 				IssuerName: "出单操作员", ReprintCount: 2,
 				Basis: []WeighRecord{{ID: 1, Stage: "first", ConfirmedAt: first.Add(-time.Hour)}, {ID: 2, Stage: "first", ConfirmedAt: first}, {ID: 3, Stage: "second", ConfirmedAt: second}},
 			})
 			sheet := compactPrintSheet(view, "示例酒厂过磅单")
-			if sheet.Title != "示例酒厂过磅单" || sheet.WidthMM != 210 || sheet.HeightMM != 99 || sheet.Layers != 5 {
+			if sheet.Title != "示例酒厂过磅单" || sheet.WidthMM != 241 || sheet.HeightMM != 93 || sheet.Template != "weighing-compact-v2" || sheet.Layers != 5 {
 				t.Fatalf("wrong paper: %+v", sheet)
 			}
 			fields := map[string]string{}
@@ -58,7 +58,7 @@ func TestCompactPrintSheetPreservesLegacyAndVoidMarksWithoutInventingMissingData
 	if sheet.Title != "酒厂过磅单" || strings.Join(sheet.Marks, ",") != "历史测试单,已作废" {
 		t.Fatalf("marks/title: %+v", sheet)
 	}
-	if sheet.Rows[3][0].Value != "—" || sheet.Rows[4][0].Value != "—" {
+	if sheet.Rows[4][0].Value != "—" || sheet.Rows[5][0].Value != "—" {
 		t.Fatal("missing historical times and actor must not be replaced with current data")
 	}
 }

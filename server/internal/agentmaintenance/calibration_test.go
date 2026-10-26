@@ -68,6 +68,7 @@ func TestFractionalCalibrationSaveApplyReopenAndRestore(t *testing.T) {
 func TestLegacyCalibrationDefaultsToUnitScale(t *testing.T) {
 	dir := t.TempDir()
 	c := Defaults()
+	c.FormLengthMM = 99 // Existing A4-era environment, independent of current new-install defaults.
 	c.AgentKey = "legacy-key"
 	if err := BuildAgentEnvironment(dir, c); err != nil {
 		t.Fatal(err)

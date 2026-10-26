@@ -48,7 +48,7 @@ type Config struct {
 
 func Defaults() Config {
 	return Config{
-		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 99, PrintScale: 1,
+		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 93, PrintScale: 1,
 		CameraTimeoutMS: 2000,
 		SerialBaud:      9600,
 	}

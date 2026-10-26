@@ -78,12 +78,13 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
     ) : <Button onClick={() => void load()}>重新加载标题</Button>}
     {error && <p role="alert" className="mt-space-3 text-sm text-error">{error}</p>}
     <DetailDialog open={preview} title="过磅单标题预览" description="使用当前输入的标题展示样张，保存后生效。预览不会打印或生成正式单据。" onCancel={() => setPreview(false)} trapFocus>
-      <TicketSheet sheet={{ template: "weighing-compact-v1", widthMm: 210, heightMm: 99, layers: 5, title: title.trim(), marks: ["标题预览样张"], rows: [
-        [{ label: "单号", value: "预览样张" }, { label: "车牌", value: "川A12345" }],
-        [{ label: "方向", value: "入厂卸货" }, { label: "供收方", value: "示例供货方" }],
-        [{ label: "物料", value: "高粱" }, { label: "规格", value: "一级" }],
-        [{ label: "毛重", value: "30 吨" }, { label: "皮重", value: "10 吨" }, { label: "净重", value: "20 吨" }],
-        [{ label: "司机签字", value: "" }],
+      <TicketSheet sheet={{ template: "weighing-compact-v2", widthMm: 241, heightMm: 93, layers: 5, title: title.trim(), marks: ["标题预览样张"], rows: [
+        [{ label: "单号", value: "GB-NEW-9a6735f61d3b803e078773473802c348" }],
+        [{ label: "车牌", value: "川A12345" }, { label: "业务", value: "入厂卸货" }],
+        [{ label: "供货方", value: "示例供货方" }, { label: "物料", value: "高粱 / 一级" }],
+        [{ label: "毛重（吨）", value: "30.125" }, { label: "皮重（吨）", value: "10" }, { label: "净重（吨）", value: "20.125" }],
+        [{ label: "首次称重", value: "2026-10-26 08:00:00" }, { label: "二次称重", value: "2026-10-26 09:00:00" }],
+        [{ label: "操作员", value: "示例操作员" }, { label: "司机签字", value: "________________" }],
       ] }} />
     </DetailDialog>
   </ContentCard>;

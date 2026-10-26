@@ -26,6 +26,7 @@
     "test:weighing:lookup": "node tests/weighing-lookup.mjs",
     "test:weighing:backend-master": "node tests/weighing-backend-master.mjs",
     "test:weighing:backend": "node tests/weighing-backend-smoke.mjs",
+    "test:ticket-sheet": "node tests/ticket-sheet.mjs",
     "test:local-management": "node tests/local-management.mjs",
     "test:camera-management": "node tests/camera-management.mjs"
   },

@@ -105,3 +105,19 @@ func TestIdentityDirectoryBindsLegacyAttemptsAndIsolatesSwitches(t *testing.T) {
 		t.Fatal("query parameters created a new print identity")
 	}
 }
+
+func TestPrepareContinuousPaperAndLegacyCompatibility(t *testing.T) {
+	s := sheet()
+	s.Template, s.Width, s.Height = "weighing-compact-v2", 241, 93
+	s.Rows = append([][]Field{{{Label: "单号", Value: "GB-NEW-9a6735f61d3b803e078773473802c348"}}}, s.Rows...)
+	if _, err := Prepare(s); err != nil {
+		t.Fatal(err)
+	}
+	s.Height = 297
+	if _, err := Prepare(s); err == nil {
+		t.Fatal("A4 height accepted for one continuous-paper section")
+	}
+	if _, err := Prepare(sheet()); err != nil {
+		t.Fatalf("legacy sheet no longer accepted: %v", err)
+	}
+}

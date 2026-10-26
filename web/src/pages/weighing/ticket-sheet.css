@@ -1,5 +1,5 @@
 .ticket-sheet-scroll { overflow-x: auto; }
-.weighing-ticket-sheet { box-sizing: border-box; width: 210mm; min-height: 99mm; padding: 6mm 8mm; background: white; color: black; font: 10pt/1.5 "SimSun", "Noto Serif CJK SC", serif; }
+.weighing-ticket-sheet { box-sizing: border-box; width: 210mm; min-height: 99mm; margin-inline: auto; padding: 6mm 8mm; background: white; color: black; font: 10pt/1.5 "SimSun", "Noto Serif CJK SC", serif; }
 .weighing-ticket-sheet h2 { margin: 0; text-align: center; font-size: 16pt; font-weight: bold; }
 .ticket-sheet-marks { min-height: 5mm; margin: 0 0 2mm; text-align: right; font-weight: bold; }
 .ticket-sheet-rows { border: 0.25mm solid black; }
@@ -8,7 +8,20 @@
 .ticket-sheet-field { min-width: 0; flex: 1; padding: 2mm; overflow-wrap: anywhere; border-right: 0.25mm solid black; }
 .ticket-sheet-field:last-child { border-right: 0; }
 .ticket-sheet-field strong { font-weight: normal; font-variant-numeric: tabular-nums; }
-@page { size: 210mm 99mm; margin: 0; }
+/* 241 mm includes both tractor-feed strips. The 175 mm table is centered
+   on the physical sheet, leaving space for holes and handwriting. */
+.ticket-sheet-continuous { width: 241mm; height: 93mm; min-height: 93mm; padding: 4mm 0; display: flex; align-items: center; justify-content: center; font-size: 11pt; line-height: 1.35; }
+.ticket-sheet-continuous .ticket-sheet-content { width: 175mm; flex: none; }
+.ticket-sheet-continuous h2 { font-size: 18pt; line-height: 1.3; }
+.ticket-sheet-continuous .ticket-sheet-marks { min-height: 4mm; margin: 0 0 1mm; font-size: 10pt; }
+.ticket-sheet-continuous .ticket-sheet-field { padding: 1.5mm 2mm; }
+.ticket-sheet-continuous .ticket-sheet-row:first-child { font-size: 10pt; }
+.ticket-sheet-weights .ticket-sheet-field { text-align: center; }
+.ticket-sheet-weights span, .ticket-sheet-weights strong { display: block; }
+.ticket-sheet-weights strong { font-size: 18pt; line-height: 1.25; font-weight: bold; }
+.ticket-sheet-weights .ticket-sheet-field:last-child strong { font-size: 20pt; }
+.ticket-sheet-signature { min-height: 13mm; align-items: stretch; }
+@page { size: 241mm 93mm; margin: 0; }
 @media print {
   body * { visibility: hidden; }
   .weighing-ticket-sheet, .weighing-ticket-sheet * { visibility: visible; }

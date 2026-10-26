@@ -25,8 +25,9 @@ func (c Calibration) scale() float64 {
 
 func (c Calibration) dimensions() (width, height, feed, form int) {
 	width = int(math.Round(math.Round(float64(c.WidthMM)*printDPI/25.4) * c.scale()))
-	height = int(math.Round(600 * c.scale()))
-	feed = (height + int(math.Round(float64(c.OffsetYMM)*printDPI/25.4)) + 23) / 24 * 24
+	height = int(math.Round(576 * c.scale()))
+	centerY := max(0, (int(math.Round(c.FormLengthMM*printDPI/25.4))-height)/2)
+	feed = (height + centerY + int(math.Round(float64(c.OffsetYMM)*printDPI/25.4)) + 23) / 24 * 24
 	form = int(math.Round(c.FormLengthMM * 360 / 25.4))
 	return
 }
@@ -46,7 +47,9 @@ func (c Calibration) Validate() error {
 		return errors.New("打印尺寸、缩放或偏移超出允许范围")
 	}
 	w, _, feed, form := c.dimensions()
-	if w+int(math.Round(float64(c.OffsetXMM)*printDPI/25.4)) > int(math.Round(210*printDPI/25.4)) || feed*2 > form {
+	pageWidth := int(math.Round(210 * printDPI / 25.4))
+	centerX := max(0, (pageWidth-w)/2)
+	if w+centerX+int(math.Round(float64(c.OffsetXMM)*printDPI/25.4)) > pageWidth || feed*2 > form {
 		return errors.New("缩放后的内容或分带走纸超出纸宽／表长，请减小缩放或偏移")
 	}
 	return nil
@@ -56,7 +59,7 @@ func (c Calibration) Validate() error {
 func CalibrationSheet(c Config) *Sheet {
 	cal := c.Calibration()
 	g := cal.Geometry()
-	return &Sheet{Template: "weighing-compact-v1", Width: 210, Height: 99,
+	return &Sheet{Template: "weighing-compact-v2", Width: 241, Height: 93,
 		Title: "打印校准测试样张", Marks: []string{"测试／校准 · 非业务单据 · 标尺 mm"},
 		Calibration: cal, CalibrationPattern: true, Rows: [][]Field{
 			{{Label: "基准宽度／缩放", Value: fmt.Sprintf("%d mm / %g 倍", c.PrintWidthMM, cal.Scale)}},

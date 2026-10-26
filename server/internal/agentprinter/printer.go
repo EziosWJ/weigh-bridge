@@ -48,7 +48,12 @@ var renderScript string
 
 // Prepare validates the view and strips control characters before rendering.
 func Prepare(s *Sheet) ([]byte, error) {
-	if s == nil || s.Template != "weighing-compact-v1" || s.Width != 210 || s.Height != 99 || len(s.Rows) != 5 {
+	if s == nil {
+		return nil, fmt.Errorf("unsupported print sheet")
+	}
+	legacy := s.Template == "weighing-compact-v1" && s.Width == 210 && s.Height == 99 && len(s.Rows) == 5
+	current := s.Template == "weighing-compact-v2" && s.Width == 241 && s.Height == 93 && (len(s.Rows) == 6 || s.CalibrationPattern && len(s.Rows) == 5)
+	if !legacy && !current {
 		return nil, fmt.Errorf("unsupported print sheet")
 	}
 	clean := func(text string) string {

@@ -12,13 +12,13 @@ func TestCalibrationGeometryAndLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	g := c.Calibration().Geometry()
-	if math.Abs(g.EffectiveFormMM-93.13) > 25.4/720 || g.FeedMM > g.EffectiveFormMM || math.Abs(g.HeightMM-86.36) > .001 {
+	if math.Abs(g.EffectiveFormMM-93.13) > 25.4/720 || g.FeedMM > g.EffectiveFormMM || math.Abs(g.HeightMM-82.9733333333) > .001 {
 		t.Fatalf("unexpected physical dimensions: %+v", g)
 	}
 	for _, mutate := range []func(*Config){
 		func(c *Config) { c.PrintScale = 1.3 },
 		func(c *Config) { c.PrintScale = .49 },
-		func(c *Config) { c.FormLengthMM = 85 },
+		func(c *Config) { c.FormLengthMM = 84 },
 		func(c *Config) { c.FormLengthMM = math.NaN() },
 		func(c *Config) { c.PrintScale = math.Inf(1) },
 	} {

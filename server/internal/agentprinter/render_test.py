@@ -13,6 +13,54 @@ def sheet():
         [{'label': '操作员', 'value': '管理员'}, {'label': '司机签字', 'value': '________________'}]]}
 
 
+def continuous_sheet():
+    s = sheet()
+    s.update(template='weighing-compact-v2', widthMm=241, heightMm=93)
+    first = s['rows'].pop(0)
+    first[0]['value'] = 'GB-NEW-9a6735f61d3b803e078773473802c348'
+    s['rows'][0][1]['value'] = '联调煤炭 / 一级'
+    s['rows'] = [[first[0]], first[1:]] + s['rows']
+    return s
+
+
+class ContinuousTableTest(unittest.TestCase):
+    def test_single_section_centering_and_feed(self):
+        s = continuous_sheet()
+        im = render.render_image(s)
+        width, sw, sh, dx, dy, form = render.geometry(s)
+        self.assertEqual(width, 1240)
+        self.assertLessEqual(abs(dx - (render.rounded(210 * 180 / 25.4) - sw) / 2), 1)
+        self.assertLessEqual(abs(dy - (render.rounded(93 * 180 / 25.4) - sh) / 2), 1)
+        self.assertEqual(im.size, (sw + dx, sh + dy))
+        self.assertLessEqual(math.ceil(im.height / 24) * 48, form)
+        data = render.escp(im, s)
+        start = data.index(b'\x1b(C\x02\x00') + 5
+        self.assertEqual(int.from_bytes(data[start:start + 2], 'little'), render.rounded(93 * 360 / 25.4))
+        # Six complete rows, including the full-width long number and tall signature.
+        for y in [90, 144, 210, 282, 402, 472, 572]:
+            self.assertTrue(all(im.getpixel((x + dx, y + dy)) == 0 for x in range(1, sw - 1)))
+
+    def test_offsets_translate_centered_content(self):
+        s = continuous_sheet()
+        base = render.render_image(s)
+        s['calibration'] = {'offsetXmm': 2, 'offsetYmm': 1}
+        im = render.render_image(s)
+        dx, dy = render.rounded(2 * 180 / 25.4), render.rounded(180 / 25.4)
+        self.assertEqual(im.crop((dx, dy, im.width, im.height)).tobytes(), base.tobytes())
+        s['calibration'] = {'offsetYmm': 10}
+        with self.assertRaises(ValueError):
+            render.render_image(s)
+
+    def test_calibration_sample_uses_same_centered_geometry(self):
+        s = continuous_sheet()
+        s['calibrationPattern'] = True
+        s['rows'] = [[{'label': '校准', 'value': '93 mm'}]] * 5
+        im = render.render_image(s)
+        _, sw, sh, dx, dy, _ = render.geometry(s)
+        self.assertEqual(im.getpixel((dx + sw // 2, dy)), 0)
+        self.assertEqual(im.getpixel((dx + sw // 2, dy + sh - 1)), 0)
+
+
 class TableTest(unittest.TestCase):
     def test_fractional_form_length_survives_escp_encoding(self):
         s = sheet()

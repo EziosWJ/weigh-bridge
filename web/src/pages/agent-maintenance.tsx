@@ -43,7 +43,7 @@ function settingsFromConfig(config: MaintenanceConfig): DeviceSettings {
   return {
     serial: { port: String(active.serialPort ?? ''), baud: numberOr(active.serialBaud, 9600) },
     print: {
-      queue: String(active.queue ?? ''), formLengthMm: numberOr(active.formLengthMm, 99),
+      queue: String(active.queue ?? ''), formLengthMm: numberOr(active.formLengthMm, 93),
       printWidthMm: numberOr(active.printWidthMm, 175), printScale: numberOr(active.printScale, 1),
       offsetXmm: numberOr(active.offsetXmm, 0), offsetYmm: numberOr(active.offsetYmm, 0),
     },

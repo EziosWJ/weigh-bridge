@@ -159,7 +159,7 @@ export function WeighingTicketPreviewPage() {
   const ticket = data.tickets.find(item => item.id === id);
   if (!canPrint) return <><PageHeader title="单据打印预览" /><p>当前账号没有打印预览权限。</p></>;
   return <>
-    <PageHeader title="单据打印预览" description="空白五联针打纸 · 每份约 210 × 99 mm · 五联一次复写" actions={<Link className={linkClass} to={`/weighing/tickets/${id}`}>返回单据详情</Link>} />
+    <PageHeader title="单据打印预览" description="空白五联针打纸 · 241 × 279 mm 三等分 · 单节 241 × 93 mm（含孔边） · 五联一次复写" actions={<Link className={linkClass} to={`/weighing/tickets/${id}`}>返回单据详情</Link>} />
     <DeviceBanner />
     {error && <p role="alert" className="text-error">{error}</p>}
     {ticket && <TicketPrintActions ticketId={ticket.id} />}
