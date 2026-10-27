@@ -95,9 +95,8 @@ func captureEvidenceOf(t *testing.T, sample weighing.Sample) struct {
 	return evidence
 }
 
-// A transient weight change during the image window invalidates the generation
-// even when the reading returns to the original value before confirmation.
-func TestPostgresMeasurementGenerationSurvivesUntilConfirmation(t *testing.T) {
+// Successful acquisition freezes evidence independently of later live readings.
+func TestPostgresSuccessfulCaptureIsFrozenUntilConfirmation(t *testing.T) {
 	db := openTemporaryDatabase(t, startBusinessPostgres(t).dsn)
 	t.Cleanup(func() { _ = db.Close() })
 	api := newMeasurementAPI(t, db)
@@ -126,25 +125,28 @@ func TestPostgresMeasurementGenerationSurvivesUntilConfirmation(t *testing.T) {
 	if sample.Source != "server" || sample.MeasurementGeneration == "" || evidence.Generation != sample.MeasurementGeneration || len(evidence.Images) != 2 || evidence.Status != "complete" {
 		t.Fatalf("new sample evidence=%+v sample=%+v", evidence, sample)
 	}
-	// Stable 100 -> 101 -> 100 after the image window and before confirmation.
+	// Change the reading after success and leave it changed at confirmation.
 	api.device.weight("101")
-	api.device.weight("100")
+	api.device.plate("川A54329")
+	business["driver"] = "核对时补齐司机"
 	checks := map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}
-	stale := map[string]any{"scaleId": 1, "clientId": "measurement-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "measurement-stale-0001", "checks": checks}
-	assertEnvelopeCode(t, serveJSON(api.router, http.MethodPost, "/api/weighing/tasks/first-confirmation", api.encode(t, stale), api.token), 200, 400, weighing.ErrConditions.Error())
-
-	// Re-capture from the restored stable reading and confirm successfully.
-	fresh := weighingData[weighing.Sample](t, api.router, http.MethodPost, "/api/weighing/samples", api.encode(t, sampleBody), api.token)
-	first := map[string]any{"scaleId": 1, "clientId": "measurement-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": fresh.ID, "requestId": "measurement-first-0001", "checks": checks}
+	first := map[string]any{"scaleId": 1, "clientId": "measurement-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "measurement-first-0001", "checks": checks, "reviewedVersions": map[string]any{"material": sample.Business.MaterialVersion, "party": sample.Business.PartyVersion, "carrier": sample.Business.CarrierVersion}}
 	confirmed := weighingData[weighing.CommandResult](t, api.router, http.MethodPost, "/api/weighing/tasks/first-confirmation", api.encode(t, first), api.token)
 	if confirmed.TaskID == 0 || confirmed.RecordID == 0 {
-		t.Fatalf("fresh confirmation failed: %+v", confirmed)
+		t.Fatalf("frozen confirmation failed: %+v", confirmed)
 	}
 
 	// Complete the second weighing so a formal ticket exists for title checks.
 	api.device.weight("10")
 	secondBody := map[string]any{"scaleId": 1, "clientId": "measurement-browser", "sessionToken": session.SessionToken, "business": business, "taskId": confirmed.TaskID}
 	secondSample := weighingData[weighing.Sample](t, api.router, http.MethodPost, "/api/weighing/samples", api.encode(t, secondBody), api.token)
+	// Failure and disconnection after acquisition must not revoke its snapshot.
+	api.device.controlAction(`{"action":"unstable"}`)
+	api.device.wait(func(state agentbridge.State) bool { return !state.Stable })
+	api.device.controlAction(`{"action":"fault"}`)
+	api.device.wait(func(state agentbridge.State) bool { return !state.DeviceOK })
+	api.device.controlAction(`{"action":"disconnect"}`)
+	api.device.wait(func(state agentbridge.State) bool { return !state.Online })
 	secondConfirm := map[string]any{"scaleId": 1, "clientId": "measurement-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": secondSample.ID, "requestId": "measurement-second-0001", "version": confirmed.TaskVersion, "checks": checks}
 	completed := weighingData[weighing.CommandResult](t, api.router, http.MethodPost, "/api/weighing/tasks/"+itoa(confirmed.TaskID)+"/second-confirmation", api.encode(t, secondConfirm), api.token)
 	if completed.TicketID == 0 {
@@ -155,6 +157,12 @@ func TestPostgresMeasurementGenerationSurvivesUntilConfirmation(t *testing.T) {
 	// rewrite the stored snapshot or the printed sheet.
 	ticketPath := "/api/weighing/tickets/" + itoa(completed.TicketID)
 	ticket := weighingData[weighing.TicketView](t, api.router, http.MethodGet, ticketPath, "", api.token)
+	if ticket.Business.Driver != "核对时补齐司机" {
+		t.Fatalf("reviewed business correction was lost: %+v", ticket.Business)
+	}
+	if ticket.OriginalGross.String() != "100" || ticket.OriginalTare.String() != "10" {
+		t.Fatalf("confirmation replaced frozen weights with live readings: %+v", ticket)
+	}
 	if ticket.TicketTitle == "" || ticket.PrintSheet == nil || !strings.Contains(ticket.PrintSheet.Title, ticket.TicketTitle) {
 		t.Fatalf("ticket title snapshot missing: %+v", ticket)
 	}

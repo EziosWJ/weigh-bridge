@@ -31,9 +31,7 @@ func (s *Service) Reweigh(ctx context.Context, id int64, in ReweighInput, e audi
 	if !validRequestID(in.RequestID) || in.Version < 1 || !validReason(in.Reason) {
 		return CommandResult{}, ErrInvalid
 	}
-	return s.confirmCommand(ctx, e.Metadata.ActorID, in.RequestID, in.ScaleID, in.SampleID, func(ctx context.Context) (CommandResult, error) {
-		return s.store.Reweigh(ctx, id, in, e)
-	})
+	return s.store.Reweigh(ctx, id, in, e)
 }
 func (s *Service) ReopenTicket(ctx context.Context, id int64, in ReopenInput, e audit.Event) (CommandResult, error) {
 	if !validRequestID(in.RequestID) || in.TaskVersion < 1 || !validReason(in.Reason) {

@@ -39,7 +39,7 @@ useWeighingStore.setState({
 function ReviewFixture() {
  const [confirmed, setConfirmed] = useState(false);
  const required = scenario === 'required-review';
- return <><WeighingReviewDialog title="首磅（毛重）" value={{ plate: '晋A12345', direction: '入厂卸货', material: '高粱', partyLabel: '供货方', party: '测试供货方', weight: 18.665, kind: '毛重', supplementary: [], capture: { id: 'optional-review', source: 'server', imageSrc: '', images: [], at: new Date().toISOString(), weight: 18.665, captureRequired: required, imageStatus: required ? 'capture_failed' : 'disabled' } }} invalidReason={scenario === 'changed-review' ? '强制抓拍配置已变更，请重新采集' : ''} onCancel={() => {}} onMismatch={() => {}} onConfirm={() => setConfirmed(true)} /><output hidden>{confirmed ? 'confirmed' : 'waiting'}</output></>;
+ return <><WeighingReviewDialog title="首磅（毛重）" value={{ plate: '晋A12345', direction: '入厂卸货', material: '高粱', partyLabel: '供货方', party: '测试供货方', weight: 18.665, kind: '毛重', supplementary: [], capture: { id: 'optional-review', source: 'server', imageSrc: '', images: [], at: new Date().toISOString(), weight: 18.665, captureRequired: required, imageStatus: required ? 'capture_failed' : 'disabled' } }} invalidReason={scenario === 'changed-business-review' ? '业务资料已变更，请返回重新核对' : ''} onCancel={() => {}} onMismatch={() => {}} onConfirm={() => setConfirmed(true)} /><output hidden>{confirmed ? 'confirmed' : 'waiting'}</output></>;
 }
 
 export function Fixture() {

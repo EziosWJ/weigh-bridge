@@ -96,16 +96,13 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
 		assertCaptureEvidence(t, sample.Evidence, false, "capture_failed", 0)
 		firstBody := map[string]any{"scaleId": 1, "clientId": "optional-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": fmt.Sprintf("optional-stale-%d", index), "checks": checks}
-		// A false -> true -> false cycle must invalidate the old sample as well.
+		// Policy edits apply to later acquisitions, not this frozen no-image sample.
 		toggle(true)
-		toggle(false)
-		assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tasks/first-confirmation", encode(firstBody), token), 200, 400, weighing.ErrCapturePolicyChanged.Error())
-		sample = weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
-		firstBody["sampleId"], firstBody["requestId"] = sample.ID, fmt.Sprintf("optional-first-%d", index)
 		first := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/first-confirmation", encode(firstBody), token)
 		if first.TaskID == 0 {
 			t.Fatal("no first record")
 		}
+		toggle(false)
 		// A mixed-policy trip reuses its confirmed no-image first basis.
 		if direction == "outbound" {
 			frames.failAll(false)

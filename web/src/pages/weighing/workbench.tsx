@@ -14,6 +14,7 @@ import { normalizePlate, plateError } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import { directionLabels, roleLabels, taskStatusLabels, type PlateEvidence, type FinalWeightInput, type WeighingCommand, type WeighingState } from '@/types/weighing';
+import { sameWeighingReview } from '@/lib/weighing/review';
 import { weightValues } from '@/lib/weighing/weights';
 import { formatWeight, formatWeightValue } from '@/lib/weighing/weights';
 import { BusinessFields } from './shared';
@@ -82,7 +83,7 @@ function WorkbenchContent() {
   const needsDayVerification = !!selected?.crossDayDoubt;
   const conditionIssue = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : !data.config.online ? 'Agent 离线或重量数据已过期' : data.config.deviceError ? '设备异常，请恢复后重新采集' : !data.config.stable ? '重量未稳定，请等待设备稳定' : !Number.isFinite(data.config.weight) || data.config.weight <= 0 ? '等待有效上磅重量' : '';
   const shouldVerifyDay = !conditionIssue && needsDayVerification;
-  const blocked = conditionIssue || device?.captureBlockedReason || (needsDayVerification ? '请先核实跨天运输，再继续称重' : '');
+  const businessBlocked = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : needsDayVerification ? '请先核实跨天运输，再继续称重' : '';
   const taskInfo = successfulTask || selected;
   const summaryPlate = taskInfo?.plate || data.draft.plate || plate;
   const summaryDirection = taskInfo?.direction ?? data.draft.direction;
@@ -94,6 +95,7 @@ function WorkbenchContent() {
   const displayKind = confirmedRecord ? (confirmedRecord.kind === 'gross' ? '毛重' : '皮重') : (summaryDirection === 'outbound') === (displayStage === 'first') ? '皮重' : '毛重';
   const hasWeighingContext = located || !!taskInfo || awaitingResult;
   const sampleReady = data.sampleReady && data.capture?.plate === summaryPlate;
+  const blocked = businessBlocked || (!sampleReady ? conditionIssue || device?.captureBlockedReason : '') || '';
   useEffect(() => {
     const resume = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.data?.type !== 'weighbridge-locate-task') return;
@@ -186,10 +188,10 @@ function WorkbenchContent() {
   }
 
   async function confirm(reviewed: WeighingState, finalWeights: FinalWeightInput) {
-    if (reviewed !== useWeighingStore.getState().data) {
+    if (!sameWeighingReview(reviewed, useWeighingStore.getState().data, selected?.id)) {
       setReview(null);
       setReviewError('');
-      warn('数据已变化', '请重新采集并核对后再提交。');
+      warn('核对内容已变化', '请返回核对当前资料后再提交。');
       return;
     }
     const checked = true;
@@ -339,8 +341,8 @@ function WorkbenchContent() {
     }
     setFeedback('');
     setBusinessOpen(false);
-    setReview({ data, title: `${stage === 'first' ? '首磅' : '回磅'}（${kind}）`, value: { plate: summaryPlate, direction: directionLabels[summaryDirection], material: summaryMaterial, partyLabel: summaryDirection === 'inbound' ? '供货方' : '收货方', party: summaryParty, weight: data.config.weight, kind, capture: data.capture,
-        original: stage === 'second' && firstRecord ? weightValues(firstRecord.kind === 'gross' ? firstRecord.weight : data.config.weight, firstRecord.kind === 'tare' ? firstRecord.weight : data.config.weight) : undefined,
+    setReview({ data, title: `${stage === 'first' ? '首磅' : '回磅'}（${kind}）`, value: { plate: summaryPlate, direction: directionLabels[summaryDirection], material: summaryMaterial, partyLabel: summaryDirection === 'inbound' ? '供货方' : '收货方', party: summaryParty, weight: data.capture!.weight, kind, capture: data.capture,
+        original: stage === 'second' && firstRecord ? weightValues(firstRecord.kind === 'gross' ? firstRecord.weight : data.capture!.weight, firstRecord.kind === 'tare' ? firstRecord.weight : data.capture!.weight) : undefined,
         firstWeight: firstRecord ? `${firstRecord.kind === 'gross' ? '毛重' : '皮重'} ${formatWeight(firstRecord.weight)} · ${beijingTime(firstRecord.at)}` : undefined,
         supplementary: [
           { label: '承运方', value: selected ? selected.carrierName ?? '' : data.parties.find(item => item.id === data.draft.carrierId)?.name ?? '' },
@@ -427,7 +429,7 @@ function WorkbenchContent() {
     </Dialog>
     {review && <WeighingReviewDialog
       title={review.title}
-      invalidReason={review.data !== data || !canWeigh || !!blocked || !!requiredHint || !sampleReady ? syncNotice || blocked || '数据或采集条件已变化，请返回重新采集并核对。' : ''}
+      invalidReason={!sameWeighingReview(review.data, data, selected?.id) || !canWeigh || !!businessBlocked || !!requiredHint || !sampleReady ? syncNotice || businessBlocked || '核对资料或采集结果已变更，请返回重新核对。' : ''}
       value={review.value}
       submitting={submitting}
       submitError={reviewError}

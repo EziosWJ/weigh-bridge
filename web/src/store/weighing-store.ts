@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ApiError } from '@/lib/api-error';
+import { sameWeighingReview } from '@/lib/weighing/review';
 import { plateError } from '@/lib/weighing/plate';
 import { workflowApi, task as taskView, ticket as ticketView, type CommandResult, type WireSample, type WireSession, type WireTicket } from '@/api/weighing-workflow';
 import type { ApiPageResult } from '@/types/api';
@@ -220,7 +221,9 @@ export const useWeighingStore = create<Store>((set, get) => ({
       const beforeTask = expected.tasks.find(t => t.id === taskId);
       const afterTask = current.tasks.find(t => t.id === taskId);
       const sameTask = !!beforeTask && !!afterTask && beforeTask.version === afterTask.version;
-      const sameReview = command.type === 'reopenTicket'
+      const sameReview = command.type === 'firstWeigh' || command.type === 'confirm'
+        ? sameWeighingReview(expected, current, command.type === 'confirm' ? command.taskId : undefined)
+        : command.type === 'reopenTicket'
         ? sameTask && previousTicket?.status === currentTicket?.status
         : command.type === 'reweigh' && sameTask && !!current.capture && expected.capture?.id === current.capture.id && current.sampleReady;
       if (!sameReview) throw new Error('数据已变化，请重新采集并核对。');
@@ -245,10 +248,6 @@ export const useWeighingStore = create<Store>((set, get) => ({
           await ensureLease();
           const target = command.stage ? [...(data.tasks.find(t => t.id === command.taskId)?.records ?? [])].reverse().find(r => r.stage === command.stage) : undefined;
           const value = await workflowApi.post<WireSample>('/samples', { scaleId: lease!.scaleId, ...sessionInput(), taskId: command.taskId ? Number(command.taskId) : null, targetRecordId: target ? Number(target.id) : null, plateEvidence: command.plateEvidence ?? null, business: businessInput(data.draft) });
-          if (!get().data.config.online || !get().data.config.stable || Number(value.weight) !== get().data.config.weight) {
-            await workflowApi.post(`/samples/${value.id}/invalidate`, sessionInput());
-            throw new Error('采集期间条件已变化，请重新采集并核对。');
-          }
           sample = value;
           set({ syncNotice: '' });
           updateData({ sampleReady: true, capture: { ...value.evidence, id: String(value.id), stage: value.stage, weight: Number(value.weight), plateEvidence: value.plateEvidence } });
@@ -348,17 +347,12 @@ setInterval(() => {
   const previous = useWeighingStore.getState().device;
   const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.capturePolicyRevision !== device.capturePolicyRevision || previous.captureRequired !== device.captureRequired || previous.captureBlockedReason !== device.captureBlockedReason;
   useWeighingStore.setState({ device });
-  const policyChanged = !!sample && sample.evidence.capturePolicyRevision !== device.capturePolicyRevision;
-  if (sample && (device.captureBlockedReason || !device.online || !device.stable || !device.deviceOk || (previous && previous.revision !== device.revision) || policyChanged)) {
-    clearSample();
-    if (policyChanged) useWeighingStore.setState({ syncNotice: '强制抓拍配置已变更，请重新采集并核对。' });
-  }
   if (!meaningful) return;
   const config = useWeighingStore.getState().data.config;
   updateData({ config: { ...config, weight: Number(device.weight), stable: device.stable, online: device.online, timedOut: !device.online, deviceError: !device.deviceOk, evidence: device.captureRequired === false || useWeighingStore.getState().data.capture?.imageStatus === 'complete' } });
  }).catch(() => {
   if (useAuthStore.getState().token !== token) return;
-  clearSample(); const config = useWeighingStore.getState().data.config;
+  const config = useWeighingStore.getState().data.config;
   if (config.online) updateData({config:{...config,online:false,stable:false,timedOut:true}});
  }).finally(() => { pollingDevice = false; });
 }, 500);

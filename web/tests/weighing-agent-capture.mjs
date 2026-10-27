@@ -53,7 +53,6 @@ try {
   const business = page.getByRole('dialog', { name: '录入运输资料', exact: true });
   if (await business.isVisible()) await page.getByRole('button', { name: '关闭运输资料', exact: true }).click();
   await page.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
-  await page.getByRole('group', { name: '抓拍摄像头', exact: true }).getByRole('button', { name: '装车区', exact: true }).click();
   await page.getByRole('img', { name: '装车区抓拍', exact: true }).waitFor();
 
   failCapture = true;
@@ -85,11 +84,11 @@ try {
   await open('required-review');
   await confirm.waitFor();
   assert.equal(await confirm.isDisabled(), true, '强制抓拍无图仍须阻止确认');
-  await open('changed-review');
+  await open('changed-business-review');
   await confirm.waitFor();
-  assert.equal(await confirm.isDisabled(), true, '策略变更后旧核对窗口必须失效');
+  assert.equal(await confirm.isDisabled(), true, '业务资料变更后旧核对窗口必须重新核对');
   assert.deepEqual(errors, []);
-  console.log('首次抓拍回归通过：无预览可请求采集、按真实摄像头名称展示多图、失败不生成采样、不自动确认、设备与权限限制保留；可选无图采集及人工确认可用，强制和策略失效仍阻断。');
+  console.log('首次抓拍回归通过：无预览可请求采集、按真实摄像头名称展示多图、失败不生成采样、不自动确认、设备与权限限制保留；可选无图采集及人工确认可用，强制无图和业务资料变更仍阻断。');
 } finally {
   clearTimeout(deadline);
   await browser?.close();

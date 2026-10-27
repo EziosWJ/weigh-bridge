@@ -271,30 +271,27 @@ try {
       await page.screenshot({ path: resolve(root, '.task/industrial-workbench-business-dialog.png'), fullPage: true });
       await business.getByRole('button', { name: '完成录入并核对', exact: true }).click();
       assert.equal(await business.isVisible(), false, '开始核对时应关闭资料弹窗');
-      // Cross the former 30-second deadline. There is no confirmation countdown:
-      // the sample may only become invalid if the device basis actually changed
-      // (for example a local processing stall makes the data stale). A timer-based
-      // invalidation with an unchanged revision would be a product defect.
-      const revisionBefore = (await call('/api/weighing/scales/1/device')).revision;
+      // A successful sample survives time, later vehicle movement and disconnect.
       await delay(31_000);
-      const revisionAfter = (await call('/api/weighing/scales/1/device')).revision;
+      await setWeight(29);
+      await fetch(`${mockUrl}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'disconnect' }) });
+      await page.waitForFunction(() => document.body.textContent.includes('Agent 离线'));
       const review = page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true });
-      assert.equal(await review.isVisible(), true, '超过原30秒限制仍保留核对窗口');
-      const confirmButton = review.getByRole('button', { name: '确认首磅（毛重）', exact: true });
-      if (!await confirmButton.isEnabled()) {
-        assert.notEqual(revisionAfter, revisionBefore, '采样失效只能因为设备依据变化，不能存在固定确认倒计时');
-        assert.ok(await review.getByRole('alert').count(), '设备依据变化时必须提示返回重新采集');
-        await review.getByRole('button', { name: '返回重新采集', exact: true }).click();
-        const recapture = page.getByRole('button', { name: '采集重量', exact: true });
-        if (await recapture.count()) await recapture.click();
-        else await page.getByRole('button', { name: '重新采集重量', exact: true }).click();
-        await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
-      }
-      assert.equal(await review.getByRole('alert').count(), 0, '有效设备依据不得因时间产生失效提示');
-      console.log('browser: no confirmation countdown; validity follows the device basis');
+      assert.equal(await review.isVisible(), true, '设备变化后仍保留核对窗口');
+      assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isEnabled(), true, '设备离线不阻止确认已采集结果');
+      assert.equal(await review.getByRole('alert').count(), 0, '设备变化不使成功采集失效');
+      // Reopening must keep the sampled 30 t, even though live weight is now 29 t.
+      await review.getByRole('button', { name: '关闭核对', exact: true }).click();
+      await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
+      assert.equal(await review.getByText('30 吨', { exact: true }).count(), 1, '核对使用采集重量，不能使用实时读数');
+      await page.route('**/api/weighing/scales/1/device', route => route.abort(), { times: 1 });
+      await delay(1000);
+      assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isEnabled(), true, '状态查询失败不清除已采集结果');
+      console.log('browser: frozen capture remains confirmable after weight change, disconnect and failed polling');
     }
     await reviewAndConfirm('首磅', direction === 'inbound' ? '毛重' : '皮重');
     await page.getByRole('button', { name: '办理下一辆车', exact: true }).click();
+    await fetch(`${mockUrl}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'connect' }) });
     await setWeight(secondWeight);
     await page.reload();
     await locate(plate);
@@ -362,8 +359,8 @@ try {
   assert.match(await sheet.innerText(), /司机签字/);
   assert.equal((await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`)).length, attemptsBeforePreview.length, '查看或预览不发起打印');
   const paperSize = await sheet.evaluate(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height }));
-  assert.ok(Math.abs(paperSize.width - 210 * 96 / 25.4) < 1);
-  assert.ok(Math.abs(paperSize.height - 99 * 96 / 25.4) < 1, '常规内容适配三等分纸张');
+  assert.ok(Math.abs(paperSize.width - 241 * 96 / 25.4) < 1);
+  assert.ok(Math.abs(paperSize.height - 93 * 96 / 25.4) < 1, '常规内容适配三等分纸张');
   await page.getByRole('link', { name: '返回单据详情', exact: true }).click();
   await page.getByRole('button', { name: '打印', exact: true }).click();
   assert.equal(new URL(page.url()).pathname, `/weighing/tickets/${currentTicket.id}`, '详情直接打印，无需预览');
@@ -425,7 +422,7 @@ try {
   await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
   await page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true }).getByRole('button', { name: '确认首磅（毛重）', exact: true }).click();
   await page.getByRole('heading', { name: '提交结果待核实', exact: true }).waitFor();
-  await page.reload();
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '查询上次提交结果', exact: true }).click();
   await page.getByRole('heading', { name: '首磅已完成', exact: true }).waitFor();
   const recovered = (await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54323')}`)).records;
@@ -484,7 +481,8 @@ try {
   assert.match(await difference('系统计算：毛重调整差额').innerText(),/—/);
   await invalidDialog.getByRole('button',{name:'不一致，返回修改',exact:true}).click();
   await setWeight(1.2);
-  await page.getByRole('button',{name:'采集重量',exact:true}).click();
+  // Live changes preserve the old sample; replacing it is now explicit.
+  await page.getByRole('button',{name:'重新采集重量',exact:true}).click();
   await page.getByRole('button',{name:'开始核对回磅（皮重）',exact:true}).click();
   invalidDialog=page.getByRole('dialog',{name:'核对回磅（皮重）',exact:true});
   await invalidDialog.getByLabel('最终毛重（吨）',{exact:true}).fill('4.5');

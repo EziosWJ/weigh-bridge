@@ -3,7 +3,6 @@ package weighing
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -38,8 +37,8 @@ func (s *Service) ChangeSession(ctx context.Context, id int64, action string, in
 //	under one deadline -> Agent end verification -> persist the sample.
 //
 // The camera set and config version are frozen before the window opens. The
-// Agent generation is kept on the sample so confirmation can verify the same
-// basis even after a transient weight change that restored the original value.
+// Agent generation records the verified capture window. A successful sample is
+// frozen; operator confirmation does not depend on subsequent device state.
 func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (Sample, error) {
 	release, gateErr := s.maintenance.enter()
 	if gateErr != nil {
@@ -109,8 +108,8 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 		candidate, recognizedAt, plateSource = observed.Candidate, observed.At, "agent"
 	}
 	// Take the device state lock only for the local commit, never across the
-	// capture interval. Any change after end is rejected here; changes between
-	// end and operator confirmation are rejected by verify.
+	// capture interval. Conditions are checked through sample persistence only;
+	// later device changes do not revoke a successful sample.
 	state, unlockState, err := s.devices.Guard(in.ScaleID, 0)
 	if err != nil {
 		return Sample{}, ErrConditions
@@ -206,53 +205,6 @@ func (s *Service) cancelMeasurement(scale int64, generation, reason string) {
 	_, _ = s.devices.Command(ctx, scale, p.TypeMeasurementCancelRequest, p.MeasurementCancelRequest{Generation: generation, Reason: reason}, measurementCancelTimeout)
 }
 
-// verifySample re-checks the persisted measurement basis at operator
-// confirmation. A replay of an already committed request is not re-verified:
-// its stored result remains authoritative and must not depend on a live device.
-func (s *Service) verifySample(ctx context.Context, actor int64, requestID string, sampleID int64) error {
-	if op, err := s.store.Operation(ctx, actor, requestID); err == nil && op.Status != "not_found" {
-		return nil
-	}
-	sample, err := s.store.Sample(ctx, sampleID)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return ErrNotFound
-		}
-		return ErrConditions
-	}
-	if sample.MeasurementGeneration == "" {
-		// Historical samples retain the original fresh device revision rule.
-		return nil
-	}
-	if s.devices == nil {
-		return ErrConditions
-	}
-	if s.camera != nil && sample.CameraConfigVersion > 0 {
-		version, err := s.camera.ConfigVersion(ctx)
-		if err != nil || version != sample.CameraConfigVersion {
-			return ErrCameraConfigChanged
-		}
-	}
-	if err := s.devices.RequireCapability(sample.ScaleID, p.CapabilityMeasurementWindow); err != nil {
-		return ErrMeasurementCapability
-	}
-	if invalidated, ok := s.devices.LastMeasurementInvalidation(sample.ScaleID); ok && invalidated.Generation == sample.MeasurementGeneration {
-		return ErrConditions
-	}
-	message, err := s.devices.Command(ctx, sample.ScaleID, p.TypeMeasurementVerifyRequest, p.MeasurementVerifyRequest{Generation: sample.MeasurementGeneration}, measurementCommandTimeout)
-	if err != nil {
-		return ErrConditions
-	}
-	var result p.MeasurementVerifyResult
-	if message.Type != p.TypeMeasurementVerifyResult || json.Unmarshal(message.Payload, &result) != nil {
-		return ErrConditions
-	}
-	if !result.Valid || result.Generation != sample.MeasurementGeneration || result.State.Unit != "t" || !result.State.Stable || !result.State.DeviceOK || result.State.Weight != sample.Weight {
-		return ErrConditions
-	}
-	return nil
-}
-
 func (s *Service) InvalidateSample(ctx context.Context, id int64, in SessionInput, actor int64) error {
 	sample, lookupErr := s.store.Sample(ctx, id)
 	if err := s.store.InvalidateSample(ctx, id, in, actor); err != nil {
@@ -268,9 +220,7 @@ func (s *Service) ConfirmFirst(ctx context.Context, in ConfirmationInput, e audi
 	if !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleID < 1 || in.TaskID != nil {
 		return CommandResult{}, ErrInvalid
 	}
-	return s.confirmCommand(ctx, e.Metadata.ActorID, in.RequestID, in.ScaleID, in.SampleID, func(ctx context.Context) (CommandResult, error) {
-		return s.store.ConfirmFirst(ctx, in, e)
-	})
+	return s.store.ConfirmFirst(ctx, in, e)
 }
 func (s *Service) Operation(ctx context.Context, actor int64, key string) (Operation, error) {
 	if !validRequestID(key) {
@@ -294,9 +244,7 @@ func (s *Service) ConfirmSecond(ctx context.Context, id int64, in ConfirmationIn
 		return CommandResult{}, ErrInvalid
 	}
 	in.TaskID = ptr(id)
-	return s.confirmCommand(ctx, e.Metadata.ActorID, in.RequestID, in.ScaleID, in.SampleID, func(ctx context.Context) (CommandResult, error) {
-		return s.store.ConfirmSecond(ctx, id, in, e)
-	})
+	return s.store.ConfirmSecond(ctx, id, in, e)
 }
 func (s *Service) FindTicket(ctx context.Context, id int64) (TicketView, error) {
 	return s.store.FindTicket(ctx, id)

@@ -403,9 +403,6 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 	if err != nil {
 		return sample, err
 	}
-	if err := validateSamplePolicy(ctx, tx, sample); err != nil {
-		return sample, err
-	}
 	if !in.Checks.Valid() {
 		return sample, ErrInvalid
 	}
@@ -415,18 +412,8 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 	if sample.ScaleID != in.ScaleID || sample.OwnerUserID != actor || sample.ClientID != in.ClientID || sample.SessionGeneration != session.Generation || sample.InvalidatedAt != nil || sample.Stable != 1 || sample.DeviceOK != 1 || sample.Weight <= 0 {
 		return sample, ErrConditions
 	}
-	device, ok := ctx.Value(deviceKey{}).(deviceContext)
-	if !ok || sample.Weight != device.State.Weight {
-		return sample, ErrConditions
-	}
-	// New samples are bound to the Agent measurement generation, which the
-	// service verified immediately before this transaction. Historical samples
-	// keep the original fresh device revision rule.
-	if sample.MeasurementGeneration == "" {
-		if sample.DeviceRevision != device.State.Revision {
-			return sample, ErrConditions
-		}
-	} else if sample.MeasurementVerifiedAt == nil {
+	// Validate the persisted capture evidence, never the current instrument.
+	if sample.MeasurementGeneration != "" && sample.MeasurementVerifiedAt == nil {
 		return sample, ErrConditions
 	}
 	var used int64
@@ -586,16 +573,14 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 		if err != nil {
 			return out, err
 		}
-		if sample.Business.MaterialID > 0 && sample.Business.PartyID > 0 {
-			if hash(business) != sample.BusinessHash {
-				return out, ErrConditions
-			}
-		} else {
-			if business.Plate != sample.Plate || business.Direction != sample.Business.Direction || in.ReviewedVersions == nil {
-				return out, ErrConditions
-			}
+		// A first capture binds the vehicle and loading direction. Ordinary
+		// business details may be completed or corrected before final review.
+		if business.Plate != sample.Plate || business.Direction != sample.Business.Direction {
+			return out, ErrConditions
+		}
+		if hash(business) != sample.BusinessHash {
 			versions := in.ReviewedVersions
-			if versions.Material != business.MaterialVersion || versions.Party != business.PartyVersion || versions.Carrier != business.CarrierVersion {
+			if versions == nil || versions.Material != business.MaterialVersion || versions.Party != business.PartyVersion || versions.Carrier != business.CarrierVersion {
 				return out, ErrConflict
 			}
 		}

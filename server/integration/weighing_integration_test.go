@@ -210,12 +210,13 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	if manualEvidence["source"] != "manual" || manualEvidence["candidate"] != "" {
 		t.Fatalf("manual plate fabricated recognition: %+v", manualEvidence)
 	}
-	// A stable reading after instability cannot revive the prior captured basis.
+	// Explicitly discarded samples remain unusable even after device recovery.
 	revision := device.hub.State(1).Revision
 	device.controlAction(`{"action":"unstable"}`)
 	device.wait(func(v agentbridge.State) bool { return !v.Stable && v.Revision != revision })
 	device.controlAction(`{"action":"stable"}`)
 	device.wait(func(v agentbridge.State) bool { return v.Stable })
+	assertEnvelopeCode(t, serveJSON(router, "POST", fmt.Sprintf("/api/weighing/samples/%d/invalidate", sample.ID), encode(map[string]any{"clientId": "browser-a", "sessionToken": session.SessionToken}), token), 200, 200, "success")
 	staleInput := map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "unstable-first-0001", "checks": map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}}
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tasks/first-confirmation", encode(staleInput), token), 200, 400, weighing.ErrConditions.Error())
 	device.plate("川A12346")
@@ -410,6 +411,8 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	conditions["weight"] = "12"
 	device.weight(conditions["weight"].(string))
 	replacement := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(oldCaptureBody), token)
+	device.controlAction(`{"action":"down"}`)
+	device.wait(func(state agentbridge.State) bool { return state.Weight == 0 })
 	replaceBody := map[string]any{"requestId": "reweigh-second-0001", "version": voidedAgain.TaskVersion, "scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": replacement.ID, "targetRecordId": completed.RecordID, "checks": checks, "sameLoadConfirmed": true, "otherBasisValid": true, "reason": "空车重称"}
 	replaced := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(first.TaskID)+"/reweighs", encode(replaceBody), token)
 	repeated := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(first.TaskID)+"/reweighs", encode(replaceBody), token)
@@ -421,6 +424,9 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("single replacement chain: %+v", taskAfterReplacement)
 	}
 	lastRecord := taskAfterReplacement.Records[len(taskAfterReplacement.Records)-1]
+	if lastRecord.Weight.String() != "12" {
+		t.Fatalf("reweigh did not use frozen sample: %+v", lastRecord)
+	}
 	if lastRecord.ReplacesRecordID == nil || *lastRecord.ReplacesRecordID != completed.RecordID || lastRecord.RetainedRecordID == nil || *lastRecord.RetainedRecordID != first.RecordID {
 		t.Fatalf("replacement links: %+v", lastRecord)
 	}

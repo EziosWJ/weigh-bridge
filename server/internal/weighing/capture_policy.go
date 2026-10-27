@@ -2,7 +2,6 @@ package weighing
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"gorm.io/gorm"
 )
@@ -28,18 +27,4 @@ func capturePolicyMatches(ctx context.Context, tx *gorm.DB) (sysconfig.CapturePo
 		return current, ErrCapturePolicyChanged
 	}
 	return current, nil
-}
-func validateSamplePolicy(ctx context.Context, tx *gorm.DB, sample Sample) error {
-	current, err := sysconfig.ReadCapturePolicy(ctx, tx, true)
-	if err != nil {
-		return err
-	}
-	var saved struct {
-		Required *bool  `json:"captureRequired"`
-		Revision string `json:"capturePolicyRevision"`
-	}
-	if json.Unmarshal(sample.Evidence, &saved) != nil || saved.Required == nil || *saved.Required != current.Required || saved.Revision != current.Revision {
-		return ErrCapturePolicyChanged
-	}
-	return nil
 }
