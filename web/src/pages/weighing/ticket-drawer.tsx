@@ -1,5 +1,5 @@
 import { useDeferredValue, useState } from 'react';
-import { FileText, RefreshCw, X } from 'lucide-react';
+import { CalendarDays, FileText, RefreshCw, RotateCcw, Search, X } from 'lucide-react';
 import type { WireTicket } from '@/api/weighing-workflow';
 import { DataTable } from '@/components/common/data-table';
 import { EmptyState } from '@/components/common/empty-state';
@@ -10,24 +10,26 @@ import {
   Dialog,
   DialogClose,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogOverlay,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 import { useWeighingPage, useWeighingSummary } from '@/hooks/use-weighing-page';
 import { beijingDate } from '@/lib/weighing/query';
+import { useWeighingStore } from '@/store/weighing-store';
 import type { DataTableColumn } from '@/types';
 import { directionLabels, printStatusLabels, type WeighingFilter } from '@/types/weighing';
-import { ListDate, WeighingFilters } from './shared';
+import { ListDate } from './shared';
 
 const linkClass = 'text-primary hover:underline';
 
 const ticketColumns: DataTableColumn<WireTicket>[] = [
   {
-    title: '出单时间',
+    title: '出单时间 ↓',
     key: 'issuedAt',
-    width: 128,
+    width: 136,
     render: (_, row) => <ListDate value={row.issuedAt} />,
   },
   {
@@ -85,6 +87,7 @@ type TicketDrawerProps = {
 };
 
 export function TicketDrawer({ siteId, siteName, onClose }: TicketDrawerProps) {
+  const { materials, parties } = useWeighingStore(state => state.data);
   const [filter, setFilter] = useState<WeighingFilter>({ siteId: String(siteId) });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -100,43 +103,76 @@ export function TicketDrawer({ siteId, siteName, onClose }: TicketDrawerProps) {
       : !filter.from && !filter.to
         ? 'all'
         : 'custom';
+  const hasFilters = Boolean(filter.keyword?.trim() || filter.status || filter.direction || filter.materialId || filter.partyId || filter.from || filter.to);
 
   const changeFilter = (next: WeighingFilter) => {
     setFilter({ ...next, siteId: String(siteId) });
     setPage(1);
   };
-  const setDateRange = (from?: string, to?: string) => {
-    changeFilter({ ...filter, from, to });
-  };
+  const updateFilter = (patch: Partial<WeighingFilter>) => changeFilter({ ...filter, ...patch });
+  const setDateRange = (from?: string, to?: string) => updateFilter({ from, to });
 
   return <Dialog open onOpenChange={next => { if (!next) onClose(); }} trapFocus restoreFocus lockScroll>
     <DialogOverlay />
     <DialogContent className="ticket-drawer">
       <DialogHeader className="ticket-drawer-header">
-        <div className="min-w-0">
-          <DialogTitle className="flex items-center gap-2"><FileText className="h-4 w-4" aria-hidden />过磅单列表</DialogTitle>
-          <DialogDescription>按出单时间倒序 · 当前厂区{siteName ? `：${siteName}` : ''}</DialogDescription>
-        </div>
+        <DialogTitle className="flex items-center gap-2 text-lg"><FileText className="h-4 w-4" aria-hidden />过磅单列表</DialogTitle>
         <DialogClose aria-label="关闭过磅单列表"><X className="h-4 w-4" aria-hidden /></DialogClose>
       </DialogHeader>
 
       <div className="ticket-drawer-body">
-        <div className="ticket-drawer-presets" aria-label="出单日期快捷筛选">
-          <span>出单日期</span>
-          <Button size="sm" variant={datePreset === 'today' ? 'primary' : 'secondary'} aria-pressed={datePreset === 'today'} onClick={() => setDateRange(today, today)}>今天</Button>
-          <Button size="sm" variant={datePreset === 'week' ? 'primary' : 'secondary'} aria-pressed={datePreset === 'week'} onClick={() => setDateRange(weekAgo, today)}>近 7 天</Button>
-          <Button size="sm" variant={datePreset === 'all' ? 'primary' : 'secondary'} aria-pressed={datePreset === 'all'} onClick={() => setDateRange(undefined, undefined)}>全部日期</Button>
-        </div>
+        <section className="ticket-drawer-filter-panel" aria-label="过磅单筛选">
+          <div className="ticket-drawer-filter-grid">
+            <div className="ticket-drawer-search">
+              <Search className="h-4 w-4" aria-hidden />
+              <Input aria-label="车牌或编号" placeholder="车牌 / 单号 / 任务号" value={filter.keyword ?? ''} onChange={event => updateFilter({ keyword: event.target.value })} />
+            </div>
+            <Select aria-label="筛选状态" value={filter.status ?? ''} onChange={event => updateFilter({ status: event.target.value })}>
+              <option value="">全部状态</option>
+              <option value="valid">有效</option>
+              <option value="void">作废</option>
+            </Select>
+            <Select aria-label="筛选方向" value={filter.direction ?? ''} onChange={event => updateFilter({ direction: event.target.value })}>
+              <option value="">全部方向</option>
+              <option value="inbound">入厂卸货</option>
+              <option value="outbound">出厂装货</option>
+            </Select>
+            <Select aria-label="筛选物料" value={filter.materialId ?? ''} onChange={event => updateFilter({ materialId: event.target.value })}>
+              <option value="">全部物料</option>
+              {materials.map(material => <option key={material.id} value={material.id}>{material.name} {material.spec}</option>)}
+            </Select>
+            <Select aria-label="筛选供收方" value={filter.partyId ?? ''} onChange={event => updateFilter({ partyId: event.target.value })}>
+              <option value="">全部供收方</option>
+              {parties.map(party => <option key={party.id} value={party.id}>{party.name}</option>)}
+            </Select>
 
-        <WeighingFilters className="ticket-drawer-filters" value={filter} onChange={changeFilter} ticket dateLabel="出单" />
-
-        <div className="ticket-drawer-summary">
-          <div>
-            共 <strong>{result.total}</strong> 张 · 有效 <strong>{summary.result?.taskCount ?? '—'}</strong> 张 · 最终净重 <strong>{summary.result?.net ?? '—'}</strong> 吨
+            <div className="ticket-drawer-datebar">
+              <span className="ticket-drawer-date-title"><CalendarDays className="h-4 w-4" aria-hidden />出单日期</span>
+              <div className="ticket-drawer-date-presets" role="group" aria-label="出单日期快捷筛选">
+                <Button size="sm" variant={datePreset === 'today' ? 'primary' : 'secondary'} aria-pressed={datePreset === 'today'} onClick={() => setDateRange(today, today)}>今天</Button>
+                <Button size="sm" variant={datePreset === 'week' ? 'primary' : 'secondary'} aria-pressed={datePreset === 'week'} onClick={() => setDateRange(weekAgo, today)}>近 7 天</Button>
+                <Button size="sm" variant={datePreset === 'all' ? 'primary' : 'secondary'} aria-pressed={datePreset === 'all'} onClick={() => setDateRange(undefined, undefined)}>全部</Button>
+              </div>
+              <div className="ticket-drawer-date-range">
+                <Input type="date" aria-label="出单开始日期" value={filter.from ?? ''} onChange={event => updateFilter({ from: event.target.value || undefined })} />
+                <span className="ticket-drawer-date-sep" aria-hidden>至</span>
+                <Input type="date" aria-label="出单结束日期" value={filter.to ?? ''} onChange={event => updateFilter({ to: event.target.value || undefined })} />
+              </div>
+            </div>
           </div>
-          <Button size="sm" variant="secondary" disabled={result.loading} onClick={result.refresh}>
-            <RefreshCw className="h-4 w-4" aria-hidden />刷新
-          </Button>
+        </section>
+
+        <div className="ticket-drawer-listbar">
+          <div className="ticket-drawer-summary">
+            {siteName && <span className="ticket-drawer-scope">当前厂区 · {siteName}</span>}
+            <span>共 <strong>{result.total}</strong> 张 · 有效 <strong>{summary.result?.taskCount ?? '—'}</strong> 张 · 最终净重 <strong>{summary.result?.net ?? '—'}</strong> 吨</span>
+          </div>
+          <div className="ticket-drawer-list-actions">
+            <Button size="sm" variant="ghost" disabled={!hasFilters} onClick={() => changeFilter({})}><RotateCcw className="h-4 w-4" aria-hidden />清空筛选</Button>
+            <Button size="sm" variant="secondary" disabled={result.loading} onClick={result.refresh}>
+              <RefreshCw className={result.loading ? 'h-4 w-4 motion-safe:animate-spin' : 'h-4 w-4'} aria-hidden />刷新
+            </Button>
+          </div>
         </div>
         {summary.error && <p role="alert" className="text-sm text-error">{summary.error}</p>}
 
@@ -151,7 +187,7 @@ export function TicketDrawer({ siteId, siteName, onClose }: TicketDrawerProps) {
           loading={result.loading}
           error={result.error}
           rowKey="id"
-          minWidth={1168}
+          minWidth={1176}
           empty={<EmptyState title="暂无过磅单" description="当前筛选条件下没有符合条件的过磅单。" />}
         />
 

@@ -81,8 +81,15 @@ try {
   const dialog = page.getByRole('dialog', { name: '过磅单列表', exact: true });
   await dialog.waitFor();
   await dialog.getByText('WB202610270001', { exact: true }).waitFor();
-  await dialog.getByText('按出单时间倒序 · 当前厂区：示范厂区', { exact: true }).waitFor();
+  assert.equal(await dialog.getByText('按出单时间倒序 · 当前厂区：示范厂区', { exact: true }).count(), 0);
+  await dialog.getByText('当前厂区 · 示范厂区', { exact: true }).waitFor();
   await dialog.getByText('共 128 张 · 有效 9 张 · 最终净重 157.41 吨', { exact: true }).waitFor();
+  const fromBox = await dialog.getByLabel('出单开始日期').boundingBox();
+  const toBox = await dialog.getByLabel('出单结束日期').boundingBox();
+  assert.ok(fromBox && toBox && Math.abs(fromBox.y - toBox.y) < 2, '开始和结束日期应在同一行');
+  const clearBox = await dialog.getByRole('button', { name: '清空筛选', exact: true }).boundingBox();
+  const refreshBox = await dialog.getByRole('button', { name: '刷新', exact: true }).boundingBox();
+  assert.ok(clearBox && refreshBox && Math.abs(clearBox.y - refreshBox.y) < 2, '清空筛选与刷新应在同一操作组');
   await page.screenshot({ path: '/tmp/opencode/ticket-drawer-final.png' });
 
   const listRequest = requests.find(request => request.pathname === '/api/weighing/tickets');
