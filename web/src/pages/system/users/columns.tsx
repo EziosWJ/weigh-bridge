@@ -97,6 +97,7 @@ export function createUserColumns({
     {
       title: "部门",
       dataIndex: "deptName",
+       width: 220,
       render: (value) => String(value || "-"),
     },
     {
