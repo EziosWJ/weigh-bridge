@@ -24,6 +24,7 @@
     "test:weighing:standalone": "node tests/standalone-workbench.mjs",
     "test:weighing:smoke": "node tests/weighing-smoke.mjs",
     "test:weighing:lookup": "node tests/weighing-lookup.mjs",
+    "test:weighing:ticket-drawer": "node tests/workbench-ticket-drawer.mjs",
     "test:weighing:backend-master": "node tests/weighing-backend-master.mjs",
     "test:weighing:backend": "node tests/weighing-backend-smoke.mjs",
     "test:ticket-sheet": "node tests/ticket-sheet.mjs",

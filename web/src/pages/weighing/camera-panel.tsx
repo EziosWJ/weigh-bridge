@@ -78,7 +78,6 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
   if (compact || gallery) {
     const photos = images.length ? images : imageSrc ? [{ id: 'legacy', url: imageSrc, cameraName: cameraLabel, capturedAt: capture.at }] : [];
     return <div className="workbench-capture-content">
-      {gallery && images.length > 1 && <div className="review-capture-tabs" role="group" aria-label="抓拍摄像头">{images.map(image => <Button key={image.id} size="sm" variant="ghost" aria-pressed={active?.id === image.id} onClick={() => setActiveId(image.id)}>{imageLabel(image, capture)}</Button>)}</div>}
       {photos.length > 0 ? <div className="workbench-capture-gallery" role="group" aria-label={gallery ? '本次抓拍图片' : '抓拍摄像头'}>{photos.map(image => <div className="workbench-capture-photo" key={image.id}>
         <button type="button" className="workbench-capture-thumbnail" aria-label={`放大抓拍 ${imageLabel(image, capture)}`} onClick={() => { setActiveId(image.id); preview(true); }}>
           <AgentImage src={image.url} alt={`${imageLabel(image, capture)}抓拍`} className="aspect-video w-full object-contain" onLoadState={ok => mark(image.id, ok)} />

@@ -189,13 +189,7 @@ try {
     const dialog = page.getByRole('dialog', { name: `核对${stage}（${kind}）`, exact: true });
     if (!await dialog.isVisible()) await page.getByRole('button', { name: `开始核对${stage}（${kind}）`, exact: true }).click();
     await dialog.getByText('本次抓拍',{exact:true}).waitFor();
-    const captureTabs = dialog.getByRole('group',{name:'抓拍摄像头',exact:true});
-    if (await captureTabs.count()) {
-      for (const name of ['入口相机','出口相机']) {
-        const tab = captureTabs.getByRole('button',{name:new RegExp(name)});
-        if (await tab.count()) await tab.click();
-      }
-    }
+    if (stage === '回磅') await dialog.getByRole('button', { name: '下一步：核对最终重量', exact: true }).click();
     await dialog.getByRole('button', { name: stage === '回磅' ? '确认称重并出单' : `确认${stage}（${kind}）`, exact: true }).click();
     await page.getByRole('heading', { name: `${stage}已完成`, exact: true }).waitFor();
     const business = await openBusiness();
@@ -472,6 +466,11 @@ try {
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   await page.getByRole('button',{name:'开始核对回磅（皮重）',exact:true}).click();
   let invalidDialog=page.getByRole('dialog',{name:'核对回磅（皮重）',exact:true});
+  const contextRegion=invalidDialog.getByRole('region',{name:'本趟运输核对依据',exact:true});
+  assert.equal(await contextRegion.count(),1);
+  await invalidDialog.getByRole('button',{name:'下一步：核对最终重量',exact:true}).click();
+  const weightRegion=invalidDialog.getByRole('region',{name:'最终重量与调整',exact:true});
+  await weightRegion.waitFor();
   await invalidDialog.getByLabel('最终毛重（吨）',{exact:true}).fill('4.5');
   await invalidDialog.getByLabel('最终皮重（吨）',{exact:true}).fill('1');
   const difference=label=>invalidDialog.getByText(label,{exact:true}).locator('..');
@@ -479,15 +478,10 @@ try {
   assert.match(await difference('系统计算：皮重调整差额').innerText(),/4 吨/);
   assert.equal(await invalidDialog.getByRole('button',{name:'确认称重并出单',exact:true}).isDisabled(),true);
   assert.match(await invalidDialog.getByRole('alert').last().innerText(),/无法出单：.*请返回.*重新采集/);
-  const contextRegion=invalidDialog.getByRole('region',{name:'本趟运输核对依据',exact:true});
-  const weightRegion=invalidDialog.getByRole('region',{name:'最终重量与调整',exact:true});
-  const contextBox=await contextRegion.boundingBox(), weightBox=await weightRegion.boundingBox();
-  assert.ok(weightBox.x>contextBox.x+contextBox.width);
   assert.ok((await invalidDialog.boundingBox()).width>=1000);
   await page.setViewportSize({width:390,height:844});
   assert.equal(await invalidDialog.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
-  const narrowContext=await contextRegion.boundingBox(), narrowWeight=await weightRegion.boundingBox();
-  assert.ok(narrowWeight.y>=narrowContext.y+narrowContext.height);
+  assert.equal(await weightRegion.isVisible(),true);
   const confirmBox=await invalidDialog.getByRole('button',{name:'确认称重并出单',exact:true}).boundingBox();
   assert.ok(confirmBox.y>=0&&confirmBox.y+confirmBox.height<=844);
   await page.setViewportSize({width:1366,height:768});
@@ -495,12 +489,14 @@ try {
   assert.match(await difference('系统计算：毛重调整差额').innerText(),/-1 吨（上调）/);
   await invalidDialog.getByLabel('最终毛重（吨）',{exact:true}).fill('');
   assert.match(await difference('系统计算：毛重调整差额').innerText(),/—/);
+  await invalidDialog.getByRole('button',{name:'上一步',exact:true}).click();
   await invalidDialog.getByRole('button',{name:'不一致，返回修改',exact:true}).click();
   await setWeight(1.2);
   // Live changes preserve the old sample; replacing it is now explicit.
   await page.getByRole('button',{name:'重新采集重量',exact:true}).click();
   await page.getByRole('button',{name:'开始核对回磅（皮重）',exact:true}).click();
   invalidDialog=page.getByRole('dialog',{name:'核对回磅（皮重）',exact:true});
+  await invalidDialog.getByRole('button',{name:'下一步：核对最终重量',exact:true}).click();
   await invalidDialog.getByLabel('最终毛重（吨）',{exact:true}).fill('4.5');
   await invalidDialog.getByLabel('最终皮重（吨）',{exact:true}).fill('1');
   await invalidDialog.getByText('系统计算调整差额：毛重 0.5 吨 · 皮重 0.2 吨',{exact:true}).waitFor();

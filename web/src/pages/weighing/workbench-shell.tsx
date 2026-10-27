@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Maximize, Minimize, Monitor } from 'lucide-react';
+import { FileText, Maximize, Minimize, Monitor } from 'lucide-react';
 import { Outlet, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast-store';
@@ -9,6 +9,7 @@ import { roleLabels } from '@/types/weighing';
 import { WORKBENCH_WINDOW,workbenchWindow } from '@/lib/workbench-window';
 import './workbench.css';
 import { WorkbenchEntry } from './workbench-entry';
+import { TicketDrawer } from './ticket-drawer';
 
 export function WorkbenchShell() {
   const capabilities=useWeighingStore(s=>s.capabilities);
@@ -28,6 +29,8 @@ export function WorkbenchShell() {
   const resetAt = useWeighingStore(s => s.data.resetAt);
   const config = useWeighingStore(s => s.data.config);
   const [fullscreen, setFullscreen] = useState(!!document.fullscreenElement);
+  const [ticketsOpen, setTicketsOpen] = useState(false);
+  const canReadTickets = capabilities?.permissionCodes.includes('weighing:read') ?? false;
   useEffect(() => {
     const name=workbenchWindow(scaleCode);
     const previousName=window.name.startsWith(WORKBENCH_WINDOW)?'':window.name;
@@ -45,6 +48,7 @@ export function WorkbenchShell() {
       <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name} · 人工核对确认</p></div></div>
       <span className="workbench-connection text-sm text-text-secondary"><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
       <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
+        {canReadTickets && <button type="button" className="workbench-management-link" aria-haspopup="dialog" aria-expanded={ticketsOpen} title="打开过磅单列表" onClick={() => setTicketsOpen(true)}><FileText className="h-4 w-4" aria-hidden />过磅单</button>}
         <a className="workbench-management-link" href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>
         {owner === 'self' && !pending && <Button size="sm" onClick={() => void dispatch({type:'occupy',owner:null}).then(() => toast.success('已释放称重操作权')).catch(e => toast.error({ title: '释放操作权失败', description: e instanceof Error ? e.message : '请稍后重试' }))}>释放操作权</Button>}
         <Button size="sm" onClick={async () => {
@@ -54,5 +58,6 @@ export function WorkbenchShell() {
       </nav>
     </header>
     <main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
+    {ticketsOpen && scale && <TicketDrawer siteName={scale.siteName} onClose={() => setTicketsOpen(false)} />}
   </div>;
 }
