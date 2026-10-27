@@ -554,11 +554,11 @@ func checkWeighingQueriesAndPrint(t *testing.T, router http.Handler, token strin
 		t.Fatalf("unknown result was forged as printed: %+v", attempts)
 	}
 	weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/print-attempts/"+itoa(reprint.PrintAttemptID)+"/result", `{"requestId":"print-failed-0002","status":"failed","reason":"确认未出纸"}`, token)
-	retry := weighingData[weighing.CommandResult](t, router, "POST", path+"/print-attempts", `{"requestId":"print-retry-0003","intent":"retry"}`, token)
+	retry := weighingData[weighing.CommandResult](t, router, "POST", path+"/print-attempts", `{"requestId":"print-retry-0003","intent":"reprint","reason":"打印失败后重新打印"}`, token)
 	weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/print-attempts/"+itoa(retry.PrintAttemptID)+"/result", `{"requestId":"print-printed-0003","status":"printed","reason":"操作员确认已出纸"}`, token)
 	printed := weighingData[weighing.TicketView](t, router, "GET", path, "", token)
-	if printed.PrintStatus != "printed" || printed.ReprintCount != 1 || printed.FinalGross != 31000 || printed.FinalTare != 12000 {
-		t.Fatalf("printing changed weights or retry counted as reprint: %+v", printed)
+	if printed.PrintStatus != "printed" || printed.ReprintCount != 2 || printed.FinalGross != 31000 || printed.FinalTare != 12000 {
+		t.Fatalf("printing changed weights or reprint count: %+v", printed)
 	}
 	task := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(taskID), "", token)
 	if task.Status != "completed" {

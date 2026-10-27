@@ -49,10 +49,6 @@ func (r *Repository) StartPrint(ctx context.Context, id int64, in PrintInput, e 
 			if in.Intent != "initial" {
 				return out, ErrInvalid
 			}
-		} else if last.Status == "failed" {
-			if in.Intent != "retry" {
-				return out, ErrInvalid
-			}
 		} else {
 			if in.Intent != "reprint" || !validReason(in.Reason) {
 				return out, ErrInvalid
@@ -70,7 +66,7 @@ func (r *Repository) StartPrint(ctx context.Context, id int64, in PrintInput, e 
 			}
 			last.Status = "unknown"
 			last.ClosedAt = &now
-			last.CloseReason = "无法排除出纸，操作员确认补打：" + in.Reason
+			last.CloseReason = "结果未知，操作员重新打印：" + in.Reason
 			last.ResolvedAt = &now
 			last.ResolvedBy = ptr(e.Metadata.ActorID)
 			if err := tx.Save(&last).Error; err != nil {

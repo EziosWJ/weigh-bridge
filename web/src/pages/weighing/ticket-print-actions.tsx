@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/common/field';
 import { FormDialog } from '@/components/common/form-dialog';
 import { Input } from '@/components/ui/input';
-import { Select } from '@/components/ui/select';
 import { useWeighingStore } from '@/store/weighing-store';
 import { toast } from '@/components/common/toast-store';
 import { printStatusLabels } from '@/types/weighing';
@@ -16,8 +15,6 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
   const canReprint = capabilities?.permissionCodes.includes('weighing:reprint') ?? false;
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const [feedbackReason, setFeedbackReason] = useState('');
-  const [resolution, setResolution] = useState<'unknown' | 'printed' | 'failed'>('unknown');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const pending = !!data.pending;
@@ -46,19 +43,6 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
       toast.error({ title: '打印发起失败', description: message, duration: 5000 });
     }
   }
-  async function resolve() {
-    setError('');
-    try {
-      await dispatch({ type: 'resolvePrint', ticketId, status: resolution, printed: resolution === 'printed', reason: feedbackReason });
-      if (useWeighingStore.getState().data.pending) return;
-      setNotice('已保存操作员反馈。'); setFeedbackReason(''); setOpen(false);
-      toast.success({ title: '打印核实已保存', description: '已记录本次人工核实结果。' });
-    } catch (failure) {
-      const message = failure instanceof Error ? failure.message : '结果核实失败';
-      setError(message);
-      toast.error({ title: '打印核实失败', description: message, duration: 5000 });
-    }
-  }
   async function resolvePending() {
     setError('');
     try {
@@ -78,23 +62,23 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
   }
   if (!ticket || !canPrint) return null;
   const unknown = ticket.printStatus === 'unknown';
-  const reprint = ticket.printStatus === 'printed' || unknown;
+  const reprint = ticket.printStatus !== 'unprinted';
   const printPending = pending && data.pending?.operation === 'print' && data.pending.taskId === ticket.taskId;
   return <div className="space-y-2">
     <div className="flex flex-wrap items-center gap-2">
-      {ticket.status === 'valid' && <Button variant="primary" disabled={busy || (pending && !printPending) || (reprint && !unknown && !canReprint)} onClick={() => {
+      {ticket.status === 'valid' && <Button variant="primary" disabled={busy || (pending && !printPending) || (reprint && !canReprint)} onClick={() => {
         if (printPending || reprint) { setOpen(true); return; }
-        void print(ticket.printStatus === 'failed' ? 'retry' : 'initial');
-      }}>{printPending ? '查询打印发起结果' : unknown ? '核实打印 / 补打' : ticket.printStatus === 'printed' ? '补打' : ticket.printStatus === 'failed' ? '重试打印' : '打印'}</Button>}
-      <span className="text-sm text-text-secondary">{printStatusLabels[ticket.printStatus]} · 补打 {ticket.reprintCount} 次</span>
+        void print('initial');
+      }}>{printPending ? '查询打印发起结果' : reprint ? '重新打印' : '打印'}</Button>}
+      <span className="text-sm text-text-secondary">{printStatusLabels[ticket.printStatus]} · 重新打印 {ticket.reprintCount} 次</span>
     </div>
     {notice && <p role="status" className="text-sm text-success">{notice}</p>}
     {error && !open && <p role="alert" className="text-sm text-error">{error}</p>}
-    <FormDialog open={open} title={printPending ? '查询打印发起结果' : unknown ? '核实打印 / 补打' : '补打单据'} onCancel={() => setOpen(false)} onSubmit={() => setOpen(false)} submitText="关闭">
+    <FormDialog open={open} title={printPending ? '查询打印发起结果' : '重新打印'} onCancel={() => setOpen(false)} onSubmit={() => setOpen(false)} submitText="关闭">
       <div className="space-y-4">
         {printPending ? <><p className="text-warning">打印发起结果未知，请先查询原请求，避免重复出纸。</p><Button disabled={busy} onClick={() => void resolvePending()}>查询原请求结果</Button></> : <>
-          {unknown && <><p className="text-warning">请先检查实际出纸情况。无法排除出纸时，填写原因办理补打。</p><Field label="人工核实结果" htmlFor="ticket-print-result"><Select id="ticket-print-result" value={resolution} onChange={event => setResolution(event.target.value as typeof resolution)}><option value="unknown">仍无法判断</option><option value="printed">确认已出纸</option><option value="failed">明确失败且确认未出纸</option></Select></Field><Field label="打印核实说明" htmlFor="ticket-result-reason"><Input id="ticket-result-reason" placeholder="请说明核实依据，如已查看出纸口或打印队列" value={feedbackReason} onChange={event => setFeedbackReason(event.target.value)} /></Field><Button disabled={busy || !feedbackReason.trim()} onClick={() => void resolve()}>保存人工核实结果</Button></>}
-          {reprint && canReprint && <><Field label="补打原因" htmlFor="ticket-reprint-reason"><Input id="ticket-reprint-reason" placeholder="请填写补打原因，便于后续追溯" value={reason} onChange={event => setReason(event.target.value)} /></Field><Button disabled={busy || pending || !reason.trim()} onClick={() => void print('reprint')}>确认补打</Button></>}
+          {unknown && <p className="text-warning">上次打印结果未知，重新打印可能重复出纸。</p>}
+          {reprint && canReprint && <><Field label="重新打印原因" htmlFor="ticket-reprint-reason"><Input id="ticket-reprint-reason" placeholder="请填写重新打印原因" value={reason} onChange={event => setReason(event.target.value)} /></Field><Button disabled={busy || pending || !reason.trim()} onClick={() => void print('reprint')}>确认重新打印</Button></>}
         </>}
         {error && <p role="alert" className="text-error">{error}</p>}
       </div>

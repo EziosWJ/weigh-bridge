@@ -383,14 +383,9 @@ try {
   assert.ok(mockPrints.some(row => row.attemptId === firstPrint.id), 'Agent 必须收到已登记的同一打印尝试');
   assert.deepEqual(mockPrints.find(row => row.attemptId === firstPrint.id).ticket.printSheet, unknownPrint.printSheet, 'Agent 与 Web 使用同一份精简字段');
   await settings.locator('.paper-sheet').first().waitFor();
-  await page.getByRole('button', { name: '核实打印 / 补打', exact: true }).click();
-  await page.locator('#ticket-print-result').selectOption('printed');
-  await page.locator('#ticket-result-reason').fill('操作员确认实际已出纸');
-  await page.getByRole('button', { name: '保存人工核实结果', exact: true }).click();
-  await page.getByText('已保存操作员反馈。', { exact: true }).waitFor();
-  await page.getByRole('button', { name: '补打', exact: true }).click();
-  await page.locator('#ticket-reprint-reason').fill('客户要求补打');
-  await page.getByRole('button', { name: '确认补打', exact: true }).click();
+  await page.getByRole('button', { name: '重新打印', exact: true }).click();
+  await page.locator('#ticket-reprint-reason').fill('客户要求重新打印');
+  await page.getByRole('button', { name: '确认重新打印', exact: true }).click();
   let secondPrint;
   for (let n = 0; n < 40 && !secondPrint; n += 1) {
     const attempts = await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`);
@@ -406,7 +401,7 @@ try {
   await page.getByRole('link', { name: '打印预览', exact: true }).click();
   await page.getByRole('article', { name: '精简过磅单' }).getByText('补打第1次', { exact: true }).waitFor();
   // Device results flow back through WSS and update the ordinary system preview.
-  await settings.getByRole('button',{name:'回报成功',exact:true}).first().click();
+  await settings.getByRole('button',{name:'回报成功',exact:true}).last().click();
   for(let n=0;n<30;n++){if((await call(`/api/weighing/tickets/${currentTicket.id}`)).printStatus==='printed')break;await delay(100);}
   assert.equal((await call(`/api/weighing/tickets/${currentTicket.id}`)).printStatus,'printed');
 
