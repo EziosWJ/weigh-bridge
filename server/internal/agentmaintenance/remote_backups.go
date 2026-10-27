@@ -36,7 +36,7 @@ func (r *Remote) listBackups(c *gin.Context) {
 		ph.WriteError(c, 400, 400, "分页参数无效", nil)
 		return
 	}
-	records, total, err := r.store.ListConfigBackups(c.Request.Context(), cfg.ScaleID, offset, limit)
+	records, total, err := r.store.ListConfigBackups(c.Request.Context(), cfg.ScaleCode, offset, limit)
 	if err != nil {
 		ph.WriteError(c, 503, 503, "配置备份读取失败", nil)
 		return
@@ -45,12 +45,12 @@ func (r *Remote) listBackups(c *gin.Context) {
 	for _, record := range records {
 		views = append(views, toBackupView(record))
 	}
-	effective, live := r.hub.EffectiveConfig(cfg.ScaleID)
+	effective, live := r.hub.EffectiveConfig(cfg.ScaleCode)
 	var state *p.EffectiveConfig
 	if live {
 		state = &effective
 	} else {
-		runtime, found, err := r.store.AgentRuntime(c.Request.Context(), cfg.ScaleID)
+		runtime, found, err := r.store.AgentRuntime(c.Request.Context(), cfg.ScaleCode)
 		if err != nil {
 			ph.WriteError(c, 503, 503, "最近生效配置读取失败", nil)
 			return
@@ -87,9 +87,9 @@ func (r *Remote) createBackup(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, 400, 400, "备份名称必填且不超过 100 字，备注不超过 500 字", nil)
 			return
 		}
-		effective, live := r.hub.EffectiveConfig(cfg.ScaleID)
-		backup, confirmed := r.hub.ConfigBackup(cfg.ScaleID)
-		if !live || !confirmed || !r.hub.Supports(cfg.ScaleID, p.CapabilityParameterBackup) {
+		effective, live := r.hub.EffectiveConfig(cfg.ScaleCode)
+		backup, confirmed := r.hub.ConfigBackup(cfg.ScaleCode)
+		if !live || !confirmed || !r.hub.Supports(cfg.ScaleCode, p.CapabilityParameterBackup) {
 			ph.WriteError(c, 409, 409, "Agent 离线或尚未报告成功生效参数，不能创建备份", nil)
 			return
 		}
@@ -98,7 +98,7 @@ func (r *Remote) createBackup(recorder audit.Recorder) gin.HandlerFunc {
 			return
 		}
 		actor, _ := ph.UserIDFromContext(c.Request.Context())
-		id, err := r.store.CreateConfigBackup(c.Request.Context(), cfg.ScaleID, backup, in.Name, in.Notes, actor)
+		id, err := r.store.CreateConfigBackup(c.Request.Context(), cfg.ScaleCode, backup, in.Name, in.Notes, actor)
 		if err != nil {
 			ph.WriteError(c, 503, 503, "创建备份失败，请刷新列表核实后再操作", nil)
 			return
@@ -128,7 +128,7 @@ func (r *Remote) deleteBackup(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, 400, 400, "备份编号无效", nil)
 			return
 		}
-		if err := r.store.DeleteConfigBackup(c.Request.Context(), cfg.ScaleID, id); err != nil {
+		if err := r.store.DeleteConfigBackup(c.Request.Context(), cfg.ScaleCode, id); err != nil {
 			status := http.StatusServiceUnavailable
 			if errors.Is(err, ErrNoBackup) {
 				status = http.StatusNotFound

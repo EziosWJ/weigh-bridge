@@ -21,7 +21,7 @@ type Service struct {
 	store              Store
 	devices            *agentbridge.Hub
 	maintenance        maintenanceGate
-	cameraAvailable    func(int64) bool
+	cameraAvailable    func(string) bool
 	cameraConfig       func() (agentprinter.Config, error)
 	camera             *camera.Service
 }
@@ -148,6 +148,11 @@ func enabled(v *bool) int {
 func (s *Service) SetLocalRuntime(imageDir string) error {
 	s.imageDir = imageDir
 	if repo, ok := s.store.(*Repository); ok {
+		// The image directory also keeps the out-of-database ticket-number
+		// watermark. An explicitly configured directory wins over an empty one.
+		if imageDir != "" {
+			repo.dataDir = imageDir
+		}
 		return localsite.Bind(repo.db)
 	}
 	return nil
@@ -158,10 +163,10 @@ func (s *Service) LocalStatus(ctx context.Context) (localsite.Status, error) {
 	}
 	return localsite.Status{}, nil
 }
-func (s *Service) LocalSiteID(ctx context.Context) (int64, error) {
+func (s *Service) LocalSiteCode(ctx context.Context) (string, error) {
 	if repo, ok := s.store.(*Repository); ok {
 		identity, err := localsite.Read(ctx, repo.db)
-		return identity.SiteID, err
+		return identity.SiteCode, err
 	}
-	return 0, nil
+	return "", nil
 }

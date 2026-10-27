@@ -113,7 +113,7 @@ func TestDisabledScaleIsPrintOnly(t *testing.T) {
 }
 
 func TestPrintPendingDoesNotBlockWeightReportingOrKick(t *testing.T) {
-	hub := agentbridge.New(agentbridge.Config{ID: "printer", ScaleID: 1, Key: "printer-test-key", ImageDir: t.TempDir()})
+	hub := agentbridge.New(agentbridge.Config{ID: "printer", ScaleCode: "WB01", Key: "printer-test-key", ImageDir: t.TempDir()})
 	router := gin.New()
 	hub.Register(router)
 	server := httptest.NewServer(router)
@@ -129,13 +129,13 @@ func TestPrintPendingDoesNotBlockWeightReportingOrKick(t *testing.T) {
 	go scale.Run(ctx)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleID: 1, AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
+		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleCode: "WB01", AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
 	}()
 	deadline := time.Now().Add(3 * time.Second)
-	for !hub.State(1).Online && time.Now().Before(deadline) {
+	for !hub.State("WB01").Online && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !hub.State(1).Online {
+	if !hub.State("WB01").Online {
 		t.Fatal("agent did not connect")
 	}
 	if _, err := pw.Write(makeD12Frame(0x30, "001550")); err != nil {
@@ -144,19 +144,19 @@ func TestPrintPendingDoesNotBlockWeightReportingOrKick(t *testing.T) {
 	waitState := func(weight string, stable bool) {
 		deadline := time.Now().Add(2 * time.Second)
 		for time.Now().Before(deadline) {
-			s := hub.State(1)
+			s := hub.State("WB01")
 			if s.Online && s.Weight.String() == weight && s.Stable == stable {
 				return
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-		t.Fatalf("hub state weight=%s stable=%t: %+v", weight, stable, hub.State(1))
+		t.Fatalf("hub state weight=%s stable=%t: %+v", weight, stable, hub.State("WB01"))
 	}
 	waitState("1.55", true)
 	if err := os.WriteFile(filepath.Join(dir, "pause"), []byte("maintenance"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := hub.Print(1, 42, map[string]string{"ticketNo": "GB-PENDING"}); err != nil {
+	if err := hub.Print("WB01", 42, map[string]string{"ticketNo": "GB-PENDING"}); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond) // let the print worker enter its pause wait
@@ -167,8 +167,8 @@ func TestPrintPendingDoesNotBlockWeightReportingOrKick(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "attempt-42.json")); !os.IsNotExist(err) {
 		t.Fatal("paused print reserved an attempt")
 	}
-	state := hub.State(1)
-	result, err := hub.Kick(ctx, 1, state.ConnectionID)
+	state := hub.State("WB01")
+	result, err := hub.Kick(ctx, "WB01", state.ConnectionID)
 	if err != nil || !result.ExitConfirmed {
 		t.Fatalf("kick: %+v %v", result, err)
 	}
@@ -183,7 +183,7 @@ func TestPrintPendingDoesNotBlockWeightReportingOrKick(t *testing.T) {
 }
 
 func TestCaptureRequestWithoutCameraFailsExplicitly(t *testing.T) {
-	hub := agentbridge.New(agentbridge.Config{ID: "printer", ScaleID: 1, Key: "printer-test-key", ImageDir: t.TempDir()})
+	hub := agentbridge.New(agentbridge.Config{ID: "printer", ScaleCode: "WB01", Key: "printer-test-key", ImageDir: t.TempDir()})
 	router := gin.New()
 	hub.Register(router)
 	server := httptest.NewServer(router)
@@ -199,7 +199,7 @@ func TestCaptureRequestWithoutCameraFailsExplicitly(t *testing.T) {
 	go scale.Run(ctx)
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleID: 1, AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
+		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleCode: "WB01", AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
 	}()
 	defer func() {
 		cancel()
@@ -211,7 +211,7 @@ func TestCaptureRequestWithoutCameraFailsExplicitly(t *testing.T) {
 		}
 	}()
 	deadline := time.Now().Add(3 * time.Second)
-	for !hub.State(1).Online && time.Now().Before(deadline) {
+	for !hub.State("WB01").Online && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if _, err := pw.Write(makeD12Frame(0x30, "001550")); err != nil {
@@ -219,13 +219,13 @@ func TestCaptureRequestWithoutCameraFailsExplicitly(t *testing.T) {
 	}
 	deadline = time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		s := hub.State(1)
+		s := hub.State("WB01")
 		if s.Online && s.DeviceOK && s.Stable && s.Weight.String() == "1.55" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	result, _, err := hub.Capture(ctx, 1)
+	result, _, err := hub.Capture(ctx, "WB01")
 	if !errors.Is(err, agentbridge.ErrUnavailable) {
 		t.Fatalf("capture error %v", err)
 	}

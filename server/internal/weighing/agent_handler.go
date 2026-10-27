@@ -8,11 +8,11 @@ import (
 )
 
 func (h *Handler) kickAgent(c *gin.Context) {
-	id, err := pathID(c)
+	id := c.Param("code")
 	var in struct {
 		ConnectionID string `json:"connectionId"`
 	}
-	if err != nil || c.ShouldBindJSON(&in) != nil || in.ConnectionID == "" {
+	if c.ShouldBindJSON(&in) != nil || in.ConnectionID == "" {
 		writeResult(c, nil, ErrInvalid)
 		return
 	}
@@ -23,7 +23,6 @@ func (h *Handler) kickAgent(c *gin.Context) {
 	e := requestEvent(c)
 	e.Action = "agent.kick.requested"
 	e.Resource = "weighing.agent"
-	e.ResourceID = id
 	e.Summary = string(snapshot(map[string]any{"agentId": h.service.devices.State(id).AgentID, "connectionId": in.ConnectionID}))
 	// Audit the operator's intent before issuing an irreversible process exit.
 	if err := h.service.RecordAgentKick(c, e); err != nil {

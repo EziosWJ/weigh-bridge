@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
@@ -23,12 +22,23 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-var imageName = regexp.MustCompile(`^[0-9]+_[a-f0-9]{32}_(front|rear)\.(png|jpg)$`)
+var imageName = regexp.MustCompile(`^([A-Za-z0-9_.-]{1,40})_([a-f0-9]{32})_(front|rear)\.(png|jpg)$`)
+
+// ParseImageID returns the scale code that owns an Agent image id. Scale codes
+// may contain underscores, so the id is parsed from its structure instead of
+// splitting on the first underscore; the greedy prefix keeps codes intact.
+func ParseImageID(id string) (string, bool) {
+	match := imageName.FindStringSubmatch(id)
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
+}
 
 func (h *Hub) Register(router gin.IRouter) {
 	g := router.Group("/api/agent")
 	// Keyless mode is the ADR 0030 production path. The server resolves the
-	// local site's sole scale; the Agent supplies only its Server address.
+	// local site's sole scaleCode; the Agent supplies only its Server address.
 	// The legacy keyed path remains available only when no local resolver was
 	// installed, so old deployments can be diagnosed during the upgrade.
 	if h.local != nil {
@@ -39,8 +49,7 @@ func (h *Hub) Register(router gin.IRouter) {
 		return
 	}
 	g.Use(func(c *gin.Context) {
-		scale, _ := strconv.ParseInt(c.GetHeader("X-Scale-ID"), 10, 64)
-		child, resolveErr := h.resolve(c.Request.Context(), scale)
+		child, resolveErr := h.resolve(c.Request.Context(), c.GetHeader("X-Scale-Code"))
 		if resolveErr != nil || child == nil || child.cfg.Key == "" || subtle.ConstantTimeCompare([]byte(c.GetHeader("Authorization")), []byte("Bearer "+child.cfg.Key)) != 1 || c.GetHeader("X-Agent-ID") != child.cfg.ID {
 			ph.AbortError(c, 401, 401, "Agent 身份无效", nil)
 			return
@@ -93,7 +102,7 @@ func (h *Hub) SaveImage(view string, reader io.Reader) (p.Image, error) {
 	if format == "jpeg" {
 		ext = "jpg"
 	}
-	id := fmt.Sprintf("%d_%s_%s.%s", h.cfg.ScaleID, ID(), view, ext)
+	id := fmt.Sprintf("%s_%s_%s.%s", h.cfg.ScaleCode, ID(), view, ext)
 	if err := os.MkdirAll(h.cfg.ImageDir, 0700); err != nil {
 		return p.Image{}, err
 	}
@@ -103,18 +112,57 @@ func (h *Hub) SaveImage(view string, reader io.Reader) (p.Image, error) {
 	sum := sha256.Sum256(data)
 	return p.Image{ID: id, View: view, URL: "/api/weighing/agent-images/" + id, SHA256: hex.EncodeToString(sum[:])}, nil
 }
-func (h *Hub) Image(id string) (p.Image, error) {
-	if h.children != nil {
-		scale, _ := strconv.ParseInt(strings.Split(id, "_")[0], 10, 64)
-		if child := h.forScale(scale); child != nil {
-			return child.Image(id)
+
+// legacyImagePrefix reports a pre-ADR-0033 file prefix, which was the numeric
+// scale id. A local database owns exactly one site and scale, so those files
+// keep resolving to the sole connected scale without rewriting history.
+func legacyImagePrefix(prefix string) bool {
+	if prefix == "" {
+		return false
+	}
+	for _, r := range prefix {
+		if r < '0' || r > '9' {
+			return false
 		}
+	}
+	return true
+}
+
+// imageHub resolves the scale that owns an image id. Ambiguous legacy numeric
+// prefixes only resolve when exactly one scale is connected.
+func (h *Hub) imageHub(id string) *Hub {
+	prefix, ok := ParseImageID(id)
+	if !ok {
+		return nil
+	}
+	if h.children != nil {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if child := h.children[prefix]; child != nil {
+			return child
+		}
+		if legacyImagePrefix(prefix) && len(h.children) == 1 {
+			for _, child := range h.children {
+				return child
+			}
+		}
+		return nil
+	}
+	if prefix == h.cfg.ScaleCode || legacyImagePrefix(prefix) {
+		return h
+	}
+	return nil
+}
+
+func (h *Hub) Image(id string) (p.Image, error) {
+	owner := h.imageHub(id)
+	if owner == nil {
 		return p.Image{}, fmt.Errorf("invalid image reference")
 	}
-	if !imageName.MatchString(id) || !strings.HasPrefix(id, strconv.FormatInt(h.cfg.ScaleID, 10)+"_") {
+	if _, ok := ParseImageID(id); !ok {
 		return p.Image{}, fmt.Errorf("invalid image reference")
 	}
-	data, err := os.ReadFile(filepath.Join(h.cfg.ImageDir, id))
+	data, err := os.ReadFile(filepath.Join(owner.cfg.ImageDir, id))
 	if err != nil {
 		return p.Image{}, err
 	}
@@ -128,20 +176,47 @@ func (h *Hub) Image(id string) (p.Image, error) {
 	// Server-acquired camera evidence.
 	return p.Image{ID: id, View: view, URL: "/api/weighing/agent-images/" + id, SHA256: hex.EncodeToString(sum[:]), Source: "agent", Status: "captured"}, nil
 }
+
+// SetLocalImageDir configures the single local history directory independently
+// of the current device connection and mutable scale code. Capture validation
+// continues to use Image and the connected device's exact identity.
+func (h *Hub) SetLocalImageDir(dir string) {
+	h.gate.Lock()
+	defer h.gate.Unlock()
+	h.localImageDir = dir
+}
+
 func (h *Hub) ServeImage(c *gin.Context) {
 	id := c.Param("imageId")
+	if _, ok := ParseImageID(id); !ok {
+		ph.WriteError(c, 404, 404, "图片不存在", nil)
+		return
+	}
+	h.gate.RLock()
+	dir := h.localImageDir
+	h.gate.RUnlock()
+	if dir != "" {
+		path := filepath.Join(dir, id)
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			ph.WriteError(c, 404, 404, "图片不存在", nil)
+			return
+		}
+		c.Header("Cache-Control", "private, max-age=86400, immutable")
+		c.File(path)
+		return
+	}
 	if _, err := h.Image(id); err != nil {
 		ph.WriteError(c, 404, 404, "图片不存在", nil)
 		return
 	}
 	c.Header("Cache-Control", "private, max-age=86400, immutable")
-	scale, _ := strconv.ParseInt(strings.Split(id, "_")[0], 10, 64)
-	child := h.forScale(scale)
-	if child == nil {
+	owner := h.imageHub(id)
+	if owner == nil {
 		ph.WriteError(c, 404, 404, "图片不存在", nil)
 		return
 	}
-	c.File(filepath.Join(child.cfg.ImageDir, id))
+	c.File(filepath.Join(owner.cfg.ImageDir, id))
 }
 func (h *Hub) resolveImages(input []p.Image) ([]p.Image, error) {
 	if len(input) != 2 {

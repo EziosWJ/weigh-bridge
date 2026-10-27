@@ -64,7 +64,7 @@ func (settingsRow) TableName() string { return "wb_camera_settings" }
 
 type imageRow struct {
 	ID             string    `gorm:"column:id;primaryKey"`
-	ScaleID        int64     `gorm:"column:scale_id"`
+	ScaleCode      string    `gorm:"column:scale_code"`
 	CameraID       *int64    `gorm:"column:camera_id"`
 	CameraPublicID string    `gorm:"column:camera_public_id"`
 	CameraName     string    `gorm:"column:camera_name"`
@@ -124,7 +124,7 @@ func toSettingsRecord(row settingsRow) settingsRecord {
 
 func toImageRecord(row imageRow) imageRecord {
 	return imageRecord{
-		ID: row.ID, ScaleID: row.ScaleID, CameraID: row.CameraID, CameraPublicID: row.CameraPublicID,
+		ID: row.ID, ScaleCode: row.ScaleCode, CameraID: row.CameraID, CameraPublicID: row.CameraPublicID,
 		CameraName: row.CameraName, CameraSource: row.CameraSource, Source: row.Source,
 		View: row.View, Status: row.Status, Error: row.Error, FileName: row.FileName,
 		SHA256: row.SHA256, Width: row.Width, Height: row.Height, Bytes: row.Bytes,
@@ -508,7 +508,7 @@ func (r *Repository) UpdateVideoSettings(ctx context.Context, expectedVersion in
 
 func (r *Repository) SaveImage(ctx context.Context, record imageRecord) error {
 	row := imageRow{
-		ID: record.ID, ScaleID: record.ScaleID, CameraID: record.CameraID,
+		ID: record.ID, ScaleCode: record.ScaleCode, CameraID: record.CameraID,
 		CameraPublicID: record.CameraPublicID, CameraName: record.CameraName,
 		CameraSource: record.CameraSource, Source: record.Source, View: record.View,
 		Status: record.Status, Error: record.Error, FileName: record.FileName,

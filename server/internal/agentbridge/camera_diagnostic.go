@@ -10,15 +10,15 @@ import (
 	"time"
 )
 
-func (h *Hub) TestCameras(ctx context.Context, scale int64) (p.CameraTest, error) {
+func (h *Hub) TestCameras(ctx context.Context, scaleCode string) (p.CameraTest, error) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.TestCameras(ctx, scale)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.TestCameras(ctx, scaleCode)
 		}
 		return p.CameraTest{}, ErrUnavailable
 	}
 	h.mu.Lock()
-	if h.cfg.ScaleID != scale || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
+	if h.cfg.ScaleCode != scaleCode || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
 		h.mu.Unlock()
 		return p.CameraTest{}, ErrUnavailable
 	}

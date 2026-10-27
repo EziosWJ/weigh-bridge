@@ -147,16 +147,17 @@ func main() {
 		os.Exit(1)
 	}
 	agents := agentbridge.NewMultiple(managed)
-	agents.SetResolver(func(ctx context.Context, scale int64) (agentbridge.Config, error) {
+	agents.SetLocalImageDir(cfg.Weighing.ImageDir)
+	agents.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
 		status, err := localsite.ReadStatus(ctx, database.GORM)
 		if err != nil || !status.Configured {
 			return agentbridge.Config{}, fmt.Errorf("local factory is not configured")
 		}
-		site, e := weighRepo.ResourceSite(ctx, "scales", scale)
-		if e != nil || site != status.SiteID {
+		site, e := weighRepo.ResourceScaleSite(ctx, scaleCode)
+		if e != nil || site != status.SiteCode {
 			return agentbridge.Config{}, fmt.Errorf("Agent outside local factory")
 		}
-		return weighRepo.AgentConfig(ctx, scale, cfg.Weighing.ImageDir)
+		return weighRepo.AgentConfig(ctx, scaleCode, cfg.Weighing.ImageDir)
 	})
 	// ADR 0030: a keyless Agent only knows the Server address. The local
 	// factory and its sole scale are resolved here, never created by a device.
@@ -173,18 +174,14 @@ func main() {
 	// Runtime reports update only the last-known effective state. Restore points
 	// are created explicitly through the configuration-backup API.
 	maintenanceStore := agentmaintenance.NewRepository(database.GORM)
-	agents.SetConfigStateHandler(func(ctx context.Context, scale int64, effective *p.EffectiveConfig, _ *p.ConfigBackup) {
+	agents.SetConfigStateHandler(func(ctx context.Context, scaleCode string, effective *p.EffectiveConfig, _ *p.ConfigBackup) {
 		if effective != nil {
-			if err := maintenanceStore.SaveEffectiveConfig(ctx, scale, *effective); err != nil {
-				slog.Warn("persist effective Agent configuration", "scale", scale, "error", err)
+			if err := maintenanceStore.SaveEffectiveConfig(ctx, scaleCode, *effective); err != nil {
+				slog.Warn("persist effective Agent configuration", "scale", scaleCode, "error", err)
 			}
 		}
 	})
 	weighService := weighing.NewService(weighRepo, agents)
-	if err := weighService.EnsureLocalSite(context.Background()); err != nil {
-		slog.Error("prepare local identity", "error", err)
-		os.Exit(1)
-	}
 	cameraService := camera.NewServiceWithDefaults(camera.NewRepository(database.GORM), cfg.Weighing.ImageDir)
 	weighService.SetCamera(cameraService)
 	var remoteMaintenance *agentmaintenance.Remote
@@ -197,7 +194,7 @@ func main() {
 			if !status.Configured {
 				return agentprinter.Config{}, fmt.Errorf("请先完成本厂配置")
 			}
-			return weighRepo.BoundMaintenanceConfig(ctx, status.SiteID, 0, "http://127.0.0.1"+apiPort(cfg.HTTP.Address))
+			return weighRepo.BoundMaintenanceConfig(ctx, status.SiteCode, "", "http://127.0.0.1"+apiPort(cfg.HTTP.Address))
 		}, weighService.BeginMaintenance)
 		remoteMaintenance.SetStore(maintenanceStore)
 	}

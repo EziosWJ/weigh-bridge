@@ -24,7 +24,7 @@ import (
 func keylessServer(t *testing.T, resolver func(context.Context) (bridge.Config, error)) (*bridge.Hub, *httptest.Server) {
 	t.Helper()
 	dir := t.TempDir()
-	hub := bridge.New(bridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1, ImageDir: dir})
+	hub := bridge.New(bridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01", ImageDir: dir})
 	hub.SetLocalResolver(resolver)
 	router := gin.New()
 	hub.Register(router)
@@ -61,7 +61,7 @@ func receiveMessage(t *testing.T, conn *websocket.Conn) p.Message {
 
 func TestKeylessAdmissionHelloCapabilityAndConflict(t *testing.T) {
 	hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
-		return bridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1}, nil
+		return bridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01", InstallationID: "00000000-0000-4000-8000-000000000001"}, nil
 	})
 	conn := dialKeyless(t, server)
 	hello := p.Hello{ProtocolVersion: p.ProtocolVersion, AgentVersion: "test", Hostname: "host", Capabilities: append([]string{}, p.FormalCaptureCapabilities...)}
@@ -76,26 +76,26 @@ func TestKeylessAdmissionHelloCapabilityAndConflict(t *testing.T) {
 	if err := json.Unmarshal(ackMessage.Payload, &ack); err != nil {
 		t.Fatal(err)
 	}
-	if ack.ProtocolVersion != p.ProtocolVersion || ack.SiteID != 1 || ack.ScaleID != 1 || ack.AgentID != "agent-01" {
+	if ack.ProtocolVersion != p.ProtocolVersion || ack.SiteCode != "F001" || ack.ScaleCode != "WB01" || ack.AgentID != "agent-01" || ack.InstallationID != "00000000-0000-4000-8000-000000000001" {
 		t.Fatalf("hello ack identity mismatch: %+v", ack)
 	}
-	if !hub.Supports(1, p.CapabilityMeasurementWindow) {
+	if !hub.Supports("WB01", p.CapabilityMeasurementWindow) {
 		t.Fatal("advertised measurement capability was not recorded")
 	}
-	if err := hub.RequireCapability(1, "missing.capability"); !errors.Is(err, bridge.ErrCapabilityMissing) {
+	if err := hub.RequireCapability("WB01", "missing.capability"); !errors.Is(err, bridge.ErrCapabilityMissing) {
 		t.Fatalf("missing capability error=%v", err)
 	}
-	if err := hub.RequireCapability(1, p.CapabilityMeasurementWindow); err != nil {
+	if err := hub.RequireCapability("WB01", p.CapabilityMeasurementWindow); err != nil {
 		t.Fatalf("known capability rejected: %v", err)
 	}
 
-	incumbent := hub.State(1)
+	incumbent := hub.State("WB01")
 	replacement := dialKeyless(t, server)
 	conflict := receiveMessage(t, replacement)
 	if conflict.Type != "error" || !bytes.Contains(conflict.Payload, []byte(p.ErrorAgentConflict)) {
 		t.Fatalf("duplicate connection: %+v", conflict)
 	}
-	current := hub.State(1)
+	current := hub.State("WB01")
 	if current.ConnectionID != incumbent.ConnectionID || current.ConnectionID == "" {
 		t.Fatal("conflicting connection displaced the incumbent")
 	}
@@ -138,23 +138,27 @@ func TestKeylessAdmissionReportsUninitializedSite(t *testing.T) {
 }
 
 func TestHelloRejectsUnsupportedProtocolVersion(t *testing.T) {
-	hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
-		return bridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1}, nil
-	})
-	_ = hub
-	conn := dialKeyless(t, server)
-	if err := websocket.JSON.Send(conn, p.NewVersion(p.ProtocolVersion, p.TypeHello, bridge.ID(), "hello-request", p.Hello{ProtocolVersion: 99})); err != nil {
-		t.Fatal(err)
-	}
-	message := receiveMessage(t, conn)
-	if message.Type != "error" || !bytes.Contains(message.Payload, []byte(p.ErrorAgentProtocolUnsupported)) {
-		t.Fatalf("unsupported protocol: %+v", message)
+	// Older agents cannot enforce installation-scoped print deduplication.
+	for _, version := range []int{99, 3, 2} {
+		hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
+			return bridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01"}, nil
+		})
+		_ = hub
+		conn := dialKeyless(t, server)
+		if err := websocket.JSON.Send(conn, p.NewVersion(p.ProtocolVersion, p.TypeHello, bridge.ID(), "hello-request", p.Hello{ProtocolVersion: version})); err != nil {
+			t.Fatal(err)
+		}
+		message := receiveMessage(t, conn)
+		if message.Type != "error" || !bytes.Contains(message.Payload, []byte(p.ErrorAgentProtocolUnsupported)) {
+			t.Fatalf("protocol %d should be rejected: %+v", version, message)
+		}
+		_ = conn.Close()
 	}
 }
 
 func TestMeasurementCommandCorrelatesRequestAndConnection(t *testing.T) {
 	hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
-		return bridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1}, nil
+		return bridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01"}, nil
 	})
 	conn := dialKeyless(t, server)
 	if err := websocket.JSON.Send(conn, p.NewVersion(p.ProtocolVersion, p.TypeHello, bridge.ID(), "hello-request", p.Hello{ProtocolVersion: p.ProtocolVersion, Capabilities: append([]string{}, p.FormalCaptureCapabilities...)})); err != nil {
@@ -166,7 +170,7 @@ func TestMeasurementCommandCorrelatesRequestAndConnection(t *testing.T) {
 	result := make(chan p.Message, 1)
 	commandErr := make(chan error, 1)
 	go func() {
-		message, err := hub.Command(context.Background(), 1, p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{CaptureID: "capture-1"}, 2*time.Second)
+		message, err := hub.Command(context.Background(), "WB01", p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{CaptureID: "capture-1"}, 2*time.Second)
 		if err != nil {
 			commandErr <- err
 			return
@@ -196,7 +200,7 @@ func TestMeasurementCommandCorrelatesRequestAndConnection(t *testing.T) {
 	}
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		if invalidated, ok := hub.LastMeasurementInvalidation(1); ok && invalidated.Generation == "gen-1" {
+		if invalidated, ok := hub.LastMeasurementInvalidation("WB01"); ok && invalidated.Generation == "gen-1" {
 			return
 		}
 		time.Sleep(time.Millisecond)
@@ -206,7 +210,7 @@ func TestMeasurementCommandCorrelatesRequestAndConnection(t *testing.T) {
 
 func TestEffectiveConfigAndBackupAreRecorded(t *testing.T) {
 	hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
-		return bridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1}, nil
+		return bridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01"}, nil
 	})
 	conn := dialKeyless(t, server)
 	if err := websocket.JSON.Send(conn, p.NewVersion(p.ProtocolVersion, p.TypeHello, bridge.ID(), "hello-request", p.Hello{ProtocolVersion: p.ProtocolVersion, Capabilities: append([]string{}, p.FormalCaptureCapabilities...)})); err != nil {
@@ -227,8 +231,8 @@ func TestEffectiveConfigAndBackupAreRecorded(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		gotEffective, okEffective := hub.EffectiveConfig(1)
-		gotBackup, okBackup := hub.ConfigBackup(1)
+		gotEffective, okEffective := hub.EffectiveConfig("WB01")
+		gotBackup, okBackup := hub.ConfigBackup("WB01")
 		if okEffective && okBackup {
 			if gotEffective.ConfigVersion != 3 || gotEffective.Print.Queue != "Aisino-SK820-raw" || gotBackup.Digest != "abc123" || gotBackup.Settings.Serial.Baud != 9600 {
 				t.Fatalf("recorded config mismatch: effective=%+v backup=%+v", gotEffective, gotBackup)

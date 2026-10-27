@@ -12,11 +12,11 @@ const plate = '晋A12345';
 useWeighingStore.setState({
   ready: true,
   capabilities: {
-    localSiteId: 1, configured: true, initialized: true,
+    localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true,
     userId: 1,
     permissionCodes: scenario === 'forbidden' ? ['weighing:read'] : ['weighing:read', 'weighing:confirm'],
     sites: [{ id: 1, code: 'site', name: '测试厂区', enabled: 1, canOperate: true }],
-    scales: [{ id: 1, code: 'scale', name: '测试地磅', enabled: 1, siteId: 1, siteName: '测试厂区', canOperate: true }],
+    scales: [{ code: 'WB01', siteCode: 'F001', name: '测试地磅', enabled: 1, siteName: '测试厂区', canOperate: true }],
   },
   data: {
     ...initial,
@@ -30,7 +30,7 @@ useWeighingStore.setState({
     },
   },
   device: {
-    agentId: 'real-agent', scaleId: 1, weight: '18.665', stable: true, deviceOk: true,
+    agentId: 'real-agent', scaleCode: 'WB01', weight: '18.665', stable: true, deviceOk: true,
     captureRequired: scenario !== 'optional', capturePolicyRevision: 'policy-1', online: true, revision: '1', receivedAt: new Date().toISOString(),
     plate: { candidate: '', failed: false, at: '' }, images: [],
   },
@@ -44,7 +44,7 @@ function ReviewFixture() {
 
 export function Fixture() {
   const data = useWeighingStore(s => s.data);
-  return <MemoryRouter initialEntries={['/weighing/workbench?scaleId=1']}>
+  return <MemoryRouter initialEntries={['/weighing/workbench?scale=WB01']}>
     <WeighingWorkbenchPage />
     <output hidden>{JSON.stringify({ sampleReady: data.sampleReady, images: data.capture?.images?.length ?? 0 })}</output>
   </MemoryRouter>;

@@ -69,7 +69,7 @@ type settingsRecord struct {
 
 type imageRecord struct {
 	ID             string
-	ScaleID        int64
+	ScaleCode      string
 	CameraID       *int64
 	CameraPublicID string
 	CameraName     string

@@ -19,9 +19,10 @@ var ErrUnavailable = errors.New("Agent 离线、数据过期或设备未稳定�
 
 type Config struct {
 	// ID is an internal diagnostics identity. It is not a pairing credential.
-	ID      string
-	SiteID  int64
-	ScaleID int64
+	ID             string
+	SiteCode       string
+	ScaleCode      string
+	InstallationID string
 	// Key is the retired v1 connection secret. It is read only by the legacy
 	// keyed route so an old binary can still be diagnosed during the upgrade
 	// window; keyless admission ignores it.
@@ -32,7 +33,7 @@ type State struct {
 	ConnectionID string `json:"connectionId"`
 	p.DeviceState
 	AgentID         string    `json:"agentId"`
-	ScaleID         int64     `json:"scaleId"`
+	ScaleCode       string    `json:"scaleCode"`
 	Online          bool      `json:"online"`
 	Revision        int64     `json:"revision,string"`
 	ReceivedAt      time.Time `json:"receivedAt"`
@@ -58,32 +59,33 @@ type connection struct {
 	hello        *p.Hello
 }
 type Hub struct {
-	children    map[int64]*Hub
-	gate        sync.RWMutex
-	parent      *Hub
-	resolver    func(context.Context, int64) (Config, error)
-	local       func(context.Context) (Config, error)
-	mu          sync.Mutex
-	cfg         Config
-	conn        *connection
-	state       State
-	printResult func(context.Context, int64, p.PrintResult) error
-	configState func(context.Context, int64, *p.EffectiveConfig, *p.ConfigBackup)
-	maintenance *MaintenanceState
-	effective   *p.EffectiveConfig
-	backup      *p.ConfigBackup
-	invalidated *p.MeasurementInvalidated
+	children      map[string]*Hub
+	gate          sync.RWMutex
+	parent        *Hub
+	resolver      func(context.Context, string) (Config, error)
+	local         func(context.Context) (Config, error)
+	localImageDir string
+	mu            sync.Mutex
+	cfg           Config
+	conn          *connection
+	state         State
+	printResult   func(context.Context, string, p.PrintResult) error
+	configState   func(context.Context, string, *p.EffectiveConfig, *p.ConfigBackup)
+	maintenance   *MaintenanceState
+	effective     *p.EffectiveConfig
+	backup        *p.ConfigBackup
+	invalidated   *p.MeasurementInvalidated
 }
 
 func New(cfg Config) *Hub {
-	return &Hub{cfg: cfg, state: State{AgentID: cfg.ID, ScaleID: cfg.ScaleID, Revision: time.Now().UnixNano(), Images: []p.Image{}, ProtocolVersion: p.LegacyProtocolVersion, Capabilities: []string{}}}
+	return &Hub{cfg: cfg, state: State{AgentID: cfg.ID, ScaleCode: cfg.ScaleCode, Revision: time.Now().UnixNano(), Images: []p.Image{}, ProtocolVersion: p.LegacyProtocolVersion, Capabilities: []string{}}}
 }
 func ID() string { var b [16]byte; _, _ = rand.Read(b[:]); return hex.EncodeToString(b[:]) }
 
 // SetConfigStateHandler receives every Agent-reported effective configuration
 // and success backup. It is invoked asynchronously so a slow database write
 // never blocks the device read loop or delays measurement messages.
-func (h *Hub) SetConfigStateHandler(fn func(context.Context, int64, *p.EffectiveConfig, *p.ConfigBackup)) {
+func (h *Hub) SetConfigStateHandler(fn func(context.Context, string, *p.EffectiveConfig, *p.ConfigBackup)) {
 	if h.children != nil {
 		h.mu.Lock()
 		h.configState = fn
@@ -107,11 +109,11 @@ func (h *Hub) publishConfig(effective *p.EffectiveConfig, backup *p.ConfigBackup
 	if fn == nil {
 		return
 	}
-	scale := h.cfg.ScaleID
-	go fn(context.Background(), scale, effective, backup)
+	scaleCode := h.cfg.ScaleCode
+	go fn(context.Background(), scaleCode, effective, backup)
 }
 
-func (h *Hub) SetPrintHandler(fn func(context.Context, int64, p.PrintResult) error) {
+func (h *Hub) SetPrintHandler(fn func(context.Context, string, p.PrintResult) error) {
 	if h.children != nil {
 		h.mu.Lock()
 		h.printResult = fn
@@ -137,17 +139,17 @@ func (h *Hub) freshLocked() bool {
 func (h *Hub) readyLocked() bool {
 	return h.freshLocked() && h.state.Stable && h.state.DeviceOK && h.state.Weight > 0
 }
-func (h *Hub) State(scale int64) State {
+func (h *Hub) State(scaleCode string) State {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.State(scale)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.State(scaleCode)
 		}
-		return State{ScaleID: scale, Images: []p.Image{}}
+		return State{ScaleCode: scaleCode, Images: []p.Image{}}
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s := h.state
-	s.Online = scale == h.cfg.ScaleID && h.freshLocked()
+	s.Online = scaleCode == h.cfg.ScaleCode && h.freshLocked()
 	s.Images = append([]p.Image{}, s.Images...)
 	s.Capabilities = append([]string{}, s.Capabilities...)
 	if !s.Online {
@@ -157,15 +159,15 @@ func (h *Hub) State(scale int64) State {
 }
 
 // Guard serializes a business commit with device changes. The caller must release it.
-func (h *Hub) Guard(scale, revision int64) (State, func(), error) {
+func (h *Hub) Guard(scaleCode string, revision int64) (State, func(), error) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.Guard(scale, revision)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.Guard(scaleCode, revision)
 		}
 		return State{}, nil, ErrUnavailable
 	}
 	h.mu.Lock()
-	if scale != h.cfg.ScaleID || !h.readyLocked() || (revision != 0 && h.state.Revision != revision) {
+	if scaleCode != h.cfg.ScaleCode || !h.readyLocked() || (revision != 0 && h.state.Revision != revision) {
 		h.mu.Unlock()
 		return State{}, nil, ErrUnavailable
 	}
@@ -194,7 +196,7 @@ func (h *Hub) Serve(ws *websocket.Conn) {
 		root := h.parent
 		root.gate.RLock()
 		if root.resolver != nil {
-			cfg, err := root.resolver(ws.Request().Context(), h.cfg.ScaleID)
+			cfg, err := root.resolver(ws.Request().Context(), h.cfg.ScaleCode)
 			if err != nil || cfg.ID != h.cfg.ID || cfg.Key != h.cfg.Key {
 				root.gate.RUnlock()
 				_ = ws.Close()
@@ -228,7 +230,7 @@ func (h *Hub) serve(ws *websocket.Conn, admitted func()) {
 	h.effective = nil
 	h.backup = nil
 	h.invalidated = nil
-	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleID: h.cfg.ScaleID, Revision: h.state.Revision + 1, Images: []p.Image{}, ProtocolVersion: p.LegacyProtocolVersion, Capabilities: []string{}}
+	h.state = State{ConnectionID: c.id, AgentID: h.cfg.ID, ScaleCode: h.cfg.ScaleCode, Revision: h.state.Revision + 1, Images: []p.Image{}, ProtocolVersion: p.LegacyProtocolVersion, Capabilities: []string{}}
 	h.mu.Unlock()
 	admitted()
 	defer h.disconnect(c)
@@ -301,7 +303,7 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 		h.state.Images = images
 	case "maintenance.state":
 		var state MaintenanceState
-		if json.Unmarshal(m.Payload, &state) != nil || state.Config.ScaleID != h.cfg.ScaleID || (h.cfg.Key != "" && state.Config.AgentID != h.cfg.ID) {
+		if json.Unmarshal(m.Payload, &state) != nil || state.Config.ScaleCode != h.cfg.ScaleCode || (h.cfg.Key != "" && state.Config.AgentID != h.cfg.ID) {
 			return errors.New("invalid maintenance state")
 		}
 		state.Config.AgentKey = ""
@@ -357,7 +359,7 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 		if h.printResult == nil {
 			return errors.New("print handler unavailable")
 		}
-		if err := h.printResult(context.Background(), h.cfg.ScaleID, result); err != nil {
+		if err := h.printResult(context.Background(), h.cfg.ScaleCode, result); err != nil {
 			return err
 		}
 		delete(c.prints, m.RequestID)
@@ -369,18 +371,18 @@ func (h *Hub) receive(c *connection, m p.Message) error {
 	c.seen = time.Now()
 	return nil
 }
-func (h *Hub) Capture(ctx context.Context, scale int64) (p.Capture, int64, error) {
-	return h.CaptureWithPolicy(ctx, scale, true)
+func (h *Hub) Capture(ctx context.Context, scaleCode string) (p.Capture, int64, error) {
+	return h.CaptureWithPolicy(ctx, scaleCode, true)
 }
-func (h *Hub) CaptureWithPolicy(ctx context.Context, scale int64, required bool) (p.Capture, int64, error) {
+func (h *Hub) CaptureWithPolicy(ctx context.Context, scaleCode string, required bool) (p.Capture, int64, error) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.CaptureWithPolicy(ctx, scale, required)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.CaptureWithPolicy(ctx, scaleCode, required)
 		}
 		return p.Capture{}, 0, ErrUnavailable
 	}
 	h.mu.Lock()
-	if scale != h.cfg.ScaleID || !h.readyLocked() {
+	if scaleCode != h.cfg.ScaleCode || !h.readyLocked() {
 		h.mu.Unlock()
 		return p.Capture{}, 0, ErrUnavailable
 	}
@@ -431,15 +433,15 @@ func (h *Hub) CaptureWithPolicy(ctx context.Context, scale int64, required bool)
 	result.Plate = h.state.Plate
 	return result, revision, nil
 }
-func (h *Hub) Print(scale int64, id int64, ticket any) error {
+func (h *Hub) Print(scaleCode string, id int64, ticket any) error {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.Print(scale, id, ticket)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.Print(scaleCode, id, ticket)
 		}
 		return ErrUnavailable
 	}
 	h.mu.Lock()
-	if scale != h.cfg.ScaleID || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
+	if scaleCode != h.cfg.ScaleCode || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
 		h.mu.Unlock()
 		return ErrUnavailable
 	}

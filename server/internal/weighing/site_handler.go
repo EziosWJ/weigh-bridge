@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/EziosWJ/weighbridge/server/internal/auth"
-	"github.com/EziosWJ/weighbridge/server/internal/rbac"
-	"github.com/gin-gonic/gin"
 	"io"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
+	"github.com/EziosWJ/weighbridge/server/internal/auth"
+	"github.com/EziosWJ/weighbridge/server/internal/rbac"
+	"github.com/gin-gonic/gin"
 )
 
 func registerSiteRoutes(router gin.IRouter, h *Handler) {
@@ -42,7 +44,7 @@ func registerSiteRoutes(router gin.IRouter, h *Handler) {
 		}
 		writeResult(c, nil, h.service.SaveSiteGrants(c, id, in.Grants, requestEvent(c)))
 	})
-	router.POST("/scales/:id/agent/kick", rbac.RequirePermission(h.permissions, "weighing:agent:kick"), h.kickAgent)
+	router.POST("/scales/:code/agent/kick", rbac.RequirePermission(h.permissions, "weighing:agent:kick"), h.kickAgent)
 }
 
 // siteScope is the common HTTP boundary for both queries and ID-based actions.
@@ -55,18 +57,18 @@ func (h *Handler) siteScope(c *gin.Context) {
 		c.Abort()
 		return
 	}
-	scope := siteScope{Read: []int64{}, Operate: []int64{}}
+	scope := siteScope{Read: []string{}, Operate: []string{}}
 	for _, s := range sites {
-		scope.Read = append(scope.Read, s.ID)
+		scope.Read = append(scope.Read, s.Code)
 		if s.CanOperate && s.Enabled == 1 {
-			scope.Operate = append(scope.Operate, s.ID)
+			scope.Operate = append(scope.Operate, s.Code)
 		}
 	}
 	c.Set(siteScopeKey, scope)
 	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	fail := func(err error) { writeResult(c, nil, err); c.Abort() }
 	path := strings.TrimPrefix(c.FullPath(), "/api/weighing/")
-	if strings.HasPrefix(path, "site-config") || strings.HasPrefix(path, "agent-settings") || strings.HasPrefix(path, "users/") || path == "site-options" {
+	if strings.HasPrefix(path, "site-config") || strings.HasPrefix(path, "agent-settings") || strings.HasPrefix(path, "ticket-sequences") || strings.HasPrefix(path, "users/") || path == "site-options" {
 		c.Next()
 		return
 	}
@@ -92,49 +94,54 @@ func (h *Handler) siteScope(c *gin.Context) {
 	if write {
 		allowed = scope.Operate
 	}
-	var expected int64
-	check := func(kind string, id int64) bool {
-		site, e := h.service.ResourceSite(c, kind, id)
-		if e != nil {
-			fail(e)
-			return false
-		}
+	var expected string
+	allow := func(site string) bool {
 		if !slices.Contains(allowed, site) {
 			fail(ErrForbidden)
 			return false
 		}
-		if expected != 0 && expected != site {
+		if expected != "" && expected != site {
 			fail(ErrForbidden)
 			return false
 		}
 		expected = site
 		return true
 	}
-	if value := c.Query("siteId"); value != "" {
-		id, e := strconv.ParseInt(value, 10, 64)
-		if e != nil || id < 1 {
-			fail(ErrInvalid)
-			return
+	check := func(kind string, id int64) bool {
+		site, e := h.service.ResourceSite(c, kind, id)
+		if e != nil {
+			fail(e)
+			return false
 		}
-		if !slices.Contains(scope.Read, id) {
+		return allow(site)
+	}
+	checkScale := func(scaleCode string) bool {
+		site, e := h.service.ScaleSite(c, scaleCode)
+		if e != nil {
+			fail(e)
+			return false
+		}
+		return allow(site)
+	}
+	if value := c.Query("siteCode"); value != "" {
+		if !slices.Contains(scope.Read, value) {
 			fail(ErrForbidden)
 			return
 		}
-		scope.FilterSiteID = id
+	}
+	if value := c.Query("scale"); value != "" {
+		if !checkScale(value) {
+			return
+		}
+		scope.ScaleCode = value
 		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	}
-	if value := c.Query("scaleId"); value != "" {
-		id, e := strconv.ParseInt(value, 10, 64)
-		if e != nil || id < 1 {
-			fail(ErrInvalid)
-			return
-		}
-		if !check("scales", id) {
-			return
-		}
-		scope.ScaleID = id
-	}
 	parts := strings.Split(path, "/")
+	if len(parts) > 1 && parts[0] == "scales" && parts[1] == ":code" {
+		if !checkScale(c.Param("code")) {
+			return
+		}
+	}
 	if len(parts) > 1 && parts[1] == ":id" {
 		id, e := pathID(c)
 		if e != nil {
@@ -146,11 +153,17 @@ func (h *Handler) siteScope(c *gin.Context) {
 		}
 	}
 	if strings.HasPrefix(path, "agent-images/") {
-		id, e := strconv.ParseInt(strings.Split(c.Param("imageId"), "_")[0], 10, 64)
-		if e != nil || !check("scales", id) {
-			if e != nil {
-				fail(ErrInvalid)
-			}
+		if _, ok := agentbridge.ParseImageID(c.Param("imageId")); !ok {
+			fail(ErrInvalid)
+			return
+		}
+		// Image prefixes are historical labels, not an authorization scope.
+		local, err := h.service.LocalSiteCode(c)
+		if err != nil {
+			fail(err)
+			return
+		}
+		if !allow(local) {
 			return
 		}
 	}
@@ -173,7 +186,7 @@ func (h *Handler) siteScope(c *gin.Context) {
 		c.Request.Body = io.NopCloser(bytes.NewReader(body))
 
 		var refs struct {
-			ScaleID        int64  `json:"scaleId"`
+			ScaleCode      string `json:"scaleCode"`
 			TaskID         int64  `json:"taskId"`
 			SampleID       int64  `json:"sampleId"`
 			TargetRecordID int64  `json:"targetRecordId"`
@@ -195,10 +208,13 @@ func (h *Handler) siteScope(c *gin.Context) {
 				return
 			}
 		}
+		if refs.ScaleCode != "" && !replay && !checkScale(refs.ScaleCode) {
+			return
+		}
 		for _, v := range []struct {
 			kind string
 			id   int64
-		}{{"scales", refs.ScaleID}, {"tasks", refs.TaskID}, {"samples", refs.SampleID}, {"records", refs.TargetRecordID}} {
+		}{{"tasks", refs.TaskID}, {"samples", refs.SampleID}, {"records", refs.TargetRecordID}} {
 			if v.id < 0 {
 				fail(ErrInvalid)
 				return
@@ -219,7 +235,6 @@ func (h *Handler) siteScope(c *gin.Context) {
 			return
 		}
 	}
-	scope.WriteSiteID = expected
 	c.Set(siteScopeKey, scope)
 	c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), siteScopeKey, scope))
 	c.Next()

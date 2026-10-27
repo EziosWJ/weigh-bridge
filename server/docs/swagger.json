@@ -7567,8 +7567,8 @@
                 "reason": {
                     "type": "string"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -7654,8 +7654,8 @@
                 "sampleId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -7974,14 +7974,14 @@
                 "plate": {
                     "type": "string"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "secondWeight": {
                     "type": "string"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -8201,8 +8201,8 @@
                 "sampleId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -8265,8 +8265,8 @@
                 "plateEvidence": {
                     "type": "object"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "source": {
                     "type": "string"
@@ -8309,8 +8309,8 @@
                 "holderUserId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "version": {
                     "type": "integer"
@@ -8349,8 +8349,8 @@
                 "holderUserId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -8410,8 +8410,8 @@
                 "partyName": {
                     "type": "string"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "tare": {
                     "type": "string"
@@ -8495,14 +8495,14 @@
                         "$ref": "#/definitions/weighing.WeighRecord"
                     }
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "secondWeight": {
                     "type": "string"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -8611,8 +8611,8 @@
                 "secondRecordId": {
                     "type": "integer"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "siteName": {
                     "type": "string"
@@ -8705,8 +8705,8 @@
                 "sampleId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "stage": {
                     "type": "string"

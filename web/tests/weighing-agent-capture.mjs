@@ -28,7 +28,7 @@ try {
     const ok = data => route.fulfill({ json: { code: 200, data } });
     if (path === '/api/weighing/cameras') return ok({ cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { apiUrl: '', apiUsername: '', hasApiPassword: false, whepBaseUrl: '', version: 1, syncState: 'pending', syncedVersion: 0, updateTime: new Date().toISOString() } });
     if (path.includes('/agent-images/')) return route.fulfill({ contentType: 'image/png', body: png });
-    if (path.includes('/session/')) return ok({ scaleId: 1, holderUserId: 1, generation: 1, sessionToken: 'isolated-session', expiresAt: new Date(Date.now() + 60000).toISOString() });
+    if (path.includes('/session/')) return ok({ scaleCode: 'WB01', holderUserId: 1, generation: 1, sessionToken: 'isolated-session', expiresAt: new Date(Date.now() + 60000).toISOString() });
     if (path.endsWith('/samples')) {
       captures++;
       if (failCapture) return route.fulfill({ status: 409, json: { code: 409, message: '装车区摄像头抓拍失败' } });
@@ -41,7 +41,7 @@ try {
     if (path.includes('confirmation')) confirmations++;
     return ok({ records: [], total: 0 });
   });
-  const open = scenario => page.goto(`${base}/tests/weighing-agent-capture.html?scaleId=1&scenario=${scenario}`);
+  const open = scenario => page.goto(`${base}/tests/weighing-agent-capture.html?scale=WB01&scenario=${scenario}`);
   await open('ready');
   await page.getByRole('heading', { name: '现场画面', exact: false }).waitFor();
   const capture = page.getByRole('button', { name: '采集重量', exact: true });

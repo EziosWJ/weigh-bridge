@@ -37,7 +37,7 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 	cfg := agentprinter.Defaults()
 	cfg.AgentID = "remote-agent"
 	cfg.AgentKey = "test-device-key"
-	hub := agentbridge.New(agentbridge.Config{ID: cfg.AgentID, ScaleID: cfg.ScaleID, Key: cfg.AgentKey, ImageDir: t.TempDir()})
+	hub := agentbridge.New(agentbridge.Config{ID: cfg.AgentID, ScaleCode: cfg.ScaleCode, Key: cfg.AgentKey, ImageDir: t.TempDir()})
 	router := gin.New()
 	hub.Register(router)
 	server := httptest.NewServer(router)
@@ -75,7 +75,7 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 	}()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		if _, err = hub.MaintenanceState(cfg.ScaleID); err == nil {
+		if _, err = hub.MaintenanceState(cfg.ScaleCode); err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -83,12 +83,11 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 		}
 		time.Sleep(time.Millisecond)
 	}
-	connection := hub.State(1).ConnectionID
-	initialRevision := hub.State(1).Revision
+	connection := hub.State("WB01").ConnectionID
+	initialRevision := hub.State("WB01").Revision
 	var maintenanceActive atomic.Bool
 	remote := agentmaintenance.NewRemote(hub, func(context.Context) (agentprinter.Config, error) {
 		identity := cfg
-		identity.SiteID = 1
 		return identity, nil
 	}, func(context.Context) (func(), error) {
 		if !maintenanceActive.CompareAndSwap(false, true) {
@@ -137,7 +136,7 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 	if got := call("POST", "/action", map[string]string{"action": "apply"}); got.Code != 200 {
 		t.Fatalf("apply camera without API-host CUPS: %d %s", got.Code, got.Body.String())
 	}
-	if hub.State(1).Revision == initialRevision {
+	if hub.State("WB01").Revision == initialRevision {
 		t.Fatal("configuration activation kept old sample revision")
 	}
 	active, err := agentprinter.ReadEnvironment(environment, agentprinter.Defaults())
@@ -163,7 +162,7 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 	if _, _, running := runtime.snapshot(); running {
 		t.Fatal("device workers not stopped")
 	}
-	if hub.State(1).ConnectionID != connection {
+	if hub.State("WB01").ConnectionID != connection {
 		t.Fatal("stopping devices dropped control connection")
 	}
 	if got := call("GET", "/config", nil); got.Code != 200 {
@@ -175,7 +174,7 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 	if _, _, running := runtime.snapshot(); !running {
 		t.Fatal("workers did not resume")
 	}
-	if hub.State(1).ConnectionID != connection {
+	if hub.State("WB01").ConnectionID != connection {
 		t.Fatal("apply/restart replaced the Agent connection")
 	}
 	// Hold an in-flight device job while apply drains it. Navigating away from
@@ -231,7 +230,7 @@ func TestAgentOwnsRemoteConfigurationAndKeepsConnectionWhenDevicesStop(t *testin
 	server.CloseClientConnections()
 	cancel()
 	deadline = time.Now().Add(time.Second)
-	for hub.Connected(1) && time.Now().Before(deadline) {
+	for hub.Connected("WB01") && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	if got := call("GET", "/config", nil); got.Code != 503 {

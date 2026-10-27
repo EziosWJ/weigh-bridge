@@ -41,13 +41,13 @@ func TestCapturePersistsBothViewsAndRejectsWeightChange(t *testing.T) {
 				_, _ = w.Write(data.Bytes())
 			}))
 			defer camera.Close()
-			hub := agentbridge.New(agentbridge.Config{ID: "real-camera-test", Key: "key", ScaleID: 1, ImageDir: t.TempDir()})
+			hub := agentbridge.New(agentbridge.Config{ID: "real-camera-test", Key: "key", ScaleCode: "WB01", ImageDir: t.TempDir()})
 			router := gin.New()
 			hub.Register(router)
 			server := httptest.NewServer(router)
 			defer server.Close()
 			cfg := agentprinter.Defaults()
-			cfg.AgentID, cfg.AgentKey, cfg.ServerURL = "real-camera-test", "key", server.URL
+			cfg.AgentID, cfg.AgentKey, cfg.ServerURL, cfg.ScaleCode = "real-camera-test", "key", server.URL, "WB01"
 			cfg.CameraFrontURL, cfg.CameraRearURL = camera.URL, camera.URL
 			result := captureEvidence(context.Background(), cfg, scale)
 			if unstable {
@@ -81,7 +81,7 @@ func TestOptionalCaptureKeepsWeightChecksAndActualImageStatus(t *testing.T) {
 				t.Fatal(err)
 			}
 			waitScale(t, scale, func(s agentscale.Snapshot) bool { return s.DeviceOK && s.Stable })
-			hub := agentbridge.New(agentbridge.Config{ID: "optional", Key: "key", ScaleID: 1, ImageDir: t.TempDir()})
+			hub := agentbridge.New(agentbridge.Config{ID: "optional", Key: "key", ScaleCode: "WB01", ImageDir: t.TempDir()})
 			router := gin.New()
 			hub.Register(router)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +105,7 @@ func TestOptionalCaptureKeepsWeightChecksAndActualImageStatus(t *testing.T) {
 			}))
 			defer camera.Close()
 			cfg := agentprinter.Defaults()
-			cfg.AgentID, cfg.AgentKey, cfg.ServerURL = "optional", "key", server.URL
+			cfg.AgentID, cfg.AgentKey, cfg.ServerURL, cfg.ScaleCode = "optional", "key", server.URL, "WB01"
 			if mode != "disabled" {
 				cfg.CameraFrontURL, cfg.CameraRearURL = camera.URL+"/front", camera.URL+"/rear"
 			}

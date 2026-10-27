@@ -7575,8 +7575,8 @@ const docTemplate = `{
                 "reason": {
                     "type": "string"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -7662,8 +7662,8 @@ const docTemplate = `{
                 "sampleId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -7982,14 +7982,14 @@ const docTemplate = `{
                 "plate": {
                     "type": "string"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "secondWeight": {
                     "type": "string"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -8209,8 +8209,8 @@ const docTemplate = `{
                 "sampleId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -8273,8 +8273,8 @@ const docTemplate = `{
                 "plateEvidence": {
                     "type": "object"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "source": {
                     "type": "string"
@@ -8317,8 +8317,8 @@ const docTemplate = `{
                 "holderUserId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "version": {
                     "type": "integer"
@@ -8357,8 +8357,8 @@ const docTemplate = `{
                 "holderUserId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "sessionToken": {
                     "type": "string"
@@ -8418,8 +8418,8 @@ const docTemplate = `{
                 "partyName": {
                     "type": "string"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "tare": {
                     "type": "string"
@@ -8503,14 +8503,14 @@ const docTemplate = `{
                         "$ref": "#/definitions/weighing.WeighRecord"
                     }
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "secondWeight": {
                     "type": "string"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "status": {
                     "type": "string"
@@ -8619,8 +8619,8 @@ const docTemplate = `{
                 "secondRecordId": {
                     "type": "integer"
                 },
-                "siteId": {
-                    "type": "integer"
+                "siteCode": {
+                    "type": "string"
                 },
                 "siteName": {
                     "type": "string"
@@ -8713,8 +8713,8 @@ const docTemplate = `{
                 "sampleId": {
                     "type": "integer"
                 },
-                "scaleId": {
-                    "type": "integer"
+                "scaleCode": {
+                    "type": "string"
                 },
                 "stage": {
                     "type": "string"

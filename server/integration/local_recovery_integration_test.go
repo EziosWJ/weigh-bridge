@@ -112,10 +112,12 @@ func recoveryBusinessAPI(t *testing.T, db *platformdatabase.Database, imageDir s
 	t.Helper()
 	deps := testDependencies(t, db, t.TempDir())
 	t.Cleanup(deps.Notification.Close)
-	repo := weighing.NewRepository(db.GORM)
+	// The image directory also holds the out-of-database ticket-number
+	// watermark, which is what prevents reuse after restoring this backup.
+	repo := weighing.NewRepository(db.GORM, weighing.RuntimeOptions{DataDir: imageDir})
 	hub := agentbridge.NewMultiple(nil)
-	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
-		return repo.AgentConfig(ctx, id, imageDir)
+	hub.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
+		return repo.AgentConfig(ctx, scaleCode, imageDir)
 	})
 	deps.Weighing = weighing.NewService(repo, hub)
 	deps.Camera, _, _ = newCaptureService(t, db, t.TempDir())
@@ -126,7 +128,7 @@ func recoveryBusinessAPI(t *testing.T, db *platformdatabase.Database, imageDir s
 	token := loginAdmin(t, router)
 	testLocalSetup(t, db, router, token, 1)
 	addCaptureCameras(t, db, "rtsp://camera/recovery-1", "rtsp://camera/recovery-2")
-	deviceConfig, err := repo.AgentConfig(context.Background(), 1, imageDir)
+	deviceConfig, err := repo.AgentConfig(context.Background(), "WB01", imageDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,8 +147,8 @@ func recoveryTrip(t *testing.T, router http.Handler, token string, device *weigh
 		}
 		return string(b)
 	}
-	session := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/1/session/takeover", `{"clientId":"recovery-browser","reason":"恢复验证"}`, token)
-	input := map[string]any{"scaleId": 1, "clientId": "recovery-browser", "sessionToken": session.SessionToken, "business": map[string]any{"plate": plate, "direction": "inbound", "materialId": materialID, "partyId": partyID}, "checks": map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}}
+	session := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/WB01/session/takeover", `{"clientId":"recovery-browser","reason":"恢复验证"}`, token)
+	input := map[string]any{"scaleCode": "WB01", "clientId": "recovery-browser", "sessionToken": session.SessionToken, "business": map[string]any{"plate": plate, "direction": "inbound", "materialId": materialID, "partyId": partyID}, "checks": map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}}
 	device.weight("30")
 	sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(input), token)
 	input["sampleId"] = sample.ID

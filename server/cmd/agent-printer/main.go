@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -38,11 +37,6 @@ func main() {
 		os.Exit(1)
 	}
 	digest := agentprinter.ConfigDigest(cfg)
-	identityDir, identityErr := agentprinter.IdentityDirectory(state, cfg.ServerURL, cfg.AgentID, cfg.ScaleID)
-	if identityErr != nil {
-		slog.Error("attempt identity initialization failed", "error", identityErr)
-		os.Exit(1)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	dir := filepath.Dir(state)
@@ -67,7 +61,7 @@ func main() {
 		statusPath := filepath.Join(filepath.Dir(state), "maintenance-status.json")
 		pausePath := filepath.Join(filepath.Dir(state), "maintenance.pause")
 		current, scale, _ := runtime.snapshot()
-		if err := runManaged(ctx, current, scale, identityDir, statusPath, pausePath, runtime); errors.Is(err, p.ErrKicked) {
+		if err := runManaged(ctx, current, scale, state, statusPath, pausePath, runtime, state); errors.Is(err, p.ErrKicked) {
 			writeAgentStatus(statusPath, false, digest)
 			slog.Info("Agent 已被后台踢出，停止运行")
 			return
@@ -86,7 +80,7 @@ func main() {
 func run(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, state, statusPath, pausePath string) error {
 	return runManaged(parent, cfg, scale, state, statusPath, pausePath, nil)
 }
-func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, state, statusPath, pausePath string, control *deviceRuntime) (resultErr error) {
+func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentscale.Monitor, state, statusPath, pausePath string, control *deviceRuntime, ledgerRoot ...string) (resultErr error) {
 	ctx, cancelRun := context.WithCancelCause(parent)
 	defer cancelRun(nil)
 	defer func() {
@@ -95,7 +89,7 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 		}
 	}()
 	server, queue := cfg.ServerURL, cfg.Queue
-	scaleID, agentID := cfg.ScaleID, cfg.AgentID
+	scaleCode, agentID := cfg.ScaleCode, cfg.AgentID
 	digest := agentprinter.ConfigDigest(cfg)
 	u, err := url.Parse(server)
 	if err != nil {
@@ -122,8 +116,8 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 	if cfg.AgentID != "" {
 		wsConfig.Header.Set("X-Agent-ID", cfg.AgentID)
 	}
-	if cfg.ScaleID > 0 {
-		wsConfig.Header.Set("X-Scale-ID", strconv.FormatInt(cfg.ScaleID, 10))
+	if cfg.ScaleCode != "" {
+		wsConfig.Header.Set("X-Scale-Code", cfg.ScaleCode)
 	}
 	dial, cancel := context.WithTimeout(ctx, 5*time.Second)
 	conn, err := wsConfig.DialContext(dial)
@@ -136,16 +130,22 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 	if err != nil {
 		return err
 	}
-	if ack.ScaleID > 0 {
-		scaleID = ack.ScaleID
-		cfg.ScaleID = ack.ScaleID
+	if len(ledgerRoot) > 0 {
+		state, err = agentprinter.InstallationDirectory(ledgerRoot[0], ack.InstallationID)
+		if err != nil {
+			return fmt.Errorf("打印账本身份核对失败：%w", err)
+		}
+	}
+	if ack.ScaleCode != "" {
+		scaleCode = ack.ScaleCode
+		cfg.ScaleCode = ack.ScaleCode
 	}
 	if ack.AgentID != "" {
 		agentID = ack.AgentID
 		cfg.AgentID = ack.AgentID
 	}
 	if !containsString(ack.Capabilities, p.CapabilityMeasurementWindow) {
-		slog.Warn("Server 未接受测量窗口能力，正式采集将不可用", "scale", scaleID)
+		slog.Warn("Server 未接受测量窗口能力，正式采集将不可用", "scale", scaleCode)
 	}
 	if monitor, err := activeMonitor(control, scale); err == nil {
 		monitor.InvalidateMeasurements("connection_changed")
@@ -163,7 +163,7 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 		case <-done:
 		}
 	}()
-	slog.Info("printer Agent connected", "queue", queue, "scale", scaleID, "agent", agentID, "serial", cfg.SerialPort)
+	slog.Info("printer Agent connected", "queue", queue, "scale", scaleCode, "agent", agentID, "serial", cfg.SerialPort)
 	var writes sync.Mutex
 	sendMessage := func(message p.Message) error {
 		writes.Lock()
@@ -185,7 +185,7 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 			return nil
 		}
 		state := control.report()
-		state.Config.ScaleID = scaleID
+		state.Config.ScaleCode = scaleCode
 		state.Config.AgentID = agentID
 		return send("maintenance.state", state)
 	}
@@ -346,7 +346,7 @@ func runManaged(parent context.Context, cfg agentprinter.Config, scale *agentsca
 						if control == nil {
 							result = (agentcamera.Client{Config: cfg}).Test(ctx)
 						} else {
-							result, _ = control.testCameras(ctx, cfg.ScaleID)
+							result, _ = control.testCameras(ctx, cfg.ScaleCode)
 						}
 						if err := sendMessage(p.New("camera.test.result", fmt.Sprintf("printer-%d", time.Now().UnixNano()), requestID, result)); err != nil {
 							cancelRun(err)

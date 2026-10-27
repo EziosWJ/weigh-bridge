@@ -28,19 +28,19 @@ func TestPostgresSiteIsolation(t *testing.T) {
 		Scales []weighing.Scale `json:"scales"`
 		Sites  []weighing.Site  `json:"sites"`
 	}](t, router, http.MethodGet, "/api/weighing/capabilities", "", admin)
-	if len(caps.Sites) != 1 || caps.Sites[0].ID != 1 || len(caps.Scales) != 1 || caps.Scales[0].ID != 1 {
+	if len(caps.Sites) != 1 || caps.Sites[0].Code != "LOCAL01" || len(caps.Scales) != 1 || caps.Scales[0].Code != "SCALE01" {
 		t.Fatalf("capabilities must expose only the configured local site: %+v", caps)
 	}
-	if got := weighingData[[]weighing.Site](t, router, http.MethodGet, "/api/weighing/sites", "", admin); len(got) != 1 || got[0].ID != 1 {
+	if got := weighingData[[]weighing.Site](t, router, http.MethodGet, "/api/weighing/sites", "", admin); len(got) != 1 || got[0].Code != "LOCAL01" {
 		t.Fatalf("site list is not local-only: %+v", got)
 	}
-	if got := serveJSON(router, http.MethodGet, "/api/weighing/scales/2/device", "", admin); got.Code != http.StatusNotFound {
+	if got := serveJSON(router, http.MethodGet, "/api/weighing/scales/FOREIGN/device", "", admin); got.Code != http.StatusNotFound {
 		t.Fatalf("foreign scale read status=%d body=%s", got.Code, got.Body.String())
 	}
-	if got := serveJSON(router, http.MethodGet, "/api/weighing/site-config/2/connection", "", admin); got.Code != http.StatusNotFound {
-		t.Fatalf("foreign connection export status=%d body=%s", got.Code, got.Body.String())
+	if got := serveJSON(router, http.MethodGet, "/api/weighing/site-config/connection", "", admin); got.Code != http.StatusOK {
+		t.Fatalf("local connection export status=%d body=%s", got.Code, got.Body.String())
 	}
-	if got := serveJSON(router, http.MethodGet, "/api/weighing/tasks?siteId=2", "", admin); got.Code != http.StatusForbidden {
+	if got := serveJSON(router, http.MethodGet, "/api/weighing/tasks?siteCode=FOREIGN", "", admin); got.Code != http.StatusForbidden {
 		t.Fatalf("foreign site filter status=%d body=%s", got.Code, got.Body.String())
 	}
 
@@ -57,13 +57,13 @@ func TestPostgresSiteIsolation(t *testing.T) {
 	if got := weighingData[[]weighing.Site](t, router, http.MethodGet, "/api/weighing/sites", "", operator); len(got) != 0 {
 		t.Fatalf("new account received implicit local scope: %+v", got)
 	}
-	assertEnvelopeCode(t, serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), `{"grants":[{"siteId":2,"canOperate":1}]}`, admin), http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
+	assertEnvelopeCode(t, serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), `{"grants":[{"siteCode":"FOREIGN","canOperate":1}]}`, admin), http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
 	var foreignGrants int64
-	if err := db.GORM.Table("wb_user_site").Where("user_id=? AND site_id=2", userID).Count(&foreignGrants).Error; err != nil || foreignGrants != 0 {
+	if err := db.GORM.Table("wb_user_site").Where("user_id=? AND site_code=?", userID, "FOREIGN").Count(&foreignGrants).Error; err != nil || foreignGrants != 0 {
 		t.Fatalf("foreign site grant was persisted: count=%d err=%v", foreignGrants, err)
 	}
-	assertEnvelopeCode(t, serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), `{"grants":[{"siteId":1,"canOperate":1}]}`, admin), http.StatusOK, http.StatusOK, "success")
-	if got := weighingData[[]weighing.Site](t, router, http.MethodGet, "/api/weighing/sites", "", operator); len(got) != 1 || got[0].ID != 1 || !got[0].CanOperate {
+	assertEnvelopeCode(t, serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), `{"grants":[{"siteCode":"LOCAL01","canOperate":1}]}`, admin), http.StatusOK, http.StatusOK, "success")
+	if got := weighingData[[]weighing.Site](t, router, http.MethodGet, "/api/weighing/sites", "", operator); len(got) != 1 || got[0].Code != "LOCAL01" || !got[0].CanOperate {
 		t.Fatalf("explicit local grant not applied: %+v", got)
 	}
 

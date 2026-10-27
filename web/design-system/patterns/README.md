@@ -47,14 +47,14 @@ DataTableCard
 | --- | --- | --- |
 | 系统概览 `src/pages/dashboard.tsx` | Detail + Standard List 变体 | 本厂业务指标、待回磅、紧凑设备摘要与最近有效单据；[页面覆盖规则](../pages/dashboard.md) |
 | 称重业务 `src/pages/weighing/` | Standard List / Form / Detail 变体 | 独立工作台、资料、任务和单据；[页面覆盖规则](../pages/weighing.md) |
-| 过磅单标题 `src/pages/system/configs/ticket-title-configuration.tsx` | Standard Form + DetailDialog 变体 | 配置管理顶部编辑、样张预览，沿用系统配置权限；内部身份自动建立，旧名称入口退役 |
+| 过磅单标题 `src/pages/system/configs/ticket-title-configuration.tsx` | Standard Form + DetailDialog 变体 | 独立页面编辑、样张预览，沿用系统配置权限 |
 | 摄像头管理 `src/pages/cameras/index.tsx` | Standard List Page + FormDialog 变体 | 动态列表、测试预览、识别与视频同步；[页面覆盖规则](../pages/cameras.md) |
 | 用户管理 `src/pages/system/users/index.tsx` | Standard List Page | 用户筛选、选择、行操作和用户 Dialog 由页面负责 |
 | 角色管理 `src/pages/system/roles/index.tsx` | Standard List Page | 角色筛选、权限分配和行操作是业务扩展 |
 | 菜单管理 `src/pages/system/menus/index.tsx` | Tree List Page | 层级菜单使用表格化树形数据，保留菜单专属操作 |
 | 部门管理 `src/pages/system/depts/index.tsx` | Tree List Page | 部门层级、展开和节点操作是页面状态 |
 | 字典管理 `src/pages/system/dicts/index.tsx` | Standard List Page 变体 | 左右为字典类型和字典项双列表，不是树；保留双表语义 |
-| 配置管理 `src/pages/system/configs/index.tsx` | Standard List + Detail / Form 变体 | 标题配置与系统配置列表组合，沿用系统配置权限 |
+| 配置管理 `src/pages/system/configs/index.tsx` | Standard List + Detail / Form 变体 | 系统配置列表，沿用系统配置权限 |
 | 文件管理 `src/pages/system/files/index.tsx` | Standard List Page + Upload Section | 主体是文件列表，上传/预览通过业务 Dialog 进入 |
 | 登录日志 `src/pages/system/logs/login-logs.tsx` | Standard List Page | 日志筛选、详情 Dialog 和清理操作是业务扩展 |
 | 操作日志 `src/pages/system/logs/oper-logs.tsx` | Standard List Page | 日志筛选、详情 Dialog 和清理操作是业务扩展 |

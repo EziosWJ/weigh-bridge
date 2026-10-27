@@ -35,7 +35,7 @@ func TestMediaMappingRoundTripAndVerifiedRuntime(t *testing.T) {
 	}
 	c.CameraEnabled = false
 	s.active = agentprinter.NormalizeConfig(c)
-	if s.CameraAvailable(c.ScaleID) {
+	if s.CameraAvailable(c.ScaleCode) {
 		t.Fatal("disabled camera accepted formal capture")
 	}
 }

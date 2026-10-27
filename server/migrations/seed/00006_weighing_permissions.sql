@@ -1,5 +1,19 @@
 -- +goose Up
-INSERT INTO wb_scale (code, name, enabled) VALUES ('SCALE01', '一号地磅', 1) ON CONFLICT (code) DO NOTHING;
+-- Placeholder site/scale rows for first-time weighing permissions. A database
+-- that already has the code identity (ADR 0033) stores codes; replaying this
+-- seed against an older schema keeps the original shape so the documented
+-- upgrade path stays reproducible. Seed 00013 clears these placeholders on a
+-- fresh database before the local identity is installed.
+-- +goose StatementBegin
+DO $$ BEGIN
+ IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='wb_scale' AND column_name='site_code') THEN
+   INSERT INTO wb_site (site_code, name) VALUES ('SITE01', '原厂区') ON CONFLICT (site_code) DO NOTHING;
+   INSERT INTO wb_scale (site_code, code, name, enabled) VALUES ('SITE01', 'SCALE01', '一号地磅', 1) ON CONFLICT (code) DO NOTHING;
+ ELSE
+   INSERT INTO wb_scale (code, name, enabled) VALUES ('SCALE01', '一号地磅', 1) ON CONFLICT (code) DO NOTHING;
+ END IF;
+END $$;
+-- +goose StatementEnd
 INSERT INTO sys_role (role_name, role_code, status, sort_order, is_builtin, remark)
 VALUES ('地磅操作员', 'WEIGHING_OPERATOR', 1, 10, 1, '称重及异常处置，无主管审批') ON CONFLICT (role_code) DO NOTHING;
 INSERT INTO sys_menu (parent_id, menu_name, menu_type, path, icon, permission_code, sort_order, visible, status, is_builtin)

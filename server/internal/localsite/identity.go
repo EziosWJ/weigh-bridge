@@ -12,21 +12,23 @@ import (
 
 const idBlock int64 = 1 << 45
 
-var ErrNotConfigured = errors.New("本厂内部身份未就绪，请检查服务启动日志与数据库")
+var ErrNotConfigured = errors.New("本厂身份未就绪，请在系统管理→本厂身份完成配置")
 
 type Identity struct {
-	ID          int64 `gorm:"primaryKey;autoIncrement:false"`
-	SiteID      int64
-	NextID      int64
-	Initialized int
+	ID             int64 `gorm:"primaryKey;autoIncrement:false"`
+	SiteCode       string
+	ScaleCode      string
+	NextID         int64
+	InstallationID string `gorm:"->"`
 }
 
 func (Identity) TableName() string { return "wb_local_identity" }
 
 type Status struct {
-	SiteID      int64 `json:"siteId"`
-	Configured  bool  `json:"configured"`
-	Initialized bool  `json:"initialized"`
+	SiteCode    string `json:"siteCode"`
+	ScaleCode   string `json:"scaleCode"`
+	Configured  bool   `json:"configured"`
+	Initialized bool   `json:"initialized"`
 }
 
 func Read(ctx context.Context, db *gorm.DB) (Identity, error) {
@@ -35,22 +37,23 @@ func Read(ctx context.Context, db *gorm.DB) (Identity, error) {
 	return identity, err
 }
 
-// ReadStatus reports the completed local configuration. Since ADR 0029 the
-// first identity transaction is sufficient: neither operator headcount nor
-// device readiness participates. The legacy initialized column is retained for
-// storage compatibility but is neither read nor written here, so databases
-// configured by older builds with initialized=0 keep working after upgrade.
+// ReadStatus reports the current local configuration. Identity values are
+// maintained through the dedicated local identity entry.
+// The legacy initialized column is retained for storage compatibility but is
+// neither read nor written here.
 func ReadStatus(ctx context.Context, db *gorm.DB) (Status, error) {
 	identity, err := Read(ctx, db)
 	if err != nil {
 		return Status{}, err
 	}
-	configured := identity.SiteID > 0
-	return Status{SiteID: identity.SiteID, Configured: configured, Initialized: configured}, nil
+	configured := identity.SiteCode != ""
+	return Status{SiteCode: identity.SiteCode, ScaleCode: identity.ScaleCode, Configured: configured, Initialized: configured}, nil
 }
 
-// Bind installs a single allocator for numeric business IDs. No identity is
-// cached, so first-time configuration becomes effective without an API restart.
+// Bind installs a single allocator for numeric business row ids. These remain
+// internal surrogate keys; they no longer encode any site identity. No
+// identity is cached, so first-time configuration becomes effective without an
+// API restart.
 func Bind(db *gorm.DB) error {
 	if _, err := Read(context.Background(), db); err != nil {
 		return err
@@ -77,13 +80,16 @@ func Bind(db *gorm.DB) error {
 				tx.AddError(errors.New("本机时间超出业务编号支持范围"))
 				return
 			}
-			var allocated struct{ SiteID, NextID int64 }
-			result := tx.Session(&gorm.Session{NewDB: true}).Raw("UPDATE wb_local_identity SET next_id=CASE WHEN next_id>=? THEN next_id+1 ELSE ? END WHERE id=1 RETURNING site_id,next_id", floor, floor).Scan(&allocated)
+			var allocated struct {
+				SiteCode string
+				NextID   int64
+			}
+			result := tx.Session(&gorm.Session{NewDB: true}).Raw("UPDATE wb_local_identity SET next_id=CASE WHEN next_id>=? THEN next_id+1 ELSE ? END WHERE id=1 RETURNING site_code,next_id", floor, floor).Scan(&allocated)
 			if result.Error != nil {
 				tx.AddError(result.Error)
 				return
 			}
-			if allocated.SiteID == 0 {
+			if allocated.SiteCode == "" {
 				tx.AddError(ErrNotConfigured)
 				return
 			}
@@ -91,7 +97,7 @@ func Bind(db *gorm.DB) error {
 				tx.AddError(errors.New("本厂业务编号范围已耗尽"))
 				return
 			}
-			tx.AddError(field.Set(tx.Statement.Context, v, allocated.SiteID*idBlock+allocated.NextID))
+			tx.AddError(field.Set(tx.Statement.Context, v, allocated.NextID))
 		}
 		value := tx.Statement.ReflectValue
 		switch value.Kind() {

@@ -48,7 +48,7 @@ try {
     const body = request.postData() ? JSON.parse(request.postData()) : null;
     if (!['GET', 'OPTIONS'].includes(method)) requests.push({ path, method, body });
     const data = value => route.fulfill({ json: { code: 200, message: 'ok', data: value } });
-    if (path === '/api/weighing/capabilities') return data({ localSiteId: 1, configured: true, initialized: true, permissionCodes: permissions, sites: [], scales: [], userId: 1 });
+    if (path === '/api/weighing/capabilities') return data({ localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, permissionCodes: permissions, sites: [], scales: [], userId: 1 });
     if (path === '/api/weighing/cameras' && method === 'GET') return data({ cameras, configVersion, captureTimeoutMs, recognitionCameraId, recognitionUrl, video });
     if (path === '/api/weighing/cameras' && method === 'POST') {
       writes.push(body);

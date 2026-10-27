@@ -24,7 +24,7 @@ func helloKeyless(t *testing.T, conn *websocket.Conn) {
 
 func TestCommandTimeoutLateReplyAndDisconnect(t *testing.T) {
 	hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
-		return bridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1}, nil
+		return bridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01"}, nil
 	})
 	conn := dialKeyless(t, server)
 	helloKeyless(t, conn)
@@ -32,7 +32,7 @@ func TestCommandTimeoutLateReplyAndDisconnect(t *testing.T) {
 	// A timeout leaves no pending request that a late reply could satisfy.
 	timedOut := make(chan error, 1)
 	go func() {
-		_, err := hub.Command(context.Background(), 1, p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{CaptureID: "capture-1"}, 30*time.Millisecond)
+		_, err := hub.Command(context.Background(), "WB01", p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{CaptureID: "capture-1"}, 30*time.Millisecond)
 		timedOut <- err
 	}()
 	first := receiveMessage(t, conn)
@@ -53,7 +53,7 @@ func TestCommandTimeoutLateReplyAndDisconnect(t *testing.T) {
 	secondResult := make(chan p.Message, 1)
 	secondErr := make(chan error, 1)
 	go func() {
-		message, err := hub.Command(context.Background(), 1, p.TypeMeasurementEndRequest, p.MeasurementEndRequest{Generation: "gen-2"}, time.Second)
+		message, err := hub.Command(context.Background(), "WB01", p.TypeMeasurementEndRequest, p.MeasurementEndRequest{Generation: "gen-2"}, time.Second)
 		if err != nil {
 			secondErr <- err
 			return
@@ -93,20 +93,20 @@ func TestCommandTimeoutLateReplyAndDisconnect(t *testing.T) {
 	// A disconnected Agent never leaves a command hanging.
 	_ = conn.Close()
 	deadline := time.Now().Add(2 * time.Second)
-	for hub.State(1).ConnectionID != "" && time.Now().Before(deadline) {
+	for hub.State("WB01").ConnectionID != "" && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
-	if hub.State(1).ConnectionID != "" {
+	if hub.State("WB01").ConnectionID != "" {
 		t.Fatal("connection did not close")
 	}
-	if _, err := hub.Command(context.Background(), 1, p.TypeMeasurementVerifyRequest, p.MeasurementVerifyRequest{Generation: "gen-2"}, 200*time.Millisecond); !errors.Is(err, bridge.ErrUnavailable) {
+	if _, err := hub.Command(context.Background(), "WB01", p.TypeMeasurementVerifyRequest, p.MeasurementVerifyRequest{Generation: "gen-2"}, 200*time.Millisecond); !errors.Is(err, bridge.ErrUnavailable) {
 		t.Fatalf("disconnected command error=%v", err)
 	}
 }
 
 func TestOldClientWithoutMeasurementCapabilityIsRejected(t *testing.T) {
 	hub, server := keylessServer(t, func(context.Context) (bridge.Config, error) {
-		return bridge.Config{ID: "agent-old", SiteID: 1, ScaleID: 1}, nil
+		return bridge.Config{ID: "agent-old", SiteCode: "F001", ScaleCode: "WB01"}, nil
 	})
 	conn := dialKeyless(t, server)
 	if err := websocket.JSON.Send(conn, p.NewVersion(p.ProtocolVersion, p.TypeHello, bridge.ID(), "hello", p.Hello{ProtocolVersion: p.ProtocolVersion, AgentVersion: "old"})); err != nil {
@@ -115,7 +115,7 @@ func TestOldClientWithoutMeasurementCapabilityIsRejected(t *testing.T) {
 	if ack := receiveMessage(t, conn); ack.Type != p.TypeHelloAck {
 		t.Fatalf("hello ack missing: %+v", ack)
 	}
-	if err := hub.RequireCapability(1, p.CapabilityMeasurementWindow); !errors.Is(err, bridge.ErrCapabilityMissing) {
+	if err := hub.RequireCapability("WB01", p.CapabilityMeasurementWindow); !errors.Is(err, bridge.ErrCapabilityMissing) {
 		t.Fatalf("old client was allowed to fall back: %v", err)
 	}
 }

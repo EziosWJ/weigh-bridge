@@ -14,7 +14,7 @@ import (
 // diagnostics, but formal capture must not fall back to weak validation when
 // the required capability is missing.
 const (
-	ProtocolVersion       = 2
+	ProtocolVersion       = 4
 	LegacyProtocolVersion = 1
 )
 
@@ -107,9 +107,10 @@ type Hello struct {
 // by the Agent beyond showing it in diagnostics.
 type HelloAck struct {
 	ProtocolVersion int       `json:"protocolVersion"`
-	SiteID          int64     `json:"siteId"`
-	ScaleID         int64     `json:"scaleId"`
+	SiteCode        string    `json:"siteCode"`
+	ScaleCode       string    `json:"scaleCode"`
 	AgentID         string    `json:"agentId"`
+	InstallationID  string    `json:"installationId,omitempty"`
 	Capabilities    []string  `json:"capabilities"`
 	ServerTime      time.Time `json:"serverTime"`
 }

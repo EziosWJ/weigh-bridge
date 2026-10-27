@@ -16,6 +16,7 @@ import (
 	"unicode"
 
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -41,49 +42,64 @@ func actorName(tx *gorm.DB, id int64) (string, error) {
 	return row.Username, err
 }
 func ptr(v int64) *int64 { return &v }
-func (r *Repository) Session(ctx context.Context, scaleID int64) (ScaleSession, error) {
+func (r *Repository) Session(ctx context.Context, scaleCode string) (ScaleSession, error) {
 	var v ScaleSession
-	result := r.db.WithContext(ctx).Where("scale_id=?", scaleID).Limit(1).Find(&v)
+	identity, err := localsite.Read(ctx, r.db)
+	if err != nil {
+		return v, err
+	}
+	if scaleCode == "" || scaleCode != identity.ScaleCode {
+		return v, ErrNotFound
+	}
+	result := r.db.WithContext(ctx).Where("local_device=TRUE").Limit(1).Find(&v)
 	if result.Error != nil {
 		return v, result.Error
 	}
 	if result.RowsAffected == 0 {
-		if _, err := findOne[Scale](r.db.WithContext(ctx), scaleID); err != nil {
+		if err := r.db.WithContext(ctx).Where("code=?", scaleCode).Take(&Scale{}).Error; err != nil {
 			return v, err
 		}
-		v.ScaleID = scaleID
 	}
+	v.ScaleCode = scaleCode
 	return v, nil
 }
-func lockSession(tx *gorm.DB, scaleID int64) (ScaleSession, error) {
+func lockSession(tx *gorm.DB, scaleCode string) (ScaleSession, error) {
 	var v ScaleSession
-	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("scale_id=?", scaleID).Take(&v).Error
+	identity, err := localsite.Read(tx.Statement.Context, tx)
+	if err != nil {
+		return v, err
+	}
+	if scaleCode == "" || scaleCode != identity.ScaleCode {
+		return v, ErrSession
+	}
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("local_device=TRUE").Take(&v).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return v, ErrSession
 	}
+	v.ScaleCode = scaleCode
 	return v, err
 }
 func validSession(v ScaleSession, actor int64, in SessionInput) bool {
 	return v.HolderUserID != nil && *v.HolderUserID == actor && v.ClientID == in.ClientID && in.SessionToken != "" && v.TokenHash == hashBytes([]byte(in.SessionToken)) && v.ExpiresAt != nil && v.ExpiresAt.After(time.Now().UTC())
 }
-func (r *Repository) ChangeSession(ctx context.Context, scaleID int64, action string, in SessionInput, e audit.Event) (SessionResult, error) {
+func (r *Repository) ChangeSession(ctx context.Context, scaleCode string, action string, in SessionInput, e audit.Event) (SessionResult, error) {
 	var result SessionResult
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockWriteSite(tx, ctx); err != nil {
 			return err
 		}
-		scale, err := findOne[Scale](tx, scaleID)
-		if err != nil {
+		var scale Scale
+		if err := tx.Where("code=?", scaleCode).Take(&scale).Error; err != nil {
 			return err
 		}
 		if scale.Enabled != 1 {
 			return ErrSession
 		}
-		initial := ScaleSession{ScaleID: scaleID, Version: 1}
+		initial := ScaleSession{LocalDevice: true, ScaleCode: scaleCode, Version: 1}
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&initial).Error; err != nil {
 			return err
 		}
-		current, err := lockSession(tx, scaleID)
+		current, err := lockSession(tx, scaleCode)
 		if err != nil {
 			return err
 		}
@@ -141,8 +157,7 @@ func (r *Repository) ChangeSession(ctx context.Context, scaleID int64, action st
 		}
 		e.Action = "session." + action
 		e.Resource = "weighing.session"
-		e.ResourceID = scaleID
-		event := BusinessEvent{ResourceType: e.Resource, ResourceID: ptr(scaleID), Action: e.Action, Reason: in.Reason, Before: snapshot(before), After: snapshot(current), ActorID: e.Metadata.ActorID, ActorName: name, OccurredAt: now}
+		event := BusinessEvent{ResourceType: e.Resource, Action: e.Action, Reason: in.Reason, Before: snapshot(before), After: snapshot(current), ActorID: e.Metadata.ActorID, ActorName: name, OccurredAt: now}
 		if err := tx.Create(&event).Error; err != nil {
 			return err
 		}
@@ -230,7 +245,7 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 		if err := lockWriteSite(tx, ctx); err != nil {
 			return err
 		}
-		session, err := lockSession(tx, in.ScaleID)
+		session, err := lockSession(tx, in.ScaleCode)
 		if err != nil {
 			return err
 		}
@@ -249,9 +264,11 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 			if err != nil {
 				return err
 			}
-			if scale, err := findOne[Scale](tx, in.ScaleID); err != nil {
+			identity, err := localsite.Read(ctx, tx)
+			if err != nil {
 				return err
-			} else if scale.SiteID != task.SiteID {
+			}
+			if identity.ScaleCode == "" || identity.ScaleCode != in.ScaleCode {
 				return ErrForbidden
 			}
 			business = task.Business
@@ -270,7 +287,7 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 					return ErrConflict
 				}
 				if task.Status == "completed" {
-					if err := activePlateConflict(tx, task.Plate, task.ID, task.SiteID); err != nil {
+					if err := activePlateConflict(tx, task.Plate, task.ID, task.SiteCode); err != nil {
 						return err
 					}
 					var active int64
@@ -364,9 +381,9 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 			value := capturedAt
 			verifiedAt = &value
 		}
-		result = Sample{ScaleID: in.ScaleID, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: captureSource, Weight: captured.Weight, CapturedAt: capturedAt, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision, MeasurementGeneration: captured.MeasurementGeneration, MeasurementVerifiedAt: verifiedAt, CameraConfigVersion: captured.CameraConfigVersion}
+		result = Sample{ScaleCode: in.ScaleCode, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: captureSource, Weight: captured.Weight, CapturedAt: capturedAt, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision, MeasurementGeneration: captured.MeasurementGeneration, MeasurementVerifiedAt: verifiedAt, CameraConfigVersion: captured.CameraConfigVersion}
 		// Recapture invalidates earlier unconfirmed samples in this session.
-		if err := tx.Model(&Sample{}).Where("scale_id=? AND session_generation=? AND invalidated_at IS NULL AND id NOT IN (SELECT sample_id FROM wb_weigh_record)", in.ScaleID, session.Generation).Update("invalidated_at", now).Error; err != nil {
+		if err := tx.Model(&Sample{}).Where("session_generation=? AND invalidated_at IS NULL AND id NOT IN (SELECT sample_id FROM wb_weigh_record)", session.Generation).Update("invalidated_at", now).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&result).Error; err != nil {
@@ -388,7 +405,11 @@ func (r *Repository) InvalidateSample(ctx context.Context, id int64, in SessionI
 		if err != nil {
 			return err
 		}
-		session, err := lockSession(tx, sample.ScaleID)
+		identity, err := localsite.Read(ctx, tx)
+		if err != nil {
+			return err
+		}
+		session, err := lockSession(tx, identity.ScaleCode)
 		if err != nil {
 			return err
 		}
@@ -409,7 +430,7 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 	if !validSession(session, actor, in.SessionInput) {
 		return sample, ErrSession
 	}
-	if sample.ScaleID != in.ScaleID || sample.OwnerUserID != actor || sample.ClientID != in.ClientID || sample.SessionGeneration != session.Generation || sample.InvalidatedAt != nil || sample.Stable != 1 || sample.DeviceOK != 1 || sample.Weight <= 0 {
+	if sample.OwnerUserID != actor || sample.ClientID != in.ClientID || sample.SessionGeneration != session.Generation || sample.InvalidatedAt != nil || sample.Stable != 1 || sample.DeviceOK != 1 || sample.Weight <= 0 {
 		return sample, ErrConditions
 	}
 	// Validate the persisted capture evidence, never the current instrument.
@@ -426,7 +447,7 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 	return sample, nil
 }
 func newRecord(sample Sample, taskID int64, actor int64, name string) WeighRecord {
-	return WeighRecord{TaskID: taskID, SampleID: sample.ID, Stage: sample.Stage, Kind: sample.Kind, Weight: sample.Weight, CapturedAt: sample.CapturedAt, ConfirmedAt: time.Now().UTC(), ScaleID: sample.ScaleID, ActorID: actor, ActorName: name, Evidence: sample.Evidence, PlateEvidence: sample.PlateEvidence}
+	return WeighRecord{TaskID: taskID, SampleID: sample.ID, Stage: sample.Stage, Kind: sample.Kind, Weight: sample.Weight, CapturedAt: sample.CapturedAt, ConfirmedAt: time.Now().UTC(), ScaleCode: sample.ScaleCode, ActorID: actor, ActorName: name, Evidence: sample.Evidence, PlateEvidence: sample.PlateEvidence}
 }
 
 type commandOutcome struct {
@@ -560,7 +581,7 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 }
 func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e audit.Event) (CommandResult, error) {
 	var session ScaleSession
-	return r.command(ctx, in.RequestID, "first.confirm", in, e, func(tx *gorm.DB) error { var err error; session, err = lockSession(tx, in.ScaleID); return err }, func(tx *gorm.DB, name string) (commandOutcome, error) {
+	return r.command(ctx, in.RequestID, "first.confirm", in, e, func(tx *gorm.DB) error { var err error; session, err = lockSession(tx, in.ScaleCode); return err }, func(tx *gorm.DB, name string) (commandOutcome, error) {
 		out := commandOutcome{}
 		sample, err := validateSample(ctx, tx, in, e.Metadata.ActorID, session)
 		if err != nil {
@@ -584,23 +605,23 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 				return out, ErrConflict
 			}
 		}
-		scale, err := findOne[Scale](tx, in.ScaleID)
-		if err != nil {
+		var scale Scale
+		if err := tx.Where("code=?", in.ScaleCode).Take(&scale).Error; err != nil {
 			return out, err
 		}
 		var active int64
-		if err := tx.Model(&Task{}).Where("site_id=? AND plate=? AND status='awaiting_second'", scale.SiteID, business.Plate).Count(&active).Error; err != nil {
+		if err := tx.Model(&Task{}).Where("plate=? AND status='awaiting_second'", business.Plate).Count(&active).Error; err != nil {
 			return out, err
 		}
 		if active > 0 {
 			return out, ErrConflict
 		}
-		number, err := nextNumber(tx, "task", "RW")
+		number, err := nextNumber(tx, "task", "RW", r.dataDir, time.Now().UTC())
 		if err != nil {
 			return out, err
 		}
 		now := time.Now().UTC()
-		task := Task{SiteID: scale.SiteID, TaskNo: number, Mode: "normal", Plate: business.Plate, Direction: business.Direction, Status: "awaiting_second", ScaleID: in.ScaleID, MaterialID: business.MaterialID, PartyID: business.PartyID, CarrierID: business.CarrierID, Business: business, Version: 1, CreateTime: now, UpdateTime: now, ActorID: e.Metadata.ActorID, ActorName: name}
+		task := Task{SiteCode: scale.SiteCode, TaskNo: number, Mode: "normal", Plate: business.Plate, Direction: business.Direction, Status: "awaiting_second", ScaleCode: in.ScaleCode, MaterialID: business.MaterialID, PartyID: business.PartyID, CarrierID: business.CarrierID, Business: business, Version: 1, CreateTime: now, UpdateTime: now, ActorID: e.Metadata.ActorID, ActorName: name}
 		if err := tx.Create(&task).Error; err != nil {
 			return out, err
 		}
@@ -643,10 +664,7 @@ func (r *Repository) FindTask(ctx context.Context, id int64) (TaskDetail, error)
 }
 func (r *Repository) ActiveTask(ctx context.Context, plate string) (*TaskDetail, error) {
 	var tasks []Task
-	db := siteFilter(r.db.WithContext(ctx).Model(&Task{}), PageQuery{}, "site_id")
-	if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok && scope.ScaleID > 0 {
-		db = db.Where("scale_id=?", scope.ScaleID)
-	}
+	db := siteFilter(r.db.WithContext(ctx).Model(&Task{}), PageQuery{}, "site_code")
 	result := db.Where("plate=? AND status='awaiting_second'", normalizePlate(plate)).Limit(2).Find(&tasks)
 	if result.Error != nil {
 		return nil, result.Error

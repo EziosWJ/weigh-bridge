@@ -971,8 +971,8 @@ definitions:
         $ref: '#/definitions/weighing.RecognitionInput'
       reason:
         type: string
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       sessionToken:
         type: string
       targetRecordId:
@@ -1028,8 +1028,8 @@ definitions:
         $ref: '#/definitions/weighing.ReviewedVersions'
       sampleId:
         type: integer
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       sessionToken:
         type: string
       targetRecordId:
@@ -1236,12 +1236,12 @@ definitions:
         type: integer
       plate:
         type: string
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       secondWeight:
         type: string
-      siteId:
-        type: integer
+      siteCode:
+        type: string
       status:
         type: string
       taskNo:
@@ -1384,8 +1384,8 @@ definitions:
         type: boolean
       sampleId:
         type: integer
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       sessionToken:
         type: string
       targetRecordId:
@@ -1429,8 +1429,8 @@ definitions:
         type: string
       plateEvidence:
         type: object
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       source:
         type: string
       stable:
@@ -1458,8 +1458,8 @@ definitions:
         type: string
       holderUserId:
         type: integer
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       version:
         type: integer
     type: object
@@ -1484,8 +1484,8 @@ definitions:
         type: string
       holderUserId:
         type: integer
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       sessionToken:
         type: string
       version:
@@ -1524,8 +1524,8 @@ definitions:
         type: string
       partyName:
         type: string
-      siteId:
-        type: integer
+      siteCode:
+        type: string
       tare:
         type: string
       taskCount:
@@ -1580,12 +1580,12 @@ definitions:
         items:
           $ref: '#/definitions/weighing.WeighRecord'
         type: array
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       secondWeight:
         type: string
-      siteId:
-        type: integer
+      siteCode:
+        type: string
       status:
         type: string
       taskNo:
@@ -1657,8 +1657,8 @@ definitions:
         type: integer
       secondRecordId:
         type: integer
-      siteId:
-        type: integer
+      siteCode:
+        type: string
       siteName:
         type: string
       snapshotSchemaVersion:
@@ -1719,8 +1719,8 @@ definitions:
         type: integer
       sampleId:
         type: integer
-      scaleId:
-        type: integer
+      scaleCode:
+        type: string
       stage:
         type: string
       taskId:

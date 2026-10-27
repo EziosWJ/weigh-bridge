@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func commandMeasurement(t *testing.T, hub *agentbridge.Hub, kind string, payload
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	message, err := hub.Command(ctx, 1, kind, payload, 2*time.Second)
+	message, err := hub.Command(ctx, "WB01", kind, payload, 2*time.Second)
 	if err != nil {
 		t.Fatalf("%s: %v", kind, err)
 	}
@@ -28,9 +29,9 @@ func commandMeasurement(t *testing.T, hub *agentbridge.Hub, kind string, payload
 
 func TestMeasurementWindowOverKeylessAgentConnection(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	hub := agentbridge.New(agentbridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1, ImageDir: t.TempDir()})
+	hub := agentbridge.New(agentbridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01", ImageDir: t.TempDir()})
 	hub.SetLocalResolver(func(context.Context) (agentbridge.Config, error) {
-		return agentbridge.Config{ID: "agent-01", SiteID: 1, ScaleID: 1, ImageDir: t.TempDir()}, nil
+		return agentbridge.Config{ID: "agent-01", SiteCode: "F001", ScaleCode: "WB01", InstallationID: "00000000-0000-4000-8000-000000000001", ImageDir: t.TempDir()}, nil
 	})
 	router := gin.New()
 	hub.Register(router)
@@ -44,7 +45,7 @@ func TestMeasurementWindowOverKeylessAgentConnection(t *testing.T) {
 	dir := t.TempDir()
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
+		done <- runManaged(ctx, agentprinter.Config{ServerURL: server.URL, Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"), nil, dir)
 	}()
 	defer func() {
 		cancel()
@@ -57,13 +58,16 @@ func TestMeasurementWindowOverKeylessAgentConnection(t *testing.T) {
 
 	deadline := time.Now().Add(3 * time.Second)
 	for {
-		if hub.State(1).Online && hub.Supports(1, p.CapabilityMeasurementWindow) {
+		if hub.State("WB01").Online && hub.Supports("WB01", p.CapabilityMeasurementWindow) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("keyless Agent did not complete hello: %+v", hub.State(1))
+			t.Fatalf("keyless Agent did not complete hello: %+v", hub.State("WB01"))
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	if info, err := os.Stat(filepath.Join(dir, "installation-00000000-0000-4000-8000-000000000001")); err != nil || !info.IsDir() {
+		t.Fatalf("Agent did not bind the server installation: %v", err)
 	}
 	if _, err := writer.Write(makeD12Frame(0x30, "001000")); err != nil {
 		t.Fatal(err)

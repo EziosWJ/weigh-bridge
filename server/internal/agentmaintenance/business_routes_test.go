@@ -281,7 +281,7 @@ func TestBusinessImportRedactsAllSecretURLsAndRequiresIdentityValidator(t *testi
 	cfg.CameraRearURL = "rtsp://operator:rear-secret@rear.local/live"
 	cfg.PlateRecognitionURL = "https://recognizer.local/api?token=recognizer-secret"
 	service.draft, service.active = cfg, cfg
-	connection := agentconfig.Connection{ServerURL: "http://127.0.0.1:18900", SiteID: 1, SiteCode: "SITE", SiteName: "Site", ScaleID: 1, ScaleCode: "SCALE", ScaleName: "Scale", AgentID: cfg.AgentID, AgentKey: "new-agent-key"}
+	connection := agentconfig.Connection{ServerURL: "http://127.0.0.1:18900", SiteCode: "SITE", SiteName: "Site", ScaleCode: "SCALE", ScaleName: "Scale", AgentID: cfg.AgentID, AgentKey: "new-agent-key"}
 	body, _ := json.Marshal(map[string]any{"connection": connection})
 	request := httptest.NewRequest(http.MethodPost, "/config/import", strings.NewReader(string(body)))
 	request = request.WithContext(context.WithValue(request.Context(), businessRequestKey{}, true))

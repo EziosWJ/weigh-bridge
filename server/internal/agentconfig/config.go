@@ -13,19 +13,23 @@ import (
 
 type Connection struct {
 	ServerURL string `json:"serverUrl"`
-	SiteID    int64  `json:"siteId"`
 	SiteCode  string `json:"siteCode"`
 	SiteName  string `json:"siteName"`
-	ScaleID   int64  `json:"scaleId"`
 	ScaleCode string `json:"scaleCode"`
 	ScaleName string `json:"scaleName"`
 	AgentID   string `json:"agentId"`
 	AgentKey  string `json:"agentKey"`
 }
 
+// Validate is the code-identity contract (ADR 0033): the portable file
+// identifies the site by its head-office code. The Agent key is a legacy
+// diagnostic and is no longer required.
 func (c Connection) Validate() error {
-	if c.SiteID < 1 || c.ScaleID < 1 || strings.TrimSpace(c.SiteName) == "" || !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) || strings.TrimSpace(c.AgentKey) == "" || strings.ContainsAny(c.AgentKey, "\r\n\x00") {
+	if strings.TrimSpace(c.SiteCode) == "" || strings.TrimSpace(c.ScaleCode) == "" || strings.TrimSpace(c.SiteName) == "" || !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) {
 		return errors.New("厂区启动配置不完整或格式无效")
+	}
+	if strings.ContainsAny(c.AgentKey, "\r\n\x00") {
+		return errors.New("旧连接密钥格式无效")
 	}
 	_, err := agentprinter.CanonicalServerURL(c.ServerURL)
 	return err
@@ -41,9 +45,6 @@ func (c Connection) ValidateEndpoint() error {
 	}
 	if c.AgentID != "" && !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) {
 		return errors.New("Agent 诊断编号格式无效")
-	}
-	if c.ScaleID < 0 || c.SiteID < 0 {
-		return errors.New("厂区或地磅编号无效")
 	}
 	if strings.ContainsAny(c.AgentKey, "\r\n\x00") {
 		return errors.New("旧连接密钥格式无效")

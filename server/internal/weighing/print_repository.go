@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"gorm.io/gorm"
 )
 
@@ -151,7 +152,7 @@ func fillPrintStatus(tx *gorm.DB, ticket *Ticket) error {
 
 // AgentPrintResult records only the first unresolved device result. Operator
 // resolutions and closed attempts are never overwritten by a late reply.
-func (r *Repository) AgentPrintResult(ctx context.Context, scale int64, in agentproto.PrintResult) error {
+func (r *Repository) AgentPrintResult(ctx context.Context, scaleCode string, in agentproto.PrintResult) error {
 	initial, err := findOne[PrintAttempt](r.db.WithContext(ctx), in.AttemptID)
 	if err != nil {
 		return err
@@ -178,11 +179,11 @@ func (r *Repository) AgentPrintResult(ctx context.Context, scale int64, in agent
 		if err != nil {
 			return err
 		}
-		var record WeighRecord
-		if err := tx.Where("id=?", ticket.SecondRecordID).Take(&record).Error; err != nil {
+		identity, err := localsite.Read(ctx, tx)
+		if err != nil {
 			return err
 		}
-		if record.ScaleID != scale {
+		if identity.ScaleCode == "" || identity.ScaleCode != scaleCode {
 			return ErrForbidden
 		}
 		before := attempt

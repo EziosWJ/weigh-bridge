@@ -245,7 +245,7 @@ try {
     if (path === '/api/weighing/cameras') return route.fulfill({ json: { code: 200, data: { ...cameraList(), cameras: cameraList().cameras.map(camera => ({ ...camera, enabled: true })) } } });
     if (path.endsWith('/preview')) return route.fulfill({ json: { code: 200, data: { ...streamFor(11), state: 'error', playbackUrl: '', lastError: '测试：预览不可用' } } });
     if (path.includes('/session/')) return route.fulfill({ json: { code: 200, data: {
-      scaleId: 1, holderUserId: 1, generation: 1, sessionToken: 'isolated-session', expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      scaleCode: 'WB01', holderUserId: 1, generation: 1, sessionToken: 'isolated-session', expiresAt: new Date(Date.now() + 60_000).toISOString(),
     } } });
     if (path.endsWith('/samples')) {
       samples++;
@@ -254,7 +254,7 @@ try {
     if (path.includes('confirmation')) confirmations++;
     return route.fulfill({ json: { code: 200, data: { records: [], total: 0 } } });
   });
-  await page.goto(`${base}/tests/weighing-agent-capture.html?scaleId=1&scenario=ready`);
+  await page.goto(`${base}/tests/weighing-agent-capture.html?scale=WB01&scenario=ready`);
   await page.getByText('视频映射同步失败', { exact: false }).waitFor();
   const captureButton = page.getByRole('button', { name: '采集重量', exact: true });
   assert.equal(await captureButton.isEnabled(), true, '视频故障不阻塞原有健康设备的采集');

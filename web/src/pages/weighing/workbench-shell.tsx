@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Maximize, Minimize, Monitor } from 'lucide-react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast-store';
 import { useAuthStore } from '@/store/auth-store';
@@ -13,8 +13,14 @@ import { WorkbenchEntry } from './workbench-entry';
 export function WorkbenchShell() {
   const capabilities=useWeighingStore(s=>s.capabilities);
   const ready=useWeighingStore(s=>s.ready);
-  const scaleId=Number(new URLSearchParams(location.search).get('scaleId'));
-  const scale=capabilities?.scales.find(s=>s.id===scaleId);
+  const [params, setParams] = useSearchParams();
+  const routeScale = params.get('scale') ?? '';
+  const scaleCode = capabilities?.localScaleCode || routeScale;
+  const scale=capabilities?.scales.find(s=>s.code===scaleCode);
+  useEffect(() => {
+    if (!routeScale || !capabilities?.localScaleCode || routeScale === capabilities.localScaleCode) return;
+    setParams(previous => { const next = new URLSearchParams(previous); next.set('scale', capabilities.localScaleCode); return next; }, { replace: true });
+  }, [routeScale, capabilities?.localScaleCode, setParams]);
   const dispatch = useWeighingStore(s => s.dispatch);
   const owner = useWeighingStore(s => s.data.owner);
   const pending = useWeighingStore(s => s.data.pending);
@@ -23,14 +29,14 @@ export function WorkbenchShell() {
   const config = useWeighingStore(s => s.data.config);
   const [fullscreen, setFullscreen] = useState(!!document.fullscreenElement);
   useEffect(() => {
-    const name=workbenchWindow(scaleId);
+    const name=workbenchWindow(scaleCode);
     const previousName=window.name.startsWith(WORKBENCH_WINDOW)?'':window.name;
     window.name=name;
     const update = () => setFullscreen(!!document.fullscreenElement);
     document.addEventListener('fullscreenchange', update);
     return () => { document.removeEventListener('fullscreenchange', update); if (window.name === name) window.name = previousName; };
-  }, [scaleId]);
-  if(!scaleId)return <WorkbenchEntry />;
+  }, [scaleCode]);
+  if(!routeScale)return <WorkbenchEntry />;
   if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/tasks" className="text-primary underline">返回后台查询</a></div>;
   if(!ready)return <p role="status" className="p-6">正在核对本厂操作权限…</p>;
   return <div className="weighing-workbench min-h-screen bg-background">

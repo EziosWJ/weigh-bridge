@@ -31,9 +31,9 @@ func (s *Service) CameraConfig() (Config, error) {
 	}
 	return c, nil
 }
-func (s *Service) CameraAvailable(scale int64) bool {
+func (s *Service) CameraAvailable(scaleCode string) bool {
 	c, err := s.CameraConfig()
-	return c.CameraMode == "" || (err == nil && c.ScaleID == scale && c.CameraEnabled)
+	return c.CameraMode == "" || (err == nil && c.ScaleCode == scaleCode && c.CameraEnabled)
 }
 
 func (s *Service) verifyCameraRuntime(c Config) error {

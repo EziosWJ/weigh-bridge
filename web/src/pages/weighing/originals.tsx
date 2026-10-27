@@ -29,7 +29,7 @@ export function WeighingOriginalsPage() {
   const linkClass = 'text-primary hover:underline';
   const columns: DataTableColumn<WireOriginal>[] = [
     { title: '任务号 / 车牌', key: 'task', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
-    {title:"厂区",key:"site",width:100,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
+    {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteCode||"—"},
     { title: '方向 / 物料规格', key: 'business', width: 180, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '原始毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.originalGross} / {row.originalTare} / <strong>{row.originalNet}</strong></span> },

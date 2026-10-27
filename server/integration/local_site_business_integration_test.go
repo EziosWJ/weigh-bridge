@@ -19,36 +19,36 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
-// Two isolated installations use their stable local site IDs against the same
+// Two isolated installations use their head-office site codes against the same
 // seeded schema. HTTP, JWT, RBAC, Agent websocket evidence and ticket snapshots
 // all pass through app.Build; each factory has an independent local database.
 func TestPostgresIndependentLocalSitesHTTPAndWeighing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	type site struct {
-		id                int64
-		name, code, plate string
-		agentID           string
-		key               string
-		db                *platformdatabase.Database
-		router            http.Handler
-		token             string
-		hub               *agentbridge.Hub
-		mock              *localSiteMock
+		id                           int64
+		name, code, plate, scaleCode string
+		agentID                      string
+		key                          string
+		db                           *platformdatabase.Database
+		router                       http.Handler
+		token                        string
+		hub                          *agentbridge.Hub
+		mock                         *localSiteMock
 	}
 	sites := []*site{}
 	for _, spec := range []struct {
-		id                int64
-		name, code, plate string
-	}{{1, "一厂", "LOCAL-A", "晋A66666"}, {2, "二厂", "LOCAL-B", "晋A66666"}} {
+		id                           int64
+		name, code, plate, scaleCode string
+	}{{1, "一厂", "LOCAL-A", "晋A66666", "SCALE-A"}, {2, "二厂", "LOCAL-B", "晋A66666", "SCALE-B"}} {
 		postgres := startBusinessPostgres(t)
 		db := openTemporaryDatabase(t, postgres.dsn)
 		t.Cleanup(func() { _ = db.Close() })
 		deps := testDependencies(t, db, t.TempDir())
 		repo := weighing.NewRepository(db.GORM)
 		hub := agentbridge.NewMultiple(nil)
-		hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
-			return repo.AgentConfig(ctx, id, t.TempDir())
+		hub.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
+			return repo.AgentConfig(ctx, scaleCode, t.TempDir())
 		})
 		deps.Weighing = weighing.NewService(repo, hub)
 		deps.Camera, _, _ = newCaptureService(t, db, t.TempDir())
@@ -57,9 +57,9 @@ func TestPostgresIndependentLocalSitesHTTPAndWeighing(t *testing.T) {
 			t.Fatal(err)
 		}
 		admin := loginAdmin(t, router)
-		ensureLocalSite(t, router, admin, spec.id, spec.code, spec.name, fmt.Sprintf("SCALE-%d", spec.id), spec.name+"地磅", "integration-agent")
+		ensureLocalSite(t, router, admin, spec.id, spec.code, spec.name, spec.scaleCode, spec.name+"地磅", "integration-agent")
 		addCaptureCameras(t, db, "rtsp://camera/site-1", "rtsp://camera/site-2")
-		agentConfig, err := repo.AgentConfig(ctx, spec.id, t.TempDir())
+		agentConfig, err := repo.AgentConfig(ctx, spec.scaleCode, t.TempDir())
 		if err != nil {
 			t.Fatalf("site %d agent binding: %v", spec.id, err)
 		}
@@ -100,7 +100,7 @@ func TestPostgresIndependentLocalSitesHTTPAndWeighing(t *testing.T) {
 			if roles.Code != http.StatusOK {
 				t.Fatalf("assign role: %d %s", roles.Code, roles.Body.String())
 			}
-			grant := serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), fmt.Sprintf(`{"grants":[{"siteId":%d,"canOperate":1}]}`, spec.id), admin)
+			grant := serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), fmt.Sprintf(`{"grants":[{"siteCode":%q,"canOperate":1}]}`, spec.code), admin)
 			if grant.Code != http.StatusOK {
 				t.Fatalf("grant local site: %d %s", grant.Code, grant.Body.String())
 			}
@@ -114,46 +114,46 @@ func TestPostgresIndependentLocalSitesHTTPAndWeighing(t *testing.T) {
 		if !ready.Initialized {
 			t.Fatalf("site %d local identity did not complete from the first configuration transaction", spec.id)
 		}
-		oldSession := weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%d/session/acquire", spec.id), fmt.Sprintf(`{"clientId":"grant-revocation-%d"}`, spec.id), operator)
+		oldSession := weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%s/session/acquire", spec.scaleCode), fmt.Sprintf(`{"clientId":"grant-revocation-%d"}`, spec.id), operator)
 		userSitesPath := fmt.Sprintf("/api/weighing/users/%d/sites", firstOperatorID)
 		revoked := serveJSON(router, http.MethodPut, userSitesPath, `{"grants":[]}`, admin)
 		if revoked.Code != http.StatusOK {
 			t.Fatalf("revoke all local grants: %d %s", revoked.Code, revoked.Body.String())
 		}
 		var grantCount int64
-		if err := db.GORM.Table("wb_user_site").Where("user_id=?", firstOperatorID).Count(&grantCount).Error; err != nil || grantCount != 0 {
+		if err := db.GORM.Table("wb_local_user_access").Where("user_id=?", firstOperatorID).Count(&grantCount).Error; err != nil || grantCount != 0 {
 			t.Fatalf("revoked user has %d site grants, err=%v", grantCount, err)
 		}
-		oldRenew := serveJSON(router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%d/session/renew", spec.id), fmt.Sprintf(`{"clientId":"grant-revocation-%d","sessionToken":%q}`, spec.id, oldSession.SessionToken), operator)
+		oldRenew := serveJSON(router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%s/session/renew", spec.scaleCode), fmt.Sprintf(`{"clientId":"grant-revocation-%d","sessionToken":%q}`, spec.id, oldSession.SessionToken), operator)
 		assertEnvelopeCode(t, oldRenew, http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
-		regranted := serveJSON(router, http.MethodPut, userSitesPath, fmt.Sprintf(`{"grants":[{"siteId":%d,"canOperate":1}]}`, spec.id), admin)
+		regranted := serveJSON(router, http.MethodPut, userSitesPath, fmt.Sprintf(`{"grants":[{"siteCode":%q,"canOperate":1}]}`, spec.code), admin)
 		if regranted.Code != http.StatusOK {
 			t.Fatalf("restore local grant: %d %s", regranted.Code, regranted.Body.String())
 		}
-		if err := db.GORM.Table("wb_user_site").Where("user_id=? AND site_id=? AND can_operate=1", firstOperatorID, spec.id).Count(&grantCount).Error; err != nil || grantCount != 1 {
+		if err := db.GORM.Table("wb_local_user_access").Where("user_id=? AND can_operate=1", firstOperatorID).Count(&grantCount).Error; err != nil || grantCount != 1 {
 			t.Fatalf("regranted local site count=%d err=%v", grantCount, err)
 		}
-		weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%d/session/renew", spec.id), fmt.Sprintf(`{"clientId":"grant-revocation-%d","sessionToken":%q}`, spec.id, oldSession.SessionToken), operator)
-		weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%d/session/release", spec.id), fmt.Sprintf(`{"clientId":"grant-revocation-%d","sessionToken":%q}`, spec.id, oldSession.SessionToken), operator)
-		// A grant to another factory and an attempt to mutate its configuration
-		// are rejected even for the local administrator.
-		crossGrant := serveJSON(router, http.MethodPut, "/api/weighing/users/2/sites", fmt.Sprintf(`{"grants":[{"siteId":%d,"canOperate":1}]}`, 3-spec.id), admin)
+		weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%s/session/renew", spec.scaleCode), fmt.Sprintf(`{"clientId":"grant-revocation-%d","sessionToken":%q}`, spec.id, oldSession.SessionToken), operator)
+		weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%s/session/release", spec.scaleCode), fmt.Sprintf(`{"clientId":"grant-revocation-%d","sessionToken":%q}`, spec.id, oldSession.SessionToken), operator)
+		// A grant to another factory and an attempt to replace the existing
+		// Agent identifier are rejected even for the local administrator.
+		crossGrant := serveJSON(router, http.MethodPut, "/api/weighing/users/2/sites", `{"grants":[{"siteCode":"OTHER","canOperate":1}]}`, admin)
 		assertEnvelopeCode(t, crossGrant, http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
-		crossConfig := serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/site-config/%d", 3-spec.id), `{"code":"OTHER","name":"他厂","scaleCode":"OTHER-SCALE","scaleName":"他磅","agentId":"other-agent","enabled":1,"version":1}`, admin)
-		assertEnvelopeCode(t, crossConfig, http.StatusNotFound, http.StatusNotFound, "数据不存在")
-		var foreignCode string
-		if err := db.GORM.Table("wb_site").Select("code").Where("id=?", 3-spec.id).Scan(&foreignCode).Error; err != nil || foreignCode == "OTHER" {
-			t.Fatalf("cross-site config changed foreign site code=%q err=%v", foreignCode, err)
+		crossConfig := serveJSON(router, http.MethodPut, "/api/weighing/site-config", `{"code":"OTHER","name":"他厂","scaleCode":"OTHER-SCALE","scaleName":"他磅","agentId":"other-agent","enabled":1,"version":1}`, admin)
+		assertEnvelopeCode(t, crossConfig, http.StatusOK, http.StatusBadRequest, "已有 Agent 编号不可修改，请保留原身份")
+		var siteCount int64
+		if err := db.GORM.Table("wb_site").Where("site_code=?", "OTHER").Count(&siteCount).Error; err != nil || siteCount != 0 {
+			t.Fatalf("cross-site config created a foreign site count=%d err=%v", siteCount, err)
 		}
-		sites = append(sites, &site{id: spec.id, name: spec.name, code: spec.code, plate: spec.plate, agentID: agentConfig.ID, key: agentConfig.Key, db: db, router: router, token: admin, hub: hub})
+		sites = append(sites, &site{id: spec.id, name: spec.name, code: spec.code, plate: spec.plate, scaleCode: spec.scaleCode, agentID: agentConfig.ID, key: agentConfig.Key, db: db, router: router, token: admin, hub: hub})
 	}
 	for _, s := range sites {
-		s.mock = startLocalSiteMock(t, s.router, s.hub, s.id, s.agentID, s.key)
+		s.mock = startLocalSiteMock(t, s.router, s.hub, s.scaleCode, s.agentID, s.key)
 	}
 	results := make([]weighing.TicketView, 0, 2)
 	taskNumbers := make([]string, 0, 2)
 	for _, s := range sites {
-		ticket := localSiteRoundTrip(t, s.router, s.token, s.token, s.id, s.plate, s.mock)
+		ticket := localSiteRoundTrip(t, s.router, s.token, s.token, s.code, s.scaleCode, s.plate, s.mock)
 		results = append(results, ticket)
 		var taskNo string
 		if err := s.db.GORM.Table("wb_transport_task").Select("task_no").Where("id=?", ticket.TaskID).Scan(&taskNo).Error; err != nil {
@@ -170,17 +170,17 @@ func TestPostgresIndependentLocalSitesHTTPAndWeighing(t *testing.T) {
 }
 
 type localSiteMock struct {
-	t       *testing.T
-	control string
-	hub     *agentbridge.Hub
-	scaleID int64
+	t         *testing.T
+	control   string
+	hub       *agentbridge.Hub
+	scaleCode string
 }
 
-func startLocalSiteMock(t *testing.T, router http.Handler, hub *agentbridge.Hub, scaleID int64, agentID, key string) *localSiteMock {
+func startLocalSiteMock(t *testing.T, router http.Handler, hub *agentbridge.Hub, scaleCode string, agentID, key string) *localSiteMock {
 	t.Helper()
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: agentID, ScaleID: scaleID, Key: key})
+	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: agentID, ScaleCode: scaleCode, Key: key})
 	control := httptest.NewServer(mock.Handler())
 	t.Cleanup(control.Close)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -194,7 +194,7 @@ func startLocalSiteMock(t *testing.T, router http.Handler, hub *agentbridge.Hub,
 			t.Error("local site mock did not stop")
 		}
 	})
-	a := &localSiteMock{t: t, control: control.URL, hub: hub, scaleID: scaleID}
+	a := &localSiteMock{t: t, control: control.URL, hub: hub, scaleCode: scaleCode}
 	a.weight("30")
 	return a
 }
@@ -215,26 +215,26 @@ func (a *localSiteMock) weight(weight string) {
 	a.controlAction(`{"action":"stable"}`)
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
-		state := a.hub.State(a.scaleID)
+		state := a.hub.State(a.scaleCode)
 		if state.Online && state.Stable && state.Weight.String() == weight {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	a.t.Fatalf("mock Agent not ready: %+v", a.hub.State(a.scaleID))
+	a.t.Fatalf("mock Agent not ready: %+v", a.hub.State(a.scaleCode))
 }
-func localSiteRoundTrip(t *testing.T, router http.Handler, masterToken, operatorToken string, scaleID int64, plate string, device *localSiteMock) weighing.TicketView {
+func localSiteRoundTrip(t *testing.T, router http.Handler, masterToken, operatorToken, siteCode, scaleCode, plate string, device *localSiteMock) weighing.TicketView {
 	t.Helper()
 	material := weighingData[weighing.Material](t, router, http.MethodPost, "/api/weighing/materials", `{"name":"本地物料"}`, masterToken)
 	party := weighingData[weighing.Party](t, router, http.MethodPost, "/api/weighing/parties", `{"name":"本地客户","nature":"enterprise","roles":["supplier","customer"]}`, masterToken)
-	client := fmt.Sprintf("factory-%d", scaleID)
-	base := map[string]any{"scaleId": scaleID, "clientId": client}
-	session := weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%d/session/acquire", scaleID), encodeLocalSite(t, base), operatorToken)
+	client := fmt.Sprintf("factory-%s", scaleCode)
+	base := map[string]any{"scaleCode": scaleCode, "clientId": client}
+	session := weighingData[weighing.SessionResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/scales/%s/session/acquire", scaleCode), encodeLocalSite(t, base), operatorToken)
 	business := map[string]any{"plate": plate, "direction": "inbound", "materialId": material.ID, "partyId": party.ID}
-	firstSampleInput := map[string]any{"scaleId": scaleID, "clientId": client, "sessionToken": session.SessionToken, "business": business, "source": "device"}
+	firstSampleInput := map[string]any{"scaleCode": scaleCode, "clientId": client, "sessionToken": session.SessionToken, "business": business, "source": "device"}
 	firstSample := weighingData[weighing.Sample](t, router, http.MethodPost, "/api/weighing/samples", encodeLocalSite(t, firstSampleInput), operatorToken)
 	checks := map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}
-	firstInput := map[string]any{"scaleId": scaleID, "clientId": client, "sessionToken": session.SessionToken, "business": business, "sampleId": firstSample.ID, "requestId": fmt.Sprintf("local-first-%d", scaleID), "checks": checks}
+	firstInput := map[string]any{"scaleCode": scaleCode, "clientId": client, "sessionToken": session.SessionToken, "business": business, "sampleId": firstSample.ID, "requestId": fmt.Sprintf("local-first-%s-%s", scaleCode, plate), "checks": checks}
 	first := weighingData[weighing.CommandResult](t, router, http.MethodPost, "/api/weighing/tasks/first-confirmation", encodeLocalSite(t, firstInput), operatorToken)
 	// The mock is independently controlled per factory; a new stable reading
 	// establishes the tare capture after the gross snapshot has been committed.
@@ -243,14 +243,14 @@ func localSiteRoundTrip(t *testing.T, router http.Handler, masterToken, operator
 	// unnecessary because the local Agent mock is passed directly.
 	device.weight("10")
 	secondSample := weighingData[weighing.Sample](t, router, http.MethodPost, "/api/weighing/samples", encodeLocalSite(t, firstSampleInput), operatorToken)
-	secondInput := map[string]any{"scaleId": scaleID, "clientId": client, "sessionToken": session.SessionToken, "taskId": first.TaskID, "sampleId": secondSample.ID, "requestId": fmt.Sprintf("local-second-%d", scaleID), "version": first.TaskVersion, "checks": checks, "finalWeights": map[string]any{"gross": "30", "tare": "10", "remark": ""}}
+	secondInput := map[string]any{"scaleCode": scaleCode, "clientId": client, "sessionToken": session.SessionToken, "taskId": first.TaskID, "sampleId": secondSample.ID, "requestId": fmt.Sprintf("local-second-%s-%s", scaleCode, plate), "version": first.TaskVersion, "checks": checks, "finalWeights": map[string]any{"gross": "30", "tare": "10", "remark": ""}}
 	completed := weighingData[weighing.CommandResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/tasks/%d/second-confirmation", first.TaskID), encodeLocalSite(t, secondInput), operatorToken)
 	if completed.TicketID == 0 || completed.TaskID != first.TaskID {
-		t.Fatalf("factory %d completion: %+v", scaleID, completed)
+		t.Fatalf("factory %s completion: %+v", scaleCode, completed)
 	}
 	ticket := weighingData[weighing.TicketView](t, router, http.MethodGet, fmt.Sprintf("/api/weighing/tickets/%d", completed.TicketID), "", operatorToken)
-	if ticket.SiteID != scaleID || ticket.OriginalGross.String() != "30" || ticket.OriginalTare.String() != "10" {
-		t.Fatalf("factory %d ticket snapshot: %+v", scaleID, ticket)
+	if ticket.SiteCode != siteCode || ticket.OriginalGross.String() != "30" || ticket.OriginalTare.String() != "10" {
+		t.Fatalf("factory %s ticket snapshot: %+v", scaleCode, ticket)
 	}
 	return ticket
 }
@@ -277,8 +277,8 @@ func TestPostgresSingleAuthorizedOperatorCompletesWeighing(t *testing.T) {
 	repository := weighing.NewRepository(db.GORM)
 	imageDir := t.TempDir()
 	hub := agentbridge.NewMultiple(nil)
-	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
-		return repository.AgentConfig(ctx, id, imageDir)
+	hub.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
+		return repository.AgentConfig(ctx, scaleCode, imageDir)
 	})
 	deps.Weighing = weighing.NewService(repository, hub)
 	deps.Camera, _, _ = newCaptureService(t, db, t.TempDir())
@@ -316,7 +316,7 @@ func TestPostgresSingleAuthorizedOperatorCompletesWeighing(t *testing.T) {
 			}
 		}
 		if withGrant {
-			if response := serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), `{"grants":[{"siteId":1,"canOperate":1}]}`, admin); response.Code != http.StatusOK {
+			if response := serveJSON(router, http.MethodPut, fmt.Sprintf("/api/weighing/users/%d/sites", userID), `{"grants":[{"siteCode":"SOLO01","canOperate":1}]}`, admin); response.Code != http.StatusOK {
 				t.Fatalf("grant site to %s: %d %s", username, response.Code, response.Body.String())
 			}
 		}
@@ -326,20 +326,20 @@ func TestPostgresSingleAuthorizedOperatorCompletesWeighing(t *testing.T) {
 	operator := loginUser(t, router, "solo-operator", "admin123")
 
 	acquire := func(token string) *httptest.ResponseRecorder {
-		return serveJSON(router, http.MethodPost, "/api/weighing/scales/1/session/acquire", `{"clientId":"solo-check"}`, token)
+		return serveJSON(router, http.MethodPost, "/api/weighing/scales/SOLO-SCALE/session/acquire", `{"clientId":"solo-check"}`, token)
 	}
 	createUser("solo-no-grant", "无本厂操作范围", true, false)
 	assertEnvelopeCode(t, acquire(loginUser(t, router, "solo-no-grant", "admin123")), http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
 	createUser("solo-no-role", "无称重权限", false, true)
 	assertEnvelopeCode(t, acquire(loginUser(t, router, "solo-no-role", "admin123")), http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
 
-	agentConfig, err := repository.AgentConfig(context.Background(), 1, imageDir)
+	agentConfig, err := repository.AgentConfig(context.Background(), "SOLO-SCALE", imageDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	device := startLocalSiteMock(t, router, hub, 1, agentConfig.ID, agentConfig.Key)
-	ticket := localSiteRoundTrip(t, router, admin, operator, 1, "晋A11111", device)
-	if ticket.SiteID != 1 || ticket.ID == 0 || ticket.TaskID == 0 {
+	device := startLocalSiteMock(t, router, hub, "SOLO-SCALE", agentConfig.ID, agentConfig.Key)
+	ticket := localSiteRoundTrip(t, router, admin, operator, "SOLO01", "SOLO-SCALE", "晋A11111", device)
+	if ticket.SiteCode != "SOLO01" || ticket.ID == 0 || ticket.TaskID == 0 {
 		t.Fatalf("single-operator ticket = %+v", ticket)
 	}
 

@@ -38,14 +38,26 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 	}
 	admin := loginAdmin(t, router)
 	ensureLocalSite(t, router, admin, 1, "LOCAL01", "本厂", "SCALE01", "一号地磅", "existing-agent")
+	// Preserve the local Agent ID and key even when the stored legacy label is
+	// older than the current scale code.
+	if err := db.GORM.Exec("UPDATE wb_agent_binding SET scale_code='OLD_SCALE' WHERE local_device").Error; err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := repo.AgentConfig(context.Background(), "SCALE01", imageDir)
+	if err != nil || cfg.ScaleCode != "SCALE01" || cfg.ID != "agent-SCALE01" || cfg.Key == "" || cfg.InstallationID == "" {
+		t.Fatalf("local binding lost after label change: %+v err=%v", cfg, err)
+	}
+	if _, err := repo.AgentConfig(context.Background(), "OLD_SCALE", imageDir); err == nil {
+		t.Fatal("old scale code accepted as current device")
+	}
 
 	// The legacy export route no longer borrows a database address: callers must
 	// supply the address the Agent host can reach.
-	assertEnvelopeCode(t, serveJSON(router, http.MethodGet, "/api/weighing/site-config/1/connection", "", admin), http.StatusOK, http.StatusBadRequest, "请显式提供 Agent 主机可访问的业务服务地址")
-	const exportPath = "/api/weighing/site-config/1/connection?serverUrl=http%3A%2F%2F127.0.0.1%3A18900"
+	assertEnvelopeCode(t, serveJSON(router, http.MethodGet, "/api/weighing/site-config/connection", "", admin), http.StatusOK, http.StatusBadRequest, "请显式提供 Agent 主机可访问的业务服务地址")
+	const exportPath = "/api/weighing/site-config/connection?serverUrl=http%3A%2F%2F127.0.0.1%3A18900"
 	connection := weighingData[agentconfig.Connection](t, router, "GET", exportPath, "", admin)
 	again := weighingData[agentconfig.Connection](t, router, "GET", exportPath, "", admin)
-	if connection != again || connection.SiteID != 1 || connection.ScaleID != 1 || connection.AgentID != "agent-01" || connection.AgentKey != "" || connection.ServerURL != "http://127.0.0.1:18900" {
+	if connection != again || connection.SiteCode != "LOCAL01" || connection.ScaleCode != "SCALE01" || connection.AgentID != "agent-SCALE01" || connection.AgentKey != "" || connection.ServerURL != "http://127.0.0.1:18900" {
 		t.Fatalf("local connection export was unstable or leaked a legacy key: first=%+v second=%+v", connection, again)
 	}
 	if err := connection.ValidateEndpoint(); err != nil {
@@ -53,7 +65,7 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 	}
 
 	configs := weighingData[[]weighing.SiteConfiguration](t, router, http.MethodGet, "/api/weighing/site-config", "", admin)
-	if len(configs) != 1 || configs[0].ID != 1 {
+	if len(configs) != 1 || configs[0].Code != "LOCAL01" {
 		t.Fatalf("single local configuration = %+v", configs)
 	}
 	input := weighing.SiteConfigurationInput{
@@ -70,21 +82,56 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 		return string(body)
 	}
 	for field, change := range map[string]func(*weighing.SiteConfigurationInput){
-		"factory code": func(v *weighing.SiteConfigurationInput) { v.Code = "FOREIGN" },
-		"scale code":   func(v *weighing.SiteConfigurationInput) { v.ScaleCode = "FOREIGN-SCALE" },
-		"agent ID":     func(v *weighing.SiteConfigurationInput) { v.AgentID = "foreign-agent" },
+		"agent ID": func(v *weighing.SiteConfigurationInput) { v.AgentID = "foreign-agent" },
 	} {
 		candidate := input
 		change(&candidate)
-		response := serveJSON(router, http.MethodPut, "/api/weighing/site-config/1", encode(candidate), admin)
+		response := serveJSON(router, http.MethodPut, "/api/weighing/site-config", encode(candidate), admin)
 		if response.Code != http.StatusOK || envelopeCode(t, response) != http.StatusBadRequest {
 			t.Errorf("changing fixed %s returned status=%d envelope=%d body=%s", field, response.Code, envelopeCode(t, response), response.Body.String())
 		}
 	}
 	input.Name = "本厂改名"
-	updated := weighingData[weighing.SiteConfiguration](t, router, http.MethodPut, "/api/weighing/site-config/1", encode(input), admin)
+	input.ScaleName = "地磅改名"
+	updated := weighingData[weighing.SiteConfiguration](t, router, http.MethodPut, "/api/weighing/site-config", encode(input), admin)
 	if updated.Name != "本厂改名" {
 		t.Fatalf("editable local name was not saved: %+v", updated)
+	}
+
+	for key, want := range map[string]string{"weighing.local-site-name": "本厂改名", "weighing.local-scale-name": "地磅改名"} {
+		var got string
+		if err := db.GORM.Table("sys_config").Select("config_value").Where("config_key=?", key).Scan(&got).Error; err != nil || got != want {
+			t.Fatalf("config %s = %q, want %q, err=%v", key, got, want, err)
+		}
+	}
+
+	input.Version = updated.Version
+	input.Code, input.ScaleCode = "LOCAL02", "SCALE02"
+	changed := weighingData[weighing.SiteConfiguration](t, router, http.MethodPut, "/api/weighing/site-config", encode(input), admin)
+	if changed.Code != "LOCAL02" || changed.ScaleCode != "SCALE02" || changed.AgentID != "agent-SCALE01" {
+		t.Fatalf("identity correction: %+v", changed)
+	}
+	currentDevice, err := repo.LocalAgentConfig(context.Background(), imageDir)
+	if err != nil || currentDevice.InstallationID != cfg.InstallationID {
+		t.Fatalf("installation identity changed after business code edit: %+v err=%v", currentDevice, err)
+	}
+	for key, want := range map[string]string{"weighing.local-site-code": "LOCAL02", "weighing.local-scale-code": "SCALE02"} {
+		var got string
+		if err := db.GORM.Table("sys_config").Select("config_value").Where("config_key=?", key).Scan(&got).Error; err != nil || got != want {
+			t.Fatalf("identity config %s=%q err=%v", key, got, err)
+		}
+	}
+	if caps := weighingData[struct {
+		LocalSiteCode  string `json:"localSiteCode"`
+		LocalScaleCode string `json:"localScaleCode"`
+	}](t, router, http.MethodGet, "/api/weighing/capabilities", "", admin); caps.LocalSiteCode != "LOCAL02" || caps.LocalScaleCode != "SCALE02" {
+		t.Fatalf("capabilities after correction: %+v", caps)
+	}
+	input.Version = changed.Version
+	input.Code, input.ScaleCode = "LOCAL01", "SCALE01"
+	updated = weighingData[weighing.SiteConfiguration](t, router, http.MethodPut, "/api/weighing/site-config", encode(input), admin)
+	if updated.Code != "LOCAL01" || updated.ScaleCode != "SCALE01" || updated.AgentID != "agent-SCALE01" {
+		t.Fatalf("identity correction back: %+v", updated)
 	}
 
 	// A local installation cannot add a second factory or write another
@@ -94,7 +141,7 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 	if added.Code == http.StatusOK && envelopeCode(t, added) == http.StatusOK {
 		t.Fatal("local installation created a second factory")
 	}
-	cross := serveJSON(router, http.MethodPut, "/api/weighing/site-config/2", encode(additional), admin)
+	cross := serveJSON(router, http.MethodPut, "/api/weighing/site-config", encode(additional), admin)
 	if cross.Code == http.StatusOK && envelopeCode(t, cross) == http.StatusOK {
 		t.Fatal("local installation changed a foreign factory")
 	}
@@ -113,7 +160,7 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 	t.Cleanup(server.Close)
 	mockCtx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
-	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: connection.AgentID, ScaleID: connection.ScaleID, Key: connection.AgentKey})
+	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: connection.AgentID, ScaleCode: connection.ScaleCode, Key: connection.AgentKey})
 	control := httptest.NewServer(mock.Handler())
 	t.Cleanup(control.Close)
 	go func() { defer close(done); mock.Run(mockCtx) }()
@@ -126,15 +173,30 @@ func TestPostgresSiteConfiguration(t *testing.T) {
 		}
 	})
 	deadline := time.Now().Add(6 * time.Second)
-	for !hub.Connected(1) && time.Now().Before(deadline) {
+	for !hub.Connected(connection.ScaleCode) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !hub.Connected(1) {
+	if !hub.Connected(connection.ScaleCode) {
 		t.Fatal("local Agent binding did not connect")
 	}
-	input.Enabled = 0
+	// An online Agent is disconnected normally and reconnects to the updated
+	// identity; it keeps the same internal Agent ID and does not get kicked.
 	input.Version = updated.Version
-	disabled := serveJSON(router, http.MethodPut, "/api/weighing/site-config/1", encode(input), admin)
+	input.Code, input.ScaleCode = "LOCAL02", "SCALE02"
+	liveChanged := weighingData[weighing.SiteConfiguration](t, router, http.MethodPut, "/api/weighing/site-config", encode(input), admin)
+	deadline = time.Now().Add(8 * time.Second)
+	for !hub.Connected("SCALE02") && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !hub.Connected("SCALE02") || hub.Connected("SCALE01") {
+		t.Fatal("Agent did not reconnect using current local scale")
+	}
+	if liveChanged.AgentID != connection.AgentID {
+		t.Fatalf("Agent identity changed: %+v", liveChanged)
+	}
+	input.Enabled = 0
+	input.Version = liveChanged.Version
+	disabled := serveJSON(router, http.MethodPut, "/api/weighing/site-config", encode(input), admin)
 	if disabled.Code != http.StatusOK || envelopeCode(t, disabled) != http.StatusBadRequest {
 		t.Fatalf("online Agent should block disabling the local scale: %d %s", disabled.Code, disabled.Body.String())
 	}

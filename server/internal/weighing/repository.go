@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	"github.com/EziosWJ/weighbridge/server/internal/localsite"
@@ -18,14 +19,16 @@ import (
 type Repository struct {
 	db         *gorm.DB
 	sessionTTL time.Duration
+	dataDir    string
 }
 type RuntimeOptions struct {
 	SessionTTL time.Duration
+	// DataDir holds the out-of-database ticket-number watermark so restoring an
+	// older database backup cannot reuse an issued serial.
+	DataDir string
 }
 
 type maintenanceIdentity struct {
-	SiteID    int64
-	ScaleID   int64
 	SiteCode  string
 	ScaleCode string
 	ServerURL string
@@ -37,15 +40,17 @@ var _ Store = (*Repository)(nil)
 
 func NewRepository(db *gorm.DB, options ...RuntimeOptions) *Repository {
 	r := &Repository{db: db, sessionTTL: time.Minute}
-	if len(options) > 0 && options[0].SessionTTL > 0 {
-		r.sessionTTL = options[0].SessionTTL
+	if len(options) > 0 {
+		if options[0].SessionTTL > 0 {
+			r.sessionTTL = options[0].SessionTTL
+		}
+		r.dataDir = options[0].DataDir
 	}
 	return r
 }
 
 func matchesMaintenanceIdentity(candidate agentprinter.Config, identity maintenanceIdentity) bool {
-	return candidate.SiteID == identity.SiteID && candidate.ScaleID == identity.ScaleID &&
-		candidate.SiteCode == identity.SiteCode && candidate.ScaleCode == identity.ScaleCode &&
+	return candidate.SiteCode == identity.SiteCode && candidate.ScaleCode == identity.ScaleCode &&
 		candidate.ServerURL == identity.ServerURL && candidate.AgentID == identity.AgentID &&
 		candidate.AgentKey == identity.AgentKey
 }
@@ -165,15 +170,23 @@ func decorateParty(v *Party, contacts []Contact) {
 }
 func (r *Repository) Scales(ctx context.Context) ([]Scale, error) {
 	v := []Scale{}
-	db := r.db.WithContext(ctx).Table("wb_scale").Select("wb_scale.*,s.name AS site_name").Joins("JOIN wb_site s ON s.id=wb_scale.site_id")
-	err := siteFilter(db, PageQuery{}, "wb_scale.site_id").Order("wb_scale.id").Find(&v).Error
+	db := r.db.WithContext(ctx).Table("wb_scale").Select("wb_scale.*,s.name AS site_name").Joins("JOIN wb_site s ON s.site_code=wb_scale.site_code")
+	err := siteFilter(db, PageQuery{}, "wb_scale.site_code").Order("wb_scale.site_code,wb_scale.code").Find(&v).Error
 	for i := range v {
-		v[i].CanOperate = mayOperate(ctx, v[i].SiteID)
+		v[i].CanOperate = mayOperate(ctx, v[i].SiteCode)
 	}
 	return v, err
 }
 func lockRow[T any](tx *gorm.DB, id int64) (T, error) {
 	return findOne[T](tx.Clauses(clause.Locking{Strength: "UPDATE"}), id)
+}
+func lockRowWhere[T any](tx *gorm.DB, query string, args ...any) (T, error) {
+	var v T
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where(query, args...).Take(&v).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = ErrNotFound
+	}
+	return v, err
 }
 func meta(old MasterMeta, id, version, actor int64) (MasterMeta, error) {
 	if id > 0 && old.Version != version {
@@ -187,25 +200,98 @@ func meta(old MasterMeta, id, version, actor int64) (MasterMeta, error) {
 	old.UpdateBy = actor
 	return old, nil
 }
-func nextNumber(tx *gorm.DB, kind, prefix string) (string, error) {
+
+// nextNumber allocates per-site, per-day sequence numbers. Tickets use the
+// "siteCode-YYYYMMDD-NNNN" form required by ADR 0033; task numbers share the
+// same daily sequence with an RW prefix; material codes keep the WL<date><nnnn>
+// form and party codes stay random. The atomic upsert serializes concurrent
+// issuers inside the same transaction as the business write, so a network
+// outage never blocks local numbering.
+func nextNumber(tx *gorm.DB, kind, prefix, dataDir string, at time.Time) (string, error) {
 	identity, err := localsite.Read(tx.Statement.Context, tx)
 	if err != nil {
 		return "", err
 	}
-	if identity.SiteID == 0 {
+	if identity.SiteCode == "" {
 		return "", localsite.ErrNotConfigured
 	}
-	if kind == "task" || kind == "ticket" || kind == "party" {
-		var site Site
-		if err := tx.First(&site, identity.SiteID).Error; err != nil {
-			return "", err
-		}
-		return prefix + "-" + site.Code + "-" + agentbridge.ID(), nil
+	if at.IsZero() {
+		at = time.Now().UTC()
 	}
-	date := time.Now().UTC().Add(8 * time.Hour).Format("20060102")
+	// The business date is taken from the same instant that freezes the
+	// document, so a confirmation crossing Beijing midnight cannot produce a
+	// number dated differently from its issue time (ADR 0033).
+	date := businessDate(at)
+	if kind == "party" {
+		return prefix + "-" + identity.SiteCode + "-" + agentbridge.ID(), nil
+	}
+	number, err := allocateDaily(tx, kind, identity.SiteCode, date, dataDir)
+	if err != nil {
+		return "", err
+	}
+	switch kind {
+	case "material":
+		return fmt.Sprintf("%s%s%04d", prefix, date, number), nil
+	case "task":
+		return fmt.Sprintf("%s-%s-%s-%04d", prefix, identity.SiteCode, date, number), nil
+	default:
+		return fmt.Sprintf("%s-%s-%04d", identity.SiteCode, date, number), nil
+	}
+}
+
+// allocateDaily bumps the (site, kind, date) counter atomically. Before a new
+// sequence row is created the counter is raised above any higher number already
+// issued for the same prefix, both from rows still in the database and from the
+// out-of-database watermark file, so restoring an older backup cannot reuse an
+// issued number (ADR 0033).
+// businessDate renders the Beijing-time business date of an instant.
+func businessDate(at time.Time) string { return at.UTC().Add(8 * time.Hour).Format("20060102") }
+
+func allocateDaily(tx *gorm.DB, kind, siteCode, date, dataDir string) (int64, error) {
+	head := siteCode + "-" + date + "-"
+	floorTable, floorColumn, floorPrefix := "", "", ""
+	switch kind {
+	case "ticket", "test_ticket":
+		floorTable, floorColumn, floorPrefix = "wb_ticket", "ticket_no", head
+	case "task":
+		floorTable, floorColumn, floorPrefix = "wb_transport_task", "task_no", "RW-"+head
+	case "material":
+		floorTable, floorColumn, floorPrefix = "wb_material", "code", "WL"+date
+	}
+	floor := "0"
+	if floorTable != "" {
+		floor = fmt.Sprintf(`COALESCE((SELECT MAX(SUBSTRING(%[2]s FROM %[3]d)::BIGINT) FROM %[1]s WHERE %[2]s LIKE ? || '%%' AND SUBSTRING(%[2]s FROM %[3]d) ~ '^[0-9]+$'),0)`, floorTable, floorColumn, len(floorPrefix)+1)
+	}
+	key := watermarkKey{Kind: kind, SiteCode: siteCode, Date: date}
+	fileFloor, err := watermarkFloor(dataDir, key)
+	if err != nil {
+		return 0, err
+	}
+	// The floor expression is interpolated twice (insert and conflict update),
+	// each carrying one placeholder, so the prefix argument repeats per use.
+	args := []any{siteCode, kind, date}
+	if floorTable != "" {
+		args = append(args, floorPrefix)
+	}
+	args = append(args, fileFloor)
+	if floorTable != "" {
+		args = append(args, floorPrefix)
+	}
+	args = append(args, fileFloor)
 	var number int64
-	err = tx.Raw("INSERT INTO wb_number_sequence (kind,business_date,next_value) VALUES (?,?,1) ON CONFLICT (kind,business_date) DO UPDATE SET next_value=wb_number_sequence.next_value+1 RETURNING next_value", kind, date).Scan(&number).Error
-	return fmt.Sprintf("%s%s%04d", prefix, date, number), err
+	query := fmt.Sprintf(`INSERT INTO wb_number_sequence (site_code,kind,business_date,next_value)
+VALUES (?,?,?,GREATEST(GREATEST(%[1]s,0),?)+1)
+ON CONFLICT (site_code,kind,business_date) DO UPDATE SET next_value=GREATEST(wb_number_sequence.next_value+1,GREATEST(GREATEST(%[1]s,0),?)+1)
+RETURNING next_value`, floor)
+	if err := tx.Raw(query, args...).Scan(&number).Error; err != nil {
+		return 0, err
+	}
+	// %04d is only a minimum width: serials expand naturally past 9999 and the
+	// ticket_no column (VARCHAR(100)) bounds the physical length (ADR 0033).
+	if err := raiseWatermark(dataDir, key, number); err != nil {
+		return 0, err
+	}
+	return number, nil
 }
 func (r *Repository) SaveCategory(ctx context.Context, id int64, in CategoryInput, e audit.Event) (Category, error) {
 	var v Category
@@ -257,7 +343,7 @@ func (r *Repository) SaveMaterial(ctx context.Context, id int64, in MaterialInpu
 			return err
 		}
 		if id == 0 {
-			v.Code, err = nextNumber(tx, "material", "WL")
+			v.Code, err = nextNumber(tx, "material", "WL", r.dataDir, time.Now().UTC())
 			if err != nil {
 				return err
 			}
@@ -303,7 +389,7 @@ func (r *Repository) SaveParty(ctx context.Context, id int64, in PartyInput, e a
 			}
 		}
 		if id == 0 {
-			v.Code, err = nextNumber(tx, "party", "ZT")
+			v.Code, err = nextNumber(tx, "party", "ZT", r.dataDir, time.Now().UTC())
 			if err != nil {
 				return err
 			}

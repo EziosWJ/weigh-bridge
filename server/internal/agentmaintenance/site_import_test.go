@@ -27,7 +27,7 @@ func TestSiteConfigurationImportPreviewsAndPreservesLocalPrinting(t *testing.T) 
 	}
 	h := s.Handler()
 	cookie := login(t, h, dir)
-	c := agentconfig.Connection{ServerURL: "http://server.internal:8900", SiteID: 2, SiteCode: "SITE02", SiteName: "二厂", ScaleID: 2, ScaleCode: "SCALE02", ScaleName: "二厂地磅", AgentID: "agent-2", AgentKey: "new-connection-key"}
+	c := agentconfig.Connection{ServerURL: "http://server.internal:8900", SiteCode: "SITE02", SiteName: "二厂", ScaleCode: "SCALE02", ScaleName: "二厂地磅", AgentID: "agent-2", AgentKey: "new-connection-key"}
 	encode := func(confirm bool) string {
 		b, _ := json.Marshal(map[string]any{"connection": c, "confirm": confirm})
 		return string(b)
@@ -59,10 +59,10 @@ func TestSiteConfigurationImportPreviewsAndPreservesLocalPrinting(t *testing.T) 
 	}
 	// Connection identity round-trips; display metadata is intentionally not
 	// written to agent.env any more.
-	if env.ServerURL != s.draft.ServerURL || env.AgentID != s.draft.AgentID || env.AgentKey != s.draft.AgentKey || env.ScaleID != s.draft.ScaleID || env.Queue != s.draft.Queue {
+	if env.ServerURL != s.draft.ServerURL || env.AgentID != s.draft.AgentID || env.AgentKey != s.draft.AgentKey || env.ScaleCode != s.draft.ScaleCode || env.Queue != s.draft.Queue {
 		t.Fatalf("connection identity did not round trip: %+v", env)
 	}
-	if env.SiteName != "" || env.ScaleName != "" || env.SiteCode != "" || env.ScaleCode != "" || env.SiteID != 0 {
+	if env.SiteName != "" || env.ScaleName != "" || env.SiteCode != "" {
 		t.Fatalf("display metadata must not be written to agent.env: %+v", env)
 	}
 	audit, err := os.ReadFile(filepath.Join(dir, "maintenance.jsonl"))

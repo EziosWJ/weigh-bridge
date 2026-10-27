@@ -62,8 +62,8 @@ func TestPostgresBusinessMaintenanceJWTPermissionsAuditAndStoppedDeviceAgentOnli
 
 	repository := weighing.NewRepository(database.GORM)
 	hub := agentbridge.NewMultiple(nil)
-	hub.SetResolver(func(ctx context.Context, scaleID int64) (agentbridge.Config, error) {
-		return repository.AgentConfig(ctx, scaleID, t.TempDir())
+	hub.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
+		return repository.AgentConfig(ctx, scaleCode, t.TempDir())
 	})
 	dependencies := testDependencies(t, database, t.TempDir())
 	dependencies.Weighing = weighing.NewService(repository, hub)
@@ -73,7 +73,7 @@ func TestPostgresBusinessMaintenanceJWTPermissionsAuditAndStoppedDeviceAgentOnli
 		if err != nil || !status.Configured {
 			return agentmaintenance.Config{}, fmt.Errorf("local site is not configured: %w", err)
 		}
-		return repository.BoundMaintenanceConfig(ctx, status.SiteID, 0, "http://127.0.0.1:18900")
+		return repository.BoundMaintenanceConfig(ctx, status.SiteCode, "", "http://127.0.0.1:18900")
 	}, nil)
 	router, err := app.Build(testAPIConfig(), database, dependencies)
 	if err != nil {
@@ -81,7 +81,7 @@ func TestPostgresBusinessMaintenanceJWTPermissionsAuditAndStoppedDeviceAgentOnli
 	}
 	token := loginAdmin(t, router)
 	ensureLocalSite(t, router, token, 1, "MAINT01", "维护测试厂", "MAINT-SCALE", "维护测试地磅", "maintenance-test-agent")
-	deviceConfig, err := repository.DevelopmentMaintenanceConfig(context.Background(), 1, "http://127.0.0.1:18900")
+	deviceConfig, err := repository.DevelopmentMaintenanceConfig(context.Background(), "MAINT-SCALE", "http://127.0.0.1:18900")
 	if err != nil {
 		t.Fatalf("read DB-bound Agent config: %v", err)
 	}
@@ -164,22 +164,22 @@ func TestPostgresBusinessMaintenanceJWTPermissionsAuditAndStoppedDeviceAgentOnli
 	if state.Config.OffsetXMM != 9 || state.Config.Queue != deviceConfig.Queue || state.Config.SerialPort != deviceConfig.SerialPort || state.Config.CameraRTSPBase != deviceConfig.CameraRTSPBase {
 		t.Fatalf("remote save lost printer/camera/serial parameters: %+v", state.Config)
 	}
-	bindingAfterSave, err := repository.AgentConfig(context.Background(), deviceConfig.ScaleID, "")
+	bindingAfterSave, err := repository.AgentConfig(context.Background(), deviceConfig.ScaleCode, "")
 	if err != nil || bindingAfterSave.Key != deviceConfig.AgentKey || bindingAfterSave.ID != deviceConfig.AgentID {
 		t.Fatal("remote maintenance changed the DB-managed Agent binding", err)
 	}
 	var initialized int16
-	if err := database.GORM.Table("wb_local_identity").Select("initialized").Where("id=1 AND site_id=1").Scan(&initialized).Error; err != nil || initialized != 0 {
+	if err := database.GORM.Table("wb_local_identity").Select("initialized").Where("id=1 AND site_code='MAINT01'").Scan(&initialized).Error; err != nil || initialized != 0 {
 		t.Fatalf("maintenance must not write the legacy initialization flag: initialized=%d err=%v", initialized, err)
 	}
 	var siteURL string
-	if err := database.GORM.Table("wb_site").Select("server_url").Where("id=1").Scan(&siteURL).Error; err != nil || siteURL != "" {
+	if err := database.GORM.Table("wb_site").Select("server_url").Where("site_code=?", "MAINT01").Scan(&siteURL).Error; err != nil || siteURL != "" {
 		t.Fatalf("legacy site address must stay unused and unwritten: %q err=%v", siteURL, err)
 	}
 
 	start := serveJSON(router, http.MethodPost, base+"/action", `{"action":"start-agent"}`, token)
-	if start.Code != http.StatusOK || !runner.active || !hub.Connected(1) {
-		t.Fatalf("start device execution over online Agent: active=%t connected=%t status=%d body=%s", runner.active, hub.Connected(1), start.Code, start.Body.String())
+	if start.Code != http.StatusOK || !runner.active || !hub.Connected(deviceConfig.ScaleCode) {
+		t.Fatalf("start device execution over online Agent: active=%t connected=%t status=%d body=%s", runner.active, hub.Connected(deviceConfig.ScaleCode), start.Code, start.Body.String())
 	}
 	jobs := serveJSON(router, http.MethodGet, base+"/jobs", "", token)
 	var preview struct {
@@ -190,8 +190,8 @@ func TestPostgresBusinessMaintenanceJWTPermissionsAuditAndStoppedDeviceAgentOnli
 	}
 	stopBody := fmt.Sprintf(`{"action":"stop-agent","previewToken":%q,"disposition":"keep"}`, preview.Token)
 	stop := serveJSON(router, http.MethodPost, base+"/action", stopBody, token)
-	if stop.Code != http.StatusOK || runner.active || !hub.Connected(1) {
-		t.Fatalf("stop device execution without stopping Agent process: active=%t connected=%t status=%d body=%s", runner.active, hub.Connected(1), stop.Code, stop.Body.String())
+	if stop.Code != http.StatusOK || runner.active || !hub.Connected(deviceConfig.ScaleCode) {
+		t.Fatalf("stop device execution without stopping Agent process: active=%t connected=%t status=%d body=%s", runner.active, hub.Connected(deviceConfig.ScaleCode), stop.Code, stop.Body.String())
 	}
 	status := serveJSON(router, http.MethodGet, base+"/status", "", token)
 	var statusPayload struct {
@@ -237,7 +237,7 @@ func runRemoteMaintenanceAgent(t *testing.T, serverURL string, hub *agentbridge.
 	wsConfig.Header = http.Header{
 		"Authorization": []string{"Bearer " + cfg.AgentKey},
 		"X-Agent-Id":    []string{cfg.AgentID},
-		"X-Scale-Id":    []string{fmt.Sprint(cfg.ScaleID)},
+		"X-Scale-Code":  []string{cfg.ScaleCode},
 	}
 	connection, err := websocket.DialConfig(wsConfig)
 	if err != nil {
@@ -282,10 +282,10 @@ func runRemoteMaintenanceAgent(t *testing.T, serverURL string, hub *agentbridge.
 	}()
 	if hub != nil {
 		deadline := time.Now().Add(2 * time.Second)
-		for !hub.Connected(cfg.ScaleID) && time.Now().Before(deadline) {
+		for !hub.Connected(cfg.ScaleCode) && time.Now().Before(deadline) {
 			time.Sleep(10 * time.Millisecond)
 		}
-		if !hub.Connected(cfg.ScaleID) {
+		if !hub.Connected(cfg.ScaleCode) {
 			_ = connection.Close()
 			return fmt.Errorf("API did not register the remote Agent connection")
 		}

@@ -40,7 +40,7 @@ func TestFreshCameraEvidenceAndRecognition(t *testing.T) {
 			defer r.MultipartForm.RemoveAll()
 			_, _ = w.Write([]byte(`{"candidate":"川A12345"}`))
 		case "/api/agent/images":
-			if r.Header.Get("Authorization") != "Bearer private-key" || r.Header.Get("X-Agent-ID") != "agent-1" || r.Header.Get("X-Scale-ID") != "21" {
+			if r.Header.Get("Authorization") != "Bearer private-key" || r.Header.Get("X-Agent-ID") != "agent-1" || r.Header.Get("X-Scale-Code") != "WB21" {
 				t.Error("Agent identity not forwarded")
 			}
 			if err := r.ParseMultipartForm(1 << 20); err != nil {
@@ -58,7 +58,7 @@ func TestFreshCameraEvidenceAndRecognition(t *testing.T) {
 	}))
 	defer server.Close()
 	cfg := agentprinter.Defaults()
-	cfg.ServerURL, cfg.AgentID, cfg.AgentKey, cfg.ScaleID = server.URL, "agent-1", "private-key", 21
+	cfg.ServerURL, cfg.AgentID, cfg.AgentKey, cfg.ScaleCode = server.URL, "agent-1", "private-key", "WB21"
 	cfg.CameraFrontURL, cfg.CameraRearURL, cfg.PlateRecognitionURL = server.URL+"/camera", server.URL+"/camera", server.URL+"/recognize"
 	client := Client{Config: cfg}
 	for range 2 {

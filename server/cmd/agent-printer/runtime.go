@@ -138,7 +138,7 @@ func (r *deviceRuntime) captureWithPolicy(ctx context.Context, required bool) p.
 	defer done()
 	return captureEvidenceWithPolicy(child, cfg, scale, required)
 }
-func (r *deviceRuntime) testCameras(ctx context.Context, _ int64) (p.CameraTest, error) {
+func (r *deviceRuntime) testCameras(ctx context.Context, _ string) (p.CameraTest, error) {
 	child, cfg, _, done, err := r.acquire(ctx, false)
 	if err != nil {
 		return p.CameraTest{}, err

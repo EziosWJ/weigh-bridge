@@ -49,7 +49,7 @@ func OpenDevice(dir, environment string, initial Config, runner Runner) (*Servic
 	s.mu.Lock()
 	oldDraft, oldPrevious := s.draft, s.previous
 	bindConnection := func(c *Config) {
-		c.ServerURL, c.AgentID, c.AgentKey, c.ScaleID = s.active.ServerURL, s.active.AgentID, s.active.AgentKey, s.active.ScaleID
+		c.ServerURL, c.AgentID, c.AgentKey, c.ScaleCode = s.active.ServerURL, s.active.AgentID, s.active.AgentKey, s.active.ScaleCode
 	}
 	bindConnection(&s.draft)
 	if s.previous.AgentID != "" {
@@ -64,8 +64,14 @@ func OpenDevice(dir, environment string, initial Config, runner Runner) (*Servic
 	}
 	s.mu.Unlock()
 	s.SetBusinessConfigValidator(func(_ context.Context, c Config) error {
-		if c.AgentID != initial.AgentID || c.ScaleID != initial.ScaleID || c.AgentKey != initial.AgentKey || c.ServerURL != initial.ServerURL {
-			return errors.New("设备维护不能修改当前 Agent 的身份、归属或连接地址")
+		// Keyless Agents know only the Server address. Site, scale and Agent
+		// codes are assigned by the Server at agent.hello.ack and are diagnostic
+		// only (ADR 0030/0033), so importing the Server-provided configuration
+		// must not be rejected for carrying them; repointing the host at a
+		// different Server (or replacing a stored key) stays forbidden.
+		changed := func(known, candidate string) bool { return known != "" && candidate != known }
+		if changed(initial.ServerURL, c.ServerURL) || changed(initial.AgentKey, c.AgentKey) {
+			return errors.New("设备维护不能修改当前 Agent 的连接地址或身份密钥")
 		}
 		return nil
 	})

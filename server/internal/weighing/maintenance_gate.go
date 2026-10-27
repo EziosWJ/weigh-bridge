@@ -56,12 +56,12 @@ func (s *Service) BeginMaintenance(ctx context.Context) (func(), error) {
 
 // The availability callback is supplied by the maintenance owner. Legacy
 // configurations continue using the existing device evidence checks.
-func (s *Service) SetCameraAvailability(fn func(int64) bool) { s.cameraAvailable = fn }
+func (s *Service) SetCameraAvailability(fn func(string) bool) { s.cameraAvailable = fn }
 
-func (s *Service) captureBlockedReason(scale int64) string {
-	return s.captureBlockedReasonWithPolicy(scale, true)
+func (s *Service) captureBlockedReason(scaleCode string) string {
+	return s.captureBlockedReasonWithPolicy(scaleCode, true)
 }
-func (s *Service) captureBlockedReasonWithPolicy(scale int64, required bool) string {
+func (s *Service) captureBlockedReasonWithPolicy(scaleCode string, required bool) string {
 	s.maintenance.mu.Lock()
 	paused := s.maintenance.paused
 	s.maintenance.mu.Unlock()

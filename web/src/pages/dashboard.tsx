@@ -28,8 +28,8 @@ export function DashboardPage() {
   const canViewCamera = permissions.includes('weighing:camera:view');
   const business = useOverviewResource(canRead ? overviewApi.business : null, revision);
   const scale = caps.data?.scales[0];
-  const scaleId = scale?.id;
-  const loadDevice = useCallback(() => scaleId ? overviewApi.device(scaleId) : Promise.reject(new Error('未找到可查询的本厂地磅')), [scaleId]);
+  const scaleCode = scale?.code;
+  const loadDevice = useCallback(() => scaleCode ? overviewApi.device(scaleCode) : Promise.reject(new Error('未找到可查询的本厂地磅')), [scaleCode]);
   const device = useOverviewResource(canRead ? loadDevice : null, revision);
   const printer = useOverviewResource(canMaintain ? agentMaintenanceApi.status : null, revision);
   const cameras = useOverviewResource(canViewCamera ? cameraApi.list : null, revision);

@@ -33,7 +33,7 @@ func (r *Repository) Overview(ctx context.Context, now time.Time) (Overview, err
 			}
 		}
 		pending := func() *gorm.DB {
-			return siteFilter(tx.Table("wb_transport_task AS t"), PageQuery{}, "t.site_id").
+			return siteFilter(tx.Table("wb_transport_task AS t"), PageQuery{}, "t.site_code").
 				Joins("JOIN wb_weigh_record f ON f.id=t.current_first_record_id AND f.task_id=t.id").
 				Where("t.status=?", "awaiting_second")
 		}

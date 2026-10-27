@@ -12,17 +12,13 @@ func (s *Service) SetCameraConfigSource(source func() (agentprinter.Config, erro
 // The route uses the same JWT, weighing:read and site scope as device state.
 func (h *Handler) cameraPreview(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	id, err := pathID(c)
-	if err != nil {
-		writeResult(c, nil, err)
-		return
-	}
+	id := c.Param("code")
 	if h.service.cameraConfig == nil {
 		writeResult(c, agentprinter.CameraPreview{Mode: "legacy"}, nil)
 		return
 	}
 	cfg, runtimeError := h.service.cameraConfig()
-	if cfg.ScaleID != id {
+	if cfg.ScaleCode != id {
 		writeResult(c, agentprinter.CameraPreview{Mode: "legacy"}, nil)
 		return
 	}

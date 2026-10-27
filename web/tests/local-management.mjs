@@ -37,8 +37,8 @@ async function newAdminPage(permissionCodes, maintenanceEnabled = true) {
   })));
   const page = await context.newPage();
   page.setDefaultTimeout(7000);
-  const capabilities = { localSiteId: 1, configured: true, initialized: true, maintenanceEnabled, permissionCodes, sites: [], scales: [], userId: 1 };
-  const localStatus = { siteId: 1, configured: true, initialized: true };
+  const capabilities = { localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled, permissionCodes, sites: [], scales: [], userId: 1 };
+  const localStatus = { siteCode: 'F001', scaleCode: 'WB01', configured: true, initialized: true };
   const apiRoute = (url) => new URL(url).pathname.startsWith('/api/');
   await context.route(apiRoute, async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -46,6 +46,7 @@ async function newAdminPage(permissionCodes, maintenanceEnabled = true) {
     if (path === '/api/weighing/capabilities') return route.fulfill({ json: { code: 200, message: 'ok', data: capabilities } });
     if (path === '/api/weighing/local-status') return route.fulfill({ json: { code: 200, message: 'ok', data: localStatus } });
     if (path === '/api/weighing/site-config') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
+    if (path === '/api/weighing/ticket-sequences') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
     if (path === '/api/system/config/page') return route.fulfill({ json: { code: 200, message: 'ok', data: { records: [], total: 0, page: 1, pageSize: 10 } } });
     await route.fulfill({ json: {} });
   });
@@ -69,6 +70,8 @@ try {
   let failTitleLoad = false;
   let failTitleSave = false;
   const writes = [];
+  const identityWrites = [];
+  let identityRow = {code: 'F001', name: '本厂', version: 1, scaleCode: 'WB01', scaleName: '本厂地磅', agentId: '', enabled: 0};
   await factory.context.route(factory.apiRoute, async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
@@ -84,15 +87,44 @@ try {
       return respond(null);
     }
     if (path.startsWith('/api/system/dict-data') || path.startsWith('/api/system/dict/')) return respond([]);
+    if (path === '/api/weighing/site-config' && request.method() === 'PUT') {
+      const body = request.postDataJSON();
+      identityWrites.push(body);
+      identityRow = {...identityRow, ...body, version: body.version + 1};
+      return respond(identityRow);
+    }
+    if (path === '/api/weighing/site-config') return respond([identityRow]);
     return route.fallback();
   });
   await factory.page.goto(`${webUrl}/weighing/site-config`);
-  await factory.page.waitForURL('**/system/config');
+  await factory.page.waitForURL('**/system/local-identity');
+  for (const name of ['首次配置', '编辑本厂配置', '新增厂区']) assert.equal(await factory.page.getByRole('button', {name, exact: true}).count(), 0);
+  // Identity codes and names can be edited without changing the stopped state.
+  const siteCodeInput = factory.page.getByLabel('厂区编码', {exact: true}).first();
+  await siteCodeInput.waitFor();
+  assert.equal(await siteCodeInput.inputValue(), 'F001');
+  assert.equal(await siteCodeInput.isDisabled(), false);
+  assert.equal(await factory.page.getByLabel('地磅编码', {exact: true}).inputValue(), 'WB01');
+  await siteCodeInput.fill('F002');
+  await factory.page.getByLabel('地磅编码', {exact: true}).fill('WB02');
+  assert.equal(await factory.page.getByLabel('厂区名称', {exact: true}).inputValue(), '本厂');
+  assert.equal(await factory.page.getByLabel('地磅名称', {exact: true}).inputValue(), '本厂地磅');
+  // A disabled factory must stay disabled when only its names are maintained.
+  assert.equal(await factory.page.getByLabel('启停状态', {exact: true}).inputValue(), '停用');
+  await factory.page.getByLabel('厂区名称', {exact: true}).fill('本厂改名');
+  await factory.page.getByRole('button', {name: '保存身份', exact: true}).click();
+  await factory.page.getByText('本厂身份已保存', {exact: true}).waitFor();
+  assert.equal(identityWrites.length, 1);
+  assert.equal(identityWrites[0].enabled, 0, 'name save must preserve the disabled state');
+  assert.equal(identityWrites[0].name, '本厂改名');
+  assert.equal(identityWrites[0].code, 'F002');
+  assert.equal(identityWrites[0].scaleCode, 'WB02');
+  await siteCodeInput.waitFor();
+  assert.equal(await siteCodeInput.inputValue(), 'F002');
+  await factory.page.goto(`${webUrl}/system/ticket-title`);
   const titleInput = factory.page.getByLabel('打印标题', {exact: true});
   await titleInput.waitFor();
   assert.equal(await titleInput.inputValue(), '酒厂过磅单');
-  for (const name of ['首次配置', '编辑本厂配置', '新增厂区']) assert.equal(await factory.page.getByRole('button', {name, exact: true}).count(), 0);
-  for (const name of ['厂区名称', '地磅名称']) assert.equal(await factory.page.getByLabel(name, {exact: true}).count(), 0);
   await titleInput.fill('本厂新过磅单');
   await factory.page.getByRole('button', {name: '预览标题', exact: true}).click();
   const preview = factory.page.getByRole('dialog', {name: '过磅单标题预览', exact: true});
@@ -137,7 +169,7 @@ try {
   await titleInput.waitFor();
   factory.capabilities.permissionCodes = ['weighing:site:manage'];
   await factory.page.reload();
-  await factory.page.getByRole('heading', {name: '无权访问配置管理', exact: true}).waitFor();
+  await factory.page.getByRole('alert').filter({hasText: '无权访问过磅单标题'}).waitFor();
   assert.equal(await factory.page.getByRole('button', {name: '保存标题', exact: true}).count(), 0, 'retired site management permission does not grant title edits');
   assert.equal(await factory.page.getByRole('link', {name: '配置管理', exact: true}).count(), 0);
   await factory.page.goto(`${webUrl}/weighing/sites`);
@@ -181,7 +213,7 @@ try {
     }
     if (path === '/api/weighing/capabilities') {
       await capabilityGate;
-      return route.fulfill({ json: { code: 200, message: 'ok', data: { localSiteId: 1, configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:view'], sites: [], scales: [], userId: 1 } } });
+      return route.fulfill({ json: { code: 200, message: 'ok', data: { localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:view'], sites: [], scales: [], userId: 1 } } });
     }
     if (path.endsWith('/backups')) return route.fulfill({ json: { records: [{ id: 11, name: '只读备份', notes: '', source: 'auto', configVersion: 1, settings: { serial: { port: '/dev/ttyUSB0', baud: 9600 }, print: {} } }], total: 1, live: false } });
     return route.fulfill({ json: {} });
@@ -234,7 +266,7 @@ try {
     const method = request.method();
     const data = value => route.fulfill({ json: { code: 200, message: 'ok', data: value } });
     if (path === '/api/auth/menus') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
-    if (path === '/api/weighing/capabilities') return data({ localSiteId: 1, configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 });
+    if (path === '/api/weighing/capabilities') return data({ localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 });
     if (path.endsWith('/status')) return route.fulfill({ json: ({
       checkedAt: new Date().toISOString(), maintenance: '运行中', maintenanceAvailable: deviceOnline, agentProcessOnline: deviceOnline,
       agent: agentRunning ? '运行中' : '已停止', agentKnown: true,

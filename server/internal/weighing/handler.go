@@ -67,7 +67,7 @@ func (h *Handler) capabilities(c *gin.Context) {
 		return
 	}
 	sites, err := h.service.Sites(c, principal.UserID)
-	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteId": status.SiteID, "configured": status.Configured, "initialized": status.Initialized}, err)
+	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}
@@ -117,7 +117,7 @@ func pageQuery(c *gin.Context) (PageQuery, error) {
 	for _, field := range []struct {
 		key    string
 		target **int64
-	}{{"materialId", &q.MaterialID}, {"partyId", &q.PartyID}, {"siteId", &q.SiteID}} {
+	}{{"materialId", &q.MaterialID}, {"partyId", &q.PartyID}} {
 		if value := c.Query(field.key); value != "" {
 			n, err := strconv.ParseInt(value, 10, 64)
 			if err != nil || n < 1 {
@@ -125,6 +125,9 @@ func pageQuery(c *gin.Context) (PageQuery, error) {
 			}
 			*field.target = &n
 		}
+	}
+	if value := c.Query("siteCode"); value != "" {
+		q.SiteCode = &value
 	}
 	if _, _, err := dateBounds(q); err != nil {
 		return q, err

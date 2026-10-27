@@ -14,7 +14,7 @@ import (
 func TestInitialDraftDoesNotApplyOrOverwriteDeviceConfiguration(t *testing.T) {
 	dir := t.TempDir()
 	initial := Defaults()
-	initial.SiteID, initial.AgentID, initial.AgentKey = 2, "development-agent", "local-key"
+	initial.SiteCode, initial.AgentID, initial.AgentKey = "F002", "development-agent", "local-key"
 	initial.ServerURL = "http://127.0.0.1:8900"
 	runner := &controllableAgentRunner{}
 	service, err := OpenWithDraft(dir, runner, initial)

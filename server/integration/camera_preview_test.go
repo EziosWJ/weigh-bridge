@@ -30,11 +30,11 @@ func TestPostgresCameraPreviewUsesExistingReadPermissionsAndSiteScope(t *testing
 	}
 	token := loginAdmin(t, router)
 	ensureLocalSite(t, router, token, 1)
-	var scale struct{ ID, SiteID int64 }
-	if err := database.GORM.Table("wb_scale").Select("id,site_id").Where("site_id=?", 1).Take(&scale).Error; err != nil {
+	var scale struct{ Code, SiteCode string }
+	if err := database.GORM.Table("wb_scale").Select("code,site_code").Where("site_code=?", "F001").Take(&scale).Error; err != nil {
 		t.Fatal(err)
 	}
-	path := fmt.Sprintf("/api/weighing/scales/%d/camera-preview", scale.ID)
+	path := fmt.Sprintf("/api/weighing/scales/%s/camera-preview", scale.Code)
 	req := serveJSON(router, http.MethodGet, path, "", token)
 	if req.Code != 200 {
 		t.Fatalf("valid operator denied: %d %s", req.Code, req.Body.String())
@@ -45,11 +45,11 @@ func TestPostgresCameraPreviewUsesExistingReadPermissionsAndSiteScope(t *testing
 			t.Fatal(err)
 		}
 	}
-	exec("UPDATE wb_user_site SET can_operate=0 WHERE user_id=1 AND site_id=?", scale.SiteID)
+	exec("UPDATE wb_local_user_access SET can_operate=0 WHERE user_id=1")
 	if got := serveJSON(router, http.MethodGet, path, "", token); got.Code != 200 {
 		t.Fatalf("existing read-only site access denied: %d", got.Code)
 	}
-	exec("UPDATE wb_user_site SET can_operate=1 WHERE user_id=1 AND site_id=?", scale.SiteID)
+	exec("UPDATE wb_local_user_access SET can_operate=1 WHERE user_id=1")
 	exec("UPDATE sys_menu SET status=0 WHERE permission_code='weighing:read'")
 	if got := serveJSON(router, http.MethodGet, path, "", token); got.Code != 403 {
 		t.Fatalf("live permission removal ignored: %d", got.Code)

@@ -50,15 +50,19 @@ func TestPostgresNotificationUpgradePreservesHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Version 17 deliberately refuses an in-place rollback. Confirm the
-	// refusal leaves the upgrade and notification history intact.
+	// The identity migrations deliberately refuse an in-place rollback. Confirm
+	// the refusal leaves the upgrade and notification history intact.
+	var versionBefore int64
+	if err := db.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&versionBefore).Error; err != nil {
+		t.Fatal(err)
+	}
 	goose.SetTableName("goose_schema_db_version")
-	if err := goose.DownToContext(ctx, db.SQL, schema, 7); err == nil || !strings.Contains(err.Error(), "restoring the previous database backup") {
-		t.Fatalf("schema 17 rollback should require restoring the previous database backup, got %v", err)
+	if err := goose.DownToContext(ctx, db.SQL, schema, 7); err == nil || !strings.Contains(err.Error(), "database backup") {
+		t.Fatalf("rollback should require restoring the database backup, got %v", err)
 	}
 	var schemaVersion int64
-	if err := db.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&schemaVersion).Error; err != nil || schemaVersion != 17 {
-		t.Fatalf("schema version after refused rollback=%d err=%v", schemaVersion, err)
+	if err := db.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&schemaVersion).Error; err != nil || schemaVersion != versionBefore {
+		t.Fatalf("schema version after refused rollback=%d want=%d err=%v", schemaVersion, versionBefore, err)
 	}
 
 	deps := testDependencies(t, db, t.TempDir())

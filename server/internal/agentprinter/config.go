@@ -15,14 +15,12 @@ import (
 
 // Config is shared by the printer process and its local maintenance service.
 type Config struct {
-	SiteID       int64   `json:"siteId"`
 	SiteCode     string  `json:"siteCode"`
 	SiteName     string  `json:"siteName"`
 	ScaleCode    string  `json:"scaleCode"`
 	ScaleName    string  `json:"scaleName"`
 	ServerURL    string  `json:"serverUrl"`
 	AgentID      string  `json:"agentId"`
-	ScaleID      int64   `json:"scaleId"`
 	AgentKey     string  `json:"agentKey"`
 	Queue        string  `json:"queue"`
 	PrintWidthMM int     `json:"printWidthMm"`
@@ -48,7 +46,7 @@ type Config struct {
 
 func Defaults() Config {
 	return Config{
-		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", ScaleID: 1, Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 93, PrintScale: 1,
+		ServerURL: "http://127.0.0.1:18900", AgentID: "scale-agent-1", Queue: "Aisino-SK820-raw", PrintWidthMM: 175, FormLengthMM: 93, PrintScale: 1,
 		CameraTimeoutMS: 2000,
 		SerialBaud:      9600,
 	}
@@ -60,9 +58,6 @@ func ValidateConfig(c Config) error {
 	// are diagnostics, never an admission requirement.
 	if c.AgentID != "" && !regexp.MustCompile(`^[A-Za-z0-9_.-]{1,80}$`).MatchString(c.AgentID) {
 		return errors.New("Agent 诊断编号格式无效")
-	}
-	if c.ScaleID < 0 {
-		return errors.New("地磅编号无效")
 	}
 	if _, err := CanonicalServerURL(c.ServerURL); err != nil {
 		return err
@@ -176,12 +171,6 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 			*dst = value
 		}
 	}
-	if value, ok := values["WEIGHBRIDGE_SCALE_ID"]; ok {
-		cfg.ScaleID, err = strconv.ParseInt(value, 10, 64)
-		if err != nil {
-			return cfg, errors.New("agent.env 地磅编号无效")
-		}
-	}
 	for key, dst := range map[string]*int{"WEIGHBRIDGE_PRINT_WIDTH_MM": &cfg.PrintWidthMM, "WEIGHBRIDGE_PRINT_OFFSET_X_MM": &cfg.OffsetXMM, "WEIGHBRIDGE_PRINT_OFFSET_Y_MM": &cfg.OffsetYMM} {
 		if value, ok := values[key]; ok {
 			*dst, err = strconv.Atoi(value)
@@ -211,12 +200,6 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 			if err != nil {
 				return cfg, fmt.Errorf("agent.env 参数 %s 无效", key)
 			}
-		}
-	}
-	if value := values["WEIGHBRIDGE_SITE_ID"]; value != "" {
-		cfg.SiteID, err = strconv.ParseInt(value, 10, 64)
-		if err != nil || cfg.SiteID < 0 {
-			return cfg, errors.New("厂区编号无效")
 		}
 	}
 	cfg = NormalizeConfig(cfg)

@@ -54,7 +54,6 @@ import { formatDateTime } from "@/lib/datetime";
 import { cn } from "@/lib/utils";
 import { weighingApi } from "@/api/weighing";
 import { useAuthStore } from "@/store/auth-store";
-import { TicketTitleConfiguration } from "./ticket-title-configuration";
 import type {
   ApiStatus,
   DataTableColumn,
@@ -612,7 +611,7 @@ export function SystemConfigsPage() {
       align: "center",
       width: 260,
       render: (_, record) => {
-        if (record.configKey === TICKET_TITLE_KEY) return <a href="#ticket-title" className="text-primary hover:underline">设置过磅单标题</a>;
+        if (record.configKey === TICKET_TITLE_KEY) return <a href="/system/ticket-title" className="text-primary hover:underline">设置过磅单标题</a>;
         const builtin = isBuiltinConfig(record);
         const editableBuiltin = isEditableBuiltinConfig(record);
         const nextStatus = getConfigStatus(record) === 1 ? 0 : 1;
@@ -640,7 +639,8 @@ export function SystemConfigsPage() {
               variant="ghost"
               disabled={
                 record.configKey === CAPTURE_REQUIRED_KEY ||
-                record.configKey === TICKET_TITLE_KEY
+                record.configKey === TICKET_TITLE_KEY ||
+                record.configKey?.startsWith("weighing.local-")
               }
               title={
                 record.configKey === CAPTURE_REQUIRED_KEY
@@ -682,7 +682,7 @@ export function SystemConfigsPage() {
     <>
       <PageHeader
         title="配置管理"
-        description="维护过磅单标题、称重策略与系统参数。"
+        description="维护称重策略与系统参数。"
         actions={
           canManageSystemConfig ? (
             <Button variant="primary" onClick={openCreateForm}>
@@ -695,7 +695,6 @@ export function SystemConfigsPage() {
 
       {canManageSystemConfig ? (
         <>
-      <TicketTitleConfiguration onSaved={loadConfigs} />
       <SearchFilterBar
         actions={
           <>

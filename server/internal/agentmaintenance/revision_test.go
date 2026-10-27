@@ -28,7 +28,7 @@ func TestEnvironmentRemainsAuthoritativeAcrossRestartAndExternalEdit(t *testing.
 		t.Fatal(err)
 	}
 	updated := original
-	updated.ServerURL, updated.Queue, updated.ScaleID = "https://new.example", "new-queue", 8
+	updated.ServerURL, updated.Queue, updated.ScaleCode = "https://new.example", "new-queue", "WB08"
 	if err := BuildAgentEnvironment(dir, updated); err != nil {
 		t.Fatal(err)
 	}

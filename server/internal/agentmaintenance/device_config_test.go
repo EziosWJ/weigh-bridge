@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/agentprinter"
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
+	"github.com/EziosWJ/weighbridge/server/internal/agentscale"
 )
 
 func applyRunner() *fakeRunner {
@@ -190,5 +192,27 @@ func TestQueuesUnavailableIsExplicit(t *testing.T) {
 	result := s.Queues()
 	if result.Code != p.ErrorQueuesUnavailable || !strings.Contains(result.Error, "cups down") {
 		t.Fatalf("queue failure not explicit: %+v", result)
+	}
+}
+
+// The effective-config report must read the same runtime status file the Agent
+// writes; a renamed path silently hides every serial fault from the Server.
+func TestEffectiveConfigReadsRuntimeScaleStatus(t *testing.T) {
+	dir := t.TempDir()
+	runner := &fakeRunner{outputs: map[string]Result{
+		"systemctl --user is-active weighbridge-agent-printer.service": {Output: "active\n"},
+		"lpstat -p": {Output: "printer ok"},
+	}}
+	service := &Service{dir: dir, runner: runner, active: Config{SerialPort: "/dev/ttyS0", SerialBaud: 9600}, appliedAt: time.Now()}
+	if state := service.EffectiveConfig().SerialState; state != "configured" {
+		t.Fatalf("missing snapshot serial state = %s", state)
+	}
+	now := time.Now()
+	writeScaleSnapshot(t, filepath.Join(dir, "scale-status.json"), now, agentscale.Snapshot{
+		Enabled: true, DeviceOK: false, Stable: true, Weight: "1.55", Unit: "t", LastValidAt: now,
+	})
+	effective := service.EffectiveConfig()
+	if effective.SerialState != "fault" || effective.DeviceState != "degraded" {
+		t.Fatalf("serial fault not reported: state=%s device=%s", effective.SerialState, effective.DeviceState)
 	}
 }

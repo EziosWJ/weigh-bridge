@@ -237,19 +237,24 @@ function sortNavigationItems(items: NavItem[]): NavItem[] {
  * backend menu tree does not yet contain the entry.
  */
 function withConfigurationEntry(items: NavItem[]): NavItem[] {
-  if (hasNavigationPath(items, "/system/config")) return items;
-  const entry: NavItem = { label: "配置管理", path: "/system/config", icon: Settings };
+  const entries: NavItem[] = [
+    { label: "配置管理", path: "/system/config", icon: Settings },
+    { label: "本厂身份", path: "/system/local-identity", icon: Settings },
+    { label: "流水号水位", path: "/system/ticket-sequence", icon: Settings },
+    { label: "过磅单标题", path: "/system/ticket-title", icon: Settings },
+  ].filter(entry => !hasNavigationPath(items, entry.path));
+  if (!entries.length) return items;
   const systemIndex = items.findIndex((item) => item.path === "/system");
   if (systemIndex >= 0) {
     return items.map((item, index) =>
       index === systemIndex
-        ? { ...item, children: sortNavigationItems([...(item.children ?? []), entry]) }
+        ? { ...item, children: sortNavigationItems([...(item.children ?? []), ...entries]) }
         : item,
     );
   }
   return sortNavigationItems([
     ...items,
-    { label: "系统管理", path: "/system", icon: Settings, sortOrder: 1, children: [entry] },
+    { label: "系统管理", path: "/system", icon: Settings, sortOrder: 1, children: entries },
   ]);
 }
 
@@ -369,6 +374,9 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/system/dept": "部门管理",
   "/system/dict": "字典管理",
   "/system/config": "配置管理",
+  "/system/local-identity": "本厂身份",
+  "/system/ticket-sequence": "流水号水位",
+  "/system/ticket-title": "过磅单标题",
   "/system/role": "角色管理",
   "/system/menu": "菜单管理",
   "/system/login-log": "登录日志",

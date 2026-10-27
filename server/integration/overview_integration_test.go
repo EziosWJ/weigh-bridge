@@ -134,15 +134,17 @@ func checkBusinessOverview(t *testing.T, database *platformdatabase.Database, ro
 		t.Fatalf("terminated tasks remained pending: %+v %v", got, err)
 	}
 
-	// Even an administrator's overview must respect the fixed local scope.
-	if err := db.Model(&weighing.Task{}).Where("id=?", task.ID).Update("site_id", 2).Error; err != nil {
+	// A task's historical codes are snapshots. Changing them must not hide its
+	// ticket from the authorized local overview after an identity correction.
+	beforeSnapshotChange := weighingData[weighing.Overview](t, router, "GET", "/api/weighing/overview", "", admin)
+	if err := db.Model(&weighing.Task{}).Where("id=?", task.ID).Updates(map[string]any{"site_code": "OLD", "scale_code": "OLD-WB"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	local := weighingData[weighing.Overview](t, router, "GET", "/api/weighing/overview", "", admin)
-	if local.ValidTickets != 0 || len(local.RecentTickets) != 0 {
-		t.Fatalf("foreign-site data leaked: %+v", local)
+	if local.ValidTickets != beforeSnapshotChange.ValidTickets || len(local.RecentTickets) != len(beforeSnapshotChange.RecentTickets) {
+		t.Fatalf("historical-code ticket disappeared from local overview: before=%+v after=%+v", beforeSnapshotChange, local)
 	}
-	if err := db.Model(&weighing.Task{}).Where("id=?", task.ID).Update("site_id", task.SiteID).Error; err != nil {
+	if err := db.Model(&weighing.Task{}).Where("id=?", task.ID).Updates(map[string]any{"site_code": task.SiteCode, "scale_code": task.ScaleCode}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("DELETE FROM sys_role_menu WHERE role_id IN (SELECT id FROM sys_role WHERE role_code='WEIGHING_OPERATOR') AND menu_id IN (SELECT id FROM sys_menu WHERE permission_code='weighing:read')").Error; err != nil {

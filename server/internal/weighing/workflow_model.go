@@ -120,7 +120,8 @@ type BusinessInfo struct {
 	CarrierName          string `json:"carrierName"`
 }
 type ScaleSession struct {
-	ScaleID      int64      `json:"scaleId" gorm:"primaryKey;autoIncrement:false"`
+	LocalDevice  bool       `json:"-" gorm:"primaryKey;autoIncrement:false"`
+	ScaleCode    string     `json:"scaleCode"`
 	HolderUserID *int64     `json:"holderUserId"`
 	HolderName   string     `json:"holderName"`
 	ClientID     string     `json:"clientId"`
@@ -143,7 +144,7 @@ type SessionResult struct {
 }
 type Sample struct {
 	ID                int64        `json:"id" gorm:"primaryKey"`
-	ScaleID           int64        `json:"scaleId"`
+	ScaleCode         string       `json:"scaleCode"`
 	OwnerUserID       int64        `json:"-"`
 	ClientID          string       `json:"-"`
 	SessionGeneration int64        `json:"-"`
@@ -183,14 +184,14 @@ type RecognitionInput struct {
 }
 type CaptureInput struct {
 	PlateEvidence *RecognitionInput `json:"plateEvidence"`
-	ScaleID       int64             `json:"scaleId"`
+	ScaleCode     string            `json:"scaleCode"`
 	SessionInput
 	TaskID         *int64        `json:"taskId"`
 	TargetRecordID *int64        `json:"targetRecordId"`
 	Business       BusinessInput `json:"business"`
 }
 type Task struct {
-	SiteID                int64        `json:"siteId"`
+	SiteCode              string       `json:"siteCode"`
 	FirstWeight           *Tonnes      `json:"firstWeight" gorm:"->" swaggertype:"string"`
 	SecondWeight          *Tonnes      `json:"secondWeight" gorm:"->" swaggertype:"string"`
 	ID                    int64        `json:"id" gorm:"primaryKey"`
@@ -199,7 +200,7 @@ type Task struct {
 	Plate                 string       `json:"plate"`
 	Direction             string       `json:"direction"`
 	Status                string       `json:"status"`
-	ScaleID               int64        `json:"scaleId"`
+	ScaleCode             string       `json:"scaleCode"`
 	MaterialID            int64        `json:"materialId"`
 	PartyID               int64        `json:"partyId"`
 	CarrierID             *int64       `json:"carrierId"`
@@ -227,7 +228,7 @@ type WeighRecord struct {
 	Weight              Tonnes    `json:"weight" gorm:"column:weight_milli_tonne" swaggertype:"string"`
 	CapturedAt          time.Time `json:"capturedAt"`
 	ConfirmedAt         time.Time `json:"confirmedAt"`
-	ScaleID             int64     `json:"scaleId"`
+	ScaleCode           string    `json:"scaleCode"`
 	ReplacesRecordID    *int64    `json:"replacesRecordId"`
 	RetainedRecordID    *int64    `json:"retainedRecordId"`
 	Reason              string    `json:"reason"`

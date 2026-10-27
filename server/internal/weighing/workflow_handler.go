@@ -11,9 +11,9 @@ func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
 	read := rbac.RequirePermission(h.permissions, "weighing:read")
 	capture := rbac.RequireAnyPermission(h.permissions, "weighing:confirm", "weighing:reweigh")
 	confirm := rbac.RequirePermission(h.permissions, "weighing:confirm")
-	router.GET("/scales/:id/session", read, h.session)
-	router.GET("/scales/:id/device", read, h.deviceState)
-	router.GET("/scales/:id/camera-preview", read, h.cameraPreview)
+	router.GET("/scales/:code/session", read, h.session)
+	router.GET("/scales/:code/device", read, h.deviceState)
+	router.GET("/scales/:code/camera-preview", read, h.cameraPreview)
 	if h.service.devices != nil {
 		router.GET("/agent-images/:imageId", read, h.service.devices.ServeImage)
 	}
@@ -22,7 +22,7 @@ func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
 		if action == "takeover" {
 			middleware = rbac.RequirePermission(h.permissions, "weighing:takeover")
 		}
-		router.POST("/scales/:id/session/"+action, middleware, h.changeSession(action))
+		router.POST("/scales/:code/session/"+action, middleware, h.changeSession(action))
 	}
 	router.POST("/samples", capture, h.capture)
 	router.POST("/samples/:id/invalidate", capture, h.invalidateSample)
@@ -44,12 +44,7 @@ func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
 // @Success 200 {object} HTTPEnvelope[ScaleSession]
 // @Router /api/weighing/scales/{id}/session [get]
 func (h *Handler) session(c *gin.Context) {
-	id, err := pathID(c)
-	if err != nil {
-		writeResult(c, nil, err)
-		return
-	}
-	v, e := h.service.Session(c, id)
+	v, e := h.service.Session(c, c.Param("code"))
 	writeResult(c, v, e)
 }
 
@@ -66,17 +61,12 @@ func (h *Handler) session(c *gin.Context) {
 // @Router /api/weighing/scales/{id}/session/takeover [post]
 func (h *Handler) changeSession(action string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		id, err := pathID(c)
-		if err != nil {
-			writeResult(c, nil, err)
-			return
-		}
 		var in SessionInput
 		if c.ShouldBindJSON(&in) != nil {
 			writeResult(c, nil, ErrInvalid)
 			return
 		}
-		v, e := h.service.ChangeSession(c, id, action, in, requestEvent(c))
+		v, e := h.service.ChangeSession(c, c.Param("code"), action, in, requestEvent(c))
 		writeResult(c, v, e)
 	}
 }
@@ -278,11 +268,7 @@ func (h *Handler) ticketDetail(c *gin.Context) {
 }
 
 func (h *Handler) deviceState(c *gin.Context) {
-	id, err := pathID(c)
-	if err != nil {
-		writeResult(c, nil, err)
-		return
-	}
+	id := c.Param("code")
 	if h.service.devices == nil {
 		writeResult(c, nil, ErrConditions)
 		return

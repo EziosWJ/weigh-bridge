@@ -12,7 +12,7 @@ import type { SystemConfigRecord } from "@/types";
 
 const titleKey = "weighing.ticket-title";
 
-export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
+export function TicketTitleConfiguration() {
   const [record, setRecord] = useState<SystemConfigRecord | null>(null);
   const [title, setTitle] = useState("");
   const [loading, setLoading] = useState(true);
@@ -54,7 +54,6 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
       setRecord({ ...record, configValue: value });
       setTitle(value);
       toast.success({ title: "过磅单标题已保存", description: "新标题将用于之后生成的单据；历史单据保持不变。" });
-      onSaved();
     } catch (failure) {
       setError(getErrorMessage(failure, "过磅单标题保存失败"));
     } finally {
@@ -79,7 +78,7 @@ export function TicketTitleConfiguration({ onSaved }: { onSaved: () => void }) {
     {error && <p role="alert" className="mt-space-3 text-sm text-error">{error}</p>}
     <DetailDialog open={preview} title="过磅单标题预览" description="使用当前输入的标题展示样张，保存后生效。预览不会打印或生成正式单据。" onCancel={() => setPreview(false)} trapFocus>
       <TicketSheet sheet={{ template: "weighing-compact-v2", widthMm: 241, heightMm: 93, layers: 5, title: title.trim(), marks: ["标题预览样张"], rows: [
-        [{ label: "单号", value: "GB-NEW-9a6735f61d3b803e078773473802c348" }],
+        [{ label: "单号", value: "F001-20261027-0001" }],
         [{ label: "车牌", value: "川A12345" }, { label: "业务", value: "入厂卸货" }],
         [{ label: "供货方", value: "示例供货方" }, { label: "物料", value: "高粱 / 一级" }],
         [{ label: "毛重（吨）", value: "30.125" }, { label: "皮重（吨）", value: "10" }, { label: "净重（吨）", value: "20.125" }],

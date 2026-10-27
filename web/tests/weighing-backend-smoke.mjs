@@ -69,8 +69,12 @@ try {
     assert.equal(payload.code, 200, payload.message);
     return payload.data;
   };
-  assert.deepEqual(await call('/api/weighing/local-status'), {siteId:1,configured:true,initialized:true}, 'API 首次启动自动建立本厂身份，不要求网页填写名称或第二名操作员');
-  const connection = await call(`/api/weighing/site-config/1/connection?serverUrl=${encodeURIComponent(api)}`);
+  // ADR 0033: a fresh database starts unconfigured; the administrator installs
+  // the head-office assigned site code before starting business.
+  const freshStatus = await call('/api/weighing/local-status');
+  if (!freshStatus.configured) await call('/api/weighing/site-config/initialize', 'POST', {siteCode:'F001', scaleCode:'WB01'});
+  assert.deepEqual(await call('/api/weighing/local-status'), {siteCode:'F001',scaleCode:'WB01',configured:true,initialized:true}, '安装时填写厂区编码后本厂身份固定，不要求第二名操作员');
+  const connection = await call(`/api/weighing/site-config/connection?serverUrl=${encodeURIComponent(api)}`);
   const agentConfig = join(directory, 'local-agent.json');
   await writeFile(agentConfig, JSON.stringify(connection), {mode:0o600});
   const mock = start('go', ['run', './cmd/agent-mock', '--config', agentConfig, '--listen', '127.0.0.1:18090'], resolve(root, 'server'));
@@ -93,9 +97,9 @@ try {
     const user = users.records.find(row => row.username === username);
     assert.ok(user, `create ${username}`);
     await call(`/api/system/user/${user.id}/roles`, 'PUT', {roleIds:[operatorRole.id]});
-    await call(`/api/weighing/users/${user.id}/sites`, 'PUT', {grants:[{siteId:1,canOperate:1}]});
+    await call(`/api/weighing/users/${user.id}/sites`, 'PUT', {grants:[{siteCode:'F001',canOperate:1}]});
   }
-  assert.deepEqual(await call('/api/weighing/local-status'), {siteId:1,configured:true,initialized:true}, 'one named authorized operator is enough for business workflow');
+  assert.deepEqual(await call('/api/weighing/local-status'), {siteCode:'F001',scaleCode:'WB01',configured:true,initialized:true}, 'one named authorized operator is enough for business workflow');
   const oldCache = await page.evaluate(() => { localStorage.setItem('master-unrelated-sentinel', 'keep'); const legacy=JSON.stringify({legacySentinel:'keep-original',tasks:[{id:'browser-only-task',plate:'晋A99999'}]}); localStorage.setItem('weighbridge-phase2a-v1',legacy); return legacy; });
   await page.goto(`${web}/weighing/materials/new`);
   await page.locator('#material-name').fill('服务端冒烟高粱');
@@ -148,10 +152,10 @@ try {
     await settings.getByRole('button',{name:'模拟上磅',exact:true}).click();
     if (!checkedWave) {
       const weights = new Set(); const start = Date.now();
-      while (Date.now() - start < 3000) { const state = await call('/api/weighing/scales/1/device'); if (state.online && !state.stable) weights.add(state.weight); await delay(250); }
+      while (Date.now() - start < 3000) { const state = await call('/api/weighing/scales/WB01/device'); if (state.online && !state.stable) weights.add(state.weight); await delay(250); }
       assert.ok(weights.size >= 3, '系统应收到一段变化的不稳定重量'); checkedWave = true;
     } else await settings.getByRole('button',{name:'恢复稳定',exact:true}).click();
-    for(let n=0;n<40;n++){const state=await call('/api/weighing/scales/1/device');if(state.online&&state.stable&&Number(state.weight)===value)return;await delay(200);}
+    for(let n=0;n<40;n++){const state=await call('/api/weighing/scales/WB01/device');if(state.online&&state.stable&&Number(state.weight)===value)return;await delay(200);}
     throw Error('Agent weight did not become stable');
   };
   const openBusiness = async () => {
@@ -200,7 +204,7 @@ try {
   };
   for (const [direction, plate, firstWeight, secondWeight] of [['inbound', '川A54321', 30, 10], ['outbound', '川A54322', 10, 30]]) {
     await setWeight(firstWeight);
-    await page.goto(`${web}/weighing/workbench?scaleId=1`);
+    await page.goto(`${web}/weighing/workbench?scale=WB01`);
     await locate(plate);
     await setDirection(direction);
     assert.equal(await page.locator('aside').count(), 0, '独立工作台不应显示后台侧栏');
@@ -283,13 +287,21 @@ try {
       // Reopening must keep the sampled 30 t, even though live weight is now 29 t.
       await review.getByRole('button', { name: '关闭核对', exact: true }).click();
       await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
-      assert.equal(await review.getByText('30 吨', { exact: true }).count(), 1, '核对使用采集重量，不能使用实时读数');
-      await page.route('**/api/weighing/scales/1/device', route => route.abort(), { times: 1 });
+      assert.equal((await review.locator('.review-weight').innerText()).replace(/\s+/g, ''), '30吨', '核对使用采集重量，不能使用实时读数');
+      await page.route('**/api/weighing/scales/WB01/device', route => route.abort(), { times: 1 });
       await delay(1000);
       assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isEnabled(), true, '状态查询失败不清除已采集结果');
       console.log('browser: frozen capture remains confirmable after weight change, disconnect and failed polling');
     }
+    let correctedIdentity;
+    if (direction === 'inbound') {
+      const current = (await call('/api/weighing/site-config'))[0];
+      correctedIdentity = await call('/api/weighing/site-config', 'PUT', {...current, scaleCode: 'WB02'});
+      assert.equal(correctedIdentity.scaleCode, 'WB02');
+      assert.equal(await page.getByRole('dialog', {name: '核对首磅（毛重）', exact: true}).isVisible(), true, '改码后冻结采样仍待人工确认');
+    }
     await reviewAndConfirm('首磅', direction === 'inbound' ? '毛重' : '皮重');
+    if (correctedIdentity) await call('/api/weighing/site-config', 'PUT', {...correctedIdentity, scaleCode: 'WB01'});
     await page.getByRole('button', { name: '办理下一辆车', exact: true }).click();
     await fetch(`${mockUrl}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'connect' }) });
     await setWeight(secondWeight);
@@ -401,16 +413,25 @@ try {
   await page.getByRole('link', { name: '打印预览', exact: true }).click();
   await page.getByRole('article', { name: '精简过磅单' }).getByText('补打第1次', { exact: true }).waitFor();
   // Device results flow back through WSS and update the ordinary system preview.
-  await settings.getByRole('button',{name:'回报成功',exact:true}).last().click();
+  // The mock lists newest prints first; report the reprint attempt explicitly
+  // instead of relying on DOM order.
+  for (let n = 0; n < 40; n += 1) {
+    const rows = (await (await fetch(`${mockUrl}/api/state`)).json()).prints ?? [];
+    if (rows.some(row => row.attemptId === secondPrint.id)) break;
+    await delay(100);
+  }
+  await settings.locator('.print').filter({ hasText: `打印尝试 #${secondPrint.id}` }).getByRole('button', { name: '回报成功', exact: true }).click();
   for(let n=0;n<30;n++){if((await call(`/api/weighing/tickets/${currentTicket.id}`)).printStatus==='printed')break;await delay(100);}
-  assert.equal((await call(`/api/weighing/tickets/${currentTicket.id}`)).printStatus,'printed');
+  const finalPrintStatus=(await call(`/api/weighing/tickets/${currentTicket.id}`)).printStatus;
+  if (finalPrintStatus !== 'printed') { const st=await (await fetch(`${mockUrl}/api/state`)).json(); console.error('MOCK_PRINTS='+JSON.stringify((st.prints||[]).map(r=>({a:r.attemptId,s:r.status})))); console.error('TICKET_PRINT='+JSON.stringify(await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`))); }
+  assert.equal(finalPrintStatus,'printed');
 
 
 
   // An unknown successful response survives reload and is resolved without a new submission.
   await page.route('**/api/weighing/tasks/first-confirmation', async route => { await route.fetch(); await route.abort('failed'); }, {times:1});
   await setWeight(25);
-  await page.goto(`${web}/weighing/workbench?scaleId=1`);
+  await page.goto(`${web}/weighing/workbench?scale=WB01`);
   await locate('川A54323');
   await pick('物料', '服务端冒烟高粱'); await pick('供货方', '服务端个人供运人');
   await page.getByRole('button', { name: '采集重量', exact: true }).click();
@@ -442,7 +463,7 @@ try {
 
   // Preserve the invalid-original and responsive-dialog regression checks against real server data.
   await setWeight(5);
-  await page.goto(`${web}/weighing/workbench?scaleId=1`); await locate('川A54327');
+  await page.goto(`${web}/weighing/workbench?scale=WB01`); await locate('川A54327');
   await pick('物料','服务端冒烟高粱'); await pick('供货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   await reviewAndConfirm('首磅','毛重');
@@ -494,7 +515,7 @@ try {
   // Agent recognition candidates still need manual confirmation.
   await settings.locator('#plate').fill('苏AD12346');
   await settings.getByRole('button',{name:'发送识别候选',exact:true}).click();
-  await page.goto(`${web}/weighing/workbench?scaleId=1`);
+  await page.goto(`${web}/weighing/workbench?scale=WB01`);
   await page.getByText(/识别候选 苏AD12346/).waitFor();
   assert.equal(await page.getByRole('button',{name:'采集重量',exact:true}).isDisabled(),true);
   await page.getByRole('textbox',{name:'车牌号码',exact:true}).fill('苏ad12345');
@@ -530,7 +551,7 @@ try {
   await siteDialog.getByLabel('本厂授权范围',{exact:true}).selectOption('operate');
   await siteDialog.getByRole('button',{name:'保存',exact:true}).click();
   await siteDialog.waitFor({state:'hidden'});
-  assert.deepEqual((await call(`/api/weighing/users/${user.id}/sites`)).map(({siteId,canOperate})=>({siteId,canOperate})),[{siteId:1,canOperate:1}]);
+  assert.deepEqual((await call(`/api/weighing/users/${user.id}/sites`)).map(({siteCode,canOperate})=>({siteCode,canOperate})),[{siteCode:'F001',canOperate:1}]);
   const reader = await browser.newContext();
   const readerPage = await reader.newPage();
   await login(readerPage, 'master-reader');
@@ -552,12 +573,12 @@ try {
 
   // A second real account must acquire/take over the same server lease; stale confirmation cannot succeed.
   await setWeight(30);
-  await page.goto(`${web}/weighing/workbench?scaleId=1`); await locate('川A54325');
+  await page.goto(`${web}/weighing/workbench?scale=WB01`); await locate('川A54325');
   await pick('物料','服务端冒烟高粱'); await pick('供货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   await page.getByRole('button',{name:'开始核对首磅（毛重）',exact:true}).waitFor();
   await page.getByRole('button',{name:'开始核对首磅（毛重）',exact:true}).click();
-  await readerPage.goto(`${web}/weighing/workbench?scaleId=1`);
+  await readerPage.goto(`${web}/weighing/workbench?scale=WB01`);
   await readerPage.getByRole('textbox',{name:'车牌号码',exact:true}).fill('川A54326');
   await readerPage.getByRole('button',{name:'核对车牌并查找运输',exact:true}).click();
   assert.equal(await readerPage.getByRole('button',{name:'采集重量',exact:true}).isDisabled(),true,'其他账号持有会话时必须禁用采集');
@@ -571,11 +592,11 @@ try {
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54325')}`)).total,0);
   await readerPage.getByRole('button',{name:'释放操作权',exact:true}).click();
 
-  const deviceBeforeKick=await call('/api/weighing/scales/1/device');
-  await call('/api/weighing/scales/1/agent/kick','POST',{connectionId:deviceBeforeKick.connectionId});
+  const deviceBeforeKick=await call('/api/weighing/scales/WB01/device');
+  await call('/api/weighing/scales/WB01/agent/kick','POST',{connectionId:deviceBeforeKick.connectionId});
   for(let n=0;n<100&&mock.exitCode===null;n++)await delay(100);
   assert.equal(mock.exitCode,0,`收到 kick 后真实 mock 进程应正常退出，不自动重连；exit=${mock.exitCode} output=${mock.output?.slice(-400)}`);
-  assert.equal((await call('/api/weighing/scales/1/device')).online,false);
+  assert.equal((await call('/api/weighing/scales/WB01/device')).online,false);
   console.log('browser: local entry, reused workbench window, scoped user access and kick process exit passed');
   assert.deepEqual(errors, []);
   console.log('Server-backed business loop: persistence, permissions, both weighing directions, capture before business data, immutable ticket versions, correction/reopen, server lists/CSV, Agent printing, manual feedback, invalid original recovery, responsive layout, direct Server camera capture, recognition evidence and real account takeover passed.');
@@ -586,6 +607,7 @@ try {
   clearTimeout(deadline);
   await browser?.close();
   await new Promise(ok => cameraServer ? cameraServer.close(ok) : ok());
+  if (process.env.DEBUG_SMOKE) { const fs = await import('node:fs'); children.forEach((child, i) => fs.writeFileSync(`${root}/.task/smoke-child-${i}.log`, child.output || '')); }
   for (const child of children) { try { if(child.exitCode===null) process.kill(-child.pid, 'SIGTERM'); } catch { /* Already exited. */ } }
   await delay(150);
   await postgres?.close();

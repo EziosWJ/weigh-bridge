@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"net/url"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -181,7 +180,7 @@ func (c Client) upload(ctx context.Context, view string, data []byte) (p.Image, 
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("Authorization", "Bearer "+c.Config.AgentKey)
 	req.Header.Set("X-Agent-ID", c.Config.AgentID)
-	req.Header.Set("X-Scale-ID", strconv.FormatInt(c.Config.ScaleID, 10))
+	req.Header.Set("X-Scale-Code", c.Config.ScaleCode)
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
 		return p.Image{}, errors.New("抓拍上传失败")

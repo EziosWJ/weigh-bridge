@@ -188,7 +188,7 @@ func TestPostgresCameraModuleCRUDVersioningCaptureAndSync(t *testing.T) {
 		t.Fatalf("diagnostic test created %d formal image rows", imageCount)
 	}
 
-	plan, err := cameraService.Plan(context.Background(), 1, "camera-integration", true)
+	plan, err := cameraService.Plan(context.Background(), "WB01", "camera-integration", true)
 	if err != nil {
 		t.Fatal(err)
 	}

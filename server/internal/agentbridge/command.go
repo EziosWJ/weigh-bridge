@@ -16,19 +16,19 @@ import (
 // and a reply that arrives after the connection changed is rejected. Duplicate
 // or late replies cannot satisfy a later request because request IDs are
 // never reused.
-func (h *Hub) Command(ctx context.Context, scale int64, kind string, payload any, timeout time.Duration) (p.Message, error) {
+func (h *Hub) Command(ctx context.Context, scaleCode string, kind string, payload any, timeout time.Duration) (p.Message, error) {
 	if h.children != nil {
-		child := h.forScale(scale)
+		child := h.forScale(scaleCode)
 		if child == nil {
 			return p.Message{}, ErrUnavailable
 		}
-		return child.Command(ctx, scale, kind, payload, timeout)
+		return child.Command(ctx, scaleCode, kind, payload, timeout)
 	}
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
 	h.mu.Lock()
-	if scale != h.cfg.ScaleID || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
+	if scaleCode != h.cfg.ScaleCode || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
 		h.mu.Unlock()
 		return p.Message{}, ErrUnavailable
 	}

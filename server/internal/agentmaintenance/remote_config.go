@@ -55,25 +55,25 @@ func effectiveFromRuntime(record RuntimeRecord) p.EffectiveConfig {
 	return effective
 }
 
-func (r *Remote) decorateConfig(ctx context.Context, scale int64, raw json.RawMessage) json.RawMessage {
+func (r *Remote) decorateConfig(ctx context.Context, scaleCode string, raw json.RawMessage) json.RawMessage {
 	var payload map[string]any
 	if json.Unmarshal(raw, &payload) != nil {
 		return raw
 	}
-	if effective, ok := r.hub.EffectiveConfig(scale); ok {
+	if effective, ok := r.hub.EffectiveConfig(scaleCode); ok {
 		payload["effective"] = effective
 	} else if r.store != nil {
-		if runtime, ok, err := r.store.AgentRuntime(ctx, scale); err == nil && ok {
+		if runtime, ok, err := r.store.AgentRuntime(ctx, scaleCode); err == nil && ok {
 			payload["effective"] = effectiveFromRuntime(runtime)
 		}
 	}
 	// Preserve the read-only fields for existing API consumers; the Web now
 	// manages restore points through the dedicated backups tab and endpoints.
-	if backup, ok := r.hub.ConfigBackup(scale); ok {
+	if backup, ok := r.hub.ConfigBackup(scaleCode); ok {
 		payload["liveBackup"] = backup
 	}
 	if r.store != nil {
-		records, _, err := r.store.ListConfigBackups(ctx, scale, 0, 1)
+		records, _, err := r.store.ListConfigBackups(ctx, scaleCode, 0, 1)
 		if err != nil {
 			payload["backupError"] = err.Error()
 		} else if len(records) > 0 {
@@ -81,10 +81,10 @@ func (r *Remote) decorateConfig(ctx context.Context, scale int64, raw json.RawMe
 		}
 	}
 	payload["capabilities"] = map[string]bool{
-		"effectiveConfig":   r.hub.Supports(scale, p.CapabilityEffectiveConfig),
-		"cupsQueues":        r.hub.Supports(scale, p.CapabilityCupsQueues),
-		"parameterBackup":   r.hub.Supports(scale, p.CapabilityParameterBackup),
-		"measurementWindow": r.hub.Supports(scale, p.CapabilityMeasurementWindow),
+		"effectiveConfig":   r.hub.Supports(scaleCode, p.CapabilityEffectiveConfig),
+		"cupsQueues":        r.hub.Supports(scaleCode, p.CapabilityCupsQueues),
+		"parameterBackup":   r.hub.Supports(scaleCode, p.CapabilityParameterBackup),
+		"measurementWindow": r.hub.Supports(scaleCode, p.CapabilityMeasurementWindow),
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -93,17 +93,17 @@ func (r *Remote) decorateConfig(ctx context.Context, scale int64, raw json.RawMe
 	return data
 }
 
-func (r *Remote) beginConfigChange(c *gin.Context, scale int64) (func(), error) {
+func (r *Remote) beginConfigChange(c *gin.Context, scaleCode string) (func(), error) {
 	if r.guard != nil {
 		release, err := r.guard(c.Request.Context())
 		if err != nil {
 			ph.WriteError(c, http.StatusConflict, http.StatusConflict, "称重请求尚未结束，请核实后再维护", nil)
 			return nil, err
 		}
-		r.hub.InvalidateSamples(scale)
+		r.hub.InvalidateSamples(scaleCode)
 		return release, nil
 	}
-	r.hub.InvalidateSamples(scale)
+	r.hub.InvalidateSamples(scaleCode)
 	return func() {}, nil
 }
 
@@ -119,7 +119,7 @@ func (r *Remote) resolveScale(c *gin.Context) (Config, bool) {
 func (r *Remote) commandResult(c *gin.Context, cfg Config, kind string, payload any, timeout time.Duration) (p.Message, bool) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(c.Request.Context()), timeout)
 	defer cancel()
-	message, err := r.hub.Command(ctx, cfg.ScaleID, kind, payload, timeout)
+	message, err := r.hub.Command(ctx, cfg.ScaleCode, kind, payload, timeout)
 	if err != nil {
 		ph.WriteError(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, err.Error(), nil)
 		return p.Message{}, false
@@ -127,9 +127,9 @@ func (r *Remote) commandResult(c *gin.Context, cfg Config, kind string, payload 
 	return message, true
 }
 
-func (r *Remote) persistApplied(ctx context.Context, scale int64, result p.ConfigApplyResult) {
+func (r *Remote) persistApplied(ctx context.Context, scaleCode string, result p.ConfigApplyResult) {
 	if r.store != nil && result.Status == p.ConfigApplyApplied && result.Effective != nil {
-		_ = r.store.SaveEffectiveConfig(ctx, scale, *result.Effective)
+		_ = r.store.SaveEffectiveConfig(ctx, scaleCode, *result.Effective)
 	}
 }
 
@@ -163,11 +163,11 @@ func (r *Remote) applyConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, http.StatusBadRequest, http.StatusBadRequest, "配置参数格式无效", nil)
 			return
 		}
-		if err := r.hub.RequireCapability(cfg.ScaleID, p.CapabilityEffectiveConfig); err != nil {
+		if err := r.hub.RequireCapability(cfg.ScaleCode, p.CapabilityEffectiveConfig); err != nil {
 			ph.WriteError(c, http.StatusConflict, http.StatusConflict, err.Error(), map[string]string{"code": p.ErrorAgentCapabilityMissing})
 			return
 		}
-		release, err := r.beginConfigChange(c, cfg.ScaleID)
+		release, err := r.beginConfigChange(c, cfg.ScaleCode)
 		if err != nil {
 			return
 		}
@@ -181,7 +181,7 @@ func (r *Remote) applyConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "Agent 配置应用结果格式无效，请核对设备实际状态", nil)
 			return
 		}
-		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleID, result)
+		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleCode, result)
 		r.recordMaintenance(c, recorder, "maintenance.config.apply", "保存并应用设备参数")
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, result)
@@ -206,7 +206,7 @@ func (r *Remote) restoreConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "服务端未配置参数备份存储", nil)
 			return
 		}
-		record, err := r.store.ConfigBackupByID(c.Request.Context(), cfg.ScaleID, in.BackupID)
+		record, err := r.store.ConfigBackupByID(c.Request.Context(), cfg.ScaleCode, in.BackupID)
 		if err != nil {
 			status := http.StatusBadRequest
 			if !errors.Is(err, ErrNoBackup) {
@@ -215,11 +215,11 @@ func (r *Remote) restoreConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, status, status, err.Error(), nil)
 			return
 		}
-		if err := r.hub.RequireCapability(cfg.ScaleID, p.CapabilityParameterBackup); err != nil {
+		if err := r.hub.RequireCapability(cfg.ScaleCode, p.CapabilityParameterBackup); err != nil {
 			ph.WriteError(c, http.StatusConflict, http.StatusConflict, err.Error(), map[string]string{"code": p.ErrorAgentCapabilityMissing})
 			return
 		}
-		release, err := r.beginConfigChange(c, cfg.ScaleID)
+		release, err := r.beginConfigChange(c, cfg.ScaleCode)
 		if err != nil {
 			return
 		}
@@ -237,7 +237,7 @@ func (r *Remote) restoreConfig(recorder audit.Recorder) gin.HandlerFunc {
 			ph.WriteError(c, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "Agent 配置恢复结果格式无效，请核对设备实际状态", nil)
 			return
 		}
-		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleID, result)
+		r.persistApplied(context.WithoutCancel(c.Request.Context()), cfg.ScaleCode, result)
 		r.recordMaintenance(c, recorder, "maintenance.config.restore", "恢复设备配置备份 #"+strconv.FormatInt(record.ID, 10))
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, result)
@@ -251,7 +251,7 @@ func (r *Remote) queues(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := r.hub.RequireCapability(cfg.ScaleID, p.CapabilityCupsQueues); err != nil {
+	if err := r.hub.RequireCapability(cfg.ScaleCode, p.CapabilityCupsQueues); err != nil {
 		ph.WriteError(c, http.StatusConflict, http.StatusConflict, err.Error(), map[string]string{"code": p.ErrorAgentCapabilityMissing})
 		return
 	}

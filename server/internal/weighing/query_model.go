@@ -13,7 +13,7 @@ type OriginalView struct {
 	CurrentTicketStatus string    `json:"currentTicketStatus"`
 }
 type SummaryLine struct {
-	SiteID       int64  `json:"siteId"`
+	SiteCode     string `json:"siteCode"`
 	Direction    string `json:"direction"`
 	MaterialID   string `json:"materialId"`
 	MaterialName string `json:"materialName"`

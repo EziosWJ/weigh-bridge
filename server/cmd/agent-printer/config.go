@@ -19,7 +19,7 @@ func printerOptions(args []string, getenv func(string) string) (agentprinter.Con
 	state := f.String("state-dir", "./state", "Durable attempt directory")
 	f.StringVar(&c.ServerURL, "server", c.ServerURL, "Server URL (standalone)")
 	f.StringVar(&c.AgentID, "agent-id", c.AgentID, "Agent identity (standalone)")
-	f.Int64Var(&c.ScaleID, "scale-id", c.ScaleID, "Scale identity (standalone)")
+	f.StringVar(&c.ScaleCode, "scale-code", c.ScaleCode, "地磅编码（独立诊断用）")
 	f.StringVar(&c.Queue, "queue", c.Queue, "CUPS queue (standalone)")
 	if err := f.Parse(args); err != nil {
 		return c, *state, err
@@ -51,12 +51,8 @@ func printerOptions(args []string, getenv func(string) string) (agentprinter.Con
 				*dst = value
 			}
 		}
-		if value := getenv("WEIGHBRIDGE_SCALE_ID"); value != "" {
-			n, err := strconv.ParseInt(value, 10, 64)
-			if err != nil {
-				return c, *state, errors.New("WEIGHBRIDGE_SCALE_ID 无效")
-			}
-			c.ScaleID = n
+		if value := getenv("WEIGHBRIDGE_SCALE_CODE"); value != "" {
+			c.ScaleCode = value
 		}
 		for key, dst := range map[string]*int{
 			"WEIGHBRIDGE_PRINT_WIDTH_MM": &c.PrintWidthMM, "WEIGHBRIDGE_PRINT_OFFSET_X_MM": &c.OffsetXMM,

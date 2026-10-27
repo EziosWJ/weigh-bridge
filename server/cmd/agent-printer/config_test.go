@@ -10,7 +10,7 @@ import (
 
 func TestManagedPrinterUsesSharedFileWithoutEnvironmentOverrides(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "agent.env")
-	if err := os.WriteFile(file, []byte("APP_WEIGHING__AGENT_KEY='file-key'\nWEIGHBRIDGE_SERVER_URL=\"https://server.example\"\nWEIGHBRIDGE_AGENT_ID=onsite\nWEIGHBRIDGE_SCALE_ID=7\nWEIGHBRIDGE_PRINT_QUEUE=onsite-queue\nWEIGHBRIDGE_PRINT_WIDTH_MM=170\n"), 0600); err != nil {
+	if err := os.WriteFile(file, []byte("APP_WEIGHING__AGENT_KEY='file-key'\nWEIGHBRIDGE_SERVER_URL=\"https://server.example\"\nWEIGHBRIDGE_AGENT_ID=onsite\nWEIGHBRIDGE_SCALE_CODE=WB07\nWEIGHBRIDGE_PRINT_QUEUE=onsite-queue\nWEIGHBRIDGE_PRINT_WIDTH_MM=170\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	getenv := func(string) string { return "stale-process-environment" }
@@ -19,7 +19,7 @@ func TestManagedPrinterUsesSharedFileWithoutEnvironmentOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := agentprinter.Defaults()
-	want.ServerURL, want.AgentID, want.ScaleID, want.Queue, want.AgentKey, want.PrintWidthMM = "https://server.example", "onsite", 7, "onsite-queue", "file-key", 170
+	want.ServerURL, want.AgentID, want.ScaleCode, want.Queue, want.AgentKey, want.PrintWidthMM = "https://server.example", "onsite", "WB07", "onsite-queue", "file-key", 170
 	if c != want || state != "existing-state" {
 		t.Fatalf("managed configuration diverged: %+v %s", c, state)
 	}
@@ -32,7 +32,7 @@ func TestManagedPrinterUsesSharedFileWithoutEnvironmentOverrides(t *testing.T) {
 }
 
 func TestStandaloneInvalidNumericEnvironmentIsRejected(t *testing.T) {
-	for _, key := range []string{"WEIGHBRIDGE_SCALE_ID", "WEIGHBRIDGE_PRINT_WIDTH_MM", "WEIGHBRIDGE_FORM_LENGTH_MM", "WEIGHBRIDGE_PRINT_SCALE"} {
+	for _, key := range []string{"WEIGHBRIDGE_PRINT_WIDTH_MM", "WEIGHBRIDGE_FORM_LENGTH_MM", "WEIGHBRIDGE_PRINT_SCALE"} {
 		t.Run(key, func(t *testing.T) {
 			_, _, err := printerOptions(nil, func(name string) string {
 				if name == key {

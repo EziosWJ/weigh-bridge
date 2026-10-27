@@ -48,7 +48,7 @@ function WorkbenchContent() {
     return () => cancelAnimationFrame(frame);
   }, [businessOpen]);
   const [params, setSearchParams] = useSearchParams();
-  const setParams=(next:Record<string,string>)=>setSearchParams({scaleId:params.get('scaleId')??'',...next});
+  const setParams=(next:Record<string,string>)=>setSearchParams({scale:capabilities?.localScaleCode || params.get('scale') || '',...next});
   const location = useLocation();
   const linkedTask = data.tasks.find((task) => task.id === params.get('task'));
   const draftTask = data.tasks.find((task) => task.plate === normalizeLegacy(data.draft.plate) && (task.status === 'first' || task.status === 'second'));
@@ -357,7 +357,7 @@ function WorkbenchContent() {
     <div className="workbench-page-heading"><PageHeader title="称重工作台" actions={<><StatusTag tone={data.config.online ? 'success' : 'warning'}>{data.config.online ? 'Agent 在线' : 'Agent 离线'}</StatusTag><span className="hidden text-sm text-text-tertiary sm:inline">{roleLabels[data.config.role]}</span></>} /></div>
     {(feedback || storageError || syncNotice) && <div role="status" className="workbench-notice rounded-control border border-border bg-neutral-background px-4 py-2 text-sm">{feedback && <p>{feedback}</p>}{syncNotice && <p>{syncNotice}</p>}{storageError && <p className="text-error">{storageError}</p>}</div>}
     <div className={`weighing-station weighing-camera-${cameraSize}`}>
-      <DeviceCameraPanel scaleId={Number(params.get('scaleId'))} scenePlate={confirmedRecord?.capture?.plateEvidence?.scenePlate ?? recognition?.scenePlate ?? data.draftPlateEvidence?.scenePlate} size={cameraSize} onSizeChange={setCameraSize} capture={confirmedRecord?.capture ?? (sampleReady ? data.capture : undefined)} saved={!!confirmedRecord} />
+      <DeviceCameraPanel scaleCode={capabilities?.localScaleCode || params.get('scale') || ''} scenePlate={confirmedRecord?.capture?.plateEvidence?.scenePlate ?? recognition?.scenePlate ?? data.draftPlateEvidence?.scenePlate} size={cameraSize} onSizeChange={setCameraSize} capture={confirmedRecord?.capture ?? (sampleReady ? data.capture : undefined)} saved={!!confirmedRecord} />
       <div className="weighing-console min-w-0 space-y-4">
         <ContentCard className="weighing-vehicle-bar shadow-none" bodyClassName="px-4 py-3">
           <div className="workbench-current-vehicle"><h2>当前车辆</h2><span className="text-xs text-text-tertiary">人工核对后定位运输</span></div>

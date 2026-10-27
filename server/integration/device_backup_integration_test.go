@@ -25,19 +25,37 @@ func TestManualDeviceBackupRepository(t *testing.T) {
 	}
 	ensureLocalSite(t, router, loginAdmin(t, router), 1)
 	ctx := context.Background()
-	var scale int64
-	if err := database.GORM.Raw(`SELECT id FROM wb_scale ORDER BY id LIMIT 1`).Scan(&scale).Error; err != nil {
+	var scale string
+	if err := database.GORM.Raw(`SELECT code FROM wb_scale ORDER BY code LIMIT 1`).Scan(&scale).Error; err != nil {
 		t.Fatal(err)
 	}
-	if scale == 0 {
+	if scale == "" {
 		t.Fatal("missing initialized scale")
 	}
 	repo := agentmaintenance.NewRepository(database.GORM)
 	settings := p.DeviceSettings{Serial: p.SerialSettings{Port: "/dev/ttyUSB0", Baud: 9600}, Print: p.PrintSettings{Queue: "printer", FormLengthMM: 93.13, PrintWidthMM: 175, PrintScale: 1}}
 	backup := p.ConfigBackup{ConfigVersion: 3, Digest: settings.Digest(), Settings: settings, AppliedAt: time.Now().UTC()}
 	// Existing automatic records remain visible and recoverable after migration.
-	if err := database.GORM.Exec(`INSERT INTO wb_agent_config_backup (scale_id,config_version,digest,settings,applied_at,source) VALUES (?,1,'legacy','{}',CURRENT_TIMESTAMP,'auto')`, scale).Error; err != nil {
+	if err := database.GORM.Exec(`INSERT INTO wb_agent_config_backup (scale_code,config_version,digest,settings,applied_at,source) VALUES (?,1,'legacy','{}',CURRENT_TIMESTAMP,'auto')`, scale).Error; err != nil {
 		t.Fatal(err)
+	}
+	// Older restore points remain local after the business scale code changes.
+	if err := database.GORM.Exec("UPDATE wb_agent_config_backup SET scale_code='OLD_SCALE' WHERE digest='legacy'").Error; err != nil {
+		t.Fatal(err)
+	}
+	effective := p.EffectiveConfig{ConfigVersion: 3, Digest: backup.Digest, Serial: settings.Serial, Print: settings.Print, AppliedAt: backup.AppliedAt}
+	if err := repo.SaveEffectiveConfig(ctx, scale, effective); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GORM.Exec("UPDATE wb_agent_runtime SET scale_code='OLD_SCALE' WHERE local_device").Error; err != nil {
+		t.Fatal(err)
+	}
+	runtime, found, err := repo.AgentRuntime(ctx, scale)
+	if err != nil || !found || runtime.EffectiveConfigDigest != backup.Digest {
+		t.Fatalf("historical runtime=%+v found=%v err=%v", runtime, found, err)
+	}
+	if err := repo.SaveEffectiveConfig(ctx, scale+"-other", effective); !errors.Is(err, agentmaintenance.ErrLocalScaleChanged) {
+		t.Fatalf("stale device report accepted: %v", err)
 	}
 	id, err := repo.CreateConfigBackup(ctx, scale, backup, "现场校准完成", "五联纸已核对", 7)
 	if err != nil {
@@ -55,10 +73,10 @@ func TestManualDeviceBackupRepository(t *testing.T) {
 	if err != nil || record.Name != "现场校准完成" || record.Notes != "五联纸已核对" || record.CreatedBy == nil || *record.CreatedBy != 7 || record.Settings.Print.FormLengthMM != 93.13 || record.Source != "manual" {
 		t.Fatalf("record=%+v err=%v", record, err)
 	}
-	if _, err := repo.ConfigBackupByID(ctx, scale+100, id); !errors.Is(err, agentmaintenance.ErrNoBackup) {
+	if _, err := repo.ConfigBackupByID(ctx, scale+"-other", id); !errors.Is(err, agentmaintenance.ErrNoBackup) {
 		t.Fatalf("cross-scale read=%v", err)
 	}
-	if err := repo.DeleteConfigBackup(ctx, scale+100, id); !errors.Is(err, agentmaintenance.ErrNoBackup) {
+	if err := repo.DeleteConfigBackup(ctx, scale+"-other", id); !errors.Is(err, agentmaintenance.ErrNoBackup) {
 		t.Fatalf("cross-scale delete=%v", err)
 	}
 	if err := repo.DeleteConfigBackup(ctx, scale, id); err != nil {

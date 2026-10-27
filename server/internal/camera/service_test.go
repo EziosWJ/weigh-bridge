@@ -183,7 +183,7 @@ func TestCaptureUsesOneDeadlineForAllCameras(t *testing.T) {
 		}
 	})
 	service := NewService(store, t.TempDir(), grabber, nil, &fakeControl{})
-	plan := CapturePlan{ScaleID: 1, ConfigVersion: 7, TimeoutMS: 400, Required: true, Cameras: []CaptureCamera{
+	plan := CapturePlan{ScaleCode: "WB01", ConfigVersion: 7, TimeoutMS: 400, Required: true, Cameras: []CaptureCamera{
 		{ID: 1, PublicID: "cam_a", Name: "入口", SourceURL: "rtsp://a", Version: 1},
 		{ID: 2, PublicID: "cam_b", Name: "出口", SourceURL: "rtsp://b", Version: 1},
 	}}
@@ -214,7 +214,7 @@ func TestCaptureUsesOneDeadlineForAllCameras(t *testing.T) {
 
 func TestCaptureRequiredRejectsEmptyCameraSet(t *testing.T) {
 	service := NewService(&fakeStore{}, t.TempDir(), nil, nil, nil)
-	outcome, err := service.Capture(context.Background(), CapturePlan{ScaleID: 1, Required: true})
+	outcome, err := service.Capture(context.Background(), CapturePlan{ScaleCode: "WB01", Required: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,7 +225,7 @@ func TestCaptureRequiredRejectsEmptyCameraSet(t *testing.T) {
 
 func TestOptionalCaptureAllowsEmptyCameraSet(t *testing.T) {
 	service := NewService(&fakeStore{}, t.TempDir(), nil, nil, nil)
-	outcome, err := service.Capture(context.Background(), CapturePlan{ScaleID: 1, Required: false})
+	outcome, err := service.Capture(context.Background(), CapturePlan{ScaleCode: "WB01", Required: false})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestCapturePreservesPerCameraFailures(t *testing.T) {
 		return Frame{Data: data, Width: 4, Height: 2, Format: "jpeg"}, nil
 	})
 	service := NewService(store, t.TempDir(), grabber, nil, &fakeControl{})
-	plan := CapturePlan{ScaleID: 1, TimeoutMS: 100, Required: true, Cameras: []CaptureCamera{
+	plan := CapturePlan{ScaleCode: "WB01", TimeoutMS: 100, Required: true, Cameras: []CaptureCamera{
 		{ID: 1, PublicID: "cam_ok", Name: "可用", SourceURL: "rtsp://ok"},
 		{ID: 2, PublicID: "cam_bad", Name: "故障", SourceURL: "rtsp://bad"},
 	}}
@@ -270,7 +270,7 @@ func TestOptionalCaptureKeepsFailureDetailsWithoutBlocking(t *testing.T) {
 	service := NewService(&fakeStore{}, t.TempDir(), frameFunc(func(context.Context, string, string, string) (Frame, error) {
 		return Frame{}, errFrameUnavailable
 	}), nil, &fakeControl{})
-	outcome, err := service.Capture(context.Background(), CapturePlan{ScaleID: 1, TimeoutMS: 100, Cameras: []CaptureCamera{
+	outcome, err := service.Capture(context.Background(), CapturePlan{ScaleCode: "WB01", TimeoutMS: 100, Cameras: []CaptureCamera{
 		{ID: 1, PublicID: "cam_a", Name: "入口", SourceURL: "rtsp://camera/1"},
 	}})
 	if err != nil {

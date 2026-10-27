@@ -301,7 +301,7 @@ func (s *Service) Status(c context.Context, m audit.Metadata, id, st int64) erro
 	if e != nil {
 		return e
 	}
-	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey {
+	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
 		return ErrBuiltin
 	}
 	return s.store.SetStatus(c, id, int(st), event(m, "config.status", "config", id, "更新配置状态"))

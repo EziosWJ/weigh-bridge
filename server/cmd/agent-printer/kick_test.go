@@ -17,7 +17,7 @@ import (
 )
 
 func TestPrinterKickEndsRunNormally(t *testing.T) {
-	hub := agentbridge.New(agentbridge.Config{ID: "printer", ScaleID: 1, Key: "printer-test-key", ImageDir: t.TempDir()})
+	hub := agentbridge.New(agentbridge.Config{ID: "printer", ScaleCode: "WB01", Key: "printer-test-key", ImageDir: t.TempDir()})
 	router := gin.New()
 	hub.Register(router)
 	server := httptest.NewServer(router)
@@ -32,13 +32,13 @@ func TestPrinterKickEndsRunNormally(t *testing.T) {
 			done <- err
 			return
 		}
-		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleID: 1, AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
+		done <- run(ctx, agentprinter.Config{ServerURL: server.URL, AgentID: "printer", ScaleCode: "WB01", AgentKey: "printer-test-key", Queue: "unused"}, scale, dir, filepath.Join(dir, "status.json"), filepath.Join(dir, "pause"))
 	}()
 	deadline := time.Now().Add(3 * time.Second)
-	for !hub.State(1).Online && time.Now().Before(deadline) {
+	for !hub.State("WB01").Online && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	state := hub.State(1)
+	state := hub.State("WB01")
 	if !state.Online {
 		t.Fatal("printer did not connect")
 	}
@@ -46,11 +46,11 @@ func TestPrinterKickEndsRunNormally(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "pause"), []byte("maintenance"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := hub.Print(1, 99, map[string]string{"ticketNo": "GB-KICK"}); err != nil {
+	if err := hub.Print("WB01", 99, map[string]string{"ticketNo": "GB-KICK"}); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(30 * time.Millisecond)
-	result, err := hub.Kick(ctx, 1, state.ConnectionID)
+	result, err := hub.Kick(ctx, "WB01", state.ConnectionID)
 	if err != nil || !result.ExitConfirmed {
 		t.Fatalf("kick: %+v %v", result, err)
 	}
@@ -62,7 +62,7 @@ func TestPrinterKickEndsRunNormally(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("printer did not exit")
 	}
-	if hub.State(1).Online {
+	if hub.State("WB01").Online {
 		t.Fatal("printer stayed online after kick")
 	}
 }

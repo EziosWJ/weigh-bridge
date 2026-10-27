@@ -55,6 +55,16 @@ func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
 			preservation := regexp.MustCompile(`(?m)^(UPDATE wb_sample SET expires_at = captured_at \+ INTERVAL '30 seconds' WHERE expires_at IS NULL;)\s*$`)
 			contents = preservation.ReplaceAll(contents, nil)
 		}
+		if filepath.Base(name) == "00022_local_user_access.sql" {
+			// Preserve existing account grants when moving to local-only access.
+			continue
+		}
+		if filepath.Base(name) == "00021_code_identity.sql" {
+			// ADR 0033 replaces numeric site/scale ids with codes. Every DML
+			// statement in this migration is a preservation backfill of an
+			// existing row (UPDATE ... FROM); no seed data is inserted.
+			continue
+		}
 		if filepath.Base(name) == "00018_local_device_contract.sql" {
 			// Retire historical pairing identities in place. Deleting them would
 			// break references from earlier device diagnostics; the UPDATE is a

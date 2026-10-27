@@ -48,12 +48,12 @@ type RuntimeRecord struct {
 // manually created restore points. Remote maintenance depends on this interface so
 // tests can substitute it.
 type ConfigStore interface {
-	SaveEffectiveConfig(ctx context.Context, scale int64, effective p.EffectiveConfig) error
-	CreateConfigBackup(ctx context.Context, scale int64, backup p.ConfigBackup, name, notes string, actor int64) (int64, error)
-	ListConfigBackups(ctx context.Context, scale int64, offset, limit int) ([]BackupRecord, int64, error)
-	DeleteConfigBackup(ctx context.Context, scale, id int64) error
-	ConfigBackupByID(ctx context.Context, scale, id int64) (BackupRecord, error)
-	AgentRuntime(ctx context.Context, scale int64) (RuntimeRecord, bool, error)
+	SaveEffectiveConfig(ctx context.Context, scaleCode string, effective p.EffectiveConfig) error
+	CreateConfigBackup(ctx context.Context, scaleCode string, backup p.ConfigBackup, name, notes string, actor int64) (int64, error)
+	ListConfigBackups(ctx context.Context, scaleCode string, offset, limit int) ([]BackupRecord, int64, error)
+	DeleteConfigBackup(ctx context.Context, scaleCode string, id int64) error
+	ConfigBackupByID(ctx context.Context, scaleCode string, id int64) (BackupRecord, error)
+	AgentRuntime(ctx context.Context, scaleCode string) (RuntimeRecord, bool, error)
 }
 
 type Repository struct {
@@ -62,7 +62,7 @@ type Repository struct {
 
 func NewRepository(db *gorm.DB) *Repository { return &Repository{db: db} }
 
-func (r *Repository) SaveEffectiveConfig(ctx context.Context, scale int64, effective p.EffectiveConfig) error {
+func (r *Repository) SaveEffectiveConfig(ctx context.Context, scaleCode string, effective p.EffectiveConfig) error {
 	settings, err := json.Marshal(p.DeviceSettings{Serial: effective.Serial, Print: effective.Print})
 	if err != nil {
 		return err
@@ -75,18 +75,27 @@ func (r *Repository) SaveEffectiveConfig(ctx context.Context, scale int64, effec
 	if deviceState == "" {
 		deviceState = "unknown"
 	}
-	return r.db.WithContext(ctx).Exec(`
+	result := r.db.WithContext(ctx).Exec(`
 INSERT INTO wb_agent_runtime
-    (scale_id, effective_config_version, effective_config_digest, effective_settings, effective_applied_at, device_state, update_time)
-VALUES (?, ?, ?, CAST(? AS jsonb), ?, ?, CURRENT_TIMESTAMP)
-ON CONFLICT (scale_id) DO UPDATE SET
+    (scale_code, effective_config_version, effective_config_digest, effective_settings, effective_applied_at, device_state, update_time)
+SELECT ?, ?, ?, CAST(? AS jsonb), ?, ?, CURRENT_TIMESTAMP
+WHERE EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?)
+ON CONFLICT (local_device) DO UPDATE SET
+    scale_code = EXCLUDED.scale_code,
     effective_config_version = EXCLUDED.effective_config_version,
     effective_config_digest = EXCLUDED.effective_config_digest,
     effective_settings = EXCLUDED.effective_settings,
     effective_applied_at = EXCLUDED.effective_applied_at,
     device_state = EXCLUDED.device_state,
     update_time = CURRENT_TIMESTAMP`,
-		scale, effective.ConfigVersion, effective.Digest, string(settings), applied, deviceState).Error
+		scaleCode, effective.ConfigVersion, effective.Digest, string(settings), applied, deviceState, scaleCode)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrLocalScaleChanged
+	}
+	return nil
 }
 
 type backupRow struct {
@@ -108,25 +117,28 @@ func (row backupRow) record() (BackupRecord, error) {
 	err := json.Unmarshal(row.Settings, &record.Settings)
 	return record, err
 }
-func (r *Repository) CreateConfigBackup(ctx context.Context, scale int64, backup p.ConfigBackup, name, notes string, actor int64) (int64, error) {
+func (r *Repository) CreateConfigBackup(ctx context.Context, scaleCode string, backup p.ConfigBackup, name, notes string, actor int64) (int64, error) {
 	settings, err := json.Marshal(backup.Settings)
 	if err != nil {
 		return 0, err
 	}
 	var id int64
 	err = r.db.WithContext(ctx).Raw(`INSERT INTO wb_agent_config_backup
- (scale_id, config_version, digest, settings, applied_at, source, name, notes, created_by)
- VALUES (?, ?, ?, CAST(? AS jsonb), ?, 'manual', ?, ?, ?) RETURNING id`,
-		scale, backup.ConfigVersion, backup.Digest, string(settings), backup.AppliedAt, name, notes, actor).Scan(&id).Error
+ (scale_code, config_version, digest, settings, applied_at, source, name, notes, created_by)
+ SELECT ?, ?, ?, CAST(? AS jsonb), ?, 'manual', ?, ?, ? WHERE EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?) RETURNING id`,
+		scaleCode, backup.ConfigVersion, backup.Digest, string(settings), backup.AppliedAt, name, notes, actor, scaleCode).Scan(&id).Error
+	if err == nil && id == 0 {
+		return 0, ErrLocalScaleChanged
+	}
 	return id, err
 }
-func (r *Repository) ListConfigBackups(ctx context.Context, scale int64, offset, limit int) ([]BackupRecord, int64, error) {
+func (r *Repository) ListConfigBackups(ctx context.Context, scaleCode string, offset, limit int) ([]BackupRecord, int64, error) {
 	var total int64
-	if err := r.db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM wb_agent_config_backup WHERE scale_id=? AND deleted_at IS NULL`, scale).Scan(&total).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM wb_agent_config_backup WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?)`, scaleCode).Scan(&total).Error; err != nil {
 		return nil, 0, err
 	}
 	var rows []backupRow
-	if err := r.db.WithContext(ctx).Raw(`SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at, name, notes, created_by FROM wb_agent_config_backup WHERE scale_id=? AND deleted_at IS NULL ORDER BY received_at DESC, id DESC OFFSET ? LIMIT ?`, scale, offset, limit).Scan(&rows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(`SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at, name, notes, created_by FROM wb_agent_config_backup WHERE deleted_at IS NULL AND EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?) ORDER BY received_at DESC, id DESC OFFSET ? LIMIT ?`, scaleCode, offset, limit).Scan(&rows).Error; err != nil {
 		return nil, 0, err
 	}
 	records := make([]BackupRecord, 0, len(rows))
@@ -139,9 +151,9 @@ func (r *Repository) ListConfigBackups(ctx context.Context, scale int64, offset,
 	}
 	return records, total, nil
 }
-func (r *Repository) ConfigBackupByID(ctx context.Context, scale, id int64) (BackupRecord, error) {
+func (r *Repository) ConfigBackupByID(ctx context.Context, scaleCode string, id int64) (BackupRecord, error) {
 	var row backupRow
-	if err := r.db.WithContext(ctx).Raw(`SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at, name, notes, created_by FROM wb_agent_config_backup WHERE scale_id=? AND id=? AND deleted_at IS NULL`, scale, id).Scan(&row).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(`SELECT id, config_version, digest, settings, applied_at, source, restored_from_id, received_at, name, notes, created_by FROM wb_agent_config_backup WHERE id=? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?)`, id, scaleCode).Scan(&row).Error; err != nil {
 		return BackupRecord{}, err
 	}
 	if row.ID == 0 {
@@ -149,8 +161,8 @@ func (r *Repository) ConfigBackupByID(ctx context.Context, scale, id int64) (Bac
 	}
 	return row.record()
 }
-func (r *Repository) DeleteConfigBackup(ctx context.Context, scale, id int64) error {
-	result := r.db.WithContext(ctx).Exec(`UPDATE wb_agent_config_backup SET deleted_at=CURRENT_TIMESTAMP WHERE scale_id=? AND id=? AND deleted_at IS NULL`, scale, id)
+func (r *Repository) DeleteConfigBackup(ctx context.Context, scaleCode string, id int64) error {
+	result := r.db.WithContext(ctx).Exec(`UPDATE wb_agent_config_backup SET deleted_at=CURRENT_TIMESTAMP WHERE id=? AND deleted_at IS NULL AND EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?)`, id, scaleCode)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -160,7 +172,7 @@ func (r *Repository) DeleteConfigBackup(ctx context.Context, scale, id int64) er
 	return nil
 }
 
-func (r *Repository) AgentRuntime(ctx context.Context, scale int64) (RuntimeRecord, bool, error) {
+func (r *Repository) AgentRuntime(ctx context.Context, scaleCode string) (RuntimeRecord, bool, error) {
 	var row struct {
 		PublicID               string
 		ProtocolVersion        int
@@ -179,7 +191,7 @@ func (r *Repository) AgentRuntime(ctx context.Context, scale int64) (RuntimeReco
 SELECT public_id, protocol_version, agent_version, hostname, connected, capabilities,
        effective_config_version, effective_config_digest, effective_settings,
        effective_applied_at, device_state, update_time
-FROM wb_agent_runtime WHERE scale_id=?`, scale).Scan(&row).Error
+FROM wb_agent_runtime WHERE local_device AND EXISTS (SELECT 1 FROM wb_local_identity WHERE id=1 AND scale_code=?)`, scaleCode).Scan(&row).Error
 	if err != nil {
 		return RuntimeRecord{}, false, err
 	}
@@ -202,3 +214,4 @@ FROM wb_agent_runtime WHERE scale_id=?`, scale).Scan(&row).Error
 }
 
 var ErrNoBackup = errors.New("尚无可恢复的成功配置备份")
+var ErrLocalScaleChanged = errors.New("本地地磅身份已变化，请刷新后重试")

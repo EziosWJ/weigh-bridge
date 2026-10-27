@@ -22,8 +22,8 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 	repository := weighing.NewRepository(db.GORM)
 	imageDir := t.TempDir()
 	hub := agentbridge.NewMultiple(nil)
-	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
-		return repository.AgentConfig(ctx, id, imageDir)
+	hub.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
+		return repository.AgentConfig(ctx, scaleCode, imageDir)
 	})
 	deps.Weighing = weighing.NewService(repository, hub)
 	cameraService, frames, _ := newCaptureService(t, db, t.TempDir())
@@ -35,7 +35,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 	token := loginAdmin(t, router)
 	testLocalSetup(t, db, router, token, 1)
 	addCaptureCameras(t, db, "rtsp://camera/optional-1", "rtsp://camera/optional-2")
-	deviceConfig, err := repository.AgentConfig(context.Background(), 1, imageDir)
+	deviceConfig, err := repository.AgentConfig(context.Background(), "WB01", imageDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +67,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		assertEnvelopeCode(t, serveJSON(router, "PUT", configPath, fmt.Sprintf(`{"configValue":"%t"}`, required), token), 200, 200, "success")
 	}
 	captureState := func() sysconfig.CapturePolicy {
-		return weighingData[sysconfig.CapturePolicy](t, router, "GET", "/api/weighing/scales/1/device", "", token)
+		return weighingData[sysconfig.CapturePolicy](t, router, "GET", "/api/weighing/scales/WB01/device", "", token)
 	}
 	if !captureState().Required {
 		t.Fatal("default capture policy is optional")
@@ -84,9 +84,9 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		}
 		device.weight(firstWeight)
 		device.wait(func(s agentbridge.State) bool { return s.DeviceOK && s.Stable && s.Weight.String() == firstWeight })
-		session := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/1/session/acquire", `{"clientId":"optional-browser"}`, token)
+		session := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/WB01/session/acquire", `{"clientId":"optional-browser"}`, token)
 		business := map[string]any{"plate": fmt.Sprintf("川A1234%d", index), "direction": direction, "materialId": material.ID, "partyId": party.ID}
-		sampleBody := map[string]any{"scaleId": 1, "clientId": "optional-browser", "sessionToken": session.SessionToken, "business": business}
+		sampleBody := map[string]any{"scaleCode": "WB01", "clientId": "optional-browser", "sessionToken": session.SessionToken, "business": business}
 		toggle(true)
 		assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/samples", encode(sampleBody), token), 200, 400, weighing.ErrConditions.Error())
 		toggle(false)
@@ -95,7 +95,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		}
 		sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
 		assertCaptureEvidence(t, sample.Evidence, false, "capture_failed", 0)
-		firstBody := map[string]any{"scaleId": 1, "clientId": "optional-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": fmt.Sprintf("optional-stale-%d", index), "checks": checks}
+		firstBody := map[string]any{"scaleCode": "WB01", "clientId": "optional-browser", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": fmt.Sprintf("optional-stale-%d", index), "checks": checks}
 		// Policy edits apply to later acquisitions, not this frozen no-image sample.
 		toggle(true)
 		first := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/first-confirmation", encode(firstBody), token)
@@ -117,7 +117,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		}
 		assertCaptureEvidence(t, secondSample.Evidence, direction == "outbound", status, count)
 		secondPath := "/api/weighing/tasks/" + itoa(first.TaskID) + "/second-confirmation"
-		second := weighingData[weighing.CommandResult](t, router, "POST", secondPath, encode(map[string]any{"scaleId": 1, "clientId": "optional-browser", "sessionToken": session.SessionToken, "sampleId": secondSample.ID, "requestId": fmt.Sprintf("optional-second-%d", index), "version": first.TaskVersion, "checks": checks}), token)
+		second := weighingData[weighing.CommandResult](t, router, "POST", secondPath, encode(map[string]any{"scaleCode": "WB01", "clientId": "optional-browser", "sessionToken": session.SessionToken, "sampleId": secondSample.ID, "requestId": fmt.Sprintf("optional-second-%d", index), "version": first.TaskVersion, "checks": checks}), token)
 		ticketPath := "/api/weighing/tickets/" + itoa(second.TicketID)
 		ticket := weighingData[weighing.TicketView](t, router, "GET", ticketPath, "", token)
 		if ticket.Mode != "normal" || ticket.FinalNet != 20000 || len(ticket.Basis) != 2 {
@@ -142,7 +142,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		sampleBody["targetRecordId"] = second.RecordID
 		replacement := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
 		assertCaptureEvidence(t, replacement.Evidence, false, "capture_failed", 0)
-		reweigh := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(first.TaskID)+"/reweighs", encode(map[string]any{"requestId": fmt.Sprintf("optional-reweigh-%d", index), "version": void.TaskVersion, "scaleId": 1, "clientId": "optional-browser", "sessionToken": session.SessionToken, "sampleId": replacement.ID, "targetRecordId": second.RecordID, "checks": checks, "sameLoadConfirmed": true, "otherBasisValid": true, "reason": "软件测试单磅重称"}), token)
+		reweigh := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(first.TaskID)+"/reweighs", encode(map[string]any{"requestId": fmt.Sprintf("optional-reweigh-%d", index), "version": void.TaskVersion, "scaleCode": "WB01", "clientId": "optional-browser", "sessionToken": session.SessionToken, "sampleId": replacement.ID, "targetRecordId": second.RecordID, "checks": checks, "sameLoadConfirmed": true, "otherBasisValid": true, "reason": "软件测试单磅重称"}), token)
 		if reweigh.RecordID == second.RecordID {
 			t.Fatal("missing replacement")
 		}
@@ -155,7 +155,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 			device.weight(secondWeight)
 			device.wait(func(s agentbridge.State) bool { return s.DeviceOK && s.Stable && s.Weight.String() == secondWeight })
 		}
-		weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/1/session/release", encode(map[string]any{"clientId": "optional-browser", "sessionToken": session.SessionToken}), token)
+		weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/WB01/session/release", encode(map[string]any{"clientId": "optional-browser", "sessionToken": session.SessionToken}), token)
 	}
 	// Corrupted/disabled/missing config never silently enables no-image weighing.
 	for _, updates := range []map[string]any{{"config_value": "invalid"}, {"config_value": "false", "status": 0}, {"config_value": "false", "status": 1, "value_type": "TEXT"}, {"deleted": 1}} {

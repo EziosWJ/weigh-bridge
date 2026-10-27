@@ -12,7 +12,7 @@ const pages = {
 const fields = [
   ['serverUrl', 'Server 地址', 'url', null, null, '例如：https://server.example'],
   ['agentId', 'Agent 编号', 'text', null, null, '应与 Server 登记的 Agent 身份一致'],
-  ['scaleId', '地磅编号', 'number', 1, null, '应与 Server 的地磅映射一致'],
+  ['scaleCode', '地磅编码', 'text', null, null, '由 Server 下发，可在本厂身份页面维护'],
   ['agentKey', '连接密钥（留空保持原值）', 'password', null, null, '密钥不回显，仅在需要替换时填写'],
   ['queue', '已有 CUPS 队列', 'text', null, null, '选择已经安装的本机打印队列'],
   ['printWidthMm', '打印宽度 (mm)', 'number', 100, 210, '缩放前基准宽度 100～210 mm；缩放后宽度加右移不超过 210 mm'],
@@ -23,6 +23,9 @@ const fields = [
   ['serialPort', '串口路径', 'text', null, null, '例如 /dev/ttyS0；不得与诊断工具同时占用'],
   ['serialBaud', '仪表波特率', 'number', 1200, 115200, '必须与仪表 bt 一致；现场为 9600'],
 ];
+// Agent, site and scale identities are assigned by the Server at
+// agent.hello.ack (ADR 0030/0033); the maintenance page only displays them.
+const identityKeys = new Set(['agentId', 'scaleCode']);
 let cfg = {};
 let configData;
 function displayField(key, value) {
@@ -202,7 +205,7 @@ function configDifferences(data) {
 async function loadConfig() {
   const data = await api('/api/config');
   cfg = data.config;
- $('siteIdentity').textContent = cfg.siteName ? `草稿归属：${cfg.siteName}（${cfg.siteCode}） · ${cfg.scaleName || cfg.scaleId}` : '现有配置未记录厂区名称，可导入后台下载的厂区配置。';
+ $('siteIdentity').textContent = cfg.siteName ? `草稿归属：${cfg.siteName}（${cfg.siteCode}） · ${cfg.scaleName || cfg.scaleCode}` : '现有配置未记录厂区名称，可导入后台下载的厂区配置。';
   configData = data;
   const queues = lastState?.queues || (await api('/api/status')).queues || [];
   const fieldHTML = ([key, name, type, min, max, help, options]) => {
@@ -210,14 +213,14 @@ async function loadConfig() {
     if (key === 'queue') control = `<select id="f-${key}">${[...new Set([cfg[key], ...queues])].map((value) => `<option>${esc(value)}</option>`).join('')}</select>`;
     else if (type === 'checkbox') control = `<input id="f-${key}" type="checkbox" ${cfg[key] ? 'checked' : ''} aria-describedby="hint-${key}">`;
     else if (type === 'select') control = `<select id="f-${key}" aria-describedby="hint-${key}">${(options || []).map((value) => `<option value="${esc(value)}" ${cfg[key] === value ? 'selected' : ''}>${esc(value)}</option>`).join('')}</select>`;
-    else control = `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="${key === 'formLengthMm' || key === 'printScale' ? 'any' : '1'}" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' ? '' : 'required'} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`;
+    else control = `<input id="f-${key}" type="${type}" ${type === 'number' ? `step="${key === 'formLengthMm' || key === 'printScale' ? 'any' : '1'}" min="${min}" ${max === null ? '' : `max="${max}"`}` : ''} ${key === 'agentKey' || identityKeys.has(key) ? '' : 'required'} ${identityKeys.has(key) ? 'readonly' : ''} value="${key === 'agentKey' ? '' : esc(cfg[key])}" autocomplete="${type === 'password' ? 'new-password' : 'off'}" aria-describedby="hint-${key}">`;
     if (type === 'checkbox') return `<div><label class="check" for="f-${key}"><span>${control} ${name}</span></label><p class="field-help" id="hint-${key}">${help}</p></div>`;
     return `<div><label for="f-${key}">${name}</label>${control}<p class="field-help" id="hint-${key}">${help}</p></div>`;
   };
   $('form').innerHTML = `<fieldset><legend>云端连接与身份</legend><div class="fields-grid">${fields.slice(0, 4).map(fieldHTML).join('')}</div></fieldset><fieldset><legend>打印目标与校准</legend><div class="fields-grid">${fields.slice(4, 10).map(fieldHTML).join('')}</div><p id="draftGeometry" class="muted"></p><p class="field-help">票面位置、每单走纸和撕纸停靠需分别校准。撕纸位置请按打印机说明调整；软件尺寸预估不代表实际纸面已验收。</p></fieldset><fieldset><legend>称重仪表（柯力 D12）</legend><div class="fields-grid">${fields.slice(10).map(fieldHTML).join('')}</div></fieldset>`;
   updateDraftGeometry();
   $('saved').textContent = `${data.hasAgentKey ? '连接密钥已设置。' : '连接密钥尚未设置。'}${data.saved ? '当前无未应用草稿。' : '存在未应用草稿，尚未影响运行配置。'}打印及仪表参数需要应用并重启打印 Agent。`;
-  $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.siteName || "厂区名称未配置"}，${data.active.scaleName || "地磅 " + data.active.scaleId}\n${data.active.serverUrl}，${data.active.agentId}\n${calibration(data.active)}。\n仪表：${scaleSummary(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
+  $('activeConfig').textContent = data.environmentKnown ? `配置来源：agent.env\n${data.active.siteName || "厂区名称未配置"}，${data.active.scaleName || "地磅 " + (data.active.scaleCode || "未配置")}\n${data.active.serverUrl}，${data.active.agentId}\n${calibration(data.active)}。\n仪表：${scaleSummary(data.active)}。` : `agent.env 尚未有效载入，以下为上次配置或初始值，不能视为当前运行值。${data.environmentError || '请保存并应用配置。'}`;
   $('runtimeConfig').textContent = data.runtimeState;
   $('configDiff').innerHTML = configDifferences(data);
   $('calibrationSummary').textContent = calibration(data.active);
@@ -232,7 +235,7 @@ async function save() {
   setBusy(true);
   try {
     const draft = { ...cfg };
-    for (const [key, , type] of fields) draft[key] = type === 'checkbox' ? $(`f-${key}`).checked : type === 'number' ? Number($(`f-${key}`).value) : $(`f-${key}`).value;
+    for (const [key, , type] of fields) { if (identityKeys.has(key)) continue; draft[key] = type === 'checkbox' ? $(`f-${key}`).checked : type === 'number' ? Number($(`f-${key}`).value) : $(`f-${key}`).value; }
     await api('/api/config', { method: 'PUT', body: JSON.stringify(draft) });
     showMessage('草稿已保存。点击“应用配置”并确认重启打印 Agent 后生效。');
     await loadConfig();

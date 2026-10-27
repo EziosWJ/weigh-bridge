@@ -151,7 +151,7 @@ type SyncResult struct {
 // CapturePlan freezes the camera set and credentials for one acquisition. It
 // is internal to Server and must not be returned to the browser.
 type CapturePlan struct {
-	ScaleID           int64
+	ScaleCode         string
 	CaptureID         string
 	ConfigVersion     int64
 	TimeoutMS         int

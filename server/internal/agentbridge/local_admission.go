@@ -26,9 +26,9 @@ func (e *AdmissionError) Error() string { return e.Message }
 
 var (
 	// ErrSiteNotInitialized means the local factory has no identity yet. The
-	// Agent must not create a site or scale; Server startup owns preparation.
+	// Agent must not create a site or scaleCode; Server startup owns preparation.
 	ErrSiteNotInitialized = &AdmissionError{Code: p.ErrorSiteNotInitialized, Message: "本厂内部身份未就绪，请检查 Server 启动日志与数据库后重试"}
-	// ErrScaleNotInitialized means the site identity exists but its sole scale
+	// ErrScaleNotInitialized means the site identity exists but its sole scaleCode
 	// is missing or disabled.
 	ErrScaleNotInitialized = &AdmissionError{Code: p.ErrorScaleNotInitialized, Message: "本厂地磅身份异常或已停用，请联系管理员检查"}
 	// ErrCapabilityMissing is returned instead of silently weakening a formal
@@ -37,14 +37,14 @@ var (
 )
 
 // SetLocalResolver enables keyless admission. The resolver reads the local
-// site identity and its sole enabled scale; it must not create business rows.
+// site identity and its sole enabled scaleCode; it must not create business rows.
 func (h *Hub) SetLocalResolver(fn func(context.Context) (Config, error)) {
 	h.gate.Lock()
 	h.local = fn
 	h.gate.Unlock()
 }
 
-// localChild resolves the local site scale and returns the per-scale hub. The
+// localChild resolves the local site scaleCode and returns the per-scaleCode hub. The
 // caller holds the root gate so site disable cannot race admission.
 func (h *Hub) localChild(ctx context.Context) (*Hub, error) {
 	if h.local == nil {
@@ -54,30 +54,30 @@ func (h *Hub) localChild(ctx context.Context) (*Hub, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.ScaleID < 1 {
+	if cfg.ScaleCode == "" {
 		return nil, ErrScaleNotInitialized
 	}
 	if h.children == nil {
-		if h.cfg.ScaleID != cfg.ScaleID {
+		if h.cfg.ScaleCode != cfg.ScaleCode {
 			return nil, ErrScaleNotInitialized
 		}
 		h.mu.Lock()
-		h.cfg.ID, h.cfg.SiteID, h.cfg.Key = cfg.ID, cfg.SiteID, ""
+		h.cfg.ID, h.cfg.SiteCode, h.cfg.InstallationID, h.cfg.Key = cfg.ID, cfg.SiteCode, cfg.InstallationID, ""
 		h.mu.Unlock()
 		return h, nil
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	child := h.children[cfg.ScaleID]
+	child := h.children[cfg.ScaleCode]
 	if child == nil {
 		child = New(cfg)
 		child.parent = h
 		child.printResult = h.printResult
 		child.configState = h.configState
-		h.children[cfg.ScaleID] = child
+		h.children[cfg.ScaleCode] = child
 	} else {
 		child.mu.Lock()
-		child.cfg.ID, child.cfg.SiteID, child.cfg.Key = cfg.ID, cfg.SiteID, ""
+		child.cfg.ID, child.cfg.SiteCode, child.cfg.InstallationID, child.cfg.Key = cfg.ID, cfg.SiteCode, cfg.InstallationID, ""
 		child.mu.Unlock()
 	}
 	return child, nil
@@ -85,7 +85,7 @@ func (h *Hub) localChild(ctx context.Context) (*Hub, error) {
 
 // serveLocal performs keyless admission. A rejection is sent as a normal error
 // message after the WebSocket upgrade so the Agent can display the actual
-// reason (uninitialized site, missing scale, conflict) instead of a bare HTTP
+// reason (uninitialized site, missing scaleCode, conflict) instead of a bare HTTP
 // handshake failure.
 func (h *Hub) serveLocal(ws *websocket.Conn) {
 	root := h
@@ -125,7 +125,10 @@ func (h *Hub) receiveHello(c *connection, m p.Message) error {
 	if err := json.Unmarshal(m.Payload, &hello); err != nil {
 		return errors.New("invalid agent hello")
 	}
-	if hello.ProtocolVersion < p.LegacyProtocolVersion || hello.ProtocolVersion > p.ProtocolVersion {
+	// ADR 0033 changes agent.hello.ack from numeric ids to site/scale codes.
+	// Only the current version is accepted so an old Agent cannot keep
+	// conducting formal weighing against a Server it cannot identify with.
+	if hello.ProtocolVersion != p.ProtocolVersion {
 		_ = c.send(p.NewVersion(p.ProtocolVersion, "error", ID(), m.RequestID, p.Error{Code: p.ErrorAgentProtocolUnsupported, Message: "Agent 协议版本不受支持，请升级到与 Server 相同的版本"}))
 		return nil
 	}
@@ -163,9 +166,10 @@ func (h *Hub) receiveHello(c *connection, m p.Message) error {
 	}
 	ack := p.HelloAck{
 		ProtocolVersion: p.ProtocolVersion,
-		SiteID:          h.cfg.SiteID,
-		ScaleID:         h.cfg.ScaleID,
+		SiteCode:        h.cfg.SiteCode,
+		ScaleCode:       h.cfg.ScaleCode,
 		AgentID:         h.cfg.ID,
+		InstallationID:  h.cfg.InstallationID,
 		Capabilities:    accepted,
 		ServerTime:      time.Now().UTC(),
 	}
@@ -173,7 +177,7 @@ func (h *Hub) receiveHello(c *connection, m p.Message) error {
 	return nil
 }
 
-func (h *Hub) capabilityLocked(scale int64, capability string) bool {
+func (h *Hub) capabilityLocked(scaleCode string, capability string) bool {
 	if h.conn == nil || h.conn.kicking {
 		return false
 	}
@@ -181,36 +185,36 @@ func (h *Hub) capabilityLocked(scale int64, capability string) bool {
 }
 
 // Supports reports whether the current connection advertised a capability.
-func (h *Hub) Supports(scale int64, capability string) bool {
+func (h *Hub) Supports(scaleCode string, capability string) bool {
 	if h.children != nil {
-		child := h.forScale(scale)
+		child := h.forScale(scaleCode)
 		if child == nil {
 			return false
 		}
-		return child.Supports(scale, capability)
+		return child.Supports(scaleCode, capability)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.capabilityLocked(scale, capability)
+	return h.capabilityLocked(scaleCode, capability)
 }
 
 // RequireCapability is the only sanctioned gate for a formal capture. Callers
 // must return its error rather than falling back to weaker validation.
-func (h *Hub) RequireCapability(scale int64, capability string) error {
-	if h.Supports(scale, capability) {
+func (h *Hub) RequireCapability(scaleCode string, capability string) error {
+	if h.Supports(scaleCode, capability) {
 		return nil
 	}
 	return fmt.Errorf("%w: %s", ErrCapabilityMissing, capability)
 }
 
 // Capabilities returns the current connection's advertised capability names.
-func (h *Hub) Capabilities(scale int64) []string {
+func (h *Hub) Capabilities(scaleCode string) []string {
 	if h.children != nil {
-		child := h.forScale(scale)
+		child := h.forScale(scaleCode)
 		if child == nil {
 			return nil
 		}
-		return child.Capabilities(scale)
+		return child.Capabilities(scaleCode)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -224,13 +228,13 @@ func (h *Hub) Capabilities(scale int64) []string {
 	return out
 }
 
-func (h *Hub) EffectiveConfig(scale int64) (p.EffectiveConfig, bool) {
+func (h *Hub) EffectiveConfig(scaleCode string) (p.EffectiveConfig, bool) {
 	if h.children != nil {
-		child := h.forScale(scale)
+		child := h.forScale(scaleCode)
 		if child == nil {
 			return p.EffectiveConfig{}, false
 		}
-		return child.EffectiveConfig(scale)
+		return child.EffectiveConfig(scaleCode)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -240,13 +244,13 @@ func (h *Hub) EffectiveConfig(scale int64) (p.EffectiveConfig, bool) {
 	return *h.effective, true
 }
 
-func (h *Hub) ConfigBackup(scale int64) (p.ConfigBackup, bool) {
+func (h *Hub) ConfigBackup(scaleCode string) (p.ConfigBackup, bool) {
 	if h.children != nil {
-		child := h.forScale(scale)
+		child := h.forScale(scaleCode)
 		if child == nil {
 			return p.ConfigBackup{}, false
 		}
-		return child.ConfigBackup(scale)
+		return child.ConfigBackup(scaleCode)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -256,13 +260,13 @@ func (h *Hub) ConfigBackup(scale int64) (p.ConfigBackup, bool) {
 	return *h.backup, true
 }
 
-func (h *Hub) LastMeasurementInvalidation(scale int64) (p.MeasurementInvalidated, bool) {
+func (h *Hub) LastMeasurementInvalidation(scaleCode string) (p.MeasurementInvalidated, bool) {
 	if h.children != nil {
-		child := h.forScale(scale)
+		child := h.forScale(scaleCode)
 		if child == nil {
 			return p.MeasurementInvalidated{}, false
 		}
-		return child.LastMeasurementInvalidation(scale)
+		return child.LastMeasurementInvalidation(scaleCode)
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()

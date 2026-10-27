@@ -43,14 +43,14 @@ export function WeighingTasksPage() {
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const columns: DataTableColumn<WireTask>[] = [
     { title: '任务编号 / 车牌', key: 'task', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
-    {title:"厂区",key:"site",width:100,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
+    {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteCode||"—"},
     { title: '方向', key: 'direction', width: 100, render: (_, row) => directionLabels[row.business.direction] },
     { title: '物料 / 规格', key: 'material', width: 180, render: (_, row) => <div>{row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '首次 / 二次重量（吨）', key: 'weights', width: 180, render: (_, row) => `${row.firstWeight ?? '—'} / ${row.secondWeight ?? '—'}` },
     { title: '任务状态', key: 'status', width: 120, render: (_, row) => <StatusTag tone={row.status === 'completed' ? 'success' : row.status === 'terminated' ? 'neutral' : 'warning'}>{row.status === 'awaiting_second' ? '待二次称重' : row.status === 'completed' ? '已完成' : '已终止'}</StatusTag> },
     { title: '创建时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.createTime} /> },
-    { title: '操作', key: 'actions', width: 148, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>详情</Link>{can('confirm') && capabilities?.scales.some(s=>s.id===row.scaleId&&s.canOperate) && row.status === 'awaiting_second' && <WorkbenchLink className={linkClass} to={`/weighing/workbench?scaleId=${row.scaleId}&task=${row.id}`}>办理称重</WorkbenchLink>}</TableActions> },
+    { title: '操作', key: 'actions', width: 148, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>详情</Link>{can('confirm') && capabilities?.scales.some(s=>s.canOperate) && row.status === 'awaiting_second' && <WorkbenchLink className={linkClass} to={`/weighing/workbench?scale=${encodeURIComponent(capabilities?.localScaleCode ?? "")}&task=${row.id}`}>办理称重</WorkbenchLink>}</TableActions> },
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
   return <div className="weighing-list-page">
@@ -82,7 +82,7 @@ export function WeighingTaskDetailPage() {
   const retainedRecord = task && [...task.records].reverse().find(record => record.stage !== reweighStage);
   const pending = !!task && data.pending?.taskId === task.id;
   const canOperate = !!capabilities?.permissionCodes.some(code => ["weighing:correct", "weighing:terminate", "weighing:reweigh"].includes(code));
-  const siteCanOperate=capabilities?.sites.some(s=>s.id===task?.siteId&&s.canOperate)??false;
+  const siteCanOperate=capabilities?.sites.some(s=>s.canOperate)??false;
   const canWeigh = siteCanOperate&&(capabilities?.permissionCodes.includes("weighing:confirm") ?? false);
   const reweighCapture = data.sampleReady && data.capture?.plate === task?.plate && data.capture?.stage === reweighStage ? data.capture : undefined;
   const reweighImageReady = !!reweighCapture && (reweighCapture.captureRequired === false || readyCaptureId === reweighCapture.id);

@@ -25,5 +25,5 @@ export interface OverviewDevice {
 
 export const overviewApi = {
   business: () => http.get<BusinessOverview>('/api/weighing/overview'),
-  device: (id: number) => http.get<OverviewDevice>(`/api/weighing/scales/${id}/device`),
+  device: (code: string) => http.get<OverviewDevice>(`/api/weighing/scales/${code}/device`),
 };

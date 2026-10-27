@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
 	"github.com/EziosWJ/weighbridge/server/internal/agentmock"
+	"github.com/EziosWJ/weighbridge/server/internal/agentproto"
 	"github.com/pressly/goose/v3"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -45,8 +47,8 @@ func TestPostgresWeighingFoundation(t *testing.T) {
 	if err := database.GORM.Table("wb_ticket").Count(&ticketsBefore).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := goose.DownToContext(context.Background(), database.SQL, schema, 11); err == nil || !strings.Contains(err.Error(), "restoring the previous database backup") {
-		t.Fatalf("schema 17 rollback should require restoring the previous database backup, got %v", err)
+	if err := goose.DownToContext(context.Background(), database.SQL, schema, 11); err == nil || !strings.Contains(err.Error(), "database backup") {
+		t.Fatalf("schema 17 rollback should require restoring the database backup, got %v", err)
 	}
 	var ticketsAfter int64
 	if err := database.GORM.Table("wb_ticket").Count(&ticketsAfter).Error; err != nil || ticketsBefore == 0 || ticketsBefore != ticketsAfter {
@@ -59,10 +61,21 @@ func TestPostgresWeighingMasterMigrationRollbackRequiresRestore(t *testing.T) {
 	runMigrations(t, projectRoot(t), temporary.dsn)
 	database := openTemporaryDatabase(t, temporary.dsn)
 	defer func() { _ = database.Close() }()
+	// Seed 00018 adds reference master data; start from an empty baseline so
+	// the counts below describe only the rows this test writes.
+	for _, table := range []string{"wb_party_contact", "wb_party", "wb_material", "wb_material_category"} {
+		if err := database.GORM.Exec("DELETE FROM " + table).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := database.GORM.Exec("INSERT INTO wb_material_category (name, create_by, update_by) VALUES ('回退分类',1,1)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.GORM.Exec("INSERT INTO wb_material (code,name,category_id,create_by,update_by) SELECT 'ROLLBACK','回退物料',id,1,1 FROM wb_material_category").Error; err != nil {
+	if err := database.GORM.Exec("INSERT INTO wb_material (code,name,category_id,create_by,update_by) SELECT 'ROLLBACK','回退物料',id,1,1 FROM wb_material_category WHERE name='回退分类'").Error; err != nil {
+		t.Fatal(err)
+	}
+	var versionBefore int64
+	if err := database.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&versionBefore).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := goose.SetDialect("postgres"); err != nil {
@@ -70,7 +83,7 @@ func TestPostgresWeighingMasterMigrationRollbackRequiresRestore(t *testing.T) {
 	}
 	schema := filepath.Join(projectRoot(t), "migrations/schema")
 	goose.SetTableName("goose_schema_db_version")
-	if err := goose.DownToContext(context.Background(), database.SQL, schema, 9); err == nil || !strings.Contains(err.Error(), "restoring the previous database backup") {
+	if err := goose.DownToContext(context.Background(), database.SQL, schema, 9); err == nil || !strings.Contains(err.Error(), "database backup") {
 		t.Fatalf("schema 17 rollback should be explicitly unsupported, got %v", err)
 	}
 	var categories, materials, version int64
@@ -80,13 +93,21 @@ func TestPostgresWeighingMasterMigrationRollbackRequiresRestore(t *testing.T) {
 	if err := database.GORM.Table("wb_material").Count(&materials).Error; err != nil || materials != 1 {
 		t.Fatalf("refused rollback changed materials: count=%d err=%v", materials, err)
 	}
-	if err := database.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&version).Error; err != nil || version != 17 {
-		t.Fatalf("schema version after refused rollback=%d err=%v", version, err)
+	if err := database.GORM.Table("goose_schema_db_version").Select("MAX(version_id)").Where("is_applied=TRUE").Scan(&version).Error; err != nil || version != versionBefore {
+		t.Fatalf("schema version after refused rollback=%d want=%d err=%v", version, versionBefore, err)
 	}
 }
 
 func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, deps app.Dependencies) {
 	t.Helper()
+	// Seed 00018 installs reference master data on a fresh database. This test
+	// exercises the empty-schema baseline, so clear those seeded rows first
+	// (child tables before parents) instead of weakening the assertions.
+	for _, table := range []string{"wb_party_contact", "wb_party", "wb_material", "wb_material_category"} {
+		if err := database.GORM.Exec("DELETE FROM " + table).Error; err != nil {
+			t.Fatalf("clear seeded %s: %v", table, err)
+		}
+	}
 	for _, table := range []string{"wb_material_category", "wb_material", "wb_party", "wb_party_contact", "wb_number_sequence"} {
 		var count int64
 		if err := database.GORM.Table(table).Count(&count).Error; err != nil || count != 0 {
@@ -100,8 +121,8 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	repo := weighing.NewRepository(database.GORM)
 	imageDir := t.TempDir()
 	hub := agentbridge.NewMultiple(nil)
-	hub.SetResolver(func(ctx context.Context, id int64) (agentbridge.Config, error) {
-		return repo.AgentConfig(ctx, id, imageDir)
+	hub.SetResolver(func(ctx context.Context, scaleCode string) (agentbridge.Config, error) {
+		return repo.AgentConfig(ctx, scaleCode, imageDir)
 	})
 	deps.Weighing = weighing.NewService(repo, hub)
 	deps.Camera, _, _ = newCaptureService(t, database, t.TempDir())
@@ -114,7 +135,7 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	testLocalSetup(t, database, router, adminToken, 1)
 	addCaptureCameras(t, database, "rtsp://camera/foundation-1", "rtsp://camera/foundation-2")
 	checkWeighingMasters(t, router, adminToken)
-	deviceConfig, err := repo.AgentConfig(context.Background(), 1, imageDir)
+	deviceConfig, err := repo.AgentConfig(context.Background(), "SCALE01", imageDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +196,7 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertEnvelopeCode(t, serveJSON(disabledRouter, "POST", "/api/weighing/samples", `{"scaleId":1,"clientId":"disabled-test"}`, adminToken), 200, 400, weighing.ErrConditions.Error())
+	assertEnvelopeCode(t, serveJSON(disabledRouter, "POST", "/api/weighing/samples", `{"scaleCode":"SCALE01","clientId":"disabled-test"}`, adminToken), 200, 400, weighing.ErrConditions.Error())
 	codes, err = rbacRepo.PermissionCodes(context.Background(), userID)
 	if err != nil || slices.Contains(codes, "weighing:confirm") {
 		t.Fatalf("revoked grant retained: %v %v", codes, err)
@@ -187,8 +208,8 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	t.Helper()
 	material := weighingData[weighing.Material](t, router, "POST", "/api/weighing/materials", `{"name":"首磅物料"}`, token)
 	party := weighingData[weighing.Party](t, router, "POST", "/api/weighing/parties", `{"name":"首磅供收方","nature":"enterprise","roles":["supplier","customer"]}`, token)
-	session := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/1/session/acquire", `{"clientId":"browser-a"}`, token)
-	occupied := serveJSON(router, "POST", "/api/weighing/scales/1/session/acquire", `{"clientId":"browser-b"}`, token)
+	session := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/SCALE01/session/acquire", `{"clientId":"browser-a"}`, token)
+	occupied := serveJSON(router, "POST", "/api/weighing/scales/SCALE01/session/acquire", `{"clientId":"browser-b"}`, token)
 	assertEnvelopeCode(t, occupied, 200, 400, weighing.ErrOccupied.Error())
 	business := map[string]any{"plate": "川A12345", "direction": "inbound", "materialId": material.ID, "partyId": party.ID}
 	encode := func(v any) string {
@@ -198,7 +219,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		}
 		return string(data)
 	}
-	sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "source": "device"}), token)
+	sample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleCode": "SCALE01", "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "source": "device"}), token)
 	if sample.Source != "server" || sample.Weight != 30000 || sample.Kind != "gross" {
 		t.Fatalf("sample source and weight: %+v", sample)
 	}
@@ -211,16 +232,16 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("manual plate fabricated recognition: %+v", manualEvidence)
 	}
 	// Explicitly discarded samples remain unusable even after device recovery.
-	revision := device.hub.State(1).Revision
+	revision := device.hub.State("SCALE01").Revision
 	device.controlAction(`{"action":"unstable"}`)
 	device.wait(func(v agentbridge.State) bool { return !v.Stable && v.Revision != revision })
 	device.controlAction(`{"action":"stable"}`)
 	device.wait(func(v agentbridge.State) bool { return v.Stable })
 	assertEnvelopeCode(t, serveJSON(router, "POST", fmt.Sprintf("/api/weighing/samples/%d/invalidate", sample.ID), encode(map[string]any{"clientId": "browser-a", "sessionToken": session.SessionToken}), token), 200, 200, "success")
-	staleInput := map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "unstable-first-0001", "checks": map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}}
+	staleInput := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "unstable-first-0001", "checks": map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}}
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tasks/first-confirmation", encode(staleInput), token), 200, 400, weighing.ErrConditions.Error())
 	device.plate("川A12346")
-	sample = weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "plateEvidence": map[string]any{"source": "agent", "scenePlate": "川A12345", "candidate": "川A12346"}}), token)
+	sample = weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleCode": "SCALE01", "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "plateEvidence": map[string]any{"source": "agent", "scenePlate": "川A12345", "candidate": "川A12346"}}), token)
 	var recognition map[string]any
 	if err := json.Unmarshal(sample.PlateEvidence, &recognition); err != nil {
 		t.Fatal(err)
@@ -229,7 +250,22 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("candidate/confirmed distinction lost: %+v", recognition)
 	}
 	checks := map[string]bool{"plate": true, "business": true, "weight": true, "evidence": true, "fullyOnScale": true}
-	input := map[string]any{"scaleId": 1, "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "first-request-0001", "checks": checks}
+	input := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-a", "sessionToken": session.SessionToken, "business": business, "sampleId": sample.ID, "requestId": "first-request-0001", "checks": checks}
+	// The confirmed capture and local session retain their generation and owner
+	// even when their saved scale-code labels are historical.
+	if err := database.GORM.Exec("UPDATE wb_scale_session SET scale_code='OLD_SCALE' WHERE local_device").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GORM.Exec("UPDATE wb_sample SET scale_code='OLD_SCALE' WHERE id=?", sample.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	currentSession := weighingData[weighing.ScaleSession](t, router, "GET", "/api/weighing/scales/SCALE01/session", "", token)
+	if currentSession.ScaleCode != "SCALE01" || currentSession.Generation != session.Generation || currentSession.ClientID != "browser-a" {
+		t.Fatalf("local session was lost after code change: %+v", currentSession)
+	}
+	if response := serveJSON(router, "GET", "/api/weighing/scales/OLD_SCALE/session", "", token); response.Code != http.StatusNotFound {
+		t.Fatalf("stale scale accepted: %d %s", response.Code, response.Body.String())
+	}
 	// Time alone must not invalidate a sample. Age both legacy expiry and capture
 	// timestamps while leaving the active session and device conditions intact.
 	if err := database.GORM.Model(&weighing.Sample{}).Where("id=?", sample.ID).Updates(map[string]any{
@@ -271,7 +307,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	if !strings.HasPrefix(task.TaskNo, "RW") || task.Mode != "normal" || len(task.Records) != 1 || task.Records[0].Weight != 30000 {
 		t.Fatalf("first confirmation: %+v", task)
 	}
-	takenOver := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/1/session/takeover", `{"clientId":"browser-b","reason":"测试接管"}`, token)
+	takenOver := weighingData[weighing.SessionResult](t, router, "POST", "/api/weighing/scales/SCALE01/session/takeover", `{"clientId":"browser-b","reason":"测试接管"}`, token)
 	replay := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/first-confirmation", encode(input), token)
 	if replay.TaskID != first.TaskID || replay.RecordID != first.RecordID {
 		t.Fatalf("deduplication changed identity: %+v %+v", first, replay)
@@ -316,15 +352,26 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	}
 	assertEnvelopeCode(t, serveJSON(router, "DELETE", "/api/weighing/parties/"+itoa(party.ID), fmt.Sprintf(`{"version":%d}`, updatedParty.Version), token), 200, 400, weighing.ErrReferenced.Error())
 
+	// Simulate a task created under earlier identity codes. The current local
+	// scale must still capture its second weight and issue under current codes.
+	if err := database.GORM.Exec("UPDATE wb_transport_task SET site_code='OLD_FACTORY',scale_code='OLD_SCALE' WHERE id=?", first.TaskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GORM.Exec("UPDATE wb_weigh_record SET scale_code='OLD_SCALE' WHERE id=?", first.RecordID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GORM.Exec("UPDATE wb_sample SET scale_code='OLD_SCALE' WHERE id=?", sample.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	// A crossed date keeps the same task and first basis; current sample must still be fresh.
 	if err := database.GORM.Exec("UPDATE wb_weigh_record SET confirmed_at=? WHERE id=?", time.Now().UTC().Add(-24*time.Hour), first.RecordID).Error; err != nil {
 		t.Fatal(err)
 	}
 	conditions := map[string]any{"weight": "40", "stable": true, "evidence": true, "cameraPreset": "front"}
 	device.weight(conditions["weight"].(string))
-	sampleBody := map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "taskId": first.TaskID}
+	sampleBody := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "taskId": first.TaskID}
 	invalidSecond := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
-	secondInput := map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": invalidSecond.ID, "requestId": "invalid-original-0001", "version": 1, "checks": checks, "finalWeights": map[string]any{"gross": "50", "tare": "10"}}
+	secondInput := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": invalidSecond.ID, "requestId": "invalid-original-0001", "version": 1, "checks": checks, "finalWeights": map[string]any{"gross": "50", "tare": "10"}}
 	secondPath := "/api/weighing/tasks/" + itoa(first.TaskID) + "/second-confirmation"
 	assertEnvelopeCode(t, serveJSON(router, "POST", secondPath, encode(secondInput), token), 200, 400, weighing.ErrWeight.Error())
 	unchanged := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(first.TaskID), "", token)
@@ -360,12 +407,21 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("second result: %+v %+v", completed, completedReplay)
 	}
 	ticket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(completed.TicketID), "", token)
-	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 31000 || ticket.FinalTare != 11000 || ticket.GrossDifference != -1000 || ticket.AdjustmentRemark != "磅精度调整" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !strings.HasPrefix(ticket.TicketNo, "GB") {
+	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 31000 || ticket.FinalTare != 11000 || ticket.GrossDifference != -1000 || ticket.AdjustmentRemark != "磅精度调整" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !regexp.MustCompile(`^SITE01-\d{8}-\d{4,}$`).MatchString(ticket.TicketNo) {
 		t.Fatalf("test ticket weights: %+v", ticket)
+	}
+	if ticket.SiteCode != "SITE01" {
+		t.Fatalf("new ticket must use current factory code: %+v", ticket)
 	}
 	finalTask := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(first.TaskID), "", token)
 	if finalTask.Status != "completed" || len(finalTask.Records) != 2 || finalTask.CurrentSecondRecordID == nil {
 		t.Fatalf("completed task: %+v", finalTask)
+	}
+	if finalTask.SiteCode != "OLD_FACTORY" || finalTask.ScaleCode != "OLD_SCALE" {
+		t.Fatalf("task identity snapshot changed: %+v", finalTask)
+	}
+	if finalTask.Records[0].ScaleCode != "OLD_SCALE" || finalTask.Records[1].ScaleCode != "SCALE01" {
+		t.Fatalf("record snapshots changed: %+v", finalTask.Records)
 	}
 	for _, event := range finalTask.Events {
 		if strings.Contains(string(event.After), "sessionToken") {
@@ -373,20 +429,23 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		}
 	}
 
+	if err := database.GORM.Exec("UPDATE wb_transport_task SET site_code='SITE01',scale_code='SCALE01' WHERE id=?", first.TaskID).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Start another trip of the same plate before correcting the completed one.
 	voidBody := map[string]any{"requestId": "void-old-ticket-0001", "reason": "测试更正"}
 	voided := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/void", encode(voidBody), token)
 	futureBusiness := map[string]any{"plate": "川A67890", "direction": "inbound", "materialId": material.ID, "partyId": party.ID}
-	futureSampleBody := map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": futureBusiness}
+	futureSampleBody := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": futureBusiness}
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/samples", encode(futureSampleBody), token), 200, 400, weighing.ErrInvalid.Error())
 	partyRestore := fmt.Sprintf(`{"name":"首磅供收方已调整","nature":"enterprise","roles":["supplier","customer"],"version":%d}`, updatedParty.Version)
 	weighingData[weighing.Party](t, router, "PUT", "/api/weighing/parties/"+itoa(party.ID), partyRestore, token)
 	conditions["weight"] = "30"
 	device.weight(conditions["weight"].(string))
-	nextSample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": business}), token)
-	nextInput := map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": business, "sampleId": nextSample.ID, "requestId": "new-trip-first-0001", "checks": checks}
+	nextSample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": business}), token)
+	nextInput := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "business": business, "sampleId": nextSample.ID, "requestId": "new-trip-first-0001", "checks": checks}
 	newTrip := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/first-confirmation", encode(nextInput), token)
-	oldCaptureBody := map[string]any{"scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "taskId": first.TaskID, "targetRecordId": secondSample.ID}
+	oldCaptureBody := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "taskId": first.TaskID, "targetRecordId": secondSample.ID}
 	// targetRecordId is a record id, never a sample id.
 	oldCaptureBody["targetRecordId"] = completed.RecordID
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/samples", encode(oldCaptureBody), token), 200, 400, weighing.ErrConflict.Error())
@@ -413,7 +472,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	replacement := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(oldCaptureBody), token)
 	device.controlAction(`{"action":"down"}`)
 	device.wait(func(state agentbridge.State) bool { return state.Weight == 0 })
-	replaceBody := map[string]any{"requestId": "reweigh-second-0001", "version": voidedAgain.TaskVersion, "scaleId": 1, "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": replacement.ID, "targetRecordId": completed.RecordID, "checks": checks, "sameLoadConfirmed": true, "otherBasisValid": true, "reason": "空车重称"}
+	replaceBody := map[string]any{"requestId": "reweigh-second-0001", "version": voidedAgain.TaskVersion, "scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": replacement.ID, "targetRecordId": completed.RecordID, "checks": checks, "sameLoadConfirmed": true, "otherBasisValid": true, "reason": "空车重称"}
 	replaced := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(first.TaskID)+"/reweighs", encode(replaceBody), token)
 	repeated := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(first.TaskID)+"/reweighs", encode(replaceBody), token)
 	if replaced.RecordID != repeated.RecordID {
@@ -447,6 +506,25 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("replacement mutated previous evidence: %+v", frozen)
 	}
 	checkWeighingQueriesAndPrint(t, router, token, first.TaskID, finalReopen.TicketID)
+	// A historical second record retains the old scale snapshot; a reprint is
+	// sent to the current local Agent and only its result can close the attempt.
+	if err := database.GORM.Exec("UPDATE wb_weigh_record SET scale_code='OLD_SCALE' WHERE id=(SELECT second_record_id FROM wb_ticket WHERE id=?)", finalReopen.TicketID).Error; err != nil {
+		t.Fatal(err)
+	}
+	printPath := "/api/weighing/tickets/" + itoa(finalReopen.TicketID) + "/print-attempts"
+	attempt := weighingData[weighing.CommandResult](t, router, "POST", printPath, `{"requestId":"historical-reprint-0004","intent":"reprint","reason":"测试旧编码单据补打"}`, token)
+	result := agentproto.PrintResult{AttemptID: attempt.PrintAttemptID, Status: "printed"}
+	repo := weighing.NewRepository(database.GORM)
+	if err := repo.AgentPrintResult(context.Background(), "OLD_SCALE", result); err != weighing.ErrForbidden {
+		t.Fatalf("old scale result accepted: %v", err)
+	}
+	if err := repo.AgentPrintResult(context.Background(), "SCALE01", result); err != nil {
+		t.Fatalf("current local scale result rejected: %v", err)
+	}
+	printedOld := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(finalReopen.TicketID), "", token)
+	if printedOld.PrintStatus != "printed" || printedOld.ReprintCount != 3 {
+		t.Fatalf("historical ticket reprint: %+v", printedOld)
+	}
 
 }
 
@@ -548,6 +626,18 @@ func checkWeighingQueriesAndPrint(t *testing.T, router http.Handler, token strin
 	if pending.PrintStatus != "unknown" || pending.ReprintCount != 0 {
 		t.Fatalf("browser initiation cannot imply success: %+v", pending)
 	}
+	config := weighingData[[]weighing.SiteConfiguration](t, router, "GET", "/api/weighing/site-config", "", token)[0]
+	edit := weighing.SiteConfigurationInput{Code: "NEW_SITE", ScaleCode: "NEW_SCALE", Name: config.Name, ScaleName: config.ScaleName, AgentID: config.AgentID, Enabled: config.Enabled, Version: config.Version}
+	changed := weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(edit), token)
+	if changed.Code != "NEW_SITE" || changed.ScaleCode != "NEW_SCALE" {
+		t.Fatalf("identity change while print result unknown: %+v", changed)
+	}
+	pendingAfterEdit := weighingData[weighing.TicketView](t, router, "GET", path, "", token)
+	if pendingAfterEdit.PrintStatus != "unknown" || pendingAfterEdit.LastPrintAttemptID == nil || *pendingAfterEdit.LastPrintAttemptID != firstPrint.PrintAttemptID {
+		t.Fatalf("identity change must preserve unknown print attempt: %+v", pendingAfterEdit)
+	}
+	edit.Code, edit.ScaleCode, edit.Version = config.Code, config.ScaleCode, changed.Version
+	weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(edit), token)
 	reprint := weighingData[weighing.CommandResult](t, router, "POST", path+"/print-attempts", `{"requestId":"print-reprint-0002","intent":"reprint","reason":"仍无法排除出纸，人工确认补打"}`, token)
 	attempts := weighingData[[]weighing.PrintAttempt](t, router, "GET", path+"/print-attempts", "", token)
 	if len(attempts) != 2 || attempts[0].Status != "unknown" || attempts[0].ClosedAt == nil || attempts[0].ResolutionSource != "operator" {
@@ -569,20 +659,21 @@ func checkWeighingQueriesAndPrint(t *testing.T, router http.Handler, token strin
 // Device input travels through the actual public Agent protocol. Business checks
 // below keep using the existing HTTP seam and databases for both dialects.
 type weighingAgent struct {
-	t       *testing.T
-	control string
-	hub     *agentbridge.Hub
+	t         *testing.T
+	control   string
+	hub       *agentbridge.Hub
+	scaleCode string
 }
 
 func startWeighingAgent(t *testing.T, router http.Handler, hub *agentbridge.Hub) *weighingAgent {
-	return startWeighingAgentWithConfig(t, router, hub, agentbridge.Config{ID: "integration-agent", ScaleID: 1, Key: "integration-agent-key"})
+	return startWeighingAgentWithConfig(t, router, hub, agentbridge.Config{ID: "integration-agent", ScaleCode: "SCALE01", Key: "integration-agent-key"})
 }
 
 func startWeighingAgentWithConfig(t *testing.T, router http.Handler, hub *agentbridge.Hub, device agentbridge.Config) *weighingAgent {
 	t.Helper()
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
-	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: device.ID, ScaleID: device.ScaleID, Key: device.Key})
+	mock := agentmock.New(agentmock.Config{Server: server.URL, ID: device.ID, ScaleCode: device.ScaleCode, Key: device.Key})
 	control := httptest.NewServer(mock.Handler())
 	t.Cleanup(control.Close)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -596,7 +687,7 @@ func startWeighingAgentWithConfig(t *testing.T, router http.Handler, hub *agentb
 			t.Error("Agent did not stop")
 		}
 	})
-	a := &weighingAgent{t, control.URL, hub}
+	a := &weighingAgent{t: t, control: control.URL, hub: hub, scaleCode: device.ScaleCode}
 	a.weight("30")
 	return a
 }
@@ -616,12 +707,12 @@ func (a *weighingAgent) wait(ready func(agentbridge.State) bool) {
 	a.t.Helper()
 	deadline := time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
-		if ready(a.hub.State(1)) {
+		if ready(a.hub.State(a.scaleCode)) {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	a.t.Fatalf("Agent state timeout: %+v", a.hub.State(1))
+	a.t.Fatalf("Agent state timeout: %+v", a.hub.State(a.scaleCode))
 }
 func (a *weighingAgent) weight(weight string) {
 	a.t.Helper()

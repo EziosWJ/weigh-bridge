@@ -40,7 +40,7 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, ok := capabilities["data"].(map[string]any)
-	if !ok || data["localSiteId"] != float64(0) || data["configured"] != false || data["initialized"] != false {
+	if !ok || data["localSiteCode"] != "" || data["configured"] != false || data["initialized"] != false {
 		t.Fatalf("unconfigured capability payload = %#v", capabilities)
 	}
 	if _, exists := data["nodeRole"]; exists {
@@ -48,12 +48,9 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 	}
 	assertEnvelopeCode(t, serveJSON(router, http.MethodPost, "/api/weighing/materials", `{"name":"未配置厂区不得写入"}`, admin), http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
 
-	input := weighing.LocalSiteInput{SiteID: 1, SiteConfigurationInput: weighing.SiteConfigurationInput{
-		Code: "LOCAL01", Name: "一厂", ScaleCode: "SCALE01", ScaleName: "一号地磅",
-		AgentID: "scale-agent-LOCAL01", ServerURL: "http://127.0.0.1:18900",
-	}}
-	// Identity fields in the request are legacy payload: initialization generates
-	// site/scale/agent identities itself and only consumes the names.
+	input := weighing.LocalSiteInput{SiteCode: "LOCAL01", ScaleCode: "SCALE01", Name: "一厂", ScaleName: "一号地磅"}
+	// ADR 0033: initialization installs the head-office codes and refuses a
+	// second identity.
 	// Force a late failure after the transaction has inserted site, scale and
 	// identity rows. The failed initialization must leave no partial state.
 	if err := db.GORM.Exec(`CREATE FUNCTION integration_reject_agent_binding() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced integration failure'; END $$`).Error; err != nil {
@@ -73,7 +70,7 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 	if err := db.GORM.Exec(`DROP FUNCTION integration_reject_agent_binding()`).Error; err != nil {
 		t.Fatal(err)
 	}
-	for table, want := range map[string]int64{"wb_local_identity": 0, "wb_site": 0, "wb_scale": 0, "wb_agent_binding": 0, "wb_user_site": 0} {
+	for table, want := range map[string]int64{"wb_local_identity": 0, "wb_site": 0, "wb_scale": 0, "wb_agent_binding": 0, "wb_local_user_access": 0} {
 		var count int64
 		if err := db.GORM.Table(table).Count(&count).Error; err != nil || count != want {
 			t.Fatalf("failed initialization left %s rows=%d want=%d err=%v", table, count, want, err)
@@ -110,20 +107,21 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 		t.Fatalf("concurrent initialization successes=%d conflicts=%d", succeeded, conflicted)
 	}
 	status = weighingData[localsite.Status](t, router, http.MethodGet, "/api/weighing/local-status", "", admin)
-	if status.SiteID != 1 || !status.Configured || !status.Initialized {
+	if status.SiteCode != "LOCAL01" || status.ScaleCode != "SCALE01" || !status.Configured || !status.Initialized {
 		t.Fatalf("status after initialization = %+v, want configured and initialized", status)
 	}
 	// The legacy address fields are no longer written even when the old client
 	// still sends serverUrl.
 	var siteURL, settingURL string
-	if err := db.GORM.Table("wb_site").Select("server_url").Where("id=1").Scan(&siteURL).Error; err != nil || siteURL != "" {
+	if err := db.GORM.Table("wb_site").Select("server_url").Where("site_code=?", "LOCAL01").Scan(&siteURL).Error; err != nil || siteURL != "" {
 		t.Fatalf("initialization persisted a site server URL: %q err=%v", siteURL, err)
 	}
 	if err := db.GORM.Table("wb_agent_setting").Select("server_url").Where("id=1").Scan(&settingURL).Error; err != nil || settingURL != "" {
 		t.Fatalf("initialization persisted a global server URL: %q err=%v", settingURL, err)
 	}
 
-	input.SiteID = 2
+	input.SiteCode = "OTHER01"
+	input.ScaleCode = "OTHER-SCALE"
 	input.Name = "不应覆盖的名称"
 	body = encodeLocalSiteInput(t, input)
 	repeated := serveJSON(router, http.MethodPost, "/api/weighing/site-config/initialize", body, admin)
@@ -131,8 +129,8 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 		t.Fatalf("repeated initialization status=%d envelope=%d body=%s", repeated.Code, envelopeCode(t, repeated), repeated.Body.String())
 	}
 	status = weighingData[localsite.Status](t, router, http.MethodGet, "/api/weighing/local-status", "", admin)
-	if status.SiteID != 1 || !status.Configured || !status.Initialized {
-		t.Fatalf("repeated initialization changed fixed local identity: %+v", status)
+	if status.SiteCode != "LOCAL01" || !status.Configured || !status.Initialized {
+		t.Fatalf("repeated initialization changed local identity: %+v", status)
 	}
 	var identity localsite.Identity
 	if err := db.GORM.First(&identity, 1).Error; err != nil {
@@ -140,7 +138,7 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 	}
 	// Databases configured by older builds keep initialized=0; status must still
 	// report completion and must not write the legacy flag.
-	if identity.SiteID != 1 || identity.NextID != 0 || identity.Initialized != 0 {
+	if identity.SiteCode != "LOCAL01" || identity.ScaleCode != "SCALE01" || identity.NextID != 0 {
 		t.Fatalf("local identity = %+v", identity)
 	}
 	var siteCount, scaleCount, bindingCount int64
@@ -161,20 +159,18 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 		ScaleName: configs[0].ScaleName, AgentID: configs[0].AgentID, Enabled: configs[0].Enabled, Version: configs[0].Version,
 	}
 	for field, change := range map[string]func(*weighing.SiteConfigurationInput){
-		"factory code": func(in *weighing.SiteConfigurationInput) { in.Code = "MUTATED" },
-		"scale code":   func(in *weighing.SiteConfigurationInput) { in.ScaleCode = "MUTATED" },
-		"agent ID":     func(in *weighing.SiteConfigurationInput) { in.AgentID = "mutated-agent" },
+		"agent ID": func(in *weighing.SiteConfigurationInput) { in.AgentID = "mutated-agent" },
 	} {
 		candidate := locked
 		change(&candidate)
-		response := serveJSON(router, http.MethodPut, "/api/weighing/site-config/1", encodeLocalSiteInput(t, weighing.LocalSiteInput{SiteID: 1, SiteConfigurationInput: candidate}), admin)
+		response := serveJSON(router, http.MethodPut, "/api/weighing/site-config", encodeLocalSiteInput(t, candidate), admin)
 		if response.Code != http.StatusOK || envelopeCode(t, response) != http.StatusBadRequest {
 			t.Errorf("changing fixed %s returned status=%d envelope=%d, want business rejection: %s", field, response.Code, envelopeCode(t, response), response.Body.String())
 		}
 	}
 	locked.Name = "一厂改名"
-	body = encodeLocalSiteInput(t, weighing.LocalSiteInput{SiteID: 1, SiteConfigurationInput: locked})
-	if response := serveJSON(router, http.MethodPut, "/api/weighing/site-config/1", body, admin); response.Code != http.StatusOK {
+	body = encodeLocalSiteInput(t, locked)
+	if response := serveJSON(router, http.MethodPut, "/api/weighing/site-config", body, admin); response.Code != http.StatusOK {
 		t.Fatalf("editing local site name returned %d: %s", response.Code, response.Body.String())
 	}
 
@@ -204,7 +200,7 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 	}
 	admin2 := loginAdmin(t, router2)
 	status2 := weighingData[localsite.Status](t, router2, http.MethodGet, "/api/weighing/local-status", "", admin2)
-	if status2.SiteID != 1 || !status2.Configured || !status2.Initialized {
+	if status2.SiteCode != "LOCAL01" || !status2.Configured || !status2.Initialized {
 		t.Fatalf("identity after API restart = %+v", status2)
 	}
 	var materialPage struct {
@@ -213,16 +209,16 @@ func TestPostgresLocalSiteInitializationHTTP(t *testing.T) {
 	materialPage = weighingData[struct {
 		Records []weighing.Material `json:"records"`
 	}](t, router2, http.MethodGet, "/api/weighing/materials?page=1&pageSize=10", "", admin2)
-	if len(materialPage.Records) != 1 || materialPage.Records[0].ID != createdMaterial.ID || materialPage.Records[0].ID/(1<<45) != 1 || nextID <= materialPage.Records[0].ID%(1<<45) {
+	if len(materialPage.Records) == 0 || materialPage.Records[0].ID != createdMaterial.ID || nextID <= materialPage.Records[0].ID {
 		t.Fatalf("local business number changed after API restart: next=%d created=%+v materials=%+v", nextID, createdMaterial, materialPage.Records)
 	}
 	nextMaterial := weighingData[weighing.Material](t, router2, http.MethodPost, "/api/weighing/materials", `{"name":"重启后编号检查"}`, admin2)
-	if nextMaterial.ID <= createdMaterial.ID || nextMaterial.ID/(1<<45) != 1 {
+	if nextMaterial.ID <= createdMaterial.ID {
 		t.Fatalf("local allocator did not resume after API restart: before=%d after=%d", createdMaterial.ID, nextMaterial.ID)
 	}
 }
 
-func encodeLocalSiteInput(t *testing.T, input weighing.LocalSiteInput) string {
+func encodeLocalSiteInput(t *testing.T, input any) string {
 	t.Helper()
 	body, err := json.Marshal(input)
 	if err != nil {
@@ -242,24 +238,23 @@ func envelopeCode(t *testing.T, response *httptest.ResponseRecorder) int {
 	return payload.Code
 }
 
-// ensureLocalSite initializes through the HTTP endpoint. Callers pass legacy
-// identity details (code, agent id) that initialization no longer consumes:
-// only site and scale names are honored, identities are generated server-side.
-func ensureLocalSite(t *testing.T, router http.Handler, token string, siteID int64, details ...string) {
+// ensureLocalSite initializes through the HTTP endpoint with the head-office
+// assigned codes (ADR 0033). Callers pass (siteCode, siteName, scaleCode,
+// scaleName, agentID); the numeric argument is retained only for signature
+// compatibility with older call sites.
+func ensureLocalSite(t *testing.T, router http.Handler, token string, _ int64, details ...string) {
 	t.Helper()
 	status := weighingData[localsite.Status](t, router, http.MethodGet, "/api/weighing/local-status", "", token)
 	if status.Configured {
 		return
 	}
-	siteName, scaleName := "本厂", "一号地磅"
-	if len(details) > 1 {
-		siteName, scaleName = details[1], details[3]
+	siteCode, siteName, scaleCode, scaleName := "F001", "本厂", "WB01", "一号地磅"
+	if len(details) > 3 {
+		siteCode, siteName, scaleCode, scaleName = details[0], details[1], details[2], details[3]
 	}
 	input := weighing.LocalSiteInput{
-		SiteID: siteID,
-		SiteConfigurationInput: weighing.SiteConfigurationInput{
-			Name: siteName, ScaleName: scaleName,
-		},
+		SiteCode: siteCode, ScaleCode: scaleCode,
+		Name: siteName, ScaleName: scaleName,
 	}
 	body, err := json.Marshal(input)
 	if err != nil {

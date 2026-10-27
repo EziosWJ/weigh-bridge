@@ -11,7 +11,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,9 +26,10 @@ var assets embed.FS
 type Config struct {
 	SiteName        string
 	ScaleName       string
+	SiteCode        string
 	Server, ID, Key string
 	OnKick          func()
-	ScaleID         int64
+	ScaleCode       string
 }
 type Print struct {
 	RequestID string `json:"requestId"`
@@ -150,8 +150,8 @@ func (m *Mock) headers() http.Header {
 	if m.cfg.ID != "" {
 		h.Set("X-Agent-ID", m.cfg.ID)
 	}
-	if m.cfg.ScaleID > 0 {
-		h.Set("X-Scale-ID", strconv.FormatInt(m.cfg.ScaleID, 10))
+	if m.cfg.ScaleCode != "" {
+		h.Set("X-Scale-Code", m.cfg.ScaleCode)
 	}
 	return h
 }
@@ -210,9 +210,9 @@ func (m *Mock) runConnection(ctx context.Context) {
 			switch msg.Type {
 			case p.TypeHelloAck:
 				var ack p.HelloAck
-				if json.Unmarshal(msg.Payload, &ack) == nil && ack.ScaleID > 0 {
+				if json.Unmarshal(msg.Payload, &ack) == nil && ack.ScaleCode != "" {
 					m.mu.Lock()
-					m.cfg.ScaleID, m.cfg.ID = ack.ScaleID, ack.AgentID
+					m.cfg.ScaleCode, m.cfg.SiteCode, m.cfg.ID = ack.ScaleCode, ack.SiteCode, ack.AgentID
 					m.mu.Unlock()
 				}
 			case "agent.kick":
@@ -608,7 +608,7 @@ func (m *Mock) stateHTTP(w http.ResponseWriter, _ *http.Request) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]any{"online": m.online, "error": m.err, "agentId": m.cfg.ID, "scaleId": m.cfg.ScaleID, "siteName": m.cfg.SiteName, "scaleName": m.cfg.ScaleName, "state": m.current, "plate": m.plate, "prints": m.prints, "history": m.history})
+	_ = json.NewEncoder(w).Encode(map[string]any{"online": m.online, "error": m.err, "agentId": m.cfg.ID, "scaleCode": m.cfg.ScaleCode, "siteName": m.cfg.SiteName, "scaleName": m.cfg.ScaleName, "state": m.current, "plate": m.plate, "prints": m.prints, "history": m.history})
 }
 func (m *Mock) control(w http.ResponseWriter, r *http.Request) {
 	var in struct {

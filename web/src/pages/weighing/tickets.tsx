@@ -54,11 +54,11 @@ export function WeighingTicketsPage() {
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const canReopenTicket = (row: WireTicket) => row.status === 'void'
     && can('reopen')
-    && (capabilities?.sites.some(site => site.id === row.siteId && site.canOperate) ?? false);
+    && (capabilities?.sites.some(site => site.canOperate) ?? false);
   const download = (kind: string) => void downloadWeighingCsv(kind, filter).then(() => toast.success("过磅单 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }));
   const columns: DataTableColumn<WireTicket>[] = [
     { title: '单号 / 车牌', key: 'ticket', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>{row.ticketNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
-    {title:"厂区",key:"site",width:100,render:(_,row)=>capabilities?.sites.find(s=>s.id===row.siteId)?.name??"—"},
+    {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteName||row.siteCode||"—"},
     { title: '方向 / 物料规格', key: 'business', width: 180, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span> },
@@ -93,7 +93,7 @@ export function WeighingTicketDetailPage() {
     if (!id) return;
     void (async () => { await loadTicket(id); const found=useWeighingStore.getState().data.tickets.find(t=>t.id===id);if(found) await loadTask(found.taskId); })().catch(failure=>setError(failure instanceof Error?failure.message:'详情加载失败'));
   }, [id, loadTicket, loadTask]);
-  const can = (code: string) => (code==='print'||!!capabilities?.sites.some(s=>s.id===ticket?.siteId&&s.canOperate))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
+  const can = (code: string) => (code==='print'||!!capabilities?.sites.some(s=>s.canOperate))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
 
   function startOperation(next: TicketOperation) {
     if (!ticket) return;

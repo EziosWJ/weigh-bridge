@@ -11,7 +11,6 @@ func TestDeviceRePairingPreservesPendingParametersAndCurrentIdentity(t *testing.
 	dir := t.TempDir()
 	environment := filepath.Join(dir, "agent.env")
 	old := Defaults()
-	old.SiteID = 1
 	old.SiteCode = "LOCAL"
 	old.ScaleCode = "SCALE"
 	old.AgentKey = "old-key"
@@ -44,7 +43,7 @@ func TestDeviceRePairingPreservesPendingParametersAndCurrentIdentity(t *testing.
 		t.Fatal("re-pairing discarded rollback parameters")
 	}
 	for _, cfg := range []Config{service.draft, service.previous} {
-		if cfg.AgentKey != current.AgentKey || cfg.ServerURL != current.ServerURL || cfg.SiteID != current.SiteID || cfg.ScaleCode != current.ScaleCode {
+		if cfg.AgentKey != current.AgentKey || cfg.ServerURL != current.ServerURL || cfg.ScaleCode != current.ScaleCode {
 			t.Fatal("draft or rollback would restore an old connection identity")
 		}
 	}

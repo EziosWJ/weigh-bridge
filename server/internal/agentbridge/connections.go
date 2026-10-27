@@ -8,23 +8,23 @@ import (
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 )
 
-// Each child owns its own mutex, state and requests; no cross-scale device lock.
+// Each child owns its own mutex, state and requests; no cross-scaleCode device lock.
 func NewMultiple(configs []Config) *Hub {
-	h := &Hub{children: map[int64]*Hub{}}
+	h := &Hub{children: map[string]*Hub{}}
 	for _, cfg := range configs {
 		child := New(cfg)
 		child.parent = h
-		h.children[cfg.ScaleID] = child
+		h.children[cfg.ScaleCode] = child
 	}
 	return h
 }
-func (h *Hub) forScale(scale int64) *Hub {
+func (h *Hub) forScale(scaleCode string) *Hub {
 	if h.children != nil {
 		h.mu.Lock()
 		defer h.mu.Unlock()
-		return h.children[scale]
+		return h.children[scaleCode]
 	}
-	if scale == h.cfg.ScaleID {
+	if scaleCode == h.cfg.ScaleCode {
 		return h
 	}
 	return nil
@@ -37,10 +37,10 @@ type KickResult struct {
 	ExitConfirmed bool `json:"exitConfirmed"`
 }
 
-func (h *Hub) Kick(ctx context.Context, scale int64, connectionID string) (KickResult, error) {
+func (h *Hub) Kick(ctx context.Context, scaleCode string, connectionID string) (KickResult, error) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.Kick(ctx, scale, connectionID)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.Kick(ctx, scaleCode, connectionID)
 		}
 		return KickResult{}, ErrUnavailable
 	}
@@ -78,23 +78,23 @@ func (h *Hub) Kick(ctx context.Context, scale int64, connectionID string) (KickR
 }
 
 // SetResolver enables database-managed bindings without replacing live connections.
-func (h *Hub) SetResolver(fn func(context.Context, int64) (Config, error)) { h.resolver = fn }
-func (h *Hub) resolve(ctx context.Context, scale int64) (*Hub, error) {
+func (h *Hub) SetResolver(fn func(context.Context, string) (Config, error)) { h.resolver = fn }
+func (h *Hub) resolve(ctx context.Context, scaleCode string) (*Hub, error) {
 	if h.resolver == nil {
-		return h.forScale(scale), nil
+		return h.forScale(scaleCode), nil
 	}
-	cfg, err := h.resolver(ctx, scale)
+	cfg, err := h.resolver(ctx, scaleCode)
 	if err != nil {
 		return nil, err
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	child := h.children[scale]
+	child := h.children[scaleCode]
 	if child == nil {
 		child = New(cfg)
 		child.parent = h
 		child.printResult = h.printResult
-		h.children[scale] = child
+		h.children[scaleCode] = child
 	}
 	if child.cfg.ID != cfg.ID || child.cfg.Key != cfg.Key {
 		return nil, ErrUnavailable
@@ -106,8 +106,26 @@ func (h *Hub) WithConnectionsPaused(fn func() error) error {
 	defer h.gate.Unlock()
 	return fn()
 }
-func (h *Hub) Connected(scale int64) bool {
-	child := h.forScale(scale)
+
+// DisconnectForIdentityChange closes the existing connection without sending a
+// kick instruction. The caller must hold WithConnectionsPaused: the Agent may
+// reconnect normally after the new local configuration commits. In-flight
+// replies remain unknown and are never replayed by this operation.
+func (h *Hub) DisconnectForIdentityChange(scaleCode string) {
+	child := h.forScale(scaleCode)
+	if child == nil {
+		return
+	}
+	child.mu.Lock()
+	conn := child.conn
+	child.mu.Unlock()
+	if conn != nil {
+		child.disconnect(conn)
+	}
+}
+
+func (h *Hub) Connected(scaleCode string) bool {
+	child := h.forScale(scaleCode)
 	if child == nil {
 		return false
 	}

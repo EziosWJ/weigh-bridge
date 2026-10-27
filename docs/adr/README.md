@@ -10,6 +10,8 @@
 | [0031 本厂身份自动建立](0031-automatic-local-identity.md) | 取消人工两名称初始化，保留内部身份与历史关联，网页聚焦过磅单标题 |
 | [0024 PostgreSQL](0024-postgresql-only.md) | 开发、数据库测试、生产一套数据库，退出双库成本；保留 migration 历史 |
 | [0030 设备职责与配置](0030-local-device-responsibilities-and-configuration.md) | Server 管相机与视频，Agent 管仪表与打印；局域网无配对接入、单次应用及成功参数备份，换取安装维护简化 |
+| [0033 编码身份与单号](0033-code-identity-and-ticket-number.md) | 单号使用编码、日期和日流水并防备份恢复复用；本地编码固定及关联键的决定由 0034 取代 |
+| [0034 可维护的本地身份](0034-editable-local-identity.md) | 本地业务不以可变厂区／地磅编码关联，保留历史快照和打印防重 |
 | [0032 成功采集后冻结](0032-freeze-successful-capture.md) | 采集时校验并冻结，确认不依赖后续设备状态，避免实时变化打断人工核对 |
 | [0013 正式称重证据](0013-formal-weighing-evidence.md) | 设备依据、人工确认及本地校验，不用手输原始值代替采集 |
 | [0014 原始与最终重量](0014-manual-weight-adjustment.md) | 双向调整、单磅重称和单据版本留痕，适应现场纠错同时保留原始依据 |

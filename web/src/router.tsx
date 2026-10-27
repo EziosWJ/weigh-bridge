@@ -34,7 +34,7 @@ export const router = createBrowserRouter([
       { path: "weighing", element: <Navigate to="/weighing/tasks" replace /> },
       // Legacy link from the retired independent menu; the only editable entry
       // is 系统管理 → 配置管理.
-      { path: "weighing/site-config", element: <Navigate to="/system/config" replace /> },
+      { path: "weighing/site-config", element: <Navigate to="/system/local-identity" replace /> },
       { path: "weighing/sites", element: <Navigate to="/weighing/tasks" replace /> },
       { path: "weighing/cameras", lazy: () => import("@/pages/cameras").then(module => ({ Component: module.CamerasPage })) },
       { path: "weighing/tasks", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTasksPage })) },
@@ -116,6 +116,9 @@ export const router = createBrowserRouter([
         path: "system/dict",
         lazy: () => import("@/pages/system/dicts").then((module) => ({ Component: module.SystemDictsPage })),
       },
+      { path: "system/local-identity", lazy: () => import("@/pages/system/configs/maintenance-pages").then(m => ({ Component: m.LocalIdentityPage })) },
+      { path: "system/ticket-sequence", lazy: () => import("@/pages/system/configs/maintenance-pages").then(m => ({ Component: m.TicketSequencePage })) },
+      { path: "system/ticket-title", lazy: () => import("@/pages/system/configs/maintenance-pages").then(m => ({ Component: m.TicketTitlePage })) },
       {
         path: "system/config",
         lazy: () => import("@/pages/system/configs").then((module) => ({ Component: module.SystemConfigsPage })),

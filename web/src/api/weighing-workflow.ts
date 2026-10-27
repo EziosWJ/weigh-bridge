@@ -11,7 +11,7 @@ export interface WireRecord {
   plateEvidence: PlateEvidence;
 }
 export interface WireTask {
-  siteId: number; scaleId: number; mode?: string; id: number; taskNo: string; version: number; business: WireBusiness;
+  siteCode: string; scaleCode: string; mode?: string; id: number; taskNo: string; version: number; business: WireBusiness;
   firstWeight?: string | null; secondWeight?: string | null;
   createTime: string; status: 'awaiting_second' | 'completed' | 'terminated';
   records?: WireRecord[]; events?: WireEvent[];
@@ -22,13 +22,13 @@ export interface WireSample {
   plateEvidence: PlateEvidence;
 }
 export interface WireSession {
-  scaleId: number; holderUserId: number | null; holderName: string;
+  scaleCode: string; holderUserId: number | null; holderName: string;
   clientId: string; expiresAt: string | null; generation: number;
   sessionToken?: string;
 }
 export interface WireTicket {
  imagesComplete?:boolean;
- siteId:number;siteName:string;
+ siteCode:string;siteName:string;
   printSheet?: PrintSheet;
   mode?: string;
   id: number; taskId: number; ticketNo: string; revision: number;
@@ -46,7 +46,7 @@ const base = '/api/weighing';
 export const workflowApi = {
   get: <T>(path: string) => http.get<T>(`${base}${path}`),
   post: <T>(path: string, body: unknown) => http.post<T>(`${base}${path}`, body),
-  active: (plate: string, scaleId?:number) => http.get<WireTask | null>(`${base}/tasks/active`, { query: { plate,scaleId } }),
+  active: (plate: string, scale?: string) => http.get<WireTask | null>(`${base}/tasks/active`, { query: { plate,scale } }),
   task: (id: string | number) => http.get<WireTask>(`${base}/tasks/${id}`),
   ticket: (id: string | number) => http.get<WireTicket>(`${base}/tickets/${id}`),
   operation: (requestId: string) => http.get<Operation>(`${base}/operations/${requestId}`),
@@ -60,13 +60,13 @@ export function record(row: WireRecord): WeighRecord {
   return { id: String(row.id), stage: row.stage, kind: row.kind, weight: Number(row.weight), at: row.confirmedAt, actor: row.actorName, evidence: row.evidence.source ?? 'agent', capture, replaces: row.replacesRecordId == null ? undefined : String(row.replacesRecordId), retainedRecordId: row.retainedRecordId == null ? undefined : String(row.retainedRecordId), reason: row.reason || undefined };
 }
 export function task(row: WireTask): TransportTask {
-  return { ...business(row.business), siteId:row.siteId,scaleId:row.scaleId,id: String(row.id), taskNo: row.taskNo, version: row.version, createdAt: row.createTime, status: row.status === 'awaiting_second' ? 'second' : row.status, records: (row.records ?? []).map(record), history: (row.events ?? []).map(history) };
+  return { ...business(row.business), siteCode:row.siteCode,scaleCode:row.scaleCode,id: String(row.id), taskNo: row.taskNo, version: row.version, createdAt: row.createTime, status: row.status === 'awaiting_second' ? 'second' : row.status, records: (row.records ?? []).map(record), history: (row.events ?? []).map(history) };
 }
 export function ticket(row: WireTicket, previous?: WireTicket): WeighingTicket {
   if (!row.previousFinal && previous) row = { ...row, previousFinal: { gross: previous.finalGross, tare: previous.finalTare, net: String(Number(previous.finalGross)-Number(previous.finalTare)) } };
   const original = { gross: Number(row.originalGross), tare: Number(row.originalTare), net: Number(row.originalGross) - Number(row.originalTare) };
   const after = { gross: Number(row.finalGross), tare: Number(row.finalTare), net: Number(row.finalGross) - Number(row.finalTare) };
-  return { ...business(row.business), ...after,siteId:row.siteId,siteName:row.siteName, printSheet: row.printSheet, legacyTest: row.mode === 'test', id: String(row.id), ticketNo: row.ticketNo, taskId: String(row.taskId), issuedAt: row.issuedAt, status: row.status, previousId: row.previousTicketId == null ? undefined : String(row.previousTicketId), unit: '吨', records: row.basis.map(record), history: [{ actor: row.issuerName, at: row.issuedAt, action: '生成过磅单' }, ...(row.voidedAt ? [{ at: row.voidedAt, action: '单据作废', reason: row.voidReason }] : [])], adjustment: { source: row.grossSource === 'manual' || row.tareSource === 'manual' ? 'manual' : 'collected', actor: row.issuerName, at: row.issuedAt, original, before: row.previousFinal ? { gross: Number(row.previousFinal.gross), tare: Number(row.previousFinal.tare), net: Number(row.previousFinal.net) } : original, after, grossDeduction: original.gross - after.gross, tareDeduction: original.tare - after.tare, reason: row.adjustmentRemark }, printStatus: row.printStatus ?? 'unprinted', reprintCount: row.reprintCount ?? 0, lastPrintAttemptId: row.lastPrintAttemptId == null ? undefined : String(row.lastPrintAttemptId), reprintAuthorized: false };
+  return { ...business(row.business), ...after,siteCode:row.siteCode,siteName:row.siteName, printSheet: row.printSheet, legacyTest: row.mode === 'test', id: String(row.id), ticketNo: row.ticketNo, taskId: String(row.taskId), issuedAt: row.issuedAt, status: row.status, previousId: row.previousTicketId == null ? undefined : String(row.previousTicketId), unit: '吨', records: row.basis.map(record), history: [{ actor: row.issuerName, at: row.issuedAt, action: '生成过磅单' }, ...(row.voidedAt ? [{ at: row.voidedAt, action: '单据作废', reason: row.voidReason }] : [])], adjustment: { source: row.grossSource === 'manual' || row.tareSource === 'manual' ? 'manual' : 'collected', actor: row.issuerName, at: row.issuedAt, original, before: row.previousFinal ? { gross: Number(row.previousFinal.gross), tare: Number(row.previousFinal.tare), net: Number(row.previousFinal.net) } : original, after, grossDeduction: original.gross - after.gross, tareDeduction: original.tare - after.tare, reason: row.adjustmentRemark }, printStatus: row.printStatus ?? 'unprinted', reprintCount: row.reprintCount ?? 0, lastPrintAttemptId: row.lastPrintAttemptId == null ? undefined : String(row.lastPrintAttemptId), reprintAuthorized: false };
 }
 
 export interface WireOriginal extends WireTask { originalGross: string; originalTare: string; originalNet: string; firstConfirmedAt: string; secondConfirmedAt: string; currentTicketId: number | null; currentTicketStatus: string }

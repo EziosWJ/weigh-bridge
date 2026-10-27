@@ -4,11 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"strings"
 	"time"
 
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
+	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +35,7 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAd
 		return Ticket{}, ErrForbidden
 	}
 	now := time.Now().UTC()
-	ticket := Ticket{SiteID: task.SiteID, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", IssuedAt: now, IssuedBy: actor, IssuerName: name}
+	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", IssuedAt: now, IssuedBy: actor, IssuerName: name}
 	if changed {
 		ticket.AdjustedBy = ptr(actor)
 		ticket.AdjustedAt = &now
@@ -56,13 +57,23 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAd
 	// Validation completes before any fact or number is written.
 	return ticket, nil
 }
-func insertTicket(ctx context.Context, tx *gorm.DB, ticket *Ticket) error {
-	number, err := nextNumber(tx, "ticket", "GB")
+func insertTicket(ctx context.Context, tx *gorm.DB, ticket *Ticket, dataDir string) error {
+	identity, err := localsite.Read(ctx, tx)
 	if err != nil {
 		return err
 	}
-	site, err := findOne[Site](tx, ticket.SiteID)
+	if identity.SiteCode == "" {
+		return localsite.ErrNotConfigured
+	}
+	// The task retains its original identity snapshot; a new ticket is issued
+	// under the identity effective at the time of issue.
+	ticket.SiteCode = identity.SiteCode
+	number, err := nextNumber(tx, "ticket", "GB", dataDir, ticket.IssuedAt)
 	if err != nil {
+		return err
+	}
+	var site Site
+	if err := tx.Where("site_code=?", ticket.SiteCode).Take(&site).Error; err != nil {
 		return err
 	}
 	// The title is frozen in the same transaction that creates the ticket, so
@@ -81,7 +92,7 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 	var task Task
 	return r.command(ctx, in.RequestID, "second.confirm", in, e, func(tx *gorm.DB) error {
 		var err error
-		session, err = lockSession(tx, in.ScaleID)
+		session, err = lockSession(tx, in.ScaleCode)
 		if err != nil {
 			return err
 		}
@@ -114,7 +125,7 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 		}
 		ticket.SecondRecordID = second.ID
 		ticket.Basis[1] = second
-		if err := insertTicket(ctx, tx, &ticket); err != nil {
+		if err := insertTicket(ctx, tx, &ticket, r.dataDir); err != nil {
 			return out, err
 		}
 		now := time.Now().UTC()
@@ -145,8 +156,12 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 		// Historical tickets predate the site-name snapshot. Resolve their added
 		// ownership label without rewriting any stored ticket or weight evidence.
 		if ticket.SiteName == "" {
-			site, err := findOne[Site](tx, ticket.SiteID)
+			var site Site
+			identity, err := localsite.Read(ctx, tx)
 			if err != nil {
+				return err
+			}
+			if err := tx.Where("site_code=?", identity.SiteCode).Take(&site).Error; err != nil {
 				return err
 			}
 			ticket.SiteName = site.Name

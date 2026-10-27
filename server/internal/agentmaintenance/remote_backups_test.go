@@ -20,35 +20,35 @@ type backupTestStore struct {
 	deletes         int
 }
 
-func (s *backupTestStore) SaveEffectiveConfig(context.Context, int64, p.EffectiveConfig) error {
+func (s *backupTestStore) SaveEffectiveConfig(context.Context, string, p.EffectiveConfig) error {
 	s.effectiveWrites++
 	return nil
 }
-func (s *backupTestStore) CreateConfigBackup(context.Context, int64, p.ConfigBackup, string, string, int64) (int64, error) {
+func (s *backupTestStore) CreateConfigBackup(context.Context, string, p.ConfigBackup, string, string, int64) (int64, error) {
 	s.creates++
 	return 1, nil
 }
-func (s *backupTestStore) ListConfigBackups(context.Context, int64, int, int) ([]BackupRecord, int64, error) {
+func (s *backupTestStore) ListConfigBackups(context.Context, string, int, int) ([]BackupRecord, int64, error) {
 	return s.records, int64(len(s.records)), nil
 }
-func (s *backupTestStore) ConfigBackupByID(context.Context, int64, int64) (BackupRecord, error) {
+func (s *backupTestStore) ConfigBackupByID(context.Context, string, int64) (BackupRecord, error) {
 	return BackupRecord{}, ErrNoBackup
 }
-func (s *backupTestStore) DeleteConfigBackup(_ context.Context, scale, id int64) error {
-	if scale != 1 || id != 11 {
+func (s *backupTestStore) DeleteConfigBackup(_ context.Context, scaleCode string, id int64) error {
+	if scaleCode != "WB01" || id != 11 {
 		return ErrNoBackup
 	}
 	s.deletes++
 	return nil
 }
-func (s *backupTestStore) AgentRuntime(context.Context, int64) (RuntimeRecord, bool, error) {
+func (s *backupTestStore) AgentRuntime(context.Context, string) (RuntimeRecord, bool, error) {
 	return RuntimeRecord{EffectiveConfigVersion: 3, EffectiveSettings: p.DeviceSettings{Serial: p.SerialSettings{Port: "/dev/ttyUSB0", Baud: 9600}}}, true, nil
 }
 
 func TestBackupRoutesAreLocalPermissionedAndReadableOffline(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	store := &backupTestStore{records: []BackupRecord{{ID: 11, Name: "校准完成", Source: "manual"}}}
-	remote := NewRemote(agentbridge.New(agentbridge.Config{ID: "agent", ScaleID: 1}), func(context.Context) (Config, error) { c := Defaults(); c.ScaleID = 1; return c, nil }, nil)
+	remote := NewRemote(agentbridge.New(agentbridge.Config{ID: "agent", ScaleCode: "WB01"}), func(context.Context) (Config, error) { c := Defaults(); c.ScaleCode = "WB01"; return c, nil }, nil)
 	remote.SetStore(store)
 	permissions := businessPermissions{PermissionView: true}
 	recorder := &businessAudit{}
@@ -125,8 +125,8 @@ func TestManualBackupRequiresMatchingConfirmedSnapshot(t *testing.T) {
 func TestApplyAndRestorePersistOnlyEffectiveState(t *testing.T) {
 	store := &backupTestStore{}
 	remote := &Remote{store: store}
-	remote.persistApplied(context.Background(), 1, p.ConfigApplyResult{Status: p.ConfigApplyApplied, Effective: &p.EffectiveConfig{ConfigVersion: 4}})
-	remote.persistApplied(context.Background(), 1, p.ConfigApplyResult{Status: p.ConfigApplyRejected})
+	remote.persistApplied(context.Background(), "WB01", p.ConfigApplyResult{Status: p.ConfigApplyApplied, Effective: &p.EffectiveConfig{ConfigVersion: 4}})
+	remote.persistApplied(context.Background(), "WB01", p.ConfigApplyResult{Status: p.ConfigApplyRejected})
 	if store.effectiveWrites != 1 || store.creates != 0 {
 		t.Fatalf("writes=%d backups=%d", store.effectiveWrites, store.creates)
 	}

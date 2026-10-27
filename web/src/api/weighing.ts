@@ -3,11 +3,12 @@ import type { ApiPageResult } from '@/types/api';
 import type { Material, MaterialCategory, Party, PartyContact } from '@/types/weighing';
 
 const base = '/api/weighing';
-export interface WeighingSite {id:number;code:string;name:string;enabled:number;canOperate:boolean}
-export interface WeighingScale {id:number;code:string;name:string;enabled:number;siteId:number;siteName:string;canOperate:boolean}
-export interface SiteGrant {siteId:number;canOperate:number}
+export interface WeighingSite {code:string;name:string;enabled:number;canOperate:boolean;version:number;serverUrl?:string}
+export interface WeighingScale {siteCode:string;code:string;name:string;enabled:number;siteName:string;canOperate:boolean}
+export interface SiteGrant {siteCode:string;canOperate:number}
+export interface DailyTicketSequence {businessDate:string;lastIssued:number}
 export interface WeighingCapabilities {
- localSiteId: number; configured: boolean; initialized: boolean;
+ localSiteCode: string; localScaleCode: string; configured: boolean; initialized: boolean;
  maintenanceEnabled?: boolean;
  sites: WeighingSite[];
   userId: number;
@@ -34,6 +35,11 @@ export const weighingApi = {
  siteGrants: (id:number) => http.get<SiteGrant[]>(`${base}/users/${id}/sites`),
  saveSiteGrants: (id:number,grants:SiteGrant[]) => http.put(`${base}/users/${id}/sites`,{grants}),
  capabilities: () => http.get<WeighingCapabilities>(`${base}/capabilities`),
+ siteConfiguration: () => http.get<unknown[]>(`${base}/site-config`),
+ initializeLocalSite: (input: { siteCode: string; scaleCode?: string; name?: string; scaleName?: string }) => http.post(`${base}/site-config/initialize`, input),
+ saveSiteConfiguration: (input: { code?: string; scaleCode?: string; name: string; scaleName: string; enabled: number; version: number }) => http.put(`${base}/site-config`, input),
+ ticketSequences: () => http.get<DailyTicketSequence[]>(`${base}/ticket-sequences`),
+ setTicketWatermark: (input: { businessDate: string; lastIssued: number }) => http.put<DailyTicketSequence>(`${base}/ticket-sequences`, input),
   categories: async (): Promise<MaterialCategory[]> => (await allPages<WireCategory>('material-categories')).map(row => ({ ...row, id: String(row.id), enabled: row.enabled === 1 })),
   materials: async (): Promise<Material[]> => (await allPages<WireMaterial>('materials')).map(row => ({ ...row, id: String(row.id), categoryId: row.categoryId == null ? '' : String(row.categoryId), enabled: row.enabled === 1, unit: '吨' })),
   parties: async (): Promise<Party[]> => (await allPages<WireParty>('parties')).map(row => ({ ...row, id: String(row.id), enabled: row.enabled === 1, contacts: row.contacts.map(c => ({ ...c, id: String(c.id), isDefault: c.isDefault === 1 })) })),

@@ -37,7 +37,7 @@ try {
     const data = value => route.fulfill({ json: { code: 200, message: 'success', data: value } });
     if (path === '/api/weighing/capabilities') {
       if (scenario === 'caps-failure') return route.fulfill({ status: 500, json: { code: 500, message: '无法读取权限' } });
-      return data({ permissionCodes: permissions, localSiteId: 1, configured: true, initialized: true, maintenanceEnabled: true, scales: [{ id: 1, enabled: 1 }], sites: [], userId: 1 });
+      return data({ permissionCodes: permissions, localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, scales: [{ code: 'WB01', siteCode: 'F001', enabled: 1, canOperate: true }], sites: [], userId: 1 });
     }
     if (path === '/api/weighing/overview') {
       if (scenario === 'business-failure') return route.fulfill({ status: 500, json: { code: 500, message: '统计查询失败' } });
@@ -45,7 +45,7 @@ try {
       if (scenario === 'many') return data({ ...business(), awaitingTasks: Array.from({ length: 5 }, (_, index) => ({ ...business().awaitingTasks[0], id: index + 1 })) });
       return data(business());
     }
-    if (path === '/api/weighing/scales/1/device') {
+    if (path === '/api/weighing/scales/WB01/device') {
       if (scenario === 'device-failure') return route.fulfill({ status: 503, json: { code: 503, message: '设备状态读取失败' } });
       return data({ online: scenario !== 'offline', deviceOk: true, stable: true, receivedAt: '2026-10-26T02:30:00Z', captureRequired: scenario !== 'optional' });
     }

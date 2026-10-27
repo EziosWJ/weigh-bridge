@@ -22,7 +22,7 @@ import (
 )
 
 func TestAgentProtocolLifecycle(t *testing.T) {
-	hub := bridge.New(bridge.Config{ID: "agent-1", ScaleID: 1, Key: "test-key", ImageDir: t.TempDir()})
+	hub := bridge.New(bridge.Config{ID: "agent-1", ScaleCode: "WB01", Key: "test-key", ImageDir: t.TempDir()})
 	router := gin.New()
 	hub.Register(router)
 	server := httptest.NewServer(router)
@@ -40,7 +40,7 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 		cfg, _ := websocket.NewConfig(strings.Replace(server.URL, "http:", "ws:", 1)+"/api/agent/ws", server.URL)
 		cfg.Header.Set("Authorization", "Bearer test-key")
 		cfg.Header.Set("X-Agent-ID", "agent-1")
-		cfg.Header.Set("X-Scale-ID", "1")
+		cfg.Header.Set("X-Scale-Code", "WB01")
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		conn, err := cfg.DialContext(ctx)
@@ -61,12 +61,12 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 		t.Helper()
 		limit := time.Now().Add(2 * time.Second)
 		for time.Now().Before(limit) {
-			if check(hub.State(1)) {
+			if check(hub.State("WB01")) {
 				return
 			}
 			time.Sleep(time.Millisecond)
 		}
-		t.Fatalf("state timeout: %+v", hub.State(1))
+		t.Fatalf("state timeout: %+v", hub.State("WB01"))
 	}
 	images := []p.Image{}
 	for _, view := range []string{"front", "rear"} {
@@ -83,7 +83,7 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 		req, _ := http.NewRequest("POST", server.URL+"/api/agent/images", &body)
 		req.Header.Set("Authorization", "Bearer test-key")
 		req.Header.Set("X-Agent-ID", "agent-1")
-		req.Header.Set("X-Scale-ID", "1")
+		req.Header.Set("X-Scale-Code", "WB01")
 		req.Header.Set("Content-Type", form.FormDataContentType())
 		response, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -103,23 +103,23 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 	send("camera.updated", "", p.Camera{Images: images})
 	send("device.state", "", p.DeviceState{Weight: 29983, Unit: "t", Stable: false, DeviceOK: true})
 	wait(func(s bridge.State) bool { return s.Online && s.Weight == 29983 && !s.Stable })
-	if _, _, err := hub.Guard(1, 0); err == nil {
+	if _, _, err := hub.Guard("WB01", 0); err == nil {
 		t.Fatal("unstable device was accepted")
 	}
 	send("device.state", "", p.DeviceState{Weight: 30000, Unit: "t", Stable: true, DeviceOK: true})
 	wait(func(s bridge.State) bool { return s.Stable })
-	revision := hub.State(1).Revision
+	revision := hub.State("WB01").Revision
 	// Unchanged stable samples leave the same basis valid.
 	send("device.state", "", p.DeviceState{Weight: 30000, Unit: "t", Stable: true, DeviceOK: true})
 	time.Sleep(10 * time.Millisecond)
-	_, release, err := hub.Guard(1, revision)
+	_, release, err := hub.Guard("WB01", revision)
 	if err != nil {
 		t.Fatal(err)
 	}
 	release()
 	captured := make(chan error, 1)
 	go func() {
-		value, rev, err := hub.Capture(context.Background(), 1)
+		value, rev, err := hub.Capture(context.Background(), "WB01")
 		if err == nil && (value.Weight != 30000 || rev != revision || len(value.Images) != 2 || value.Images[0].SHA256 == "") {
 			err = io.ErrUnexpectedEOF
 		}
@@ -139,15 +139,15 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 	wait(func(s bridge.State) bool { return !s.Stable })
 	send("device.state", "", p.DeviceState{Weight: 30000, Unit: "t", Stable: true, DeviceOK: true})
 	wait(func(s bridge.State) bool { return s.Stable })
-	if _, release, err := hub.Guard(1, revision); err == nil {
+	if _, release, err := hub.Guard("WB01", revision); err == nil {
 		release()
 		t.Fatal("old basis became valid after instability")
 	}
 	// A delayed reply cannot satisfy a later capture request.
 	send("capture.result", command.RequestID, result)
 	results := make(chan p.PrintResult, 2)
-	hub.SetPrintHandler(func(_ context.Context, _ int64, result p.PrintResult) error { results <- result; return nil })
-	if err := hub.Print(1, 42, map[string]string{"ticketNo": "GB0001"}); err != nil {
+	hub.SetPrintHandler(func(_ context.Context, _ string, result p.PrintResult) error { results <- result; return nil })
+	if err := hub.Print("WB01", 42, map[string]string{"ticketNo": "GB0001"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := websocket.JSON.Receive(conn, &command); err != nil || command.Type != "print.request" {
@@ -165,7 +165,7 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 		t.Fatal("duplicate print receipt processed twice")
 	case <-time.After(20 * time.Millisecond):
 	}
-	if err := hub.Print(1, 43, map[string]string{"ticketNo": "GB0002"}); err != nil {
+	if err := hub.Print("WB01", 43, map[string]string{"ticketNo": "GB0002"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := websocket.JSON.Receive(conn, &command); err != nil || command.Type != "print.request" {
@@ -180,7 +180,7 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("failure receipt missing")
 	}
-	incumbent := hub.State(1)
+	incumbent := hub.State("WB01")
 	replacement := dial()
 	defer replacement.Close()
 	_ = replacement.SetReadDeadline(time.Now().Add(time.Second))
@@ -188,27 +188,27 @@ func TestAgentProtocolLifecycle(t *testing.T) {
 	if err := websocket.JSON.Receive(replacement, &conflict); err != nil || conflict.Type != "error" || !bytes.Contains(conflict.Payload, []byte("agent_conflict")) {
 		t.Fatalf("duplicate connection: %+v %v", conflict, err)
 	}
-	current := hub.State(1)
+	current := hub.State("WB01")
 	if !current.Online || current.Revision != incumbent.Revision || current.ConnectionID != incumbent.ConnectionID {
 		t.Fatal("duplicate connection changed incumbent state")
 	}
-	if _, release, err := hub.Guard(1, current.Revision); err != nil {
+	if _, release, err := hub.Guard("WB01", current.Revision); err != nil {
 		t.Fatal(err)
 	} else {
 		release()
 	}
 	// An old client that never acknowledges kick must not be reported as exited.
-	outcome, err := hub.Kick(context.Background(), 1, current.ConnectionID)
+	outcome, err := hub.Kick(context.Background(), "WB01", current.ConnectionID)
 	if err != nil || !outcome.Disconnected || outcome.ExitConfirmed {
 		t.Fatalf("unacknowledged kick: %+v %v", outcome, err)
 	}
 	next := dial()
 	defer next.Close()
 	wait(func(s bridge.State) bool { return s.ConnectionID != "" && s.ConnectionID != current.ConnectionID })
-	if _, err := hub.Kick(context.Background(), 1, current.ConnectionID); !errors.Is(err, bridge.ErrConnectionChanged) {
+	if _, err := hub.Kick(context.Background(), "WB01", current.ConnectionID); !errors.Is(err, bridge.ErrConnectionChanged) {
 		t.Fatalf("stale kick: %v", err)
 	}
-	if hub.State(1).ConnectionID == "" {
+	if hub.State("WB01").ConnectionID == "" {
 		t.Fatal("stale kick disconnected the replacement")
 	}
 }

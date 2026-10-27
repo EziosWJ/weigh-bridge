@@ -296,13 +296,13 @@ func (s *Service) SaveVideoSettings(ctx context.Context, input VideoSettingsInpu
 
 // Plan freezes the currently enabled capture cameras and credentials. DC-06
 // records ConfigVersion on the sample and re-validates before confirmation.
-func (s *Service) Plan(ctx context.Context, scaleID int64, captureID string, required bool) (CapturePlan, error) {
+func (s *Service) Plan(ctx context.Context, scaleCode string, captureID string, required bool) (CapturePlan, error) {
 	settings, cameras, _, err := s.store.ListState(ctx)
 	if err != nil {
 		return CapturePlan{}, err
 	}
 	plan := CapturePlan{
-		ScaleID: scaleID, CaptureID: captureID, ConfigVersion: settings.ConfigVersion,
+		ScaleCode: scaleCode, CaptureID: captureID, ConfigVersion: settings.ConfigVersion,
 		TimeoutMS: captureTimeout(settings), Required: required,
 		RecognitionURL: settings.RecognitionURL,
 		Cameras:        []CaptureCamera{},
@@ -327,7 +327,7 @@ func (s *Service) Plan(ctx context.Context, scaleID int64, captureID string, req
 // It never creates a sample; DC-06 owns the weighing transaction.
 func (s *Service) Capture(ctx context.Context, plan CapturePlan) (CaptureOutcome, error) {
 	started := time.Now().UTC()
-	if plan.ScaleID < 1 {
+	if plan.ScaleCode == "" {
 		return CaptureOutcome{}, ErrInvalid
 	}
 	outcome := CaptureOutcome{ConfigVersion: plan.ConfigVersion, Images: []p.Image{}, Failures: []CaptureFailure{}}
@@ -358,7 +358,7 @@ func (s *Service) Capture(ctx context.Context, plan CapturePlan) (CaptureOutcome
 			image, failure := s.captureOne(ctx, captureCtx, plan, camera)
 			if failure != nil {
 				failures[index] = failure
-				if plan.ScaleID > 0 {
+				if plan.ScaleCode != "" {
 					s.recordFailedImage(ctx, plan, camera, *failure)
 				}
 				return
@@ -419,7 +419,7 @@ func (s *Service) captureOne(parent, captureCtx context.Context, plan CapturePla
 	digest := imageDigest(frame.Data)
 	capturedAt := time.Now().UTC()
 	record := imageRecord{
-		ID: id, ScaleID: plan.ScaleID, CameraID: int64Pointer(camera.ID), CameraPublicID: camera.PublicID,
+		ID: id, ScaleCode: plan.ScaleCode, CameraID: int64Pointer(camera.ID), CameraPublicID: camera.PublicID,
 		CameraName: camera.Name, CameraSource: camera.SourceURL, Source: "server", Status: "captured",
 		FileName: fileName, SHA256: digest, Width: frame.Width, Height: frame.Height,
 		Bytes: int64(len(frame.Data)), CapturedAt: capturedAt,
@@ -444,7 +444,7 @@ func (s *Service) recordFailedImage(ctx context.Context, plan CapturePlan, camer
 	}
 	id += ".jpg"
 	_ = s.store.SaveImage(ctx, imageRecord{
-		ID: id, ScaleID: plan.ScaleID, CameraID: int64Pointer(camera.ID), CameraPublicID: camera.PublicID,
+		ID: id, ScaleCode: plan.ScaleCode, CameraID: int64Pointer(camera.ID), CameraPublicID: camera.PublicID,
 		CameraName: camera.Name, CameraSource: camera.SourceURL, Source: "server", Status: "failed",
 		Error: failure.Message, CapturedAt: time.Now().UTC(),
 	})

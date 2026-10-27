@@ -6,12 +6,12 @@
 
 ## 本地启动真实 Agent
 
-先启动本地 API，在网页「系统管理 → 配置管理」完成本厂身份配置。Agent 连接文件只需 Server 地址，不连接业务数据库：
+先启动本地 API，登录后在「系统管理 → 本厂身份」填写总部或实施方预先分配的厂区编码（地磅编码默认 `WB01`）完成本厂身份配置。Agent 连接文件只需 Server 地址，不连接业务数据库：
 
 ```bash
 task init
 task dev
-# Server 首次启动自动建立本厂身份，登录后在配置管理确认过磅单标题
+# Server 不再自动建立身份：首次在本厂身份页面填写厂区编码，并在过磅单标题页面确认标题
 cd server
 go run ./cmd/agent-provision --agent-env-path "$PWD/../agent.env" --server-url http://127.0.0.1:8900
 cd ..
@@ -39,7 +39,7 @@ task agent -- --env-file /绝对路径/agent.env --state-dir /绝对路径/agent
 
 ## mock 本机启动
 
-先启动 Server，确认内部身份已自动建立，再按上文生成 `agent.env`。mock 可读取显式指定的 Agent 环境文件，或用 `--server` 指定地址；不从业务 API YAML 导入身份，不需要配对文件。
+先启动 Server，在配置管理完成本厂身份配置（未配置时 Agent 显示 `site_not_initialized`），再按上文生成 `agent.env`。mock 可读取显式指定的 Agent 环境文件，或用 `--server` 指定地址；不从业务 API YAML 导入身份，不需要配对文件。
 
 ```bash
 # 终端一：API 与系统 Web
@@ -48,7 +48,7 @@ task dev
 task agent:mock -- --env-file "$PWD/agent.env"
 ```
 
-`--config` 可继续读取便携 JSON 连接配置；它与 `--env-file` 互斥，且二者都不能与 `--server`、`--agent-id`、`--scale-id` 混用。ADR 0030 起只需 Server 地址，mock 通过 `agent.hello` 接收 Server 分配的地磅；`--agent-id`、`--scale-id` 与旧 key 仅供排障，不再是接入门槛。`agent.env` 中的旧身份、密钥与相机字段会在升级时清理，不影响 mock 从该文件读取连接地址。
+`--config` 可继续读取便携 JSON 连接配置；它与 `--env-file` 互斥，且二者都不能与 `--server`、`--agent-id`、`--scale-code` 混用。ADR 0030 起只需 Server 地址，mock 通过 `agent.hello` 接收 Server 分配的地磅；`--agent-id`、`--scale-code` 与旧 key 仅供排障，不再是接入门槛。`agent.env` 中的旧身份、密钥与相机字段会在升级时清理，不影响 mock 从该文件读取连接地址。
 
 本地 API 默认端口 8900，mock 控制页默认监听 `0.0.0.0:8090`；本机访问 http://127.0.0.1:8090。也可运行 `task agent:mock -- --server http://127.0.0.1:8900`，不与 `--env-file` 混用；旧编号和 key 兼容参数不成为接入门槛。Agent 离线时网页明确显示实际配置不可读，不在 API 主机伪造设备文件。
 

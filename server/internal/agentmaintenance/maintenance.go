@@ -106,7 +106,7 @@ type Service struct {
 	startupError            string
 	businessConfigValidator BusinessConfigValidator
 	operationGuard          func(context.Context) (func(), error)
-	cameraTester            func(context.Context, int64) (p.CameraTest, error)
+	cameraTester            func(context.Context, string) (p.CameraTest, error)
 	environment             string
 	deviceOwned             bool
 	configVersion           int64
@@ -159,10 +159,10 @@ func open(dir string, runner Runner, initialDraft *Config, deviceOwned bool) (*S
 	s := &Service{dir: dir, runner: runner, deviceOwned: deviceOwned, sessions: map[string]time.Time{}, previews: map[string][]Job{}, unknownPreviews: map[string]bool{}}
 	if b, e := os.ReadFile(filepath.Join(dir, "maintenance.json")); e == nil {
 		var v struct {
-			Draft    Config `json:"draft"`
-			Active   Config `json:"active"`
-			Config   Config `json:"config"`
-			Saved    Config `json:"saved"`
+			Draft         Config    `json:"draft"`
+			Active        Config    `json:"active"`
+			Config        Config    `json:"config"`
+			Saved         Config    `json:"saved"`
 			Previous      Config    `json:"previous"`
 			Password      string    `json:"passwordHash"`
 			ConfigVersion int64     `json:"configVersion"`
@@ -1352,7 +1352,7 @@ func BuildAgentEnvironmentAt(path string, c Config) error {
 	// ADR 0030: the key is no longer required. A legacy key is retained only
 	// so an in-place upgrade does not lose the existing local file before the
 	// old keyed deployment is retired.
-	data := fmt.Sprintf("WEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_ID=%d\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), c.ScaleID, strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
+	data := fmt.Sprintf("WEIGHBRIDGE_SERVER_URL=%s\nWEIGHBRIDGE_AGENT_ID=%s\nWEIGHBRIDGE_SCALE_CODE=%s\nWEIGHBRIDGE_PRINT_QUEUE=%s\nWEIGHBRIDGE_PRINT_WIDTH_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_X_MM=%d\nWEIGHBRIDGE_PRINT_OFFSET_Y_MM=%d\nWEIGHBRIDGE_FORM_LENGTH_MM=%g\nWEIGHBRIDGE_PRINT_SCALE=%g\n", strconv.Quote(c.ServerURL), strconv.Quote(c.AgentID), strconv.Quote(c.ScaleCode), strconv.Quote(c.Queue), c.PrintWidthMM, c.OffsetXMM, c.OffsetYMM, c.FormLengthMM, c.Calibration().Scale)
 	if c.AgentKey != "" {
 		if strings.ContainsAny(c.AgentKey, "\r\n\x00") {
 			return errors.New("旧连接密钥格式无效")

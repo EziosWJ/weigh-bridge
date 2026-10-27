@@ -32,20 +32,20 @@ func waitMockState(t *testing.T, hub *agentbridge.Hub, weight p.Weight) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		state := hub.State(1)
+		state := hub.State("WB01")
 		if state.Online && state.Stable && state.Weight == weight {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("mock state weight=%s: %+v", weight, hub.State(1))
+	t.Fatalf("mock state weight=%s: %+v", weight, hub.State("WB01"))
 }
 
 func TestMockMeasurementLifecycleAndValueChangeLatch(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	hub := agentbridge.New(agentbridge.Config{ID: "mock-01", SiteID: 1, ScaleID: 1, ImageDir: t.TempDir()})
+	hub := agentbridge.New(agentbridge.Config{ID: "mock-01", SiteCode: "F001", ScaleCode: "WB01", ImageDir: t.TempDir()})
 	hub.SetLocalResolver(func(context.Context) (agentbridge.Config, error) {
-		return agentbridge.Config{ID: "mock-01", SiteID: 1, ScaleID: 1, ImageDir: t.TempDir()}, nil
+		return agentbridge.Config{ID: "mock-01", SiteCode: "F001", ScaleCode: "WB01", ImageDir: t.TempDir()}, nil
 	})
 	router := gin.New()
 	hub.Register(router)
@@ -60,11 +60,11 @@ func TestMockMeasurementLifecycleAndValueChangeLatch(t *testing.T) {
 	defer mockServer.Close()
 
 	deadline := time.Now().Add(3 * time.Second)
-	for !(hub.State(1).Online && hub.Supports(1, p.CapabilityMeasurementWindow)) && time.Now().Before(deadline) {
+	for !(hub.State("WB01").Online && hub.Supports("WB01", p.CapabilityMeasurementWindow)) && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !hub.Supports(1, p.CapabilityMeasurementWindow) {
-		t.Fatalf("mock did not advertise measurement capability: %+v", hub.State(1))
+	if !hub.Supports("WB01", p.CapabilityMeasurementWindow) {
+		t.Fatalf("mock did not advertise measurement capability: %+v", hub.State("WB01"))
 	}
 
 	mockControl(t, mockServer, map[string]any{"action": "up", "weight": "1.000"})
@@ -75,7 +75,7 @@ func TestMockMeasurementLifecycleAndValueChangeLatch(t *testing.T) {
 		t.Helper()
 		ctx, stop := context.WithTimeout(context.Background(), 2*time.Second)
 		defer stop()
-		message, err := hub.Command(ctx, 1, kind, payload, 2*time.Second)
+		message, err := hub.Command(ctx, "WB01", kind, payload, 2*time.Second)
 		if err != nil {
 			t.Fatalf("%s: %v", kind, err)
 		}

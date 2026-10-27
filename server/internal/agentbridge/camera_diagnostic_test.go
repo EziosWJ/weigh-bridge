@@ -17,7 +17,7 @@ import (
 )
 
 func TestCameraDiagnosticWorksWithoutScaleAndDoesNotBecomeEvidence(t *testing.T) {
-	hub := bridge.New(bridge.Config{ID: "agent", ScaleID: 1, Key: "key", ImageDir: t.TempDir()})
+	hub := bridge.New(bridge.Config{ID: "agent", ScaleCode: "WB01", Key: "key", ImageDir: t.TempDir()})
 	router := gin.New()
 	hub.Register(router)
 	server := httptest.NewServer(router)
@@ -25,7 +25,7 @@ func TestCameraDiagnosticWorksWithoutScaleAndDoesNotBecomeEvidence(t *testing.T)
 	cfg, _ := websocket.NewConfig(strings.Replace(server.URL, "http:", "ws:", 1)+"/api/agent/ws", server.URL)
 	cfg.Header.Set("Authorization", "Bearer key")
 	cfg.Header.Set("X-Agent-ID", "agent")
-	cfg.Header.Set("X-Scale-ID", "1")
+	cfg.Header.Set("X-Scale-Code", "WB01")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	conn, err := cfg.DialContext(ctx)
@@ -44,7 +44,7 @@ func TestCameraDiagnosticWorksWithoutScaleAndDoesNotBecomeEvidence(t *testing.T)
 	}
 	result := make(chan error, 1)
 	go func() {
-		diagnostic, e := hub.TestCameras(ctx, 1)
+		diagnostic, e := hub.TestCameras(ctx, "WB01")
 		if e == nil && (len(diagnostic.Views) != 2 || !diagnostic.Views[0].Success) {
 			e = bridge.ErrUnavailable
 		}
@@ -68,10 +68,10 @@ func TestCameraDiagnosticWorksWithoutScaleAndDoesNotBecomeEvidence(t *testing.T)
 	case <-ctx.Done():
 		t.Fatal("diagnostic timed out")
 	}
-	if len(hub.State(1).Images) != 0 {
+	if len(hub.State("WB01").Images) != 0 {
 		t.Fatal("diagnostic thumbnails became formal evidence")
 	}
-	if _, _, err = hub.Capture(ctx, 1); err == nil {
+	if _, _, err = hub.Capture(ctx, "WB01"); err == nil {
 		t.Fatal("diagnostic bypassed formal instrument conditions")
 	}
 }

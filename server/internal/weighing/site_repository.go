@@ -3,44 +3,44 @@ package weighing
 import (
 	"context"
 	"errors"
+	"slices"
+	"time"
+
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"slices"
-	"time"
 )
 
-func mayOperate(ctx context.Context, id int64) bool {
+func mayOperate(ctx context.Context, code string) bool {
 	scope, ok := ctx.Value(siteScopeKey).(siteScope)
-	return ok && slices.Contains(scope.Operate, id)
+	return ok && slices.Contains(scope.Operate, code)
 }
-func siteFilter(db *gorm.DB, q PageQuery, column string) *gorm.DB {
-	scope, ok := db.Statement.Context.Value(siteScopeKey).(siteScope)
-	if ok {
-		db = db.Where(column+" IN ?", scope.Read)
-	}
-	if q.SiteID != nil {
-		db = db.Where(column+"=?", *q.SiteID)
+
+// The database represents one local factory. The scope authorizes access to
+// that database; codes saved on historical rows are snapshots, not ownership.
+func siteFilter(db *gorm.DB, _ PageQuery, _ string) *gorm.DB {
+	if scope, ok := db.Statement.Context.Value(siteScopeKey).(siteScope); ok && len(scope.Read) == 0 {
+		return db.Where("1=0")
 	}
 	return db
 }
 func (r *Repository) Sites(ctx context.Context, user int64) ([]Site, error) {
 	rows := []Site{}
-	db := r.db.WithContext(ctx).Table("wb_site s").Select("s.*,CASE WHEN s.enabled=1 THEN us.can_operate ELSE 0 END AS can_operate").Joins("JOIN wb_user_site us ON us.site_id=s.id AND us.user_id=?", user)
+	db := r.db.WithContext(ctx).Table("wb_site s").Select("s.*,CASE WHEN s.enabled=1 THEN us.can_operate ELSE 0 END AS can_operate").Joins("JOIN wb_local_identity i ON i.id=1 AND i.site_code=s.site_code").Joins("JOIN wb_local_user_access us ON us.user_id=?", user)
 	if scope, ok := ctx.Value(siteScopeKey).(siteScope); ok {
-		db = db.Where("s.id IN ?", scope.Read)
+		db = db.Where("s.site_code IN ?", scope.Read)
 	}
-	err := db.Order("s.id").Find(&rows).Error
+	err := db.Order("s.site_code").Find(&rows).Error
 	return rows, err
 }
 func (r *Repository) SiteOptions(ctx context.Context) ([]Site, error) {
 	rows := []Site{}
-	err := r.db.WithContext(ctx).Order("id").Find(&rows).Error
+	err := r.db.WithContext(ctx).Order("site_code").Find(&rows).Error
 	return rows, err
 }
 func (r *Repository) SiteGrants(ctx context.Context, user int64) ([]SiteGrant, error) {
 	rows := []SiteGrant{}
-	err := r.db.WithContext(ctx).Where("user_id=?", user).Order("site_id").Find(&rows).Error
+	err := r.db.WithContext(ctx).Table("wb_local_user_access a").Select("a.user_id, i.site_code, a.can_operate").Joins("JOIN wb_local_identity i ON i.id=1 AND i.site_code IS NOT NULL").Where("a.user_id=?", user).Scan(&rows).Error
 	return rows, err
 }
 func (r *Repository) SaveSiteGrants(ctx context.Context, user int64, rows []SiteGrant, e audit.Event) error {
@@ -55,27 +55,27 @@ func (r *Repository) SaveSiteGrants(ctx context.Context, user int64, rows []Site
 			}
 			return err
 		}
-		seen := map[int64]bool{}
+		seen := map[string]bool{}
 		for i := range rows {
 			v := &rows[i]
-			if v.SiteID < 1 || seen[v.SiteID] || (v.CanOperate != 0 && v.CanOperate != 1) {
+			if v.SiteCode == "" || seen[v.SiteCode] || (v.CanOperate != 0 && v.CanOperate != 1) {
 				return ErrInvalid
 			}
-			seen[v.SiteID] = true
+			seen[v.SiteCode] = true
 			v.UserID = user
 			var n int64
-			if err := tx.Model(&Site{}).Where("id=?", v.SiteID).Count(&n).Error; err != nil {
+			if err := tx.Model(&Site{}).Where("site_code=?", v.SiteCode).Count(&n).Error; err != nil {
 				return err
 			}
 			if n != 1 {
 				return ErrInvalid
 			}
 		}
-		if err := tx.Where("user_id=?", user).Delete(&SiteGrant{}).Error; err != nil {
+		if err := tx.Exec("DELETE FROM wb_local_user_access WHERE user_id=?", user).Error; err != nil {
 			return err
 		}
 		if len(rows) > 0 {
-			if err := tx.Create(&rows).Error; err != nil {
+			if err := tx.Exec("INSERT INTO wb_local_user_access (user_id, can_operate) VALUES (?, ?)", user, rows[0].CanOperate).Error; err != nil {
 				return err
 			}
 		}
@@ -86,34 +86,29 @@ func (r *Repository) SaveSiteGrants(ctx context.Context, user int64, rows []Site
 	})
 }
 
-// ResourceSite resolves ownership from persisted rows, never client-provided site ids.
-func (r *Repository) ResourceSite(ctx context.Context, kind string, id int64) (int64, error) {
-	db := r.db.WithContext(ctx)
-	switch kind {
-	case "scales":
-		db = db.Table("wb_scale").Select("site_id").Where("id=?", id)
-	case "tasks":
-		db = db.Table("wb_transport_task").Select("site_id").Where("id=?", id)
-	case "tickets":
-		db = db.Table("wb_ticket").Select("site_id").Where("id=?", id)
-	case "samples":
-		db = db.Table("wb_sample x").Select("s.site_id").Joins("JOIN wb_scale s ON s.id=x.scale_id").Where("x.id=?", id)
-	case "records":
-		db = db.Table("wb_weigh_record x").Select("t.site_id").Joins("JOIN wb_transport_task t ON t.id=x.task_id").Where("x.id=?", id)
-	case "print-attempts":
-		db = db.Table("wb_print_attempt x").Select("t.site_id").Joins("JOIN wb_ticket t ON t.id=x.ticket_id").Where("x.id=?", id)
-	default:
-		return 0, ErrInvalid
+// ResourceScaleSite resolves the owning site of a scale by its code.
+func (r *Repository) ResourceScaleSite(ctx context.Context, scaleCode string) (string, error) {
+	var row struct{ SiteCode string }
+	err := r.db.WithContext(ctx).Table("wb_scale").Select("site_code").Where("code=?", scaleCode).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", ErrNotFound
 	}
-	var row struct{ SiteID int64 }
-	result := db.Take(&row)
-	if result.Error != nil {
-		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return 0, ErrNotFound
-		}
-		return 0, result.Error
+	return row.SiteCode, err
+}
+
+// ResourceSite verifies that the resource exists locally and resolves its
+// authorization scope from the current local identity, not a historical code.
+func (r *Repository) ResourceSite(ctx context.Context, kind string, id int64) (string, error) {
+	table := map[string]string{"tasks": "wb_transport_task", "tickets": "wb_ticket", "samples": "wb_sample", "records": "wb_weigh_record", "print-attempts": "wb_print_attempt"}[kind]
+	if table == "" {
+		return "", ErrInvalid
 	}
-	return row.SiteID, nil
+	var row struct{ SiteCode string }
+	result := r.db.WithContext(ctx).Table(table).Select("(SELECT site_code FROM wb_local_identity WHERE id=1) AS site_code").Where("id=?", id).Take(&row)
+	if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+		return "", ErrNotFound
+	}
+	return row.SiteCode, result.Error
 }
 func (r *Repository) RecordAgentKick(ctx context.Context, e audit.Event) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -132,15 +127,15 @@ func (r *Repository) RecordAgentKick(ctx context.Context, e audit.Event) error {
 // Serialize business writes and site disable without changing replayed commands.
 func lockWriteSite(tx *gorm.DB, ctx context.Context) error {
 	scope, ok := ctx.Value(siteScopeKey).(siteScope)
-	if !ok || scope.WriteSiteID == 0 {
+	if !ok || len(scope.Operate) == 0 {
 		return nil
 	}
-	site, err := lockRow[Site](tx, scope.WriteSiteID)
-	if err != nil {
+	var site Site
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("site_code=? AND enabled=1", scope.Operate[0]).Take(&site).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrForbidden
+		}
 		return err
-	}
-	if site.Enabled != 1 {
-		return ErrForbidden
 	}
 	return nil
 }

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -21,29 +20,24 @@ import (
 func main() {
 	serverDefault := "http://127.0.0.1:8900"
 	idDefault := "scale-agent-1"
-	scaleDefault := int64(1)
+	scaleDefault := "WB01"
 	if value := os.Getenv("APP_WEIGHING__AGENT_ID"); value != "" {
 		idDefault = value
 	}
-	if value := os.Getenv("APP_WEIGHING__SCALE_ID"); value != "" {
-		parsed, err := strconv.ParseInt(value, 10, 64)
-		if err != nil || parsed < 1 {
-			slog.Error("invalid APP_WEIGHING__SCALE_ID")
-			os.Exit(1)
-		}
-		scaleDefault = parsed
+	if value := os.Getenv("APP_WEIGHING__SCALE_CODE"); value != "" {
+		scaleDefault = value
 	}
 	server := flag.String("server", serverDefault, "Server HTTP(S) address (explicit mock mode only)")
 	listen := flag.String("listen", "0.0.0.0:8090", "mock control page listen address")
 	id := flag.String("agent-id", idDefault, "Agent identity (explicit mock mode only)")
-	scale := flag.Int64("scale-id", scaleDefault, "scale identity (explicit mock mode only)")
+	scale := flag.String("scale-code", scaleDefault, "地磅编码（仅显式 mock 模式诊断用）")
 	file := flag.String("config", "", "portable connection JSON file")
 	envFile := flag.String("env-file", "", "Agent-owned agent.env connection and device settings")
 	flag.Parse()
 
 	identityOverride := false
 	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "server" || f.Name == "agent-id" || f.Name == "scale-id" {
+		if f.Name == "server" || f.Name == "agent-id" || f.Name == "scale-code" {
 			identityOverride = true
 		}
 	})
@@ -56,7 +50,7 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	m := agentmock.New(agentmock.Config{
-		Server: connection.ServerURL, ID: connection.AgentID, ScaleID: connection.ScaleID,
+		Server: connection.ServerURL, ID: connection.AgentID, SiteCode: connection.SiteCode, ScaleCode: connection.ScaleCode,
 		Key: connection.AgentKey, SiteName: connection.SiteName, ScaleName: connection.ScaleName, OnKick: stop,
 	})
 	defer stop()
@@ -68,19 +62,19 @@ func main() {
 		defer cancel()
 		_ = srv.Shutdown(shutdown)
 	}()
-	slog.Info("Agent mock control page", "address", "http://"+*listen, "server", connection.ServerURL, "site", connection.SiteName, "scale", connection.ScaleID)
+	slog.Info("Agent mock control page", "address", "http://"+*listen, "server", connection.ServerURL, "site", connection.SiteName, "scale", connection.ScaleCode)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		slog.Error("mock server", "error", err)
 		os.Exit(1)
 	}
 }
 
-func resolveConnection(configFile, envFile, serverURL, agentID string, scaleID int64, mockKey string, identityOverride bool) (agentconfig.Connection, error) {
+func resolveConnection(configFile, envFile, serverURL, agentID string, scaleCode string, mockKey string, identityOverride bool) (agentconfig.Connection, error) {
 	if configFile != "" && envFile != "" {
 		return agentconfig.Connection{}, errors.New("--config 与 --env-file 不能同时使用")
 	}
 	if (configFile != "" || envFile != "") && identityOverride {
-		return agentconfig.Connection{}, errors.New("使用 --config 或 --env-file 时，不得同时指定 --server、--agent-id 或 --scale-id")
+		return agentconfig.Connection{}, errors.New("使用 --config 或 --env-file 时，不得同时指定 --server、--agent-id 或 --scale-code")
 	}
 	if configFile != "" {
 		return agentconfig.Read(configFile)
@@ -103,7 +97,7 @@ func resolveConnection(configFile, envFile, serverURL, agentID string, scaleID i
 	// flags remain useful for local diagnostics, but no key or provisioned
 	// identity is an admission gate. The Server assigns the local scale in
 	// agent.hello.ack.
-	connection := agentconfig.Connection{ServerURL: serverURL, SiteName: "mock", ScaleID: scaleID, AgentID: agentID, AgentKey: mockKey}
+	connection := agentconfig.Connection{ServerURL: serverURL, SiteName: "mock", ScaleCode: scaleCode, AgentID: agentID, AgentKey: mockKey}
 	if err := connection.ValidateEndpoint(); err != nil {
 		return agentconfig.Connection{}, err
 	}
@@ -112,7 +106,7 @@ func resolveConnection(configFile, envFile, serverURL, agentID string, scaleID i
 
 func connectionFromAgentConfig(cfg agentprinter.Config) agentconfig.Connection {
 	return agentconfig.Connection{
-		ServerURL: cfg.ServerURL, SiteID: cfg.SiteID, SiteCode: cfg.SiteCode, SiteName: cfg.SiteName,
-		ScaleID: cfg.ScaleID, ScaleCode: cfg.ScaleCode, ScaleName: cfg.ScaleName, AgentID: cfg.AgentID, AgentKey: cfg.AgentKey,
+		ServerURL: cfg.ServerURL, SiteCode: cfg.SiteCode, SiteName: cfg.SiteName,
+		ScaleCode: cfg.ScaleCode, ScaleName: cfg.ScaleName, AgentID: cfg.AgentID, AgentKey: cfg.AgentKey,
 	}
 }

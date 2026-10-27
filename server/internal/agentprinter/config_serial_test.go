@@ -67,7 +67,6 @@ func TestSerialConfigurationValidation(t *testing.T) {
 		func(c *Config) { c.SerialPort = "/dev/../etc/passwd" },
 		func(c *Config) { c.SerialBaud = 1234 },
 		func(c *Config) { c.AgentID = "bad id" },
-		func(c *Config) { c.ScaleID = -1 },
 		func(c *Config) { c.Queue = "bad queue" },
 	}
 	for i, mutate := range bad {
@@ -98,7 +97,7 @@ func TestSerialEnvironmentRejectsInvalidValues(t *testing.T) {
 }
 
 func TestNormalizeConfigKeepsLegacyPrintingWithoutASerialPort(t *testing.T) {
-	legacy := Config{ServerURL: "http://server.example", AgentID: "agent", ScaleID: 1, AgentKey: "key", Queue: "q", PrintWidthMM: 175, FormLengthMM: 99}
+	legacy := Config{ServerURL: "http://server.example", AgentID: "agent", ScaleCode: "WB01", AgentKey: "key", Queue: "q", PrintWidthMM: 175, FormLengthMM: 99}
 	n := NormalizeConfig(legacy)
 	if n.SerialPort != "" || n.SerialBaud != 9600 {
 		t.Fatalf("normalized legacy config: %+v", n)

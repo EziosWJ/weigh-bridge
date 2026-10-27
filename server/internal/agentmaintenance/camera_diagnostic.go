@@ -8,7 +8,7 @@ import (
 	p "github.com/EziosWJ/weighbridge/server/internal/agentproto"
 )
 
-func (s *Service) SetCameraTester(fn func(context.Context, int64) (p.CameraTest, error)) {
+func (s *Service) SetCameraTester(fn func(context.Context, string) (p.CameraTest, error)) {
 	s.cameraTester = fn
 }
 func (s *Service) testCamera(w http.ResponseWriter, r *http.Request) {
@@ -43,7 +43,7 @@ func (s *Service) testCamera(w http.ResponseWriter, r *http.Request) {
 		}
 		defer release()
 	}
-	result, err := s.cameraTester(r.Context(), cfg.ScaleID)
+	result, err := s.cameraTester(r.Context(), cfg.ScaleCode)
 	// Only status metadata enters the audit; thumbnails live in this response.
 	statuses := map[string]bool{}
 	for _, v := range result.Views {

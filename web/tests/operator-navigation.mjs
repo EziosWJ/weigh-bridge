@@ -18,10 +18,10 @@ const viewer = { ...operator, id: 3, username: 'viewer', roles: [{ id: 3, roleNa
 const menu = (id, menuName, path, children = []) => ({ id, menuName, path, menuType: children.length ? 'DIR' : 'MENU', visible: 1, sortOrder: id, children });
 const menus = [menu(1, '日志管理', '/log', [menu(2, '登录日志', '/system/login-log'), menu(3, '操作日志', '/system/oper-log')]), menu(4, '文件管理', '/system/file')];
 const capabilities = {
-  userId: 2, localSiteId: 3, configured: true, initialized: true,
+  userId: 2, localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true,
   permissionCodes: ['weighing:read', 'weighing:master:read', 'weighing:confirm', 'system:log', 'system:login-log', 'system:oper-log'],
-  sites: [{ id: 3, name: '本厂', enabled: 1, canOperate: true }],
-  scales: [{ id: 7, siteId: 3, name: '本厂地磅', siteName: '本厂', enabled: 1, canOperate: true }],
+  sites: [{ code: 'F001', name: '本厂', enabled: 1, canOperate: true }],
+  scales: [{ code: 'WB01', siteCode: 'F001', name: '本厂地磅', siteName: '本厂', enabled: 1, canOperate: true }],
 };
 
 async function fixture(user, { authenticated = false, denied = false, failure = false } = {}) {
@@ -47,7 +47,7 @@ async function fixture(user, { authenticated = false, denied = false, failure = 
     };
     else if (path === '/api/weighing/cameras') data = { cameras: [], configVersion: 1 };
     else if (path.endsWith('/unread-count')) data = 0;
-    else if (path.endsWith('/session')) data = { scaleId: 7, holderUserId: null, expiresAt: null };
+    else if (path.endsWith('/session')) data = { scaleCode: 'WB01', holderUserId: null, expiresAt: null };
     else if (path.endsWith('/device')) data = { online: false, stable: false, deviceOk: false, weight: '0', revision: 1 };
     await route.fulfill({ json: { code: 200, message: 'success', data } });
   });
@@ -65,7 +65,7 @@ try {
     await delay(150);
   }
   browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
-  for (const [user, target] of [[operator, '/weighing/workbench?scaleId=7'], [admin, '/dashboard'], [viewer, '/dashboard']]) {
+  for (const [user, target] of [[operator, '/weighing/workbench?scale=WB01'], [admin, '/dashboard'], [viewer, '/dashboard']]) {
     const { context, page, requests, errors } = await fixture(user);
     await page.goto(`${base}/login`);
     await page.locator('#username').waitFor().catch(async error => {
@@ -79,8 +79,8 @@ try {
       await page.getByRole('heading', { name: '称重工作台', exact: true }).waitFor().catch(async error => {
         throw new Error(`${error.message}\nPage errors: ${JSON.stringify(errors)}\nBody: ${await page.locator('body').innerText()}\nRequests: ${JSON.stringify(requests)}`);
       });
-      await page.waitForRequest('**/api/weighing/scales/7/device');
-      assert.ok(!requests.includes('/api/weighing/scales/0/device'), '登录后绑定实际本厂地磅');
+      await page.waitForRequest('**/api/weighing/scales/WB01/device');
+      assert.ok(!requests.includes('/api/weighing/scales//device'), '登录后绑定实际本厂地磅');
     } else {
       await page.getByRole('heading', { name: '系统概览', exact: true }).waitFor();
       await page.goto(`${base}/`);
@@ -93,7 +93,7 @@ try {
 
   const { context, page, errors } = await fixture(operator, { authenticated: true });
   await page.goto(`${base}/`);
-  await page.waitForURL(`${base}/weighing/workbench?scaleId=7`);
+  await page.waitForURL(`${base}/weighing/workbench?scale=WB01`);
   await page.goto(`${base}/weighing/tasks`);
   const nav = page.getByRole('navigation', { name: '主导航', exact: true });
   await nav.getByRole('button', { name: '日志管理', exact: true }).waitFor();
@@ -114,7 +114,7 @@ try {
   const popupPromise = page.waitForEvent('popup');
   await page.getByRole('option').filter({ hasText: '称重工作台' }).click();
   const popup = await popupPromise;
-  await popup.waitForURL(`${base}/weighing/workbench?scaleId=7`);
+  await popup.waitForURL(`${base}/weighing/workbench?scale=WB01`);
   await popup.close();
   assert.deepEqual(errors, []);
   await context.close();
@@ -127,7 +127,7 @@ try {
     state.denied = false;
     state.failure = false;
     await page.getByRole('button', { name: '重试', exact: true }).click();
-    await page.waitForURL(`${base}/weighing/workbench?scaleId=7`);
+    await page.waitForURL(`${base}/weighing/workbench?scale=WB01`);
     await context.close();
   }
 

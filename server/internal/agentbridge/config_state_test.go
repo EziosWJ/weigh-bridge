@@ -9,16 +9,16 @@ import (
 )
 
 func TestConfigReportsAreRecordedAndPublished(t *testing.T) {
-	hub := New(Config{ID: "agent", ScaleID: 1})
+	hub := New(Config{ID: "agent", ScaleCode: "WB01"})
 	conn := &connection{id: "connection", pending: map[string]chan p.Message{}, prints: map[string]int64{}, capabilities: map[string]bool{}}
 	hub.mu.Lock()
 	hub.conn = conn
 	hub.mu.Unlock()
 
 	reported := make(chan struct{}, 2)
-	hub.SetConfigStateHandler(func(_ context.Context, scale int64, effective *p.EffectiveConfig, backup *p.ConfigBackup) {
-		if scale != 1 || (effective == nil && backup == nil) {
-			t.Errorf("unexpected report scale=%d effective=%v backup=%v", scale, effective, backup)
+	hub.SetConfigStateHandler(func(_ context.Context, scaleCode string, effective *p.EffectiveConfig, backup *p.ConfigBackup) {
+		if scaleCode != "WB01" || (effective == nil && backup == nil) {
+			t.Errorf("unexpected report scale=%s effective=%v backup=%v", scaleCode, effective, backup)
 		}
 		reported <- struct{}{}
 	})
@@ -37,11 +37,11 @@ func TestConfigReportsAreRecordedAndPublished(t *testing.T) {
 			t.Fatal("config report callback was not invoked")
 		}
 	}
-	stored, ok := hub.EffectiveConfig(1)
+	stored, ok := hub.EffectiveConfig("WB01")
 	if !ok || stored.ConfigVersion != 3 || stored.Digest != "abc" {
 		t.Fatalf("effective config not retained: %+v", stored)
 	}
-	storedBackup, ok := hub.ConfigBackup(1)
+	storedBackup, ok := hub.ConfigBackup("WB01")
 	if !ok || storedBackup.ConfigVersion != 3 {
 		t.Fatalf("config backup not retained: %+v", storedBackup)
 	}

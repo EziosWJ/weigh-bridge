@@ -37,10 +37,9 @@ func (s *Service) importConnection(w http.ResponseWriter, r *http.Request) {
 	cfg := before
 	c := in.Connection
 	cfg.ServerURL = c.ServerURL
-	cfg.SiteID = c.SiteID
 	cfg.SiteCode = c.SiteCode
 	cfg.SiteName = c.SiteName
-	cfg.ScaleID = c.ScaleID
+	cfg.ScaleCode = c.ScaleCode
 	cfg.ScaleCode = c.ScaleCode
 	cfg.ScaleName = c.ScaleName
 	cfg.AgentID = c.AgentID

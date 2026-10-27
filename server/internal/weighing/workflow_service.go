@@ -21,14 +21,14 @@ const (
 	measurementCancelTimeout  = 2 * time.Second
 )
 
-func (s *Service) Session(ctx context.Context, id int64) (ScaleSession, error) {
-	return s.store.Session(ctx, id)
+func (s *Service) Session(ctx context.Context, scaleCode string) (ScaleSession, error) {
+	return s.store.Session(ctx, scaleCode)
 }
-func (s *Service) ChangeSession(ctx context.Context, id int64, action string, in SessionInput, e audit.Event) (SessionResult, error) {
-	if id < 1 || strings.TrimSpace(in.ClientID) == "" || !maxLength(in.ClientID, 100) || !maxLength(in.Reason, 2000) {
+func (s *Service) ChangeSession(ctx context.Context, scaleCode string, action string, in SessionInput, e audit.Event) (SessionResult, error) {
+	if strings.TrimSpace(scaleCode) == "" || strings.TrimSpace(in.ClientID) == "" || !maxLength(in.ClientID, 100) || !maxLength(in.Reason, 2000) {
 		return SessionResult{}, ErrInvalid
 	}
-	return s.store.ChangeSession(ctx, id, action, in, e)
+	return s.store.ChangeSession(ctx, scaleCode, action, in, e)
 }
 
 // Capture orchestrates one formal acquisition:
@@ -49,7 +49,7 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 	if err != nil {
 		return Sample{}, err
 	}
-	if in.ScaleID < 1 || in.ClientID == "" || s.devices == nil || s.camera == nil {
+	if in.ScaleCode == "" || in.ClientID == "" || s.devices == nil || s.camera == nil {
 		return Sample{}, ErrConditions
 	}
 	if in.PlateEvidence != nil {
@@ -58,41 +58,41 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 			return Sample{}, ErrInvalid
 		}
 	}
-	current, err := s.store.Session(ctx, in.ScaleID)
+	current, err := s.store.Session(ctx, in.ScaleCode)
 	if err != nil {
 		return Sample{}, err
 	}
 	if !validSession(current, e.Metadata.ActorID, in.SessionInput) {
 		return Sample{}, ErrSession
 	}
-	if err := s.devices.RequireCapability(in.ScaleID, p.CapabilityMeasurementWindow); err != nil {
+	if err := s.devices.RequireCapability(in.ScaleCode, p.CapabilityMeasurementWindow); err != nil {
 		return Sample{}, ErrMeasurementCapability
 	}
 	// A new begin supersedes an unconfirmed window, so two captures on one
 	// scale must not overlap. This lock spans network work but never the device
 	// state lock (Hub.Guard is taken only for the local commit).
-	unlock := s.lockCapture(in.ScaleID)
+	unlock := s.lockCapture(in.ScaleCode)
 	defer unlock()
 
-	plan, err := s.camera.Plan(ctx, in.ScaleID, agentbridge.ID(), policy.Required)
+	plan, err := s.camera.Plan(ctx, in.ScaleCode, agentbridge.ID(), policy.Required)
 	if err != nil {
 		return Sample{}, err
 	}
 	if policy.Required && len(plan.Cameras) == 0 {
 		return Sample{}, ErrCaptureCameraRequired
 	}
-	begin, err := s.beginMeasurement(ctx, in.ScaleID, policy.Revision, plan)
+	begin, err := s.beginMeasurement(ctx, in.ScaleCode, policy.Revision, plan)
 	if err != nil {
 		return Sample{}, err
 	}
 	outcome, captureErr := s.camera.Capture(ctx, plan)
 	if captureErr != nil || !outcome.Success {
-		s.cancelMeasurement(in.ScaleID, begin.Generation, "抓拍未满足策略")
+		s.cancelMeasurement(in.ScaleCode, begin.Generation, "抓拍未满足策略")
 		return Sample{}, ErrConditions
 	}
-	end, err := s.endMeasurement(ctx, in.ScaleID, begin.Generation)
+	end, err := s.endMeasurement(ctx, in.ScaleCode, begin.Generation)
 	if err != nil {
-		s.cancelMeasurement(in.ScaleID, begin.Generation, "测量结束核实失败")
+		s.cancelMeasurement(in.ScaleCode, begin.Generation, "测量结束核实失败")
 		return Sample{}, err
 	}
 	// Recognition is optional and reuses an already saved image; a failure must
@@ -104,13 +104,13 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 		// The Agent still observes the scene plate for operator cross-check.
 		// Recognition failure must not discard that observation, and the
 		// evidence must keep its actual source instead of claiming Server work.
-		observed := s.devices.State(in.ScaleID).Plate
+		observed := s.devices.State(in.ScaleCode).Plate
 		candidate, recognizedAt, plateSource = observed.Candidate, observed.At, "agent"
 	}
 	// Take the device state lock only for the local commit, never across the
 	// capture interval. Conditions are checked through sample persistence only;
 	// later device changes do not revoke a successful sample.
-	state, unlockState, err := s.devices.Guard(in.ScaleID, 0)
+	state, unlockState, err := s.devices.Guard(in.ScaleCode, 0)
 	if err != nil {
 		return Sample{}, ErrConditions
 	}
@@ -149,7 +149,7 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 		// The measurement window has no persisted sample to confirm. Releasing
 		// it is best effort; it is equally unusable after any later session or
 		// policy change.
-		s.cancelMeasurement(in.ScaleID, begin.Generation, "采样保存失败")
+		s.cancelMeasurement(in.ScaleCode, begin.Generation, "采样保存失败")
 		return Sample{}, err
 	}
 	return sample, nil
@@ -168,9 +168,9 @@ func captureImageStatus(plan camera.CapturePlan, outcome camera.CaptureOutcome) 
 	return "capture_failed"
 }
 
-func (s *Service) beginMeasurement(ctx context.Context, scale int64, policyRevision string, plan camera.CapturePlan) (p.MeasurementBeginResult, error) {
+func (s *Service) beginMeasurement(ctx context.Context, scaleCode string, policyRevision string, plan camera.CapturePlan) (p.MeasurementBeginResult, error) {
 	var result p.MeasurementBeginResult
-	message, err := s.devices.Command(ctx, scale, p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{
+	message, err := s.devices.Command(ctx, scaleCode, p.TypeMeasurementBeginRequest, p.MeasurementBeginRequest{
 		CaptureID: plan.CaptureID, CapturePolicyRevision: policyRevision, CameraConfigVersion: plan.ConfigVersion,
 	}, measurementCommandTimeout)
 	if err != nil || message.Type != p.TypeMeasurementBeginResult || json.Unmarshal(message.Payload, &result) != nil {
@@ -182,9 +182,9 @@ func (s *Service) beginMeasurement(ctx context.Context, scale int64, policyRevis
 	return result, nil
 }
 
-func (s *Service) endMeasurement(ctx context.Context, scale int64, generation string) (p.MeasurementEndResult, error) {
+func (s *Service) endMeasurement(ctx context.Context, scaleCode string, generation string) (p.MeasurementEndResult, error) {
 	var result p.MeasurementEndResult
-	message, err := s.devices.Command(ctx, scale, p.TypeMeasurementEndRequest, p.MeasurementEndRequest{Generation: generation}, measurementCommandTimeout)
+	message, err := s.devices.Command(ctx, scaleCode, p.TypeMeasurementEndRequest, p.MeasurementEndRequest{Generation: generation}, measurementCommandTimeout)
 	if err != nil || message.Type != p.TypeMeasurementEndResult || json.Unmarshal(message.Payload, &result) != nil {
 		return result, ErrConditions
 	}
@@ -196,13 +196,13 @@ func (s *Service) endMeasurement(ctx context.Context, scale int64, generation st
 
 // cancelMeasurement releases a window that will never be confirmed. Failure is
 // harmless: an already superseded or disconnected window is equally unusable.
-func (s *Service) cancelMeasurement(scale int64, generation, reason string) {
+func (s *Service) cancelMeasurement(scaleCode string, generation, reason string) {
 	if s.devices == nil || generation == "" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), measurementCancelTimeout)
 	defer cancel()
-	_, _ = s.devices.Command(ctx, scale, p.TypeMeasurementCancelRequest, p.MeasurementCancelRequest{Generation: generation, Reason: reason}, measurementCancelTimeout)
+	_, _ = s.devices.Command(ctx, scaleCode, p.TypeMeasurementCancelRequest, p.MeasurementCancelRequest{Generation: generation, Reason: reason}, measurementCancelTimeout)
 }
 
 func (s *Service) InvalidateSample(ctx context.Context, id int64, in SessionInput, actor int64) error {
@@ -211,13 +211,15 @@ func (s *Service) InvalidateSample(ctx context.Context, id int64, in SessionInpu
 		return err
 	}
 	if lookupErr == nil && sample.MeasurementGeneration != "" {
-		s.cancelMeasurement(sample.ScaleID, sample.MeasurementGeneration, "操作员废弃采样")
+		if current, err := s.LocalStatus(ctx); err == nil && current.ScaleCode != "" {
+			s.cancelMeasurement(current.ScaleCode, sample.MeasurementGeneration, "操作员废弃采样")
+		}
 	}
 	return nil
 }
 
 func (s *Service) ConfirmFirst(ctx context.Context, in ConfirmationInput, e audit.Event) (CommandResult, error) {
-	if !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleID < 1 || in.TaskID != nil {
+	if !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleCode == "" || in.TaskID != nil {
 		return CommandResult{}, ErrInvalid
 	}
 	return s.store.ConfirmFirst(ctx, in, e)
@@ -240,7 +242,7 @@ func (s *Service) ActiveTask(ctx context.Context, plate string) (*TaskDetail, er
 func validRequestID(v string) bool { return len(v) >= 8 && len(v) <= 128 && strings.TrimSpace(v) == v }
 
 func (s *Service) ConfirmSecond(ctx context.Context, id int64, in ConfirmationInput, e audit.Event) (CommandResult, error) {
-	if id < 1 || !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleID < 1 || in.Version < 1 {
+	if id < 1 || !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleCode == "" || in.Version < 1 {
 		return CommandResult{}, ErrInvalid
 	}
 	in.TaskID = ptr(id)
@@ -261,8 +263,8 @@ func (s *Service) Tickets(ctx context.Context, q PageQuery) (Page[TicketView], e
 // other. The map is tiny (one scale per site) and entries live for the process.
 var captureLocks sync.Map
 
-func (s *Service) lockCapture(scale int64) func() {
-	value, _ := captureLocks.LoadOrStore(scale, &sync.Mutex{})
+func (s *Service) lockCapture(scaleCode string) func() {
+	value, _ := captureLocks.LoadOrStore(scaleCode, &sync.Mutex{})
 	mutex := value.(*sync.Mutex)
 	mutex.Lock()
 	return mutex.Unlock

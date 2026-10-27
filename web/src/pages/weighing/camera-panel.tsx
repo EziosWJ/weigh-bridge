@@ -129,7 +129,7 @@ function previewMessage(camera: CameraRecord, stream: CameraStream | null, error
   return `视频映射待同步${stream.lastError ? `：${stream.lastError}` : '，同步完成后可预览；直连抓拍不受影响。'}`;
 }
 
-export function DeviceCameraPanel({ scaleId, scenePlate, capture, saved = false, size, onSizeChange }: { scaleId: number; scenePlate?: string; capture?: CaptureSnapshot; saved?: boolean; size: CameraSize; onSizeChange: (size: CameraSize) => void }) {
+export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = false, size, onSizeChange }: { scaleCode: string; scenePlate?: string; capture?: CaptureSnapshot; saved?: boolean; size: CameraSize; onSizeChange: (size: CameraSize) => void }) {
   const device = useWeighingStore(state => state.device);
   const [cameras, setCameras] = useState<CameraRecord[] | null>(null);
   const [cameraError, setCameraError] = useState('');
@@ -137,7 +137,7 @@ export function DeviceCameraPanel({ scaleId, scenePlate, capture, saved = false,
   const [stream, setStream] = useState<CameraStream | null>(null);
   const [streamError, setStreamError] = useState('');
   const [streamLoading, setStreamLoading] = useState(false);
-  const validScale = Number.isSafeInteger(scaleId) && scaleId > 0;
+  const validScale = /^[A-Za-z0-9_.-]{1,40}$/.test(scaleCode);
 
   const loadCameras = useCallback(async () => {
     if (!validScale) { setCameras([]); return; }

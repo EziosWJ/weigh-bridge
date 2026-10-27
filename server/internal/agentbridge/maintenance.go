@@ -13,15 +13,15 @@ var ErrMaintenanceUnsupported = errors.New("Agent 尚未提供远程维护能力
 
 type MaintenanceState = p.MaintenanceState
 
-func (h *Hub) Maintenance(ctx context.Context, scale int64, in p.MaintenanceRequest) (p.MaintenanceResponse, error) {
+func (h *Hub) Maintenance(ctx context.Context, scaleCode string, in p.MaintenanceRequest) (p.MaintenanceResponse, error) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.Maintenance(ctx, scale, in)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.Maintenance(ctx, scaleCode, in)
 		}
 		return p.MaintenanceResponse{}, ErrUnavailable
 	}
 	h.mu.Lock()
-	if scale != h.cfg.ScaleID || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
+	if scaleCode != h.cfg.ScaleCode || h.conn == nil || h.conn.kicking || time.Since(h.conn.seen) > 15*time.Second {
 		h.mu.Unlock()
 		return p.MaintenanceResponse{}, ErrUnavailable
 	}
@@ -58,10 +58,10 @@ func (h *Hub) Maintenance(ctx context.Context, scale int64, in p.MaintenanceRequ
 	}
 	return result, nil
 }
-func (h *Hub) MaintenanceState(scale int64) (MaintenanceState, error) {
+func (h *Hub) MaintenanceState(scaleCode string) (MaintenanceState, error) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			return child.MaintenanceState(scale)
+		if child := h.forScale(scaleCode); child != nil {
+			return child.MaintenanceState(scaleCode)
 		}
 		return MaintenanceState{}, ErrUnavailable
 	}
@@ -75,10 +75,10 @@ func (h *Hub) MaintenanceState(scale int64) (MaintenanceState, error) {
 	}
 	return *h.maintenance, nil
 }
-func (h *Hub) InvalidateSamples(scale int64) {
+func (h *Hub) InvalidateSamples(scaleCode string) {
 	if h.children != nil {
-		if child := h.forScale(scale); child != nil {
-			child.InvalidateSamples(scale)
+		if child := h.forScale(scaleCode); child != nil {
+			child.InvalidateSamples(scaleCode)
 		}
 		return
 	}

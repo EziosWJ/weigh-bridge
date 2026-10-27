@@ -1,8 +1,39 @@
 # 当前实现、验证与剩余工作
 
+## 2026-10-27 未决打印不再阻止修改本厂编码
+
+- 本厂身份保存不再因未关闭的打印尝试拒绝改码；未知打印记录原样保留，不自动重发。专项集成先复现原报错，修复后 `task db:check`（后端检查和隔离 PostgreSQL 全量集成）通过，覆盖改码、保留未知记录和重新打印。未连接业务数据库。
+
+## 2026-10-27 本厂身份去关联
+
+- 用户确认本次从空库初始化，不导入旧业务、授权、设备配置或旧打印账本；未操作已有业务数据库。厂区及地磅编码可在「本厂身份」维护，配置保存在系统配置表，历史单据和称重依据保留生成时快照，本地业务和操作授权不按可变编码关联。
+- 改码后未完成任务可续办，在线 Agent 重连，编码改回时沿用对应单号水位；打印账本按安装实例隔离，协议 v4 拒绝旧 Agent；未决打印保留未知状态，不阻止修改编码，也不自动重放。详细实施与验证见[实施记录](work-in-progress/local-identity-decoupling.md)。云端关联流程及真实设备现场验收尚未完成。
+- 验证：`task db:check`（含后端检查及隔离 PostgreSQL 全量集成）、`task build:check`、前端 lint／build、`test:local-management`、身份配置和真实 API 称重浏览器回归通过；浏览器回归并行执行时一次模拟重量切换后重采取到旧值，单独复跑通过。未使用真实设备或业务库。
+
+## 2026-10-27 维护入口拆分（历史记录）
+
+- 本厂身份、流水号水位、过磅单标题从配置管理拆成系统管理下独立页面，旧本厂配置地址转向本厂身份；标题仍存于系统配置表。本厂身份的编码和名称写入受保护的系统配置项，并在同一事务中同步业务关联表；流水号仍使用现有业务表和水位文件。升级需显式执行 seed 迁移。
+- `task db:check`（隔离 PostgreSQL）、身份初始化和名称更新专项集成、前端 lint、build 通过；`test:local-management` 已通过拆分页面的身份与标题部分，后续设备维护窄屏 toast 断言失败，整套回归未通过。未对业务数据库执行迁移。
+
+- 本厂与地磅编码可在独立页面维护，历史单号与业务快照保留；本地身份去关联改造及验证进度见[实施记录](work-in-progress/local-identity-decoupling.md)，目标与边界见[总规格](requirements/standalone-site-spec.md#本厂身份初始化与管理)。本次不要求真实旧库升级；设备协议协同部署待现场演练。
+- 新过磅单号采用厂区编码、出单日期和至少四位当日流水号，超出后自动扩展，已实现并通过软件验证；恢复后流水号倒退的正式处理流程仍暂缓决策，当前实现以库内最大单号、数据目录高水位和管理员水位设置只升不降兜底。详见[业务规格](requirements/weighing-business-spec.md)与[交付记录](requirements/code-identity-delivery.md)。
+- 已确认资料分两阶段：当前单机由本厂维护；接入云端后由总部维护、统一下发，本地不再维护。单机资料由人工分析合并，具体切换操作待确定；云端与同步尚未实现。
+- 已确认单机阶段内置操作员角色默认有资料维护权限；当前默认角色仍无此权限，调整尚未实施或验证。
+- 已确认云端接收已出过磅单及约定的重量和联系信息用于查询统计，待回磅任务、照片及打印记录留在本厂；部分同步实现细节待设计，云端同步尚未实现。
+- 已确认单据变化与待上传记录同事务保存，云端确认后标记完成，断网重试、防重及同单据顺序处理；同步尚未实现或验证，恢复旧备份后的倒退处理仍暂缓。
+- 云端资料和单据同步已确认首批正式使用时接入、首次完整同步、全量资料拉取和原单作废后重开上传的顺序；各厂尚未使用，无需本次历史导入。详见[业务规格](requirements/weighing-business-spec.md#未来云端过磅单查询与同步第一版基准)和[厂云同步契约](requirements/cloud-sync-contract.md)；具体接口、凭据和重试参数待设计，云端同步尚未实现或验证。
+
 - 打印交互调整：已有打印尝试后统一填写原因重新打印，不再要求人工核实结果；保留未知请求查询、防自动重发、权限和打印记录。已完成前后端调整，后端常规检查、前端 lint 与构建通过；PostgreSQL 称重集成测试在打印场景之前因物料分类初始数据断言失败（期望空表，实际 6 条），打印集成与浏览器场景尚待验证。
 
 更新：2026-10-26 成功采集后冻结称重依据、三等分穿孔纸票面；DC-09 联合回归记录于 2026-10-25。本文区分代码、软件验证、隔离模拟、部署演练和现场验收；[总规格](requirements/standalone-site-spec.md)表达最终目标，本文表达已知完成程度。详细代码范围与命令结果见[设备职责改造交付记录](requirements/local-device-maintenance-delivery.md)。
+
+## 2026-10-27 本厂编码身份与过磅单号
+
+- 按 [ADR 0033](adr/0033-code-identity-and-ticket-number.md)，厂区编码（安装时填写，默认地磅编码 `WB01`）取代数字厂区／地磅 ID，成为本地数据库、接口、授权与设备关联的唯一业务身份；新增 schema migration `00021_code_identity.sql`，就地回填编码后删除数字列并重建主键、外键、唯一约束与索引，保留业务行、历史单号、图片、授权、绑定与启停状态。取消 Server 启动自动建立身份：未配置时仍可启动登录，但不办理正式业务、不接入 Agent；配置管理提供首次填写编码、名称维护、流水号水位入口。过磅单号改为“厂区编码-北京时间日期-当日流水号”（至少四位，超出自动扩展），`wb_number_sequence` 原子分配；任务号同样按编码、日期与流水号生成。恢复防重复使用库内最大单号兜底、数据目录高水位文件与只升不降的水位设置，正式恢复流程仍暂缓决策。
+- 代码范围：`server/internal/{localsite,weighing,agentbridge,agentproto,agentprinter,agentconfig,agentmaintenance,agentmock}` 与 `server/cmd`、`server/migrations`、`web/src`、`web/tests`、`protocol/v1.md`；详细清单与命令结果见[交付记录](requirements/code-identity-delivery.md)。
+- 软件验证：`task backend:check`、`task db:check`（完整 PostgreSQL 集成 69.2s，0 失败）、`task frontend:lint`、`task frontend:build`、`task backend:swagger` 通过；新增 `TestPostgresCodeIdentityMigration*` 覆盖旧 schema + 业务数据升级、预 seed 旧库升级、旧计数器保留与缺身份负例，`TestPostgresIdentityEntryAcceptsSystemConfigPermission` 覆盖仅 `system:config` 角色的身份与水位入口。浏览器夹具 `business-layout`、`dashboard`、`operator-navigation`、`menu-order`、`local-management`、`weighing:camera-live`、`weighing:agent-capture` 通过；真实 API 冒烟 `site-configuration-smoke.mjs` 与 `weighing-backend-smoke.mjs` 通过（含打印回报、恢复、双方向称重与真实账号接管）。
+- 评审修复（2026-10-27）：统一身份与水位接口权限（接受 `system:config` 或 `weighing:site:manage`）；名称保存原样保留厂区启停状态；历史单据厂区列改用出单时保存的 `site_name` 快照，任务／原始记录显示编码；流水号水位文件改为临时文件加原子替换并 fsync，损坏或为空时拒绝发号，水位取值限定大于 0 且不超过 BIGINT 安全上限；图片编号按结构解析、支持含下划线的地磅编码；恢复 Agent 维护状态文件名回归；协议版本提升并在 hello 阶段拒绝旧版本。修复后 `task backend:check`、完整 PostgreSQL 集成（69.2s，0 失败）、前端 lint／build、`site-configuration-smoke.mjs`、`weighing-backend-smoke.mjs` 与全部相关浏览器夹具已复跑通过。
+- 边界：未在真实旧业务库、真实设备与真实 MediaMTX 上演练；协议提升到 v3，旧 Agent 被明确拒绝，Server／Agent／mock 须协同升级（`agent.hello.ack` 改为 `siteCode`／`scaleCode`）；整体恢复数据目录后仍须人工核实已发单号。业务规格同期新增的资料分阶段、云端同步与操作员资料权限等已确认事项不在本次范围。
 
 ## 2026-10-26 成功采集后冻结称重依据
 

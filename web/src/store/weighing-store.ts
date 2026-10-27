@@ -34,8 +34,8 @@ interface Store {
   dispatch: (command: WeighingCommand, expected?: WeighingState) => Promise<void>;
 }
 const isWorkbench=location.pathname==='/weighing/workbench';
-let selectedScaleId=Number(new URLSearchParams(location.search).get('scaleId'))||0;
-export function selectedScale(capabilities:WeighingCapabilities|null){return capabilities?.scales.find(s=>s.id===selectedScaleId&&s.enabled===1);}
+let selectedScaleCode=new URLSearchParams(location.search).get('scale')||'';
+export function selectedScale(capabilities:WeighingCapabilities|null){return capabilities?.scales.find(s=>s.code===selectedScaleCode&&s.enabled===1);}
 let lease: WireSession | null = null;
 let sample: WireSample | null = null;
 let pendingRequest: PendingRequest | null = null;
@@ -43,7 +43,7 @@ let heartbeat: ReturnType<typeof setInterval> | null = null;
 let refreshPromise: Promise<void> | null = null;
 let refreshToken: string | null = null;
 let actorId = 0;
-const uiKey = () => `${WEIGHING_STORAGE_KEY}:${actorId}:${selectedScaleId}:${clientId}`;
+const uiKey = () => `${WEIGHING_STORAGE_KEY}:${actorId}:${selectedScaleCode}:${clientId}`;
 const checks = { plate: true, business: true, weight: true, evidence: true, fullyOnScale: true };
 function businessInput(value: TaskInput) { return { ...value, materialId: Number(value.materialId), partyId: Number(value.partyId), carrierId: value.carrierId ? Number(value.carrierId) : null }; }
 function sessionInput() { return { clientId, sessionToken: lease?.sessionToken ?? '' }; }
@@ -70,20 +70,45 @@ function restoreUI() {
   } catch { useWeighingStore.setState({ storageError: '本地工作草稿读取失败，未导入任何旧演示业务记录。' }); }
 }
 async function release(original?: PendingRequest) {
-  const fallback = original && typeof original.body.scaleId === 'number' && typeof original.body.sessionToken === 'string' ? { scaleId: original.body.scaleId, sessionToken: original.body.sessionToken } : null;
+  const fallback = original && typeof original.body.scaleCode === 'string' && typeof original.body.sessionToken === 'string' ? { scaleCode: original.body.scaleCode, sessionToken: original.body.sessionToken } : null;
   const current = lease ?? fallback; lease = null;
   if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
   updateData({ owner: null });
   if (current?.sessionToken) {
-    try { await workflowApi.post(`/scales/${current.scaleId}/session/release`, { clientId, sessionToken: current.sessionToken }); }
+    try { await workflowApi.post(`/scales/${current.scaleCode}/session/release`, { clientId, sessionToken: current.sessionToken }); }
     catch { /* The bounded server lease expires without changing committed business data. */ }
   }
 }
+// The session belongs to the sole local device, not the scale-code snapshot.
+// Refreshing the identity may renew the same lease but never replays a business
+// submission. A failed check leaves a frozen sample available for retry.
+async function synchronizeLocalIdentity(): Promise<boolean> {
+  const currentLease = lease;
+  const latest = await workflowApi.get<WeighingCapabilities>('/capabilities');
+  const currentScale = latest.scales.find(item => item.code === latest.localScaleCode && item.enabled === 1);
+  if (latest.userId !== actorId || !latest.configured || !currentScale?.canOperate) {
+    throw new Error('本厂地磅未就绪或当前账号无操作权限，请联系管理员检查。');
+  }
+  const changed = selectedScaleCode !== currentScale.code || (!!currentLease && currentLease.scaleCode !== currentScale.code);
+  if (changed && currentLease?.sessionToken) {
+    const renewed = await workflowApi.post<WireSession>(`/scales/${encodeURIComponent(currentScale.code)}/session/renew`, { clientId, sessionToken: currentLease.sessionToken });
+    if (renewed.generation !== currentLease.generation || renewed.holderUserId !== actorId || renewed.clientId !== clientId) {
+      throw new Error('操作会话已变化，请核实当前操作权。');
+    }
+    if (lease !== currentLease) throw new Error('操作会话已变化，请核实当前操作权。');
+    lease = { ...renewed, sessionToken: currentLease.sessionToken };
+  }
+  selectedScaleCode = currentScale.code;
+  useWeighingStore.setState({ capabilities: latest });
+  if (changed) { persist(); useWeighingStore.setState({ syncNotice: '本厂身份已更新，已保留当前操作会话与采样。' }); }
+  return changed;
+}
+
 async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') {
   const state = useWeighingStore.getState();
   const scale = selectedScale(state.capabilities);
   if (!scale?.canOperate) throw new Error('请从顶部称重工作台入口进入已授权地磅');
-  try { lease = await workflowApi.post<WireSession>(`/scales/${scale.id}/session/${action}`, { clientId, reason }); }
+  try { lease = await workflowApi.post<WireSession>(`/scales/${scale.code}/session/${action}`, { clientId, reason }); }
   catch (error) { updateData({ owner: 'other' }); throw error; }
   updateData({ owner: 'self' });
   if (heartbeat) clearInterval(heartbeat);
@@ -91,9 +116,13 @@ async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') 
   heartbeat = setInterval(() => {
     if (!lease?.sessionToken) return;
     const current = lease;
-    void workflowApi.post<WireSession>(`/scales/${current.scaleId}/session/renew`, sessionInput()).then(next => {
+    void workflowApi.post<WireSession>(`/scales/${current.scaleCode}/session/renew`, sessionInput()).then(next => {
       if (lease === current) lease = { ...next, sessionToken: current.sessionToken };
-    }).catch(() => { if (lease === current) { lease = null; if (heartbeat) clearInterval(heartbeat); heartbeat = null; clearSample(); updateData({ owner: null }); useWeighingStore.setState({ syncNotice: '操作会话已失效，请重新取得操作权并采集。' }); } });
+    }).catch(async () => {
+      if (lease !== current) return;
+      try { if (await synchronizeLocalIdentity()) return; } catch { /* Normal session failure handling follows. */ }
+      if (lease === current) { lease = null; if (heartbeat) clearInterval(heartbeat); heartbeat = null; clearSample(); updateData({ owner: null }); useWeighingStore.setState({ syncNotice: '操作会话已失效，请重新取得操作权并采集。' }); }
+    });
   }, renewalPeriod);
 }
 async function ensureLease() { if (!lease?.sessionToken || !lease.expiresAt || Date.parse(lease.expiresAt) <= Date.now()) await acquire(); }
@@ -137,8 +166,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
   loadTask: async id => {
     const token = useAuthStore.getState().token;
     const value = taskView(await workflowApi.task(id));
- if(isWorkbench&&value.scaleId!==selectedScaleId) throw new Error('该任务不属于当前地磅，请核对本厂任务与地磅归属');
- if(!isWorkbench) selectedScaleId=value.scaleId??0;
+ if(!isWorkbench) selectedScaleCode=get().capabilities?.localScaleCode || selectedScaleCode;
     const versions: WireTicket[] = [];
     for (let page = 1;; page++) {
       const batch = await workflowApi.get<ApiPageResult<WireTicket>>(`/tickets?taskId=${id}&page=${page}&pageSize=500`);
@@ -161,7 +189,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
   },
   locate: async plate => {
     const token = useAuthStore.getState().token;
-    const wire = await workflowApi.active(plate,selectedScaleId||undefined);
+    const wire = await workflowApi.active(plate,selectedScaleCode||undefined);
     if (!wire) return undefined;
     const value = taskView(wire);
     if (useAuthStore.getState().token === token) set(s => ({ data: { ...s.data, tasks: [...s.data.tasks.filter(t => t.id !== value.id), value] } }));
@@ -181,6 +209,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
         if (useAuthStore.getState().token !== token) return;
         const firstLoad = !get().ready;
         actorId = masters.capabilities.userId;
+        if (!lease && masters.capabilities.localScaleCode) selectedScaleCode = masters.capabilities.localScaleCode;
         const role = masters.capabilities.permissionCodes.includes('weighing:confirm') ? 'operator' : 'admin';
         set(s => ({ capabilities: masters.capabilities, data: { ...s.data, ...masters.data, config: { ...s.data.config, role } } }));
         if (firstLoad) restoreUI();
@@ -195,7 +224,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
           if (!plateError(get().data.draft.plate)) await get().locate(get().data.draft.plate);
           const scale=selectedScale(masters.capabilities);
           if(scale){
-            const current=await workflowApi.get<WireSession>(`/scales/${scale.id}/session`);
+            const current=await workflowApi.get<WireSession>(`/scales/${scale.code}/session`);
             const active=!!current.holderUserId&&!!current.expiresAt&&Date.parse(current.expiresAt)>Date.now();
             const own=active&&current.holderUserId===actorId&&current.clientId===clientId;
             if(lease&&(!own||current.generation!==lease.generation)){lease=null;if(heartbeat)clearInterval(heartbeat);heartbeat=null;clearSample();}
@@ -247,22 +276,24 @@ export const useWeighingStore = create<Store>((set, get) => ({
         case 'capture': {
           await ensureLease();
           const target = command.stage ? [...(data.tasks.find(t => t.id === command.taskId)?.records ?? [])].reverse().find(r => r.stage === command.stage) : undefined;
-          const value = await workflowApi.post<WireSample>('/samples', { scaleId: lease!.scaleId, ...sessionInput(), taskId: command.taskId ? Number(command.taskId) : null, targetRecordId: target ? Number(target.id) : null, plateEvidence: command.plateEvidence ?? null, business: businessInput(data.draft) });
+          const value = await workflowApi.post<WireSample>('/samples', { scaleCode: lease!.scaleCode, ...sessionInput(), taskId: command.taskId ? Number(command.taskId) : null, targetRecordId: target ? Number(target.id) : null, plateEvidence: command.plateEvidence ?? null, business: businessInput(data.draft) });
           sample = value;
           set({ syncNotice: '' });
           updateData({ sampleReady: true, capture: { ...value.evidence, id: String(value.id), stage: value.stage, weight: Number(value.weight), plateEvidence: value.plateEvidence } });
           break;
         }
         case 'firstWeigh': {
+          await synchronizeLocalIdentity();
           if (!command.checked || !sample || !lease?.sessionToken) throw new Error('请重新采集并完成人工核对');
-          const body = { scaleId: lease.scaleId, ...sessionInput(), business: businessInput(command.input), sampleId: sample.id, requestId: command.requestId, checks, reviewedVersions: { material: data.materials.find(m => m.id === command.input.materialId)?.version ?? 0, party: data.parties.find(p => p.id === command.input.partyId)?.version ?? 0, carrier: data.parties.find(p => p.id === command.input.carrierId)?.version ?? 0 } };
+          const body = { scaleCode: lease.scaleCode, ...sessionInput(), business: businessInput(command.input), sampleId: sample.id, requestId: command.requestId, checks, reviewedVersions: { material: data.materials.find(m => m.id === command.input.materialId)?.version ?? 0, party: data.parties.find(p => p.id === command.input.partyId)?.version ?? 0, carrier: data.parties.find(p => p.id === command.input.carrierId)?.version ?? 0 } };
           await send({ actorId, path: '/tasks/first-confirmation', body, requestId: command.requestId, stage: 'first' }); break;
         }
         case 'confirm': {
+          await synchronizeLocalIdentity();
           if (!command.checked || !sample || !lease?.sessionToken) throw new Error('请重新采集并完成人工核对');
           const current = data.tasks.find(t => t.id === command.taskId);
           const requestId = crypto.randomUUID();
-          const body = { scaleId: lease.scaleId, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}) };
+          const body = { scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/second-confirmation`, body, requestId, taskId: command.taskId, stage: 'second' }); break;
         }
         case 'correctTask':
@@ -287,12 +318,13 @@ export const useWeighingStore = create<Store>((set, get) => ({
           await send({ actorId, path: `/tickets/${command.ticketId}/reopen`, body, requestId, taskId: current.id, stage: 'second', operation: 'reopen' }); break;
         }
         case 'reweigh': {
+          await synchronizeLocalIdentity();
           const current = data.tasks.find(t => t.id === command.taskId);
           if (!current || !sample || !lease?.sessionToken || !command.checked || command.captureId !== String(sample.id)) throw new Error('请重新采集并人工核对目标称重');
           const target = [...current.records].reverse().find(r => r.stage === command.stage);
           if (!target) throw new Error('未找到当前有效的目标称重');
           const requestId = crypto.randomUUID();
-          const body = { requestId, version: current.version, scaleId: lease.scaleId, ...sessionInput(), sampleId: sample.id, targetRecordId: Number(target.id), checks, sameLoadConfirmed: command.sameLoad, otherBasisValid: command.otherValid ?? false, reason: command.reason };
+          const body = { requestId, version: current.version, scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, targetRecordId: Number(target.id), checks, sameLoadConfirmed: command.sameLoad, otherBasisValid: command.otherValid ?? false, reason: command.reason };
           await send({ actorId, path: `/tasks/${command.taskId}/reweighs`, body, requestId, taskId: current.id, stage: command.stage ?? 'first', operation: 'reweigh' }); break;
         }
         case 'previewPrint':
@@ -342,7 +374,7 @@ setInterval(() => {
  const scale = selectedScale(state.capabilities);
  if (!token || !scale || pollingDevice || !state.capabilities?.permissionCodes.includes('weighing:read')) return;
  pollingDevice = true;
- void workflowApi.get<DeviceState>(`/scales/${scale.id}/device`).then(device => {
+ void workflowApi.get<DeviceState>(`/scales/${scale.code}/device`).then(device => {
   if (useAuthStore.getState().token !== token) return;
   const previous = useWeighingStore.getState().device;
   const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.capturePolicyRevision !== device.capturePolicyRevision || previous.captureRequired !== device.captureRequired || previous.captureBlockedReason !== device.captureBlockedReason;

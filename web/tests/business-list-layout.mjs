@@ -14,15 +14,15 @@ let browser;
 const deadline = setTimeout(() => { void browser?.close(); vite.kill('SIGTERM'); }, 90_000);
 const user = {id: 1, username: 'admin', nickname: '管理员', roles: []};
 const capabilities = {
-  localSiteId: 1, configured: true, initialized: true,
+  localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true,
   userId: 1, permissionCodes: ['weighing:read', 'weighing:confirm', 'weighing:export', 'weighing:print', 'weighing:master:read', 'weighing:master:write', 'weighing:site:manage', 'weighing:site:export'],
-  sites: [{id: 1, name: '一厂区', code: 'SITE01', enabled: 1, canOperate: true}],
-  scales: [{id: 1, name: '一号地磅', code: 'SCALE01', siteId: 1, siteName: '一厂区', enabled: 1, canOperate: true}],
+  sites: [{code: 'F001', name: '一厂区', enabled: 1, canOperate: true}],
+  scales: [{code: 'WB01', siteCode: 'F001', name: '一号地磅', siteName: '一厂区', enabled: 1, canOperate: true}],
 };
 const rows = Array.from({length: 12}, (_, index) => ({
-  id: index + 1, siteId: 1, scaleId: 1, version: 1, taskId: index + 1,
-  taskNo: `TASK202610220000${String(index + 1).padStart(4, '0')}`,
-  ticketNo: `WB202610220000${String(index + 1).padStart(4, '0')}`,
+  id: index + 1, siteCode: 'F001', siteName: '一厂区', scaleCode: 'WB01', version: 1, taskId: index + 1,
+  taskNo: `RW-F001-20261022-${String(index + 1).padStart(4, '0')}`,
+  ticketNo: `F001-20261022-${String(index + 1).padStart(4, '0')}`,
   business: {plate: '川A12345', direction: 'inbound', materialName: '酿酒高粱', materialSpec: '优级', materialCode: 'GL001', partyName: '四川省粮食供应有限公司'},
   firstWeight: '35.125', secondWeight: '12.5', originalGross: '35.125', originalTare: '12.5', originalNet: '22.625',
   finalGross: '35.125', finalTare: '12.5', finalNet: '22.625', currentTicketId: index + 1,
@@ -81,7 +81,7 @@ try {
       const region = page.getByRole('region', {name: label, exact: true});
       await region.locator('tbody tr').first().waitFor();
       const workbench = page.locator('header').getByRole('link', {name: '称重工作台', exact: true});
-      assert.equal(await workbench.getAttribute('href'), '/weighing/workbench?scaleId=1');
+      assert.equal(await workbench.getAttribute('href'), '/weighing/workbench?scale=WB01');
       const bellBox = await page.getByRole('button', {name: '站内通知', exact: true}).boundingBox();
       const workbenchBox = await workbench.boundingBox();
       assert.ok(workbenchBox.x >= bellBox.x + bellBox.width, 'workbench entry is right of the notification bell');
@@ -107,8 +107,8 @@ try {
           const popupPromise = page.waitForEvent('popup');
           await workbench.click();
           const popup = await popupPromise;
-          await popup.waitForURL('**/weighing/workbench?scaleId=1');
-          assert.equal(await popup.evaluate(() => window.name), 'weighbridge-workbench-1');
+          await popup.waitForURL('**/weighing/workbench?scale=WB01');
+          assert.equal(await popup.evaluate(() => window.name), 'weighbridge-workbench-WB01');
           await page.bringToFront();
           await workbench.click();
           assert.equal(context.pages().length, 2, 'reopening reuses the scale workbench window');

@@ -76,11 +76,10 @@ type Contact struct {
 func (Contact) TableName() string { return "wb_party_contact" }
 
 type Scale struct {
-	SiteID     int64  `json:"siteId"`
+	SiteCode   string `json:"siteCode" gorm:"column:site_code;primaryKey"`
+	Code       string `json:"code" gorm:"primaryKey"`
 	SiteName   string `json:"siteName" gorm:"->"`
 	CanOperate bool   `json:"canOperate" gorm:"-"`
-	ID         int64  `json:"id"`
-	Code       string `json:"code"`
 	Name       string `json:"name"`
 	Enabled    int    `json:"enabled"`
 }
@@ -100,7 +99,7 @@ type PageQuery struct {
 	Keyword, Role, Nature       string
 	Enabled                     *int
 	CategoryID                  *int64
-	SiteID                      *int64
+	SiteCode                    *string
 	TaskID                      *int64
 }
 type CategoryInput struct {
@@ -137,15 +136,18 @@ type Store interface {
 	SiteConfigurations(context.Context) ([]SiteConfiguration, error)
 	AgentSettings(context.Context) (AgentSetting, error)
 	SaveAgentSettings(context.Context, string, audit.Event) error
-	SaveSiteConfiguration(context.Context, int64, SiteConfigurationInput, audit.Event, func(int64) bool) (SiteConfiguration, error)
-	ExportAgentConnection(context.Context, int64, string, audit.Event) (agentconfig.Connection, error)
+	SaveSiteConfiguration(context.Context, SiteConfigurationInput, audit.Event, func(string) bool) (SiteConfiguration, error)
+	ExportAgentConnection(context.Context, string, audit.Event) (agentconfig.Connection, error)
 
 	RecordAgentKick(context.Context, audit.Event) error
 	Sites(context.Context, int64) ([]Site, error)
 	SiteOptions(context.Context) ([]Site, error)
 	SiteGrants(context.Context, int64) ([]SiteGrant, error)
 	SaveSiteGrants(context.Context, int64, []SiteGrant, audit.Event) error
-	ResourceSite(context.Context, string, int64) (int64, error)
+	ResourceSite(context.Context, string, int64) (string, error)
+	ResourceScaleSite(context.Context, string) (string, error)
+	ListTicketSequences(context.Context) ([]DailySequence, error)
+	SetTicketWatermark(context.Context, string, int64, audit.Event) (DailySequence, error)
 
 	TaskEvents(context.Context, int64, PageQuery) (Page[BusinessEvent], error)
 	TasksAll(context.Context, PageQuery) ([]Task, error)
@@ -171,8 +173,8 @@ type Store interface {
 	Tasks(context.Context, PageQuery) (Page[Task], error)
 	Tickets(context.Context, PageQuery) (Page[TicketView], error)
 
-	Session(context.Context, int64) (ScaleSession, error)
-	ChangeSession(context.Context, int64, string, SessionInput, audit.Event) (SessionResult, error)
+	Session(context.Context, string) (ScaleSession, error)
+	ChangeSession(context.Context, string, string, SessionInput, audit.Event) (SessionResult, error)
 	Capture(context.Context, CaptureInput, audit.Event) (Sample, error)
 	Sample(context.Context, int64) (Sample, error)
 	InvalidateSample(context.Context, int64, SessionInput, int64) error

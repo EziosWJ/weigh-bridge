@@ -39,9 +39,9 @@ func (r *Remote) CameraConfig() (Config, error) {
 	if err != nil {
 		return cfg, err
 	}
-	state, err := r.hub.MaintenanceState(cfg.ScaleID)
+	state, err := r.hub.MaintenanceState(cfg.ScaleCode)
 	if errors.Is(err, agentbridge.ErrMaintenanceUnsupported) {
-		return Config{ScaleID: cfg.ScaleID}, nil
+		return Config{ScaleCode: cfg.ScaleCode}, nil
 	}
 	if err != nil {
 		return cfg, err
@@ -51,9 +51,9 @@ func (r *Remote) CameraConfig() (Config, error) {
 	}
 	return state.Config, nil
 }
-func (r *Remote) CameraAvailable(scale int64) bool {
+func (r *Remote) CameraAvailable(scaleCode string) bool {
 	cfg, err := r.CameraConfig()
-	if err != nil || cfg.ScaleID != scale {
+	if err != nil || cfg.ScaleCode != scaleCode {
 		return false
 	}
 	return cfg.CameraMode == "" || cfg.CameraEnabled
@@ -100,7 +100,7 @@ func (r *Remote) forward(recorder audit.Recorder) gin.HandlerFunc {
 		}
 		if c.Request.Method == "PUT" && path == "/config" {
 			var candidate Config
-			if json.Unmarshal(body, &candidate) != nil || candidate.ScaleID != cfg.ScaleID || candidate.AgentID != cfg.AgentID || (candidate.SiteID != 0 && candidate.SiteID != cfg.SiteID) || (candidate.AgentKey != "" && candidate.AgentKey != cfg.AgentKey) {
+			if json.Unmarshal(body, &candidate) != nil || candidate.ScaleCode != cfg.ScaleCode || candidate.AgentID != cfg.AgentID || (candidate.AgentKey != "" && candidate.AgentKey != cfg.AgentKey) {
 				ph.WriteError(c, 400, 400, "不能通过设备参数维护更换 Agent 身份或归属", nil)
 				return
 			}
@@ -113,7 +113,7 @@ func (r *Remote) forward(recorder audit.Recorder) gin.HandlerFunc {
 				return
 			}
 			defer release()
-			r.hub.InvalidateSamples(cfg.ScaleID)
+			r.hub.InvalidateSamples(cfg.ScaleCode)
 		}
 		actor, _ := ph.UserIDFromContext(c.Request.Context())
 		requestMeta, _ := ph.RequestMetaFromContext(c.Request.Context())
@@ -125,10 +125,10 @@ func (r *Remote) forward(recorder audit.Recorder) gin.HandlerFunc {
 			commandContext, cancel = context.WithTimeout(context.WithoutCancel(commandContext), 40*time.Second)
 			defer cancel()
 		}
-		result, err := r.hub.Maintenance(commandContext, cfg.ScaleID, p.MaintenanceRequest{Method: c.Request.Method, Path: path, Query: c.Request.URL.RawQuery, Body: body, ActorID: actor, ClientIP: requestMeta.ClientIP})
+		result, err := r.hub.Maintenance(commandContext, cfg.ScaleCode, p.MaintenanceRequest{Method: c.Request.Method, Path: path, Query: c.Request.URL.RawQuery, Body: body, ActorID: actor, ClientIP: requestMeta.ClientIP})
 		if err != nil {
 			if c.Request.Method == "GET" && path == "/status" {
-				c.JSON(200, map[string]any{"maintenance": "运行中", "agent": "离线", "agentKnown": true, "agentProcessOnline": r.hub.Connected(cfg.ScaleID), "maintenanceAvailable": false, "remote": true, "lastError": err.Error()})
+				c.JSON(200, map[string]any{"maintenance": "运行中", "agent": "离线", "agentKnown": true, "agentProcessOnline": r.hub.Connected(cfg.ScaleCode), "maintenanceAvailable": false, "remote": true, "lastError": err.Error()})
 				return
 			}
 			ph.WriteError(c, 503, 503, err.Error(), nil)
@@ -136,7 +136,7 @@ func (r *Remote) forward(recorder audit.Recorder) gin.HandlerFunc {
 		}
 		c.Header("Cache-Control", "no-store")
 		if c.Request.Method == "GET" && path == "/config" && result.Status < 400 && len(result.JSON) > 0 {
-			result.JSON = r.decorateConfig(c.Request.Context(), cfg.ScaleID, result.JSON)
+			result.JSON = r.decorateConfig(c.Request.Context(), cfg.ScaleCode, result.JSON)
 		}
 		if path == "/status" && len(result.JSON) > 0 {
 			var state map[string]any
