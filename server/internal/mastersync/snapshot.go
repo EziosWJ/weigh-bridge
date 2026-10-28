@@ -48,7 +48,6 @@ type Party struct {
 type Snapshot struct {
 	SchemaVersion int        `json:"schemaVersion"`
 	SiteCode      string     `json:"siteCode"`
-	ScaleCodes    []string   `json:"scaleCodes"`
 	Categories    []Category `json:"categories"`
 	Materials     []Material `json:"materials"`
 	Parties       []Party    `json:"parties"`
@@ -56,7 +55,7 @@ type Snapshot struct {
 
 // Decode rejects missing and null fields as well as invalid relationships. This
 // distinction is necessary because JSON zero values otherwise hide partial replies.
-func Decode(body []byte, site, scale string) (Snapshot, error) {
+func Decode(body []byte, site string) (Snapshot, error) {
 	var empty Snapshot
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(body, &envelope); err != nil {
@@ -77,7 +76,7 @@ func Decode(body []byte, site, scale string) (Snapshot, error) {
 	if json.Unmarshal(envelope["data"], &obj) != nil {
 		return empty, errors.New("资料格式错误")
 	}
-	if err := fields(obj, "schemaVersion", "siteCode", "scaleCodes", "categories", "materials", "parties"); err != nil {
+	if err := fields(obj, "schemaVersion", "siteCode", "categories", "materials", "parties"); err != nil {
 		return empty, err
 	}
 	for key, required := range map[string][]string{
@@ -110,23 +109,11 @@ func Decode(body []byte, site, scale string) (Snapshot, error) {
 	if err := json.Unmarshal(envelope["data"], &out); err != nil {
 		return empty, errors.New("资料字段类型错误")
 	}
-	if out.SchemaVersion != 1 {
+	if out.SchemaVersion != 2 {
 		return empty, errors.New("资料版本不兼容")
 	}
-	if site == "" || scale == "" || out.SiteCode != site || out.ScaleCodes == nil {
-		return empty, errors.New("厂区或地磅身份不匹配")
-	}
-	scales := map[string]bool{}
-	found := false
-	for _, v := range out.ScaleCodes {
-		if strings.TrimSpace(v) == "" || scales[v] {
-			return empty, errors.New("地磅编码无效或重复")
-		}
-		scales[v] = true
-		found = found || v == scale
-	}
-	if !found {
-		return empty, errors.New("厂区或地磅身份不匹配")
+	if site == "" || out.SiteCode != site {
+		return empty, errors.New("厂区编码不匹配")
 	}
 	categories := map[string]bool{}
 	materials := map[string]bool{}

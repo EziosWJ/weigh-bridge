@@ -15,7 +15,7 @@ import (
 
 // SyncMaster serializes automatic and manual runs through the same path.
 // The configuration is supplied by the caller and is never written to logs.
-func (s *Service) SyncMaster(ctx context.Context, address, credential, trigger string) error {
+func (s *Service) SyncMaster(ctx context.Context, address, trigger string) error {
 	if trigger != "manual" && trigger != "automatic" {
 		return ErrInvalid
 	}
@@ -29,7 +29,7 @@ func (s *Service) SyncMaster(ctx context.Context, address, credential, trigger s
 	fetchReason := ""
 	if err == nil {
 		var snapshot mastersync.Snapshot
-		snapshot, err = mastersync.Fetch(ctx, address, credential, identity.SiteCode, identity.ScaleCode)
+		snapshot, err = mastersync.Fetch(ctx, address, identity.SiteCode)
 		if err != nil {
 			fetchReason = err.Error()
 		}
@@ -58,7 +58,7 @@ func (s *Service) SyncMaster(ctx context.Context, address, credential, trigger s
 
 // ConfigureMasterSync applies the deployment switch before the HTTP server starts.
 // A new enabled period requires manual synchronization; ordinary restarts do not.
-func (s *Service) ConfigureMasterSync(ctx context.Context, enabled bool, address, credential string) error {
+func (s *Service) ConfigureMasterSync(ctx context.Context, enabled bool, address string) error {
 	repo, ok := s.store.(*Repository)
 	if !ok {
 		return ErrForbidden
@@ -80,7 +80,6 @@ func (s *Service) ConfigureMasterSync(ctx context.Context, enabled bool, address
 	if err == nil {
 		s.masterSyncEnabled = enabled
 		s.masterSyncAddress = address
-		s.masterSyncCredential = credential
 	}
 	return err
 }
@@ -116,7 +115,7 @@ func (s *Service) RunMasterSync(ctx context.Context, trigger string) error {
 			return nil
 		}
 	}
-	return s.SyncMaster(ctx, s.masterSyncAddress, s.masterSyncCredential, trigger)
+	return s.SyncMaster(ctx, s.masterSyncAddress, trigger)
 }
 func (s *Service) masterSyncReady(ctx context.Context) error {
 	if !s.masterSyncEnabled {
@@ -146,6 +145,8 @@ type MasterSyncLog struct {
 	ID          int64     `json:"id"`
 	AttemptedAt time.Time `json:"attemptedAt"`
 	TriggerType string    `json:"triggerType"`
+	SyncType    string    `json:"syncType"`
+	TicketNo    string    `json:"ticketNo"`
 	Success     bool      `json:"success"`
 	Reason      string    `json:"reason"`
 }

@@ -28,7 +28,7 @@ export interface WireSession {
 }
 export interface WireTicket {
  imagesComplete?:boolean;
- siteCode:string;siteName:string;
+ siteCode:string;siteName:string; syncStatus?: 'pending' | 'synced' | 'failed' | 'untracked';
   printSheet?: PrintSheet;
   mode?: string;
   id: number; taskId: number; ticketNo: string; revision: number;

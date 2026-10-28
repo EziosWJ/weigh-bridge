@@ -397,6 +397,10 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		if rolledBack.Status != "awaiting_second" || len(rolledBack.Records) != 1 {
 			t.Fatalf("partial second confirmation survived rollback: %+v", rolledBack)
 		}
+		var outboxCount int64
+		if err := database.GORM.Table("wb_ticket_sync_change").Count(&outboxCount).Error; err != nil || outboxCount != 0 {
+			t.Fatalf("outbox survived rollback: %d %v", outboxCount, err)
+		}
 		if err := database.GORM.Exec("ALTER TABLE sys_oper_log DROP CONSTRAINT reject_weighing_audit").Error; err != nil {
 			t.Fatal(err)
 		}
@@ -449,6 +453,12 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	// targetRecordId is a record id, never a sample id.
 	oldCaptureBody["targetRecordId"] = completed.RecordID
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/samples", encode(oldCaptureBody), token), 200, 400, weighing.ErrConflict.Error())
+	// Change the local code after voiding; the reopened ticket keeps the new
+	// identity while its dependency continues to reference the original ticket.
+	configs := weighingData[[]weighing.SiteConfiguration](t, router, "GET", "/api/weighing/site-config", "", token)
+	config := configs[0]
+	identity := weighing.SiteConfigurationInput{ServerURL: config.ServerURL, Code: "F001", Name: config.Name, ScaleCode: config.ScaleCode, ScaleName: config.ScaleName, AgentID: config.AgentID, Enabled: config.Enabled, Version: config.Version}
+	changedIdentity := weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
 	reopenBody := map[string]any{"requestId": "manual-reopen-0001", "taskVersion": voided.TaskVersion, "reason": "旧依据人工更正", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}}
 	reopened := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(reopenBody), token)
 	if reopened.TicketID == ticket.ID {
@@ -462,6 +472,9 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	if newTicket.PreviousTicketID == nil || *newTicket.PreviousTicketID != ticket.ID || newTicket.PreviousFinal == nil || newTicket.PreviousFinal.Gross != 31000 {
 		t.Fatalf("reopen chain/prior final weights: %+v", newTicket)
 	}
+	checkTicketSyncOutbox(t, database.GORM, ticket.ID, newTicket.ID)
+	identity.Code, identity.Version = "SITE01", changedIdentity.Version
+	weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
 	terminated := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(newTrip.TaskID)+"/termination", encode(map[string]any{"requestId": "terminate-trip-0001", "version": newTrip.TaskVersion, "reason": "取消新趟运输"}), token)
 	if terminated.Status != "terminated" {
 		t.Fatalf("termination: %+v", terminated)

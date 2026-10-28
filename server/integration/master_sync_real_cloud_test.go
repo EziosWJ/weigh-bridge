@@ -8,15 +8,16 @@ import (
 	"testing"
 
 	"github.com/EziosWJ/weighbridge/server/internal/audit"
+	"github.com/EziosWJ/weighbridge/server/internal/mastersync"
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 // TestPostgresMasterSyncRealCloud exercises the real cloud HTTP service using
 // an isolated local database. It is skipped unless the caller supplies an
-// ephemeral cloud endpoint and its test-only factory credential.
+// ephemeral cloud endpoint.
 func TestPostgresMasterSyncRealCloud(t *testing.T) {
-	endpoint, token := os.Getenv("WB_SYNC_TEST_URL"), os.Getenv("WB_SYNC_TEST_TOKEN")
-	if endpoint == "" || token == "" {
+	endpoint := os.Getenv("WB_SYNC_TEST_URL")
+	if endpoint == "" {
 		t.Skip("isolated cloud endpoint not supplied")
 	}
 	temporary := startBusinessPostgres(t)
@@ -27,7 +28,7 @@ func TestPostgresMasterSyncRealCloud(t *testing.T) {
 	if _, err := service.InitializeLocalSite(ctx, 1, weighing.LocalSiteInput{SiteCode: "F001", ScaleCode: "WB01"}, audit.Event{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ConfigureMasterSync(ctx, true, endpoint, token); err != nil {
+	if err := service.ConfigureMasterSync(ctx, true, endpoint); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.RunMasterSync(ctx, "manual"); err != nil {
@@ -55,14 +56,12 @@ func TestPostgresMasterSyncRealCloud(t *testing.T) {
 	if row.Category != "谷物" || row.Material != "高粱" || row.Spec != "一级" || row.Party == "" || row.Contact == "" {
 		t.Fatalf("cloud values not persisted: %+v", row)
 	}
-	if err := service.ConfigureMasterSync(ctx, true, endpoint, "invalid-test-credential"); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.RunMasterSync(ctx, "manual"); err == nil {
-		t.Fatal("invalid credential accepted")
+	if _, err := mastersync.Fetch(ctx, endpoint, "INVALID-SITE-CODE"); err == nil {
+		t.Fatal("unknown site code accepted")
 	}
 	var name string
 	if err := db.GORM.Table("wb_material").Where("code = ?", "C-M-0001").Select("name").Scan(&name).Error; err != nil || name != "高粱" {
 		t.Fatalf("failed sync modified data: %q %v", name, err)
 	}
+
 }

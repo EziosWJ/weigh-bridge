@@ -199,7 +199,7 @@ func main() {
 		}
 	})
 	weighService := weighing.NewService(weighRepo, agents)
-	if err := weighService.ConfigureMasterSync(context.Background(), cfg.MasterSync.Enabled, cfg.MasterSync.Address, cfg.MasterSync.Credential); err != nil {
+	if err := weighService.ConfigureMasterSync(context.Background(), cfg.MasterSync.Enabled, cfg.MasterSync.Address); err != nil {
 		slog.Error("configure master sync", "error", err)
 		os.Exit(1)
 	}
@@ -243,6 +243,18 @@ func main() {
 	monitoringContext, stopMonitoring := context.WithCancel(context.Background())
 	cameraService.Start(monitoringContext)
 	if cfg.MasterSync.Enabled {
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				_ = weighService.RunTicketSync(monitoringContext)
+				select {
+				case <-monitoringContext.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
 		go func() {
 			interval := func() time.Duration {
 				value, err := configService.GetByKey(monitoringContext, sysconfig.MasterSyncIntervalKey)

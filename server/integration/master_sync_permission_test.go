@@ -27,10 +27,10 @@ func TestPostgresMasterSyncPermissionsAndLogAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":200,"message":"ok","data":{"schemaVersion":1,"siteCode":"F001","scaleCodes":["WB01"],"categories":[],"materials":[],"parties":[]}}`)
+		fmt.Fprint(w, `{"code":200,"message":"ok","data":{"schemaVersion":2,"siteCode":"F001","categories":[],"materials":[],"parties":[]}}`)
 	}))
 	defer remote.Close()
-	if err := service.ConfigureMasterSync(ctx, true, remote.URL, "token"); err != nil {
+	if err := service.ConfigureMasterSync(ctx, true, remote.URL); err != nil {
 		t.Fatal(err)
 	}
 	router, err := app.Build(testAPIConfig(), db, deps)

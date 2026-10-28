@@ -70,8 +70,7 @@ monitoring:
   socket_path: /run/weighbridge/host-monitor.sock
   timeout: 4s
 
-# 厂云基础资料同步；凭据请写入未提交的环境配置文件。
+# 厂云基础资料同步。
 master_sync:
   enabled: false
   address: ""
-  credential: ""

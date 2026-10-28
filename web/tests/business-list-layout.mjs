@@ -32,7 +32,7 @@ const materials = rows.map(row => ({id: row.id, version: 1, enabled: 1, name: '�
 const parties = rows.map(row => ({id: row.id, version: 1, enabled: 1, name: '四川省粮食供应有限公司', code: `PARTY${row.id}`, shortName: '粮食供应', nature: 'enterprise', roles: ['supplier', 'carrier'], phone: '13800138000', contacts: [{id: 1, name: '张师傅', isDefault: 1}], address: '四川省宜宾市翠屏区产业园区粮食仓储中心一号仓库', remark: 'LONG_REFERENCE_WITHOUT_SPACES_'.repeat(3)}));
 const pageResult = records => ({records, total: records.length, page: 1, pageSize: 10});
 const pages = [
-  ['tasks', '运输任务列表', 9], ['originals', '原始称重列表', 8], ['tickets', '最终单据列表', 8],
+  ['tasks', '运输任务列表', 9], ['originals', '原始称重列表', 8], ['tickets', '最终单据列表', 9],
   ['materials', '物料列表', 7], ['parties', '往来主体列表', 7],
   ['categories', '物料分类列表', 3],
 ];
@@ -65,7 +65,7 @@ try {
     else if (path.endsWith('/materials')) data = pageResult(materials);
     else if (path.endsWith('/parties')) data = pageResult(parties);
     else if (path.endsWith('/tasks') || path.endsWith('/originals')) data = pageResult(rows.slice(0, 10));
-    else if (path.endsWith('/tickets')) data = pageResult(rows.slice(0, 10).map(row => ({...row, status: 'valid'})));
+    else if (path.endsWith('/tickets')) data = pageResult(rows.slice(0, 10).map(row => ({...row, status: 'valid', syncStatus: 'pending'})));
     else if (path.endsWith('/agent-settings')) data = {serverUrl: 'http://192.168.1.100:8900'};
     await route.fulfill({json: {code: 200, message: 'ok', data}});
   });
@@ -114,6 +114,10 @@ try {
           assert.equal(context.pages().length, 2, 'reopening reuses the scale workbench window');
           await popup.close();
         }
+      }
+      if (path === 'tickets') {
+        assert.equal(await region.getByRole('columnheader', {name: '同步状态'}).count(), 1);
+        assert.ok(await region.getByText('待同步').count() > 0);
       }
       assert.equal(await region.locator('thead th').count(), count, `${path}: all columns retained`);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${path}: page overflow at ${viewport.width}`);

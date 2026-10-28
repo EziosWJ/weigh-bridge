@@ -54,9 +54,8 @@ func (m MaintenanceConfig) IsEnabled() bool {
 }
 
 type MasterSyncConfig struct {
-	Enabled    bool   `koanf:"enabled"`
-	Address    string `koanf:"address"`
-	Credential string `koanf:"credential"`
+	Enabled bool   `koanf:"enabled"`
+	Address string `koanf:"address"`
 }
 
 type WeighingConfig struct {

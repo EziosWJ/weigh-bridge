@@ -63,6 +63,7 @@ export function WeighingTicketsPage() {
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span> },
     { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag><div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
+    { title: '同步状态', key: 'sync', width: 110, render: (_, row) => <StatusTag tone={row.syncStatus === 'synced' ? 'success' : row.syncStatus === 'failed' ? 'error' : row.syncStatus === 'pending' ? 'warning' : 'neutral'}>{row.syncStatus === 'synced' ? '已同步' : row.syncStatus === 'failed' ? '同步失败' : row.syncStatus === 'pending' ? '待同步' : '未纳入同步'}</StatusTag> },
     { title: '出单时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
     { title: '操作', key: 'actions', width: 168, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
   ];

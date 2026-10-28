@@ -23,16 +23,16 @@ func TestPostgresMasterSyncLifecycle(t *testing.T) {
 	if _, err := service.InitializeLocalSite(ctx, 1, weighing.LocalSiteInput{SiteCode: "F001", ScaleCode: "WB01"}, audit.Event{}); err != nil {
 		t.Fatal(err)
 	}
-	body := `{"code":200,"message":"ok","data":{"schemaVersion":1,"siteCode":"F001","scaleCodes":["WB01"],"categories":[{"code":"C-C-0001","name":"谷物","enabled":true}],"materials":[{"code":"C-M-0001","name":"高粱","categoryCode":"C-C-0001","spec":"","remark":"","enabled":true}],"parties":[{"code":"C-P-0001","name":"供货方","shortName":"","nature":"enterprise","isSupplier":true,"isCustomer":false,"isCarrier":false,"phone":"","address":"","creditCode":"","remark":"","enabled":true,"contacts":[{"id":1,"name":"联系人","phone":"","purpose":"","remark":"","isDefault":true}]}]}}`
+	body := `{"code":200,"message":"ok","data":{"schemaVersion":2,"siteCode":"F001","categories":[{"code":"C-C-0001","name":"谷物","enabled":true}],"materials":[{"code":"C-M-0001","name":"高粱","categoryCode":"C-C-0001","spec":"","remark":"","enabled":true}],"parties":[{"code":"C-P-0001","name":"供货方","shortName":"","nature":"enterprise","isSupplier":true,"isCustomer":false,"isCarrier":false,"phone":"","address":"","creditCode":"","remark":"","enabled":true,"contacts":[{"id":1,"name":"联系人","phone":"","purpose":"","remark":"","isDefault":true}]}]}}`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/weighbridge/sync/master" || r.Header.Get("Authorization") != "Bearer test-token" {
+		if r.URL.Path != "/api/v1/weighbridge/sync/master" || (r.Header.Get("Authorization") != "" || r.URL.Query().Get("siteCode") != "F001") {
 			w.WriteHeader(401)
 			return
 		}
 		fmt.Fprint(w, body)
 	}))
 	defer server.Close()
-	if err := service.ConfigureMasterSync(ctx, true, server.URL, "test-token"); err != nil {
+	if err := service.ConfigureMasterSync(ctx, true, server.URL); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.ConfirmFirst(ctx, weighing.ConfirmationInput{}, audit.Event{}); err == nil || !strings.Contains(err.Error(), "首次总部资料同步") {
@@ -52,8 +52,32 @@ func TestPostgresMasterSyncLifecycle(t *testing.T) {
 	if err != nil || !status.Bound || status.LastSuccess == nil {
 		t.Fatalf("initial sync: %+v %v", status, err)
 	}
+	// A successful sync must not freeze either local identity code. A request
+	// for the changed site fails without replacing the already applied snapshot.
+	configs, err := service.SiteConfigurations(ctx)
+	if err != nil || len(configs) != 1 {
+		t.Fatalf("identity: %+v %v", configs, err)
+	}
+	c := configs[0]
+	input := weighing.SiteConfigurationInput{Code: "F002", Name: c.Name, ScaleCode: "WB02", ScaleName: c.ScaleName, AgentID: c.AgentID, Enabled: c.Enabled, Version: c.Version}
+	event := audit.Event{Action: "site.update", Resource: "weighing.site", Metadata: audit.Metadata{ActorID: 1}}
+	changed, err := service.SaveSiteConfiguration(ctx, input, event)
+	if err != nil {
+		t.Fatalf("change synchronized identity: %v", err)
+	}
+	if err := service.RunMasterSync(ctx, "manual"); err == nil || !strings.Contains(err.Error(), "厂区编码") {
+		t.Fatalf("changed identity must be rejected: %v", err)
+	}
+	var retained string
+	if err := db.GORM.Table("wb_material").Where("code=?", "C-M-0001").Select("name").Scan(&retained).Error; err != nil || retained != "高粱" {
+		t.Fatalf("failed identity sync changed data: %s %v", retained, err)
+	}
+	input.Code, input.ScaleCode, input.Version = "F001", "WB01", changed.Version
+	if _, err := service.SaveSiteConfiguration(ctx, input, event); err != nil {
+		t.Fatalf("restore identity: %v", err)
+	}
 	// A regular restart with the same switch must preserve the binding.
-	if err := service.ConfigureMasterSync(ctx, true, server.URL, "test-token"); err != nil {
+	if err := service.ConfigureMasterSync(ctx, true, server.URL); err != nil {
 		t.Fatal(err)
 	}
 	status, err = service.MasterSyncStatus(ctx)
@@ -89,14 +113,14 @@ func TestPostgresMasterSyncLifecycle(t *testing.T) {
 	if err := db.GORM.Exec("UPDATE wb_material SET name = '单机修改' WHERE code = 'C-M-0001'").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := service.ConfigureMasterSync(ctx, false, "", ""); err != nil {
+	if err := service.ConfigureMasterSync(ctx, false, ""); err != nil {
 		t.Fatal(err)
 	}
 	status, _ = service.MasterSyncStatus(ctx)
 	if status.Bound || status.Enabled {
 		t.Fatalf("standalone %+v", status)
 	}
-	if err := service.ConfigureMasterSync(ctx, true, server.URL, "test-token"); err != nil {
+	if err := service.ConfigureMasterSync(ctx, true, server.URL); err != nil {
 		t.Fatal(err)
 	}
 	status, _ = service.MasterSyncStatus(ctx)

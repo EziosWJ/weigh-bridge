@@ -42,7 +42,7 @@ export function SystemSyncLogsPage() {
   const filtered = useMemo(() => logs.filter(log => {
     const time = new Date(log.attemptedAt);
     const localDate = `${time.getFullYear()}-${String(time.getMonth() + 1).padStart(2, "0")}-${String(time.getDate()).padStart(2, "0")}`;
-    return (!date || localDate === date) && (!kind || log.triggerType === kind) && (!result || String(log.success) === result);
+    return (!date || localDate === date) && (!kind || (log.syncType === "master" ? log.triggerType : log.syncType) === kind) && (!result || String(log.success) === result);
   }), [logs, date, kind, result]);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
   const reset = () => { setDate(""); setKind(""); setResult(""); setPage(1); };
@@ -54,15 +54,16 @@ export function SystemSyncLogsPage() {
   };
   const columns: DataTableColumn<SyncLog>[] = [
     { title: "同步时间", dataIndex: "attemptedAt", width: 200, render: (_, row) => formatDateTime(row.attemptedAt) },
-    { title: "同步类型", dataIndex: "triggerType", width: 150, render: (_, row) => row.triggerType === "manual" ? "手动同步" : "自动同步" },
+    { title: "同步类型", dataIndex: "triggerType", width: 150, render: (_, row) => row.syncType === "master" ? (row.triggerType === "manual" ? "资料手动同步" : "资料自动同步") : ({issue:"出单上传",void:"作废上传",reopen:"重开上传"}[row.syncType] ?? row.syncType) },
+    { title: "范围 / 单号", dataIndex: "ticketNo", width: 200, render: (_, row) => row.ticketNo || "全部资料" },
     { title: "结果", dataIndex: "success", width: 120, render: (_, row) => <StatusTag tone={row.success ? "success" : "error"}>{row.success ? "成功" : "失败"}</StatusTag> },
     { title: "失败原因", dataIndex: "reason", render: (_, row) => row.reason || "—" },
   ];
   return <>
-    <PageHeader title="同步日志" description="查看总部基础资料自动和手动同步的记录。" />
+    <PageHeader title="同步日志" description="查看资料同步及单据上传记录。" />
     <SearchFilterBar actions={<Button variant="secondary" onClick={reset}><RotateCcw className="h-4 w-4" aria-hidden />重置</Button>}>
       <Input type="date" aria-label="同步日期" value={date} onChange={event => { setDate(event.target.value); setPage(1); }} />
-      <Select aria-label="同步类型" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }}><option value="">全部类型</option><option value="manual">手动同步</option><option value="automatic">自动同步</option></Select>
+      <Select aria-label="同步类型" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }}><option value="">全部类型</option><option value="manual">手动同步</option><option value="automatic">资料自动同步</option><option value="issue">出单上传</option><option value="void">作废上传</option><option value="reopen">重开上传</option></Select>
       <Select aria-label="同步结果" value={result} onChange={event => { setResult(event.target.value); setPage(1); }}><option value="">全部结果</option><option value="true">成功</option><option value="false">失败</option></Select>
     </SearchFilterBar>
     <DataTableCard>
@@ -73,6 +74,6 @@ export function SystemSyncLogsPage() {
       <DataTable columns={columns} dataSource={filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)} rowKey="id" loading={loading} error={error} minWidth={760} empty={<EmptyState title="暂无同步日志" description="当前筛选条件下没有同步记录。" />} />
       <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} disabled={loading} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
-    <ConfirmDialog open={clearOpen} title="清空同步日志" description="确认清空全部同步日志吗？此操作不可恢复，不影响同步资料。" confirmText="清空" danger loading={clearing} onConfirm={() => void clear()} onCancel={() => setClearOpen(false)} />
+    <ConfirmDialog open={clearOpen} title="清空同步日志" description="确认清空全部同步日志吗？此操作不可恢复，不影响资料或待上传变化。" confirmText="清空" danger loading={clearing} onConfirm={() => void clear()} onCancel={() => setClearOpen(false)} />
   </>;
 }

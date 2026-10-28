@@ -50,14 +50,8 @@ func (r *Repository) applyMasterSnapshot(ctx context.Context, snapshot mastersyn
 		if err != nil {
 			return err
 		}
-		matched := false
-		for _, code := range snapshot.ScaleCodes {
-			if code == identity.ScaleCode {
-				matched = true
-			}
-		}
-		if identity.SiteCode == "" || identity.ScaleCode == "" || identity.SiteCode != snapshot.SiteCode || !matched || snapshot.SchemaVersion != 1 {
-			return RejectionError("厂区或地磅身份不匹配")
+		if identity.SiteCode == "" || identity.SiteCode != snapshot.SiteCode || snapshot.SchemaVersion != 2 {
+			return RejectionError("厂区编码不匹配")
 		}
 		// A missing previously synced record must reject the entire snapshot.
 		// Contacts are intentionally excluded: headquarters may remove them.

@@ -110,6 +110,9 @@ func (r *Repository) VoidTicket(ctx context.Context, id int64, in VoidInput, e a
 		if err := tx.Model(&Ticket{}).Where("id=? AND status='valid'", id).Updates(map[string]any{"status": "void", "voided_at": now, "voided_by": e.Metadata.ActorID, "void_reason": in.Reason}).Error; err != nil {
 			return out, err
 		}
+		if err := enqueueTicketChange(tx, ticket, nil, "void", name); err != nil {
+			return out, err
+		}
 		task.Version++
 		task.UpdateTime = now
 		if err := tx.Model(&task).Updates(map[string]any{"version": task.Version, "update_time": now}).Error; err != nil {
@@ -279,6 +282,9 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 			return out, err
 		}
 		if err := insertTicket(ctx, tx, &ticket, r.dataDir); err != nil {
+			return out, err
+		}
+		if err := enqueueTicketChange(tx, ticket, &latest, "reopen", name); err != nil {
 			return out, err
 		}
 		task.Version++

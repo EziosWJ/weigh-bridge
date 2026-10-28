@@ -15,19 +15,19 @@ import (
 )
 
 type Service struct {
-	imageDir             string
-	maintenanceEnabled   bool
-	printMu              sync.Mutex
-	masterSyncMu         sync.Mutex
-	masterSyncEnabled    bool
-	masterSyncAddress    string
-	masterSyncCredential string
-	store                Store
-	devices              *agentbridge.Hub
-	maintenance          maintenanceGate
-	cameraAvailable      func(string) bool
-	cameraConfig         func() (agentprinter.Config, error)
-	camera               *camera.Service
+	imageDir           string
+	maintenanceEnabled bool
+	printMu            sync.Mutex
+	masterSyncMu       sync.Mutex
+	ticketSyncMu       sync.Mutex
+	masterSyncEnabled  bool
+	masterSyncAddress  string
+	store              Store
+	devices            *agentbridge.Hub
+	maintenance        maintenanceGate
+	cameraAvailable    func(string) bool
+	cameraConfig       func() (agentprinter.Config, error)
+	camera             *camera.Service
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {

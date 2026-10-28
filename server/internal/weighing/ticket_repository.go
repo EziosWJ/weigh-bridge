@@ -128,6 +128,9 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 		if err := insertTicket(ctx, tx, &ticket, r.dataDir); err != nil {
 			return out, err
 		}
+		if err := enqueueTicketChange(tx, ticket, nil, "issue", name); err != nil {
+			return out, err
+		}
 		now := time.Now().UTC()
 		task.CurrentSecondRecordID = ptr(second.ID)
 		task.Status = "completed"
@@ -216,7 +219,7 @@ func (r *Repository) Tickets(ctx context.Context, q PageQuery) (Page[TicketView]
 	if err != nil {
 		return Page[TicketView]{}, err
 	}
-	query = query.Select("k.*, COALESCE((SELECT CASE WHEN p.status='initiated' THEN 'unknown' ELSE p.status END FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1),'unprinted') AS print_status, (SELECT COUNT(*) FROM wb_print_attempt p WHERE p.ticket_id=k.id AND p.intent='reprint') AS reprint_count, (SELECT p.id FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1) AS last_print_attempt_id")
+	query = query.Select("k.*, COALESCE((SELECT c.status FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'untracked') AS sync_status, COALESCE((SELECT CASE WHEN p.status='initiated' THEN 'unknown' ELSE p.status END FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1),'unprinted') AS print_status, (SELECT COUNT(*) FROM wb_print_attempt p WHERE p.ticket_id=k.id AND p.intent='reprint') AS reprint_count, (SELECT p.id FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1) AS last_print_attempt_id")
 	raw, err := workflowPage[Ticket](query, q, "k.issued_at DESC,k.id DESC")
 	result := Page[TicketView]{Records: []TicketView{}, Total: raw.Total, Page: raw.Page, PageSize: raw.PageSize}
 	for _, row := range raw.Records {

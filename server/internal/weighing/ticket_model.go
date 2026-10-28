@@ -3,6 +3,7 @@ package weighing
 import "time"
 
 type Ticket struct {
+	SyncStatus            string        `json:"syncStatus" gorm:"->"`
 	SiteCode              string        `json:"siteCode"`
 	SiteName              string        `json:"siteName"`
 	PrintStatus           string        `json:"printStatus" gorm:"->"`
