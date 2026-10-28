@@ -71,6 +71,7 @@ func readPage[T any](db *gorm.DB, q PageQuery) (Page[T], error) {
 }
 func (r *Repository) Categories(ctx context.Context, q PageQuery) (Page[Category], error) {
 	db := masterFilter(r.db.WithContext(ctx).Model(&Category{}), q)
+	db = db.Where("NOT (SELECT bound FROM wb_master_sync_state WHERE id = 1) OR id IN (SELECT local_id FROM wb_master_category_map)")
 	if q.Keyword != "" {
 		db = db.Where("LOWER(name) LIKE LOWER(?)", "%"+q.Keyword+"%")
 	}
@@ -78,6 +79,7 @@ func (r *Repository) Categories(ctx context.Context, q PageQuery) (Page[Category
 }
 func (r *Repository) Materials(ctx context.Context, q PageQuery) (Page[Material], error) {
 	db := masterFilter(r.db.WithContext(ctx).Model(&Material{}), q)
+	db = db.Where("NOT (SELECT bound FROM wb_master_sync_state WHERE id = 1) OR id IN (SELECT local_id FROM wb_master_material_map)")
 	if q.Keyword != "" {
 		v := "%" + q.Keyword + "%"
 		db = db.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?) OR LOWER(spec) LIKE LOWER(?)", v, v, v)
@@ -89,6 +91,7 @@ func (r *Repository) Materials(ctx context.Context, q PageQuery) (Page[Material]
 }
 func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], error) {
 	db := masterFilter(r.db.WithContext(ctx).Model(&Party{}), q)
+	db = db.Where("NOT (SELECT bound FROM wb_master_sync_state WHERE id = 1) OR id IN (SELECT local_id FROM wb_master_party_map)")
 	if q.Keyword != "" {
 		v := "%" + q.Keyword + "%"
 		db = db.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?) OR LOWER(short_name) LIKE LOWER(?) OR phone LIKE ?", v, v, v, v)
@@ -296,6 +299,9 @@ RETURNING next_value`, floor)
 func (r *Repository) SaveCategory(ctx context.Context, id int64, in CategoryInput, e audit.Event) (Category, error) {
 	var v Category
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := rejectCloudMasterWrite(tx); err != nil {
+			return err
+		}
 		var err error
 		if id > 0 {
 			v, err = lockRow[Category](tx, id)
@@ -321,6 +327,9 @@ func (r *Repository) SaveCategory(ctx context.Context, id int64, in CategoryInpu
 func (r *Repository) SaveMaterial(ctx context.Context, id int64, in MaterialInput, e audit.Event) (Material, error) {
 	var v Material
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := rejectCloudMasterWrite(tx); err != nil {
+			return err
+		}
 		var err error
 		if id > 0 {
 			v, err = lockRow[Material](tx, id)
@@ -364,6 +373,9 @@ func (r *Repository) SaveMaterial(ctx context.Context, id int64, in MaterialInpu
 func (r *Repository) SaveParty(ctx context.Context, id int64, in PartyInput, e audit.Event) (Party, error) {
 	var v Party
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := rejectCloudMasterWrite(tx); err != nil {
+			return err
+		}
 		var err error
 		if id > 0 {
 			v, err = lockRow[Party](tx, id)
@@ -444,6 +456,9 @@ func (r *Repository) DeleteMaster(ctx context.Context, kind string, id, version 
 		return ErrInvalid
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := rejectCloudMasterWrite(tx); err != nil {
+			return err
+		}
 		var row struct{ ID, Version int64 }
 		if err := tx.Model(model).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&row).Error; err != nil {
 			return err
@@ -491,6 +506,9 @@ func (r *Repository) SetMasterStatus(ctx context.Context, kind string, id, versi
 		return ErrInvalid
 	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := rejectCloudMasterWrite(tx); err != nil {
+			return err
+		}
 		result := tx.Model(model).Where("id=? AND version=?", id, version).Updates(map[string]any{"enabled": value, "version": version + 1, "update_by": e.Metadata.ActorID, "update_time": time.Now().UTC()})
 		if result.Error != nil {
 			return result.Error

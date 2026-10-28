@@ -1,5 +1,6 @@
+import { weighingApi } from '@/api/weighing';
 import { WorkbenchLink } from "@/components/common/workbench-link";
-import { useDeferredValue, useState, type ReactNode } from 'react';
+import { useDeferredValue, useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/common/page-header';
 import { DataTableCard } from '@/components/common/data-table-card';
@@ -39,13 +40,24 @@ function RoleHint() {
 function MasterBanner() {
   return <aside className="mb-4 rounded-control border border-border bg-neutral-background px-4 py-2 text-sm text-text-secondary">服务端保存 · 使用真实账号权限 · 设备数据由 Agent 提供</aside>;
 }
+function MasterSyncControls() {
+  const [status, setStatus] = useState<{enabled:boolean;bound:boolean;lastSuccess:string|null;isAdmin:boolean} | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useWeighingMasterStore(s => s.load);
+  useEffect(() => { let active = true; void weighingApi.masterSyncStatus().then(value => { if (active) setStatus(value); }).catch(() => {}); return () => { active = false; }; }, []);
+  if (!status || (!status.enabled && !status.isAdmin)) return null;
+  return <aside className="mb-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+    <span>上次成功同步：{status.lastSuccess ? new Date(status.lastSuccess).toLocaleString() : '尚未同步'}</span>
+    {status.enabled && <Button disabled={busy} onClick={async () => { setBusy(true); try { const next = await weighingApi.runMasterSync(); setStatus(next); await load(); toast.success('总部资料同步成功'); } catch (error) { toast.error({ title: '总部资料同步失败', description: error instanceof Error ? error.message : '请稍后重试' }); } finally { setBusy(false); } }}>立即同步</Button>}
+  </aside>;
+}
 function MasterBoundary({ children }: { children: ReactNode }) {
   const store = useWeighingMasterData();
   const token = useAuthStore(s => s.token);
   if (store.error) return <><PageHeader title="资料加载失败" /><p role="alert" className="mb-4 text-error">{store.error}</p><Button onClick={() => void store.load()}>重新加载</Button></>;
   if (store.loadedToken !== token) return <p role="status" className="p-4 text-text-secondary">正在加载服务端资料…</p>;
   if (!store.capabilities?.permissionCodes.includes('weighing:master:read')) return <PageHeader title="暂无资料查询权限" description="请联系管理员授权。" />;
-  return children;
+  return <><MasterSyncControls />{children}</>;
 }
 export function WeighingMaterialsPage(props: { parties?: boolean }) { return <MasterBoundary><MaterialsContent {...props} /></MasterBoundary>; }
 export function WeighingMaterialEditPage() { return <MasterBoundary><MaterialEditContent /></MasterBoundary>; }
@@ -64,7 +76,7 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
   const [pageSize, setPageSize] = useState(10);
   const [deleting, setDeleting] = useState<Material | Party | null>(null);
   const [error, setError] = useState('');
-  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
+  const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const name = parties ? '往来主体' : '物料';
   const base = parties ? '/weighing/parties' : '/weighing/materials';
   const suffix = params.get('returnTo') ? `?${params.toString()}` : '';
@@ -114,7 +126,7 @@ function MaterialEditContent() {
   const [baseVersion] = useState(current?.version);
   const [form, setForm] = useState({ name: current?.name ?? '', categoryId: current?.categoryId ?? '', spec: current?.spec ?? '', enabled: current?.enabled ?? true, remark: current?.remark ?? '' });
   const [error, setError] = useState('');
-  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
+  const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const back = `/weighing/materials${params.toString() ? `?${params}` : ''}`;
   if (id && !current) return <PageHeader title="物料不存在" actions={<Link to={back}>返回资料列表</Link>} />;
   return <>
@@ -145,7 +157,7 @@ function PartyEditContent() {
   const [baseVersion] = useState(current?.version);
   const [form, setForm] = useState({ name: current?.name ?? '', shortName: current?.shortName ?? '', nature: current?.nature ?? 'enterprise' as PartyNature, roles: current?.roles ?? ['supplier'] as PartyKind[], phone: current?.phone ?? '', address: current?.address ?? '', creditCode: current?.creditCode ?? '', enabled: current?.enabled ?? true, remark: current?.remark ?? '', contacts: current?.contacts ?? [] });
   const [error, setError] = useState('');
-  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
+  const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const back = `/weighing/parties${params.toString() ? `?${params}` : ''}`;
   if (id && !current) return <PageHeader title="往来主体不存在" actions={<Link to={back}>返回资料列表</Link>} />;
   return <>
@@ -178,7 +190,7 @@ function PartyEditContent() {
 
 function CategoriesContent() {
   const { data, dispatch, capabilities, saving } = useWeighingMasterStore();
-  const admin = capabilities?.permissionCodes.includes('weighing:master:write') ?? false;
+  const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const [editing, setEditing] = useState<{ id?: string; name: string; enabled: boolean; version?: number } | null>(null);
   const [deleting, setDeleting] = useState<MaterialCategory | null>(null);
   const [error, setError] = useState('');

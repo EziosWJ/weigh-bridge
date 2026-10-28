@@ -251,6 +251,13 @@ func (r *Repository) SaveSiteConfiguration(ctx context.Context, in SiteConfigura
 		if in.ScaleCode != "" {
 			nextScaleCode = in.ScaleCode
 		}
+		var syncState masterSyncState
+		if err := tx.First(&syncState, 1).Error; err != nil {
+			return err
+		}
+		if syncState.LastSuccess != nil && (nextSiteCode != site.Code || nextScaleCode != scale.Code) {
+			return RejectionError("已绑定总部资料，厂区和地磅编码不可修改")
+		}
 		if in.Enabled == 0 {
 			reasons := []string{}
 			var count int64

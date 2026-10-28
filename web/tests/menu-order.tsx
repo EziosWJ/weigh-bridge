@@ -66,13 +66,14 @@ const operatorNavigation = buildAppNavigation({
   capabilities: { maintenanceEnabled: true, permissionCodes: ['weighing:read', 'weighing:master:read', 'weighing:confirm', 'system:user', 'system:config', 'agent:maintenance:view', 'weighing:camera:view'] },
 });
 const noPermissionNavigation = buildAppNavigation({ menus: [], isAdmin: false, isOperator: true });
-const adminNavigation = buildAppNavigation({ menus: systemMenus, isAdmin: true, isOperator: true });
+const adminNavigation = buildAppNavigation({ menus: [...systemMenus, logMenu], isAdmin: true, isOperator: true });
 
 const scenarios: Record<string, NavItem[]> = {
   operator: operatorNavigation,
   'operator-children': operatorNavigation.flatMap(item => item.children ?? []),
   'operator-no-permission': noPermissionNavigation,
   'admin-operator': adminNavigation,
+  'admin-log-children': adminNavigation.find(item => item.path === '/log')?.children ?? [],
   // 本地入口与业务菜单 sortOrder 相同时，本地入口保持在前
   tie: mergeNavItems(
     defaultNavItems,

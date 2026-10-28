@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
+	"time"
 
 	_ "github.com/EziosWJ/weighbridge/server/docs"
 	"github.com/EziosWJ/weighbridge/server/internal/agentbridge"
@@ -107,6 +109,21 @@ func main() {
 		os.Exit(1)
 	}
 	configService := sysconfig.NewService(sysconfig.NewRepository(database.GORM))
+	intervalChanged := make(chan time.Time, 1)
+	configService.SetMasterSyncIntervalChanged(func() {
+		select {
+		case intervalChanged <- time.Now():
+		default:
+			select {
+			case <-intervalChanged:
+			default:
+			}
+			select {
+			case intervalChanged <- time.Now():
+			default:
+			}
+		}
+	})
 	fileStorage, err := filemgmt.NewLocalStorage(cfg.File.StorageRoot)
 	if err != nil {
 		slog.Error("build file storage", "error", err)
@@ -182,6 +199,11 @@ func main() {
 		}
 	})
 	weighService := weighing.NewService(weighRepo, agents)
+	if err := weighService.ConfigureMasterSync(context.Background(), cfg.MasterSync.Enabled, cfg.MasterSync.Address, cfg.MasterSync.Credential); err != nil {
+		slog.Error("configure master sync", "error", err)
+		os.Exit(1)
+	}
+
 	cameraService := camera.NewServiceWithDefaults(camera.NewRepository(database.GORM), cfg.Weighing.ImageDir)
 	weighService.SetCamera(cameraService)
 	var remoteMaintenance *agentmaintenance.Remote
@@ -220,6 +242,45 @@ func main() {
 	}
 	monitoringContext, stopMonitoring := context.WithCancel(context.Background())
 	cameraService.Start(monitoringContext)
+	if cfg.MasterSync.Enabled {
+		go func() {
+			interval := func() time.Duration {
+				value, err := configService.GetByKey(monitoringContext, sysconfig.MasterSyncIntervalKey)
+				if err != nil || value == nil {
+					return time.Hour
+				}
+				minutes, err := strconv.Atoi(value.ConfigValue)
+				if err != nil || minutes < 1 || minutes > 10080 {
+					return time.Hour
+				}
+				return time.Duration(minutes) * time.Minute
+			}
+			timer := time.NewTimer(interval())
+			defer timer.Stop()
+			for {
+				select {
+				case <-monitoringContext.Done():
+					return
+				case savedAt := <-intervalChanged:
+					if !timer.Stop() {
+						select {
+						case <-timer.C:
+						default:
+						}
+					}
+					delay := time.Until(savedAt.Add(interval()))
+					if delay < 0 {
+						delay = 0
+					}
+					timer.Reset(delay)
+				case <-timer.C:
+					_ = weighService.RunMasterSync(monitoringContext, "automatic")
+					timer.Reset(interval())
+				}
+			}
+		}()
+	}
+
 	monitoringDone := make(chan struct{})
 	if cfg.Monitoring.Enabled {
 		go func() {

@@ -84,6 +84,7 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 const LOG_CLEAR_ENABLED_KEY = "system.log-clear-enabled";
+const MASTER_SYNC_INTERVAL_KEY = "weighing.master-sync-interval-minutes";
 const CAPTURE_REQUIRED_KEY = "weighing.capture-required";
 const TICKET_TITLE_KEY = "weighing.ticket-title";
 
@@ -163,6 +164,7 @@ function isBuiltinConfig(config: SystemConfigRecord) {
 
 function isEditableBuiltinConfig(config: SystemConfigRecord) {
   if (!isBuiltinConfig(config)) return false;
+  if (config.configKey === MASTER_SYNC_INTERVAL_KEY) return config.valueType === "NUMBER";
   if (config.configKey === TICKET_TITLE_KEY) {
     return config.valueType === "TEXT";
   }
@@ -625,7 +627,7 @@ export function SystemConfigsPage() {
               title={
                 builtin
                   ? editableBuiltin
-                    ? "内置开关仅允许修改布尔值"
+                    ? "内置配置仅允许修改配置值"
                     : "内置配置不允许编辑"
                   : undefined
               }
@@ -638,6 +640,7 @@ export function SystemConfigsPage() {
               size="sm"
               variant="ghost"
               disabled={
+                record.configKey === MASTER_SYNC_INTERVAL_KEY ||
                 record.configKey === CAPTURE_REQUIRED_KEY ||
                 record.configKey === TICKET_TITLE_KEY ||
                 record.configKey?.startsWith("weighing.local-")
@@ -1043,7 +1046,7 @@ function ConfigFormDialog({
                   ? "开启后须完成本次指定摄像头抓拍及上传；关闭后允许无图确认称重，缺少图片追溯依据。保存后生效，未确认采样须重新采集。"
                   : editingConfig.configKey === TICKET_TITLE_KEY
                     ? "标题用于此后生成的正式过磅单；历史单据沿用升级基准或自身标题快照，不随本次修改重写。"
-                    : "内置开关仅允许修改布尔值。"
+                    : "内置配置仅允许修改配置值。"
                 : "内置配置由系统维护，不允许编辑或删除。"}
             </div>
           )}

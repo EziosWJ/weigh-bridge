@@ -179,6 +179,39 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 		info.BusinessInput = in
 		return info, nil
 	}
+	var cloudState masterSyncState
+	if err := tx.First(&cloudState, 1).Error; err != nil {
+		return BusinessInfo{}, err
+	}
+	if cloudState.Bound {
+		checks := []struct {
+			table     string
+			id        int64
+			unchanged bool
+		}{
+			{"wb_master_material_map", in.MaterialID, old != nil && old.MaterialID == in.MaterialID},
+			{"wb_master_party_map", in.PartyID, old != nil && old.PartyID == in.PartyID},
+		}
+		if in.CarrierID != nil {
+			checks = append(checks, struct {
+				table     string
+				id        int64
+				unchanged bool
+			}{"wb_master_party_map", *in.CarrierID, old != nil && old.CarrierID != nil && *old.CarrierID == *in.CarrierID})
+		}
+		for _, check := range checks {
+			if check.unchanged {
+				continue
+			}
+			var n int64
+			if err := tx.Table(check.table).Where("local_id = ?", check.id).Count(&n).Error; err != nil {
+				return BusinessInfo{}, err
+			}
+			if n != 1 {
+				return BusinessInfo{}, RejectionError("云端模式下新业务只能选择总部资料")
+			}
+		}
+	}
 	material, err := lockRow[Material](tx, in.MaterialID)
 	if err != nil {
 		return BusinessInfo{}, err

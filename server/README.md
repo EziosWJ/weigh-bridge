@@ -184,3 +184,19 @@ GOCACHE=/tmp/server-build go test -tags=integration ./integration
 PostgreSQL 集成测试每次运行共用一个临时容器，迁移命令编译一次。普通业务测试通过 `startBusinessPostgres` 从本次迁移后的模板克隆独立数据库；模板使用 test 种子，迁移完成后禁止连接。迁移、环境种子、升级／回退专项通过 `startPostgres` 创建空库并执行真实迁移；恢复目标也使用空库。各测试结束删库，整套结束清理容器和临时可执行文件。Goose 回退测试涉及全局状态，保持串行。
 
 `TestPostgresLocalBusinessRecovery` 核对恢复后业务证据、未决操作不重放及不复用后续编号；图片和设备打印账本的完整恢复不在该测试范围。一次性本厂初始化见 `TestPostgresLocalSiteInitializationHTTP`。业务浏览器入口 `npm --prefix web run test:weighing:backend` 使用临时 PostgreSQL、端口 18085／4185／18090 及 Playwright Chromium，结束清理；已知失败仍以当前状态为准。
+
+
+## 厂云基础资料同步
+
+在未提交的环境配置文件（如 `configs/config.dev.yaml`）中设置：
+
+```yaml
+master_sync:
+  enabled: true
+  address: "http://云端地址:端口"
+  credential: "厂区凭据"
+```
+
+支持 HTTP 和 HTTPS。地址不包含 `/api/v1`；凭据由总部发放，不写入受版本控制的文件。修改后重启 Server。先在本厂身份设置与云端相同的厂区及地磅编码，由管理员打开资料页面点“立即同步”；首次成功前不能正式称重。后续每小时自动同步，操作员可主动同步，失败保留上一版。关闭开关并重启后回到单机模式；再次启用后须管理员手动同步成功才恢复云端模式。管理员可在资料页查看和清理同步日志。
+
+部署前执行 Goose schema 与 seed 迁移。恢复测试、升级及联调须使用隔离库；单据上传不属于此功能。

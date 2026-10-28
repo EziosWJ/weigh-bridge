@@ -25,6 +25,7 @@ func RegisterRoutes(router gin.IRouter, h *Handler) {
 	router.Use(h.siteScope)
 	registerSiteRoutes(router, h)
 	registerSiteConfigurationRoutes(router, h)
+	registerMasterSyncRoutes(router, h)
 	router.GET("/capabilities", h.capabilities)
 	router.GET("/local-status", func(c *gin.Context) { v, e := h.service.LocalStatus(c); writeResult(c, v, e) })
 	registerWorkflowRoutes(router, h)
@@ -67,7 +68,12 @@ func (h *Handler) capabilities(c *gin.Context) {
 		return
 	}
 	sites, err := h.service.Sites(c, principal.UserID)
-	writeResult(c, map[string]any{"userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
+	syncStatus, syncErr := h.service.MasterSyncStatus(c)
+	if syncErr != nil {
+		writeResult(c, nil, syncErr)
+		return
+	}
+	writeResult(c, map[string]any{"masterSyncBound": syncStatus.Bound, "userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}

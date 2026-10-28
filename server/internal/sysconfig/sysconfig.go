@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	enabled            = 1
-	builtin            = 1
-	LogClearEnabledKey = "system.log-clear-enabled"
-	CaptureRequiredKey = "weighing.capture-required"
+	enabled               = 1
+	builtin               = 1
+	LogClearEnabledKey    = "system.log-clear-enabled"
+	CaptureRequiredKey    = "weighing.capture-required"
+	MasterSyncIntervalKey = "weighing.master-sync-interval-minutes"
 )
 
 var (
@@ -170,12 +171,14 @@ func (r *Repository) SetStatus(c context.Context, id int64, s int, e audit.Event
 }
 
 type Service struct {
-	store Store
+	store                       Store
+	onMasterSyncIntervalChanged func()
 }
 
 func NewService(s Store) *Service {
-	return &Service{s}
+	return &Service{store: s}
 }
+func (s *Service) SetMasterSyncIntervalChanged(fn func()) { s.onMasterSyncIntervalChanged = fn }
 func (s *Service) Page(c context.Context, q Query) (Page, error) {
 	if q.Page < 1 {
 		q.Page = 1
@@ -237,6 +240,15 @@ func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config,
 			return ErrInvalid
 		}
 		value = normalized
+	case MasterSyncIntervalKey:
+		if old.ValueType != "NUMBER" {
+			return ErrInvalid
+		}
+		minutes, err := strconv.Atoi(strings.TrimSpace(in.ConfigValue))
+		if err != nil || minutes < 1 || minutes > 10080 {
+			return ErrInvalid
+		}
+		value = strconv.Itoa(minutes)
 	case TicketTitleKey:
 		// The ticket title is a protected text key: only its value may change,
 		// and it must stay a non-empty single-line title.
@@ -257,7 +269,13 @@ func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config,
 	e := event(m, "config.update", "config", old.ID, "更新配置")
 	data, _ := json.Marshal(map[string]any{"configKey": old.ConfigKey, "before": before, "after": value})
 	e.Summary = string(data)
-	return s.store.Update(c, old, e)
+	if err := s.store.Update(c, old, e); err != nil {
+		return err
+	}
+	if old.ConfigKey == MasterSyncIntervalKey && s.onMasterSyncIntervalChanged != nil {
+		s.onMasterSyncIntervalChanged()
+	}
+	return nil
 }
 
 func normalizeBooleanValue(value string) (string, bool) {
@@ -301,7 +319,7 @@ func (s *Service) Status(c context.Context, m audit.Metadata, id, st int64) erro
 	if e != nil {
 		return e
 	}
-	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
+	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey || old.ConfigKey == MasterSyncIntervalKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
 		return ErrBuiltin
 	}
 	return s.store.SetStatus(c, id, int(st), event(m, "config.status", "config", id, "更新配置状态"))

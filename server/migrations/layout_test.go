@@ -49,6 +49,12 @@ func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
 		if filepath.Base(name) == "00009_business_notification_source.sql" || filepath.Base(name) == "00011_weighing_workflow_schema.sql" || filepath.Base(name) == "00012_agent_contract.sql" {
 			continue
 		}
+		if filepath.Base(name) == "00030_master_sync.sql" {
+			// The singleton state is required immediately after schema migration,
+			// including upgrades that apply seed migrations separately.
+			initialState := regexp.MustCompile(`(?m)^INSERT INTO wb_master_sync_state \(id\) VALUES \(1\);\s*$`)
+			contents = initialState.ReplaceAll(contents, nil)
+		}
 		if filepath.Base(name) == "00013_sample_without_timeout.sql" {
 			// Restore the former NOT NULL constraint on rollback with a data backfill.
 			// Keep rejecting any other DML, including seed inserts.

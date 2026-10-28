@@ -2,6 +2,7 @@ import {
   FileSearch,
   FileText,
   ListOrdered,
+  ListChecks,
   LayoutDashboard,
   Bell,
   Camera,
@@ -322,7 +323,15 @@ export function buildAppNavigation({
     }
     return sortNavigationItems(items);
   }
-  return permissionCodes.includes("system:config") ? withConfigurationEntry(merged) : merged;
+  let result = permissionCodes.includes("system:config") ? withConfigurationEntry(merged) : merged;
+  if (isAdmin && !hasNavigationPath(result, "/system/sync-log")) {
+    const entry: NavItem = { label: "同步日志", path: "/system/sync-log", icon: ListChecks, sortOrder: 3 };
+    const index = result.findIndex(item => item.path === "/log");
+    result = index >= 0
+      ? result.map((item, i) => i === index ? { ...item, children: sortNavigationItems([...(item.children ?? []), entry]) } : item)
+      : sortNavigationItems([...result, { label: "日志管理", path: "/log", icon: ListChecks, sortOrder: 2, children: [entry] }]);
+  }
+  return result;
 }
 
 export function createUserMenuTitleMap(
@@ -381,6 +390,7 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/system/menu": "菜单管理",
   "/system/login-log": "登录日志",
   "/system/oper-log": "操作日志",
+  "/system/sync-log": "同步日志",
   "/system/file": "文件管理",
   "/system/notification": "通知管理",
   "/system/agent-maintenance": "设备维护",

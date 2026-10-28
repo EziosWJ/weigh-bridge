@@ -40,6 +40,9 @@ func (s *Service) ChangeSession(ctx context.Context, scaleCode string, action st
 // Agent generation records the verified capture window. A successful sample is
 // frozen; operator confirmation does not depend on subsequent device state.
 func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (Sample, error) {
+	if err := s.masterSyncReady(ctx); err != nil {
+		return Sample{}, err
+	}
 	release, gateErr := s.maintenance.enter()
 	if gateErr != nil {
 		return Sample{}, gateErr
@@ -219,6 +222,9 @@ func (s *Service) InvalidateSample(ctx context.Context, id int64, in SessionInpu
 }
 
 func (s *Service) ConfirmFirst(ctx context.Context, in ConfirmationInput, e audit.Event) (CommandResult, error) {
+	if err := s.masterSyncReady(ctx); err != nil {
+		return CommandResult{}, err
+	}
 	if !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleCode == "" || in.TaskID != nil {
 		return CommandResult{}, ErrInvalid
 	}

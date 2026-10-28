@@ -9,7 +9,7 @@ export interface SiteGrant {siteCode:string;canOperate:number}
 export interface DailyTicketSequence {businessDate:string;lastIssued:number}
 export interface WeighingCapabilities {
  localSiteCode: string; localScaleCode: string; configured: boolean; initialized: boolean;
- maintenanceEnabled?: boolean;
+ maintenanceEnabled?: boolean; masterSyncBound?: boolean;
  sites: WeighingSite[];
   userId: number;
   permissionCodes: string[];
@@ -35,6 +35,10 @@ export const weighingApi = {
  siteGrants: (id:number) => http.get<SiteGrant[]>(`${base}/users/${id}/sites`),
  saveSiteGrants: (id:number,grants:SiteGrant[]) => http.put(`${base}/users/${id}/sites`,{grants}),
  capabilities: () => http.get<WeighingCapabilities>(`${base}/capabilities`),
+ masterSyncStatus: () => http.get<{enabled:boolean;bound:boolean;lastSuccess:string|null;isAdmin:boolean}>(`${base}/master-sync/status`),
+ masterSyncLogs: () => http.get<{id:number;attemptedAt:string;triggerType:string;success:boolean;reason:string}[]>(`${base}/master-sync/logs`),
+ clearMasterSyncLogs: () => http.delete(`${base}/master-sync/logs`),
+ runMasterSync: () => http.post<{enabled:boolean;bound:boolean;lastSuccess:string|null;isAdmin:boolean}>(`${base}/master-sync`, {}),
  siteConfiguration: () => http.get<unknown[]>(`${base}/site-config`),
  initializeLocalSite: (input: { siteCode: string; scaleCode?: string; name?: string; scaleName?: string }) => http.post(`${base}/site-config/initialize`, input),
  saveSiteConfiguration: (input: { code?: string; scaleCode?: string; name: string; scaleName: string; enabled: number; version: number }) => http.put(`${base}/site-config`, input),

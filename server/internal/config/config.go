@@ -35,6 +35,7 @@ type Config struct {
 	Monitoring  MonitoringConfig  `koanf:"monitoring"`
 	Maintenance MaintenanceConfig `koanf:"maintenance"`
 	Weighing    WeighingConfig    `koanf:"weighing"`
+	MasterSync  MasterSyncConfig  `koanf:"master_sync"`
 }
 
 // MaintenanceConfig configures the local Agent maintenance bridge.
@@ -50,6 +51,12 @@ func (m MaintenanceConfig) IsEnabled() bool {
 		return *m.Enabled
 	}
 	return true
+}
+
+type MasterSyncConfig struct {
+	Enabled    bool   `koanf:"enabled"`
+	Address    string `koanf:"address"`
+	Credential string `koanf:"credential"`
 }
 
 type WeighingConfig struct {

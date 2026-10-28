@@ -41,6 +41,7 @@ try {
     assert.deepEqual(await labels('operator-children'), ['待回磅任务', '原始称重', '最终单据', '物料资料', '往来主体', '物料分类', '登录日志', '操作日志']);
     assert.deepEqual(await labels('operator-no-permission'), ['系统概览'], '概览入口默认可见，业务菜单仍遵守已有权限');
     assert.ok((await labels('admin-operator')).includes('系统概览'), 'ADMIN 优先于操作员菜单限制');
+    assert.deepEqual(await labels('admin-log-children'), ['登录日志', '操作日志', '同步日志'], '同步日志应放在管理员日志管理下');
     console.log("menu order passed");
   } finally {
     await browser.close();

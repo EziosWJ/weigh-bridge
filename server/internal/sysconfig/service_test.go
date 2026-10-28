@@ -262,3 +262,29 @@ func TestBuiltinTicketTitleRejectsWrongValueType(t *testing.T) {
 }
 
 func intPtr(value int) *int { return &value }
+
+func TestMasterSyncIntervalValidationAndNotification(t *testing.T) {
+	store := newMemoryStore()
+	store.configs[1] = Config{ID: 1, ConfigKey: MasterSyncIntervalKey, ConfigValue: "60", ValueType: "NUMBER", IsBuiltin: builtin, Status: 1}
+	service := NewService(store)
+	notifications := 0
+	service.SetMasterSyncIntervalChanged(func() { notifications++ })
+	for _, value := range []string{"0", "-1", "1.5", "10081", "abc"} {
+		if err := service.Update(context.Background(), audit.Metadata{}, 1, Input{ConfigValue: value}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("value %q: %v", value, err)
+		}
+	}
+	if notifications != 0 || len(store.auditEvents) != 0 {
+		t.Fatal("invalid values changed state")
+	}
+	if err := service.Update(context.Background(), audit.Metadata{}, 1, Input{ConfigValue: "15"}); err != nil {
+		t.Fatal(err)
+	}
+	if notifications != 1 || store.configs[1].ConfigValue != "15" || len(store.auditEvents) != 1 {
+		t.Fatal("valid update did not notify and audit")
+	}
+	store.auditError = errors.New("audit failure")
+	if err := service.Update(context.Background(), audit.Metadata{}, 1, Input{ConfigValue: "30"}); err == nil || notifications != 1 {
+		t.Fatal("failed audit must not notify")
+	}
+}

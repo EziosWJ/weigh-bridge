@@ -136,6 +136,10 @@ export const router = createBrowserRouter([
         lazy: () => import("@/pages/system/logs/login-logs").then((module) => ({ Component: module.SystemLoginLogsPage })),
       },
       {
+        path: "system/sync-log",
+        lazy: () => import("@/pages/system/logs/sync-logs").then((module) => ({ Component: module.SystemSyncLogsPage })),
+      },
+      {
         path: "system/oper-log",
         lazy: () => import("@/pages/system/logs/oper-logs").then((module) => ({ Component: module.SystemOperLogsPage })),
       },
