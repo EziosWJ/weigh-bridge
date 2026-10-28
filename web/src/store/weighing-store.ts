@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ApiError } from '@/lib/api-error';
+import { createId } from '@/lib/id';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { plateError } from '@/lib/weighing/plate';
 import { workflowApi, task as taskView, ticket as ticketView, type CommandResult, type WireSample, type WireSession, type WireTicket } from '@/api/weighing-workflow';
@@ -12,14 +13,14 @@ import { useWeighingMasterStore } from './weighing-master-store';
 // This namespace contains UI drafts/preferences and pending request ids, never business rows.
 export const WEIGHING_STORAGE_KEY = 'weighbridge-server-ui-v1';
 const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-let clientId = crypto.randomUUID();
+let clientId = createId();
 try {
   const saved = sessionStorage.getItem(`${WEIGHING_STORAGE_KEY}:client`);
   if (saved && (!window.opener || navigation?.type === 'reload')) clientId = saved as `${string}-${string}-${string}-${string}-${string}`;
   sessionStorage.setItem(`${WEIGHING_STORAGE_KEY}:client`, clientId);
 } catch { /* An in-memory client still obeys the server lease. */ }
 const defaults = (): DeviceConfig => ({ role: 'operator', weight: 0, stable: false, timedOut: true, deviceError: false, online: false, evidence: false });
-function empty(): WeighingState { return { version: 3, categories: [], materials: [], parties: [], tasks: [], tickets: [], config: defaults(), draft: emptyTaskInput(), draftRequestId: crypto.randomUUID(), firstRequests: {}, sampleReady: false, owner: null, history: [], sequence: 0 }; }
+function empty(): WeighingState { return { version: 3, categories: [], materials: [], parties: [], tasks: [], tickets: [], config: defaults(), draft: emptyTaskInput(), draftRequestId: createId(), firstRequests: {}, sampleReady: false, owner: null, history: [], sequence: 0 }; }
 interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'void' | 'print' }
 interface UIState { draft: TaskInput; draftRequestId: string; pending: PendingRequest | null }
 interface Store {
@@ -155,7 +156,7 @@ async function send(request: PendingRequest, explicitRetry = false) {
 
       pendingRequest = null;
       if (useWeighingStore.getState().capabilities?.userId === request.actorId) clearSample();
-      updateData({ pending: undefined, draftRequestId: crypto.randomUUID() }); persist();
+      updateData({ pending: undefined, draftRequestId: createId() }); persist();
     }
     throw error;
   }
@@ -270,7 +271,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
           updateData({ draft: { ...get().data.draft, ...command.patch }, ...(changedPlate ? { draftPlateEvidence: undefined } : {}) }); persist(); break;
         }
         case 'verifyPlate': updateData({ draftPlateEvidence: command.evidence }); break;
-        case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: crypto.randomUUID(), draftPlateEvidence: undefined }); persist(); await release(); break;
+        case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: createId(), draftPlateEvidence: undefined }); persist(); await release(); break;
         case 'occupy': if (command.owner === 'other') throw new Error('请用另一个真实工作台取得操作权，不能伪造其他会话。'); if (command.owner === null) { await invalidate(); await release(); } else await acquire(); break;
         case 'takeover': await acquire('takeover', command.reason); clearSample(); break;
         case 'capture': {
@@ -292,28 +293,28 @@ export const useWeighingStore = create<Store>((set, get) => ({
           await synchronizeLocalIdentity();
           if (!command.checked || !sample || !lease?.sessionToken) throw new Error('请重新采集并完成人工核对');
           const current = data.tasks.find(t => t.id === command.taskId);
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           const body = { scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/second-confirmation`, body, requestId, taskId: command.taskId, stage: 'second' }); break;
         }
         case 'correctTask':
         case 'terminate': {
           const current = data.tasks.find(t => t.id === command.taskId);
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           const body = { requestId, version: current?.version, reason: command.reason, ...(command.type === 'correctTask' ? { business: businessInput(command.input) } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/${command.type === 'correctTask' ? 'corrections' : 'termination'}`, body, requestId, taskId: command.taskId, stage: 'second', operation: command.type === 'correctTask' ? 'correct' : 'terminate' }); break;
         }
         case 'voidTicket': {
           const current = data.tickets.find(t => t.id === command.ticketId);
           if (!current) throw new Error('请先刷新单据详情');
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           await send({ actorId, path: `/tickets/${command.ticketId}/void`, body: { requestId, reason: command.reason }, requestId, taskId: current.taskId, stage: 'second', operation: 'void' }); break;
         }
         case 'reopenTicket': {
           const previous = data.tickets.find(t => t.id === command.ticketId);
           const current = data.tasks.find(t => t.id === previous?.taskId);
           if (!previous || !current) throw new Error('请先刷新原任务与单据');
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           const body = { requestId, taskVersion: current.version, reason: command.reason, business: businessInput(command.input), basisValid: command.evidenceValid, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}) };
           await send({ actorId, path: `/tickets/${command.ticketId}/reopen`, body, requestId, taskId: current.id, stage: 'second', operation: 'reopen' }); break;
         }
@@ -323,7 +324,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
           if (!current || !sample || !lease?.sessionToken || !command.checked || command.captureId !== String(sample.id)) throw new Error('请重新采集并人工核对目标称重');
           const target = [...current.records].reverse().find(r => r.stage === command.stage);
           if (!target) throw new Error('未找到当前有效的目标称重');
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           const body = { requestId, version: current.version, scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, targetRecordId: Number(target.id), checks, sameLoadConfirmed: command.sameLoad, otherBasisValid: command.otherValid ?? false, reason: command.reason };
           await send({ actorId, path: `/tasks/${command.taskId}/reweighs`, body, requestId, taskId: current.id, stage: command.stage ?? 'first', operation: 'reweigh' }); break;
         }
@@ -331,7 +332,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
         case 'startPrint': {
           const current = data.tickets.find(t => t.id === command.ticketId);
           if (!current) throw new Error('请先刷新单据');
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           const intent = command.type === 'startPrint' ? command.intent : current.printStatus === 'failed' ? 'retry' : 'initial';
           const body = { requestId, intent, reason: command.type === 'startPrint' ? command.reason ?? '' : '' };
           await send({ actorId, path: `/tickets/${command.ticketId}/print-attempts`, body, requestId, taskId: current.taskId, stage: 'second', operation: 'print' }); break;
@@ -339,7 +340,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
         case 'resolvePrint': {
           const current = data.tickets.find(t => t.id === command.ticketId);
           if (!current?.lastPrintAttemptId) throw new Error('没有可核实的打印尝试，请刷新单据');
-          const requestId = crypto.randomUUID();
+          const requestId = createId();
           const body = { requestId, status: command.status ?? (command.printed ? 'printed' : 'failed'), reason: command.reason };
           await send({ actorId, path: `/print-attempts/${current.lastPrintAttemptId}/result`, body, requestId, taskId: current.taskId, stage: 'second', operation: 'print' }); break;
         }
@@ -348,7 +349,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
           const request = pendingRequest;
           const result = await workflowApi.operation(request.requestId);
           if (result.status === 'not_found') throw new Error('尚未查到已提交结果，可能仍在处理。请稍后查询，或明确使用原请求重试；不能新建请求重复确认。');
-          if (result.status === 'rejected') { pendingRequest = null; clearSample(); updateData({ pending: undefined, draftRequestId: crypto.randomUUID() }); persist(); set({ lastResolution: { committed: false, taskId: request.taskId ?? '' } }); throw new Error(`此前请求已被拒绝：${result.error}。请重新采集并核对。`); }
+          if (result.status === 'rejected') { pendingRequest = null; clearSample(); updateData({ pending: undefined, draftRequestId: createId() }); persist(); set({ lastResolution: { committed: false, taskId: request.taskId ?? '' } }); throw new Error(`此前请求已被拒绝：${result.error}。请重新采集并核对。`); }
           if (!result.result) throw new Error('服务端结果尚不可用');
           await finishResult(result.result, request); break;
         }

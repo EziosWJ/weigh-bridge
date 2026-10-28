@@ -21,6 +21,7 @@ import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useWeighingMasterStore, useWeighingMasterData } from '@/store/weighing-master-store';
 import { useAuthStore } from '@/store/auth-store';
+import { createId } from '@/lib/id';
 import { partyRoleLabels, partyNatureLabels, type Material, type Party, type PartyKind, type PartyNature, type MaterialCategory } from '@/types/weighing';
 import type { DataTableColumn } from '@/types';
 import './list.css';
@@ -179,7 +180,7 @@ function PartyEditContent() {
         <div className="space-y-5 md:col-span-2">{form.contacts.map((contact, index) => <div key={contact.id} className="border-b border-border pb-4">
           <div className="mb-3 flex items-center justify-between"><label className="flex items-center gap-2 text-sm"><input type="radio" name="default-contact" checked={contact.isDefault} onChange={() => setForm({ ...form, contacts: form.contacts.map(c => ({ ...c, isDefault: c.id === contact.id })) })} />默认联系人</label><Button size="sm" onClick={() => { const contacts = form.contacts.filter(c => c.id !== contact.id); if (contacts.length && !contacts.some(c => c.isDefault)) contacts[0] = { ...contacts[0], isDefault: true }; setForm({ ...form, contacts }); }}>移除联系人</Button></div>
           <div className="grid gap-x-4 md:grid-cols-2">{([['name', '姓名'], ['phone', '电话'], ['purpose', '职务／用途'], ['remark', '联系人备注']] as const).map(([key, label]) => <Field key={key} label={`${label}（联系人${index + 1}）`} htmlFor={`contact-${contact.id}-${key}`} required={key === 'name'}><Input id={`contact-${contact.id}-${key}`} type={key === 'phone' ? 'tel' : 'text'} required={key === 'name'} value={contact[key]} onChange={e => setForm({ ...form, contacts: form.contacts.map(c => c.id === contact.id ? { ...c, [key]: e.target.value } : c) })} /></Field>)}</div>
-        </div>)}{admin && <Button onClick={() => setForm({ ...form, contacts: [...form.contacts, { id: crypto.randomUUID(), name: '', phone: '', purpose: '', remark: '', isDefault: form.contacts.length === 0 }] })}>添加联系人</Button>}{!form.contacts.length && <p className="text-sm text-text-tertiary">暂无联系人，可先保存主体资料。</p>}</div>
+        </div>)}{admin && <Button onClick={() => setForm({ ...form, contacts: [...form.contacts, { id: createId(), name: '', phone: '', purpose: '', remark: '', isDefault: form.contacts.length === 0 }] })}>添加联系人</Button>}{!form.contacts.length && <p className="text-sm text-text-tertiary">暂无联系人，可先保存主体资料。</p>}</div>
       </FormSection></fieldset>
       {data.parties.some(p => p.id !== id && p.name === form.name.trim()) && <p className="text-sm text-warning">存在同名主体，允许保存。请通过编码、电话和性质核对，避免重复建档。</p>}
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
