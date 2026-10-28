@@ -403,7 +403,7 @@ function WorkbenchContent() {
     <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
       <DialogOverlay />
       <DialogContent className="workbench-business-dialog flex max-w-[1200px] flex-col">
-        <DialogHeader><div><DialogTitle>{taskInfo || awaitingResult ? '查看运输资料' : '录入运输资料'}</DialogTitle><DialogDescription>{taskInfo || awaitingResult ? '查看本趟运输信息及称重依据。' : '填写本趟资料，修改自动保留；称重仍需单独核对并确认。'}</DialogDescription></div><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
+        <DialogHeader><div><DialogTitle>{taskInfo || awaitingResult ? '查看运输资料' : '录入运输资料'}</DialogTitle><DialogDescription>{taskInfo || awaitingResult ? '' : ''}</DialogDescription></div><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
         <DialogBody>{!taskInfo && located && requiredHint && <p role="status" className="mb-3 text-sm text-warning">确认前{requiredHint}</p>}<div className="weighing-business min-w-0" ref={businessPanel}>{taskInfo ? <ContentCard title={successfulTask ? '本趟运输' : '核对本趟运输'} extra={<StatusTag>{awaitingResult ? '提交待核实' : taskStatusLabels[taskInfo.status]}</StatusTag>}>
           <SectionTabs key={taskInfo.id} label="本趟运输信息" items={[
             { value: 'basic', label: '基本信息', content: <>

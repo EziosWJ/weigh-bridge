@@ -54,7 +54,7 @@ export function WeighingTasksPage() {
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
   return <div className="weighing-list-page">
-    <PageHeader title="待回磅任务" description="默认显示待二次称重的车辆，可切换状态查询历史任务。" />
+    <PageHeader title="待回磅任务" description="" />
     <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(Object.keys(value).length ? value : { status: 'second' }); setPage(1); }} />
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).then(() => toast.success("运输任务 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }))}>导出筛选明细 CSV</Button>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1352} />

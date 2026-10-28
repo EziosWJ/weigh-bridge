@@ -213,7 +213,7 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
             <div className="truncate text-base font-semibold text-text-primary">
               酒厂地磅管理系统
             </div>
-            <div className="truncate text-xs text-text-tertiary">管理控制台</div>
+            <div className="truncate text-xs text-text-tertiary"></div>
           </div>
         )}
       </div>
