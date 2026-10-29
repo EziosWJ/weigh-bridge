@@ -68,8 +68,8 @@ export function MaintenanceConfigPanel({ section, config, settings, setSettings,
           <Input id="maintenance-offset-x" type="number" min={0} max={30} disabled={busy}
             value={settings.print.offsetXmm} onChange={event => updatePrint('offsetXmm', Number(event.target.value))} />
         </Field>
-        <Field label="垂直偏移（mm）" htmlFor="maintenance-offset-y" help="正方向向下；不作为累计走纸误差的替代修正。">
-          <Input id="maintenance-offset-y" type="number" min={0} max={30} disabled={busy}
+        <Field label="垂直偏移（mm）" htmlFor="maintenance-offset-y" help="正数向下、负数向上；上移不能超过内容居中留白，超出会拒绝。不作为累计走纸误差的替代修正。">
+          <Input id="maintenance-offset-y" type="number" min={-30} max={30} disabled={busy}
             value={settings.print.offsetYmm} onChange={event => updatePrint('offsetYmm', Number(event.target.value))} />
         </Field>
         <Field label="内容缩放（倍）" htmlFor="maintenance-print-scale" help="先节长、再位置，必要时才缩放。">

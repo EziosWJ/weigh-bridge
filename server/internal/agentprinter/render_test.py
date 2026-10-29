@@ -51,6 +51,20 @@ class ContinuousTableTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             render.render_image(s)
 
+    def test_negative_vertical_offset_moves_up_without_cropping(self):
+        s = continuous_sheet()
+        base = render.render_image(s)
+        _, sw, sh, base_x, base_y, _ = render.geometry(s)
+        base_content = base.crop((base_x, base_y, base_x + sw, base_y + sh))
+        s['calibration'] = {'offsetYmm': -5}
+        im = render.render_image(s)
+        _, _, _, x, y, _ = render.geometry(s)
+        self.assertLess(y, base_y)
+        self.assertEqual(im.crop((x, y, x + sw, y + sh)).tobytes(), base_content.tobytes())
+        s['calibration'] = {'offsetYmm': -6}
+        with self.assertRaises(ValueError):
+            render.render_image(s)
+
     def test_calibration_sample_uses_same_centered_geometry(self):
         s = continuous_sheet()
         s['calibrationPattern'] = True
