@@ -107,3 +107,19 @@ export const streamStateLabels: Record<StreamState, string> = {
   removing: "待移除",
   removed: "已移除",
 };
+
+export interface CameraEventBinding {
+  cameraId: number;
+  serialNumber: string;
+  enabled: boolean;
+  timeoutSeconds: number;
+  lastHeartbeatAt?: string | null;
+  deviceTime: string;
+  deviceIp: string;
+}
+export interface CameraEventDiagnostic {
+  id: number; operator: string; eventId: string; deviceTime: string; receivedAt: string; sha256: string; diagnostic: unknown;
+}
+export interface CameraEvents {
+  binding: CameraEventBinding; state: "unconfigured" | "unknown" | "offline" | "online"; events: CameraEventDiagnostic[];
+}

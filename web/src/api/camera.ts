@@ -1,6 +1,8 @@
 import { http } from "@/lib/http";
 import type {
   CameraInput,
+  CameraEvents,
+  CameraEventBinding,
   CameraList,
   CameraRecord,
   CameraSyncResult,
@@ -15,6 +17,8 @@ const base = "/api/weighing";
 
 /** Camera maintenance API. Read endpoints require weighing:camera:view. */
 export const cameraApi = {
+  events: (id: number) => http.get<CameraEvents>(`${base}/cameras/${id}/events`),
+  saveEvents: (id: number, binding: Pick<CameraEventBinding, "serialNumber" | "enabled" | "timeoutSeconds">) => http.put(`${base}/cameras/${id}/events`, binding),
   list: () => http.get<CameraList>(`${base}/cameras`),
   create: (input: CameraInput) => http.post<CameraRecord>(`${base}/cameras`, input),
   update: (id: number, input: CameraInput) => http.put<CameraRecord>(`${base}/cameras/${id}`, input),

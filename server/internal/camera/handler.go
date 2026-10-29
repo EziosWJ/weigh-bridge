@@ -25,6 +25,7 @@ func NewHandler(service *Service, permissions *rbac.Service) *Handler {
 // prefix. The module has its own maintenance boundary and does not depend on
 // the Agent connection or the weighing site-scope middleware.
 func RegisterRoutes(router gin.IRouter, h *Handler) {
+	registerEventManagement(router, h)
 	view := rbac.RequirePermission(h.permissions, "weighing:camera:view")
 	manage := rbac.RequirePermission(h.permissions, "weighing:camera:manage")
 	router.GET("/cameras", view, h.list)

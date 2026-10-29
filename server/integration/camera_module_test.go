@@ -242,3 +242,88 @@ func TestPostgresCameraModuleCRUDVersioningCaptureAndSync(t *testing.T) {
 		t.Fatalf("historical image unavailable after delete: %v", err)
 	}
 }
+
+func TestPostgresCameraEventReception(t *testing.T) {
+	temporary := startBusinessPostgres(t)
+	db := openTemporaryDatabase(t, temporary.dsn)
+	defer db.Close()
+	deps := testDependencies(t, db, t.TempDir())
+	deps.Camera = camera.NewService(camera.NewRepository(db.GORM), t.TempDir(), cameraIntegrationFrame{data: cameraIntegrationJPEG(t)}, nil, nil)
+	router, err := app.Build(testAPIConfig(), db, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := loginAdmin(t, router)
+	testLocalSetup(t, db, router, token, 1)
+	first := decodeCameraData[camera.Camera](t, serveJSON(router, http.MethodPost, "/api/weighing/cameras", `{"name":"event one","sourceUrl":"rtsp://camera/1"}`, token))
+	second := decodeCameraData[camera.Camera](t, serveJSON(router, http.MethodPost, "/api/weighing/cameras", `{"name":"event two","sourceUrl":"rtsp://camera/2"}`, token))
+	endpoint := func(id int64) string { return "/api/weighing/cameras/" + itoa(id) + "/events" }
+	for _, binding := range []struct {
+		id     int64
+		serial string
+	}{{first.ID, "one"}, {second.ID, "two"}} {
+		response := serveJSON(router, http.MethodPut, endpoint(binding.id), `{"serialNumber":"`+binding.serial+`","enabled":true,"timeoutSeconds":180}`, token)
+		assertEnvelopeCode(t, response, 200, 200, "success")
+	}
+	heartbeat := func(serial string) *httptest.ResponseRecorder {
+		return serveJSON(router, http.MethodPost, "/api/v1/event/pull", `{"operator":"heartbeat","deviceInfo":{"serialNumber":"`+serial+`"},"info":{"eventId":1,"time":"bad-device-clock"}}`, "")
+	}
+	if response := heartbeat("unknown"); response.Code != 403 {
+		t.Fatalf("unknown: %d", response.Code)
+	}
+	if response := heartbeat("one"); response.Code != 200 || !strings.Contains(response.Body.String(), `"operator":"heartbeat-ack"`) {
+		t.Fatalf("heartbeat: %d %s", response.Code, response.Body.String())
+	}
+	type state struct {
+		Binding camera.EventBinding      `json:"binding"`
+		State   string                   `json:"state"`
+		Events  []camera.EventDiagnostic `json:"events"`
+	}
+	a := decodeCameraData[state](t, serveJSON(router, http.MethodGet, endpoint(first.ID), "", token))
+	b := decodeCameraData[state](t, serveJSON(router, http.MethodGet, endpoint(second.ID), "", token))
+	if a.State != "online" || a.Binding.LastHeartbeatAt == nil || b.State != "unknown" || b.Binding.LastHeartbeatAt != nil {
+		t.Fatalf("cross-device state: %+v %+v", a, b)
+	}
+	if response := serveJSON(router, http.MethodGet, endpoint(first.ID), "", ""); response.Code != http.StatusUnauthorized {
+		t.Fatalf("diagnostic requires authentication: %d", response.Code)
+	}
+	collision := serveJSON(router, http.MethodPut, endpoint(second.ID), `{"serialNumber":"one","enabled":true,"timeoutSeconds":180}`, token)
+	assertEnvelopeCode(t, collision, 200, 400, camera.ErrConflict.Error())
+	if heartbeat("two").Code != 200 || heartbeat("one").Code != 200 {
+		t.Fatal("repeated heartbeats failed")
+	}
+	event := `{"operator":"faceReco","deviceInfo":{"serialNumber":"one"},"info":{"eventId":1,"time":"wrong"},"image":"secret-image"}`
+	for i := 0; i < 102; i++ {
+		if response := serveJSON(router, http.MethodPost, "/api/v1/event/pull", event, ""); response.Code != 503 {
+			t.Fatalf("event: %d", response.Code)
+		}
+	}
+	otherEvent := strings.Replace(event, `"serialNumber":"one"`, `"serialNumber":"two"`, 1)
+	if serveJSON(router, http.MethodPost, "/api/v1/event/pull", otherEvent, "").Code != 503 {
+		t.Fatal("other device event failed")
+	}
+	b = decodeCameraData[state](t, serveJSON(router, http.MethodGet, endpoint(second.ID), "", token))
+	if len(b.Events) != 1 {
+		t.Fatalf("other device event missing: %+v", b.Events)
+	}
+	deps.Camera = camera.NewService(camera.NewRepository(db.GORM), t.TempDir(), cameraIntegrationFrame{data: cameraIntegrationJPEG(t)}, nil, nil)
+	router, err = app.Build(testAPIConfig(), db, deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a = decodeCameraData[state](t, serveJSON(router, http.MethodGet, endpoint(first.ID), "", token))
+	if len(a.Events) != 100 || strings.Contains(string(a.Events[0].Diagnostic), "secret-image") {
+		t.Fatalf("diagnostics: %+v", a.Events)
+	}
+	if err := db.GORM.Exec("UPDATE wb_camera_event_binding SET last_heartbeat_at = NOW() - INTERVAL '1 hour' WHERE camera_id = ?", first.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	a = decodeCameraData[state](t, serveJSON(router, http.MethodGet, endpoint(first.ID), "", token))
+	if a.State != "offline" {
+		t.Fatalf("stale status: %s", a.State)
+	}
+	assertEnvelopeCode(t, serveJSON(router, http.MethodPut, endpoint(first.ID), `{"serialNumber":"one","enabled":false,"timeoutSeconds":180}`, token), 200, 200, "success")
+	if heartbeat("one").Code != 403 {
+		t.Fatal("disabled device accepted")
+	}
+}

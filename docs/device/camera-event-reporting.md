@@ -1,0 +1,18 @@
+# 摄像头主动上报接入与现场验证
+
+本厂 Server 的 `POST /api/v1/event/pull` 供设备使用，不要求用户 JWT；必须通过防火墙或网关仅允许本厂可信设备网段访问，禁止直接暴露公网。可选环境变量 `WEIGHBRIDGE_CAMERA_EVENT_ALLOWED_IPS` 以逗号分隔允许的直接连接 IP，配置后只接受这些来源，不信任转发头；部署在反向代理后应结合代理自身的网络限制。未配置时由网络规则限制。设备身份按管理员在摄像头管理页绑定的序列号匹配；序列号本身不是认证凭据。管理与诊断接口仍需摄像头权限。HTTPS 由现场已有 TLS 终止或 Server 部署方式提供，设备配置的地址、端口、路径须与实际入口一致。
+
+升级前备份数据库；显式执行 schema 迁移 `00032_camera_events.sql`，该迁移不支持直接回退，需恢复升级前备份。然后在摄像头管理中打开“上报”，填写设备实际序列号、勾选启用，按设备心跳周期设置离线阈值（建议三倍）。保留原 RTSP 配置；不修改 Agent。服务重启后持久状态保留，状态根据 Server 接收时间计算；未收到心跳显示未知，超过阈值显示离线。设备自报时间和 IP 仅用于诊断。
+
+请求上限 2 MiB、并发上限 8，数据库操作限时 5 秒，HTTP 读取超时沿用 Server 配置。非心跳报文仅记录通用元数据、SHA-256 和去除所有叶子值的有限结构，每台最多保留最近 100 条；不保存原始图片或车牌值。重复和补传暂逐次记录，不以事件号去重，也不触发业务；待取得真实协议后再设计幂等键。对未知事件返回 HTTP 503，表示尚无确认过的厂家 ACK，不表示厂家可接受该响应；设备可能重试。
+
+以下示例仅用于隔离环境，将序列号替换为测试绑定值：
+
+```sh
+curl -i -X POST http://127.0.0.1:8080/api/v1/event/pull -H 'Content-Type: application/json' -d '{"operator":"heartbeat","deviceInfo":{"serialNumber":"test-camera"},"info":{"eventId":1,"time":"2026-10-29T12:00:00+08:00"}}'
+curl -i -X POST http://127.0.0.1:8080/api/v1/event/pull -H 'Content-Type: application/json' -d '{"operator":"test-event","deviceInfo":{"serialNumber":"test-camera"},"info":{"eventId":1,"time":"2026-10-29T12:00:00+08:00"},"image":"synthetic-placeholder"}'
+```
+
+连续发送首条验证重复心跳；更换未知序列号验证拒绝；用无效 JSON 和超过 2 MiB 的合成载荷验证拒绝；重启 Server 后刷新管理页核对状态和诊断。模拟结果不代表设备验收。
+
+现场配置设备的 HTTP/HTTPS 服务器、端口、路径和心跳周期，核对序列号；先用厂家后台测试，再连续观察多次心跳、断开后的离线及恢复。确认设备是否接受不带 `strategy` 的 heartbeat ACK。另向厂家获取真实车牌事件样本、图片尺寸、补传规则和非心跳 ACK 规范，安全脱敏后复核；在此之前不得声称事件上报已获厂家验收，也不将事件关联正式称重。

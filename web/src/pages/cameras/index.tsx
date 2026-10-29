@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/datetime";
+import { CameraEventDialog } from "./camera-events";
 import { CameraDeleteDialog, CameraErrorBanner, CameraFormDialog } from "./camera-form";
 import { CameraPreviewDialog, CameraTestDialog, TestSummary, type TestRecord } from "./camera-dialogs";
 import { streamStateLabels, type CameraInput, type CameraList, type CameraRecord, type VideoSyncState } from "@/types/camera";
@@ -61,6 +62,7 @@ export function CamerasPage() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [testing, setTesting] = useState<CameraRecord | null>(null);
+  const [eventCamera, setEventCamera] = useState<CameraRecord | null>(null);
   const [previewing, setPreviewing] = useState<CameraRecord | null>(null);
 
   const canView = permissions?.includes("weighing:camera:view") ?? false;
@@ -147,6 +149,7 @@ export function CamerasPage() {
     { title: "最近测试", key: "test", width: 190, render: (_, row) => <TestSummary record={tests[row.id]} /> },
     { title: "配置版本", key: "version", width: 90, align: "center", render: (_, row) => <span className="tabular-nums">{row.version}</span> },
     { title: "操作", key: "actions", width: canManage ? 240 : 90, nowrap: true, render: (_, row) => <TableActions>
+      {canManage && <Button size="sm" variant="ghost" onClick={() => setEventCamera(row)}>上报</Button>}
       <Button size="sm" variant="ghost" onClick={() => setPreviewing(row)}><Video className="h-4 w-4" aria-hidden />预览</Button>
       {canManage && <Button size="sm" variant="ghost" onClick={() => setTesting(row)}><Search className="h-4 w-4" aria-hidden />测试</Button>}
       {canManage && <Button size="sm" variant="ghost" onClick={() => { setEditing(row); setFormError(""); setFormOpen(true); }}>编辑</Button>}
@@ -185,6 +188,7 @@ export function CamerasPage() {
 
     {formOpen && <CameraFormDialog key={editing?.id ?? "new"} camera={editing} open loading={formBusy} error={formError} onCancel={() => { setFormOpen(false); setEditing(null); }} onSubmit={saveCamera} />}
     <CameraDeleteDialog camera={deleting} loading={deleteBusy} error={deleteError} onCancel={() => setDeleting(null)} onConfirm={() => void deleteCamera()} />
+    {eventCamera && <CameraEventDialog camera={eventCamera} canManage={canManage} onClose={() => setEventCamera(null)} />}
     {testing && <CameraTestDialog key={`test-${testing.id}`} camera={testing} onClose={() => { setTesting(null); void load(false); }} onResult={record => recordTest(testing, record)} />}
     {previewing && <CameraPreviewDialog key={`preview-${previewing.id}`} camera={previewing} canManage={canManage} onClose={() => setPreviewing(null)} onSync={async () => { await syncVideo(); toast.success("视频源已同步。"); }} />}
   </div>;

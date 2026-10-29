@@ -127,6 +127,7 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		weighing.RegisterRoutes(business, weighing.NewHandler(deps.Weighing, deps.RBAC))
 	}
 	if deps.Camera != nil {
+		camera.RegisterEventRoute(router, deps.Camera)
 		business := router.Group("/api/weighing")
 		business.Use(auth.BearerMiddleware(deps.Auth))
 		camera.RegisterRoutes(business, camera.NewHandler(deps.Camera, deps.RBAC))

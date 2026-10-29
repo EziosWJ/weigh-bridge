@@ -312,6 +312,11 @@ func (r *Repository) UpdateCamera(ctx context.Context, id, expectedVersion int64
 		if result.RowsAffected == 0 {
 			return ErrConflict
 		}
+		if (current.Enabled == 1) != record.Enabled {
+			if err := tx.Model(&EventBinding{}).Where("camera_id=?", id).Updates(map[string]any{"last_heartbeat_at": nil, "device_time": "", "device_ip": ""}).Error; err != nil {
+				return err
+			}
+		}
 		if streamChanged {
 			state := StreamPending
 			if !record.Enabled {
@@ -382,6 +387,9 @@ func (r *Repository) DeleteCamera(ctx context.Context, id, expectedVersion int64
 		}
 		if result.RowsAffected == 0 {
 			return ErrConflict
+		}
+		if err := tx.Model(&EventBinding{}).Where("camera_id=?", id).Updates(map[string]any{"serial_number": "", "enabled": false, "last_heartbeat_at": nil}).Error; err != nil {
+			return err
 		}
 		result = tx.Model(&streamRow{}).Where("camera_id=?", id).Updates(map[string]any{
 			"desired_version": nextVersion,
