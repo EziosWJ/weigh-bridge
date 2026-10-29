@@ -26,6 +26,7 @@ var eventSlots = make(chan struct{}, 8)
 // Network access must be restricted to the trusted device network.
 func RegisterEventRoute(router gin.IRouter, service *Service) {
 	allowed := os.Getenv("WEIGHBRIDGE_CAMERA_EVENT_ALLOWED_IPS")
+	strategyEnabled := os.Getenv("WEIGHBRIDGE_CAMERA_HEARTBEAT_STRATEGY") == "1"
 	router.POST("/api/v1/event/pull", func(c *gin.Context) {
 		if !eventSourceAllowed(allowed, c.Request.RemoteAddr) {
 			c.Status(http.StatusForbidden)
@@ -107,7 +108,7 @@ func RegisterEventRoute(router gin.IRouter, service *Service) {
 			c.Status(http.StatusBadRequest)
 			return
 		}
-		ack, err := heartbeatACK(request, now)
+		ack, err := heartbeatACK(request, now, strategyEnabled)
 		if err != nil {
 			c.Status(http.StatusInternalServerError)
 			return

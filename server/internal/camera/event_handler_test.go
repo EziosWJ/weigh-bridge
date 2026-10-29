@@ -94,3 +94,16 @@ func TestEventSourceAllowlist(t *testing.T) {
 		}
 	}
 }
+
+func TestEventHeartbeatStrategySwitch(t *testing.T) {
+	t.Setenv("WEIGHBRIDGE_CAMERA_HEARTBEAT_STRATEGY", "1")
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterEventRoute(router, NewService(&eventFake{}, "", nil, nil, nil))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/event/pull", strings.NewReader(`{"operator":"heartbeat","deviceInfo":{"serialNumber":"a"},"info":{"eventId":1,"time":"x"}}`))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"heartBeatInterval":30`) || !strings.Contains(response.Body.String(), `"isCarLicenseSnapshotEnable":true`) {
+		t.Fatalf("strategy ACK: %d %s", response.Code, response.Body.String())
+	}
+}
