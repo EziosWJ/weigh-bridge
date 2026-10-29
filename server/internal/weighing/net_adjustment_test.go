@@ -56,6 +56,7 @@ func TestMakeTicketAppliesNetAdjustment(t *testing.T) {
 	first := WeighRecord{ID: 10, TaskID: 1, Stage: "first", Kind: "gross", Weight: 30000}
 	second := WeighRecord{ID: 11, TaskID: 1, Stage: "second", Kind: "tare", Weight: 10000}
 	amount := func(v WeightDifference) *WeightDifference { return &v }
+	rate := func(v int) *int { return &v }
 	ticket, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(1500), Category: "WATER", Remark: "水分大"}, "水分大", false, true, 7, "操作员", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +66,16 @@ func TestMakeTicketAppliesNetAdjustment(t *testing.T) {
 	}
 	if view := ticketView(ticket); view.FinalNet != 18500 {
 		t.Fatalf("final net = %v", view.FinalNet)
+	}
+	percent, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "percent", RateBP: rate(125), Category: "WATER"}, "水分大", false, true, 7, "操作员", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if percent.NetAdjustment != 250 || percent.NetAdjustmentMode != "percent" || percent.NetAdjustmentRateBP == nil || *percent.NetAdjustmentRateBP != 125 {
+		t.Fatalf("percent adjustment: %+v", percent)
+	}
+	if view := ticketView(percent); view.FinalNet != 19750 {
+		t.Fatalf("percent final net = %v", view.FinalNet)
 	}
 	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(-500), Category: "WATER"}, "水分大", false, true, 7, "操作员", nil); err == nil {
 		t.Fatal("normal issuance accepted an upward adjustment")
