@@ -22,7 +22,7 @@ export function WorkbenchShell() {
     if (!routeScale || !capabilities?.localScaleCode || routeScale === capabilities.localScaleCode) return;
     setParams(previous => { const next = new URLSearchParams(previous); next.set('scale', capabilities.localScaleCode); return next; }, { replace: true });
   }, [routeScale, capabilities?.localScaleCode, setParams]);
-  const dispatch = useWeighingStore(s => s.dispatch);
+  const releaseOperation = useWeighingStore(s => s.releaseOperation);
   const owner = useWeighingStore(s => s.data.owner);
   const pending = useWeighingStore(s => s.data.pending);
   const user = useAuthStore(s => s.user);
@@ -30,6 +30,7 @@ export function WorkbenchShell() {
   const config = useWeighingStore(s => s.data.config);
   const [fullscreen, setFullscreen] = useState(!!document.fullscreenElement);
   const [ticketsOpen, setTicketsOpen] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   const canReadTickets = capabilities?.permissionCodes.includes('weighing:read') ?? false;
   useEffect(() => {
     const name=workbenchWindow(scaleCode);
@@ -50,7 +51,14 @@ export function WorkbenchShell() {
       <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
         {canReadTickets && <button type="button" className="workbench-management-link" aria-haspopup="dialog" aria-expanded={ticketsOpen} title="打开过磅单列表" onClick={() => setTicketsOpen(true)}><FileText className="h-4 w-4" aria-hidden />过磅单</button>}
         <a className="workbench-management-link" href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>
-        {owner === 'self' && !pending && <Button size="sm" onClick={() => void dispatch({type:'occupy',owner:null}).then(() => toast.success('已释放称重操作权')).catch(e => toast.error({ title: '释放操作权失败', description: e instanceof Error ? e.message : '请稍后重试' }))}>释放操作权</Button>}
+        {owner === 'self' && <Button size="sm" disabled={!!pending || releasing} aria-busy={releasing} title={pending ? '提交流程处理中，暂不能释放操作权' : undefined} onClick={() => {
+          if (pending || releasing) return;
+          setReleasing(true);
+          void releaseOperation()
+            .then(() => toast.success('已释放称重操作权'))
+            .catch(e => toast.error({ title: '释放操作权失败', description: e instanceof Error ? e.message : '请稍后重试' }))
+            .finally(() => setReleasing(false));
+        }}>{releasing ? '正在释放…' : '释放操作权'}</Button>}
         <Button size="sm" onClick={async () => {
           try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
           catch { toast.error('浏览器未允许全屏，请使用浏览器全屏功能或重试。'); }

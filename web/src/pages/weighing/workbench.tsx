@@ -440,6 +440,14 @@ function WorkbenchContent() {
       } });
   }
 
+  // The store marks the request pending before the POST finishes. That is not
+  // a review invalidation; keep the frozen review visible while saving.
+  const reviewInvalidReason = !review || submitting
+    ? ''
+    : !sameWeighingReview(review.data, data, selected?.id) || !canWeigh || !!businessBlocked || !!requiredHint || !sampleReady
+      ? syncNotice || businessBlocked || '核对资料或采集结果已变更，请返回重新核对。'
+      : '';
+
   return <div className="weighing-workbench">
     <div className="workbench-page-heading"><PageHeader title="称重工作台" actions={<><StatusTag tone={data.config.online ? 'success' : 'warning'}>{data.config.online ? 'Agent 在线' : 'Agent 离线'}</StatusTag><span className="hidden text-sm text-text-tertiary sm:inline">{roleLabels[data.config.role]}</span></>} /></div>
     {(feedback || storageError || syncNotice) && <div role="status" className="workbench-notice rounded-control border border-border bg-neutral-background px-4 py-2 text-sm">{feedback && <p>{feedback}</p>}{syncNotice && <p>{syncNotice}</p>}{storageError && <p className="text-error">{storageError}</p>}</div>}
@@ -491,7 +499,16 @@ function WorkbenchContent() {
         <ContentCard className="workbench-current-action shadow-none" bodyClassName="p-4">
           <div className="space-y-3" aria-label="当前称重操作">
             {awaitingResult ? <><h2 className="font-semibold text-warning">提交结果待核实</h2><p className="text-sm text-text-secondary">先查询原结果，避免重复称重或出单。</p><><Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={resolve}>查询上次提交结果</Button><Button size="lg" className="w-full" disabled={busy} onClick={retry}>按原请求重试</Button></></>
-            : successfulTask ? <><h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成' : '回磅已完成'}</h2><p className="text-sm text-text-secondary">{ticket ? `本趟净重 ${formatWeight(ticket.net)}` : '已保存首次称重，装卸后按车牌办理回磅。'}</p><Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button><div className="flex flex-wrap gap-3 text-sm"><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tasks/${successfulTask.id}`}>查看任务详情</Link>{ticket && <><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link></>}</div>{ticket && <TicketPrintActions ticketId={ticket.id} />}</>
+            : successfulTask ? <>
+              <h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成' : '回磅已完成'}</h2>
+              <p className="text-sm text-text-secondary">{ticket ? `本趟净重 ${formatWeight(ticket.net)}` : '已保存首次称重，装卸后按车牌办理回磅。'}</p>
+              {ticket && <TicketPrintActions ticketId={ticket.id} />}
+              <Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button>
+              <div className="flex flex-wrap gap-3 text-sm">
+                <Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tasks/${successfulTask.id}`}>查看任务详情</Link>
+                {ticket && <Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link>}
+              </div>
+            </>
             : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : '请等待设备就绪后继续'}</span><Button size="lg" className="w-full" disabled>采集重量</Button>{data.owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <div className="space-y-2"><label htmlFor="takeover-reason" className="text-sm">接管原因</label><input id="takeover-reason" className="w-full rounded-control border border-border px-3 py-2" placeholder="请输入接管原因，便于后续追溯" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /><Button disabled={!takeoverReason.trim() || busy} onClick={() => void takeover()}>接管操作权</Button></div>}</>
             : !located ? <><p className="text-sm text-text-secondary">先核对车牌并查找运输，再为当前车辆采集。</p><Button size="lg" className="w-full" disabled>采集重量</Button></>
             : !canWeigh ? <><p className="text-sm text-warning">当前任务不能继续称重，请查看任务详情。</p><Button size="lg" className="w-full" disabled>当前不可称重</Button></>
@@ -530,7 +547,7 @@ function WorkbenchContent() {
     </Dialog>
     {review && <WeighingReviewDialog
       title={review.title}
-      invalidReason={!sameWeighingReview(review.data, data, selected?.id) || !canWeigh || !!businessBlocked || !!requiredHint || !sampleReady ? syncNotice || businessBlocked || '核对资料或采集结果已变更，请返回重新核对。' : ''}
+      invalidReason={reviewInvalidReason}
       value={review.value}
       submitting={submitting}
       submitError={reviewError}

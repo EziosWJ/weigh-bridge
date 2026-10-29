@@ -32,6 +32,7 @@ interface Store {
   loadTicket: (id: string | number) => Promise<void>;
   loadPreview: (id: string | number) => Promise<void>;
   locate: (plate: string) => Promise<TransportTask | undefined>;
+  releaseOperation: () => Promise<void>;
   dispatch: (command: WeighingCommand, expected?: WeighingState) => Promise<void>;
 }
 const isWorkbench=location.pathname==='/weighing/workbench';
@@ -70,15 +71,33 @@ function restoreUI() {
     }
   } catch { useWeighingStore.setState({ storageError: '本地工作草稿读取失败，未导入任何旧演示业务记录。' }); }
 }
-async function release(original?: PendingRequest) {
-  const fallback = original && typeof original.body.scaleCode === 'string' && typeof original.body.sessionToken === 'string' ? { scaleCode: original.body.scaleCode, sessionToken: original.body.sessionToken } : null;
-  const current = lease ?? fallback; lease = null;
+function stopHeartbeat() {
   if (heartbeat) { clearInterval(heartbeat); heartbeat = null; }
-  updateData({ owner: null });
-  if (current?.sessionToken) {
-    try { await workflowApi.post(`/scales/${current.scaleCode}/session/release`, { clientId, sessionToken: current.sessionToken }); }
-    catch { /* The bounded server lease expires without changing committed business data. */ }
+}
+// A page reload keeps the server lease but deliberately has no token. Acquire
+// the same lease again before releasing so the server sees a valid token and
+// the operation right does not remain occupied until expiry.
+async function releaseCurrentSession() {
+  if (!lease?.sessionToken && useWeighingStore.getState().data.owner === 'self') await acquire();
+  const current = lease;
+  if (!current?.sessionToken) { stopHeartbeat(); updateData({ owner: null }); return; }
+  try { await invalidate(); } catch { /* Release the lease even if the unconfirmed sample is already gone. */ }
+  stopHeartbeat();
+  try {
+    await workflowApi.post(`/scales/${encodeURIComponent(current.scaleCode)}/session/release`, { clientId, sessionToken: current.sessionToken });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('操作会话已失效')) {
+      if (lease?.sessionToken === current.sessionToken) lease = null;
+      stopHeartbeat();
+      updateData({ owner: null });
+      throw new Error('操作权已失效，已清除本地占用');
+    }
+    if (lease?.sessionToken === current.sessionToken) startHeartbeat(lease);
+    throw new Error(`释放操作权失败：${message || '请稍后重试'}`);
   }
+  if (lease?.sessionToken === current.sessionToken) lease = null;
+  updateData({ owner: null });
 }
 // The session belongs to the sole local device, not the scale-code snapshot.
 // Refreshing the identity may renew the same lease but never replays a business
@@ -105,6 +124,22 @@ async function synchronizeLocalIdentity(): Promise<boolean> {
   return changed;
 }
 
+function startHeartbeat(current: WireSession) {
+  stopHeartbeat();
+  const renewalPeriod = Math.max(250, Math.min(15_000, (Date.parse(current.expiresAt ?? '') - Date.now()) / 4));
+  heartbeat = setInterval(() => {
+    if (!lease?.sessionToken || lease.sessionToken !== current.sessionToken) return;
+    const active = lease;
+    void workflowApi.post<WireSession>(`/scales/${active.scaleCode}/session/renew`, sessionInput()).then(next => {
+      if (lease === active) lease = { ...next, sessionToken: active.sessionToken };
+    }).catch(async () => {
+      if (lease !== active) return;
+      try { if (await synchronizeLocalIdentity()) return; } catch { /* Normal session failure handling follows. */ }
+      if (lease === active) { lease = null; stopHeartbeat(); clearSample(); updateData({ owner: null }); useWeighingStore.setState({ syncNotice: '操作会话已失效，请重新取得操作权并采集。' }); }
+    });
+  }, renewalPeriod);
+}
+
 async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') {
   const state = useWeighingStore.getState();
   const scale = selectedScale(state.capabilities);
@@ -112,19 +147,7 @@ async function acquire(action: 'acquire' | 'takeover' = 'acquire', reason = '') 
   try { lease = await workflowApi.post<WireSession>(`/scales/${scale.code}/session/${action}`, { clientId, reason }); }
   catch (error) { updateData({ owner: 'other' }); throw error; }
   updateData({ owner: 'self' });
-  if (heartbeat) clearInterval(heartbeat);
-  const renewalPeriod = Math.max(250, Math.min(15_000, (Date.parse(lease.expiresAt ?? '') - Date.now()) / 4));
-  heartbeat = setInterval(() => {
-    if (!lease?.sessionToken) return;
-    const current = lease;
-    void workflowApi.post<WireSession>(`/scales/${current.scaleCode}/session/renew`, sessionInput()).then(next => {
-      if (lease === current) lease = { ...next, sessionToken: current.sessionToken };
-    }).catch(async () => {
-      if (lease !== current) return;
-      try { if (await synchronizeLocalIdentity()) return; } catch { /* Normal session failure handling follows. */ }
-      if (lease === current) { lease = null; if (heartbeat) clearInterval(heartbeat); heartbeat = null; clearSample(); updateData({ owner: null }); useWeighingStore.setState({ syncNotice: '操作会话已失效，请重新取得操作权并采集。' }); }
-    });
-  }, renewalPeriod);
+  startHeartbeat(lease);
 }
 async function ensureLease() { if (!lease?.sessionToken || !lease.expiresAt || Date.parse(lease.expiresAt) <= Date.now()) await acquire(); }
 async function finishResult(result: CommandResult, request: PendingRequest) {
@@ -134,7 +157,7 @@ async function finishResult(result: CommandResult, request: PendingRequest) {
   if (request.stage === 'first' && !request.operation) updateData({ firstRequests: { ...useWeighingStore.getState().data.firstRequests, [request.requestId]: String(result.taskId) } });
   pendingRequest = null; clearSample(); updateData({ pending: undefined });
   useWeighingStore.setState({ lastResolution: { committed: true, taskId: String(result.taskId) }, syncNotice: '' });
-  persist(); await release(request);
+  persist();
 }
 async function send(request: PendingRequest, explicitRetry = false) {
   pendingRequest = request; updateData({ pending: pendingView(request) }); persist();
@@ -196,6 +219,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
     if (useAuthStore.getState().token === token) set(s => ({ data: { ...s.data, tasks: [...s.data.tasks.filter(t => t.id !== value.id), value] } }));
     return value;
   },
+  releaseOperation: async () => { await releaseCurrentSession(); },
   refresh: () => {
     const token = useAuthStore.getState().token;
     if (refreshPromise && refreshToken === token) return refreshPromise;
@@ -279,8 +303,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
           }
           updateData({ draftPlateEvidence: evidence }); break;
         }
-        case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: createId(), draftPlateEvidence: undefined }); persist(); await release(); break;
-        case 'occupy': if (command.owner === 'other') throw new Error('请用另一个真实工作台取得操作权，不能伪造其他会话。'); if (command.owner === null) { await invalidate(); await release(); } else await acquire(); break;
+        case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: createId(), draftPlateEvidence: undefined }); persist(); break;
+        case 'occupy': if (command.owner === 'other') throw new Error('请用另一个真实工作台取得操作权，不能伪造其他会话。'); if (command.owner === null) await releaseCurrentSession(); else await acquire(); break;
         case 'takeover': await acquire('takeover', command.reason); clearSample(); break;
         case 'capture': {
           await ensureLease();

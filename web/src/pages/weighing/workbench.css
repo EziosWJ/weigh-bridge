@@ -149,6 +149,8 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .weighing-workbench > * + * { margin-top: 0; }
   .weighing-station { flex: 1; min-height: 0; }
   .weighing-camera, .weighing-console { min-height: 0; }
+  .weighing-console { overflow-y: auto; scrollbar-gutter: stable; overscroll-behavior: contain; }
+  .workbench-current-action { flex-shrink: 0; }
   .workbench-camera-feed { position: relative; }
   .workbench-camera-feed > img { position: absolute; inset: 0; height: 100%; max-height: none; }
   .camera-live-feed > video { position: absolute; inset: 0; max-height: none; }
