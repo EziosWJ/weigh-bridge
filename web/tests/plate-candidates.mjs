@@ -191,5 +191,39 @@ try {
   await savedDraft.getByRole('button', { name: /晋A11111/ }).waitFor();
   assert.equal(await savedDraft.getByLabel('车牌号码').inputValue(), '', '已有业务草稿不得自动套入候选');
   await savedDraft.close();
+  for (const [width, allowedShift] of [[1920, 8], [1366, 80]]) {
+    const compact = await browser.newPage({ viewport: { width, height: 768 } });
+    compact.setDefaultTimeout(7000);
+    let compactEvents = [];
+    await compact.route('**/api/weighing/**', async route => {
+      const url = new URL(route.request().url());
+      const ok = data => route.fulfill({ json: { code: 200, data } });
+      if (url.pathname.endsWith('/plate-candidates')) {
+        const after = url.searchParams.get('after');
+        return ok({ items: after ? compactEvents.filter(item => item.id > Number(after)) : [], nextCursor: String(compactEvents.length), serverTime: new Date().toISOString() });
+      }
+      if (url.pathname.endsWith('/cameras')) return ok({ cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { whepBaseUrl: '', syncState: 'pending' } });
+      return ok({ records: [], total: 0 });
+    });
+    await compact.goto(`${base}/tests/plate-candidates.html?scale=WB01`);
+    await delay(500);
+    const phaseTop = await compact.locator('.workbench-phase').evaluate(node => node.getBoundingClientRect().top);
+    const sameMoment = new Date();
+    const candidate = (id, plate, cameras) => ({ id, plate, firstReceivedAt: sameMoment.toISOString(), lastReceivedAt: sameMoment.toISOString(), expiresAt: new Date(sameMoment.getTime() + 60_000).toISOString(), sourceEvents: cameras.map((name, index) => ({ eventRecordId: id + index, cameraId: index + 1, cameraName: name, receivedAt: sameMoment.toISOString(), recognizedAt: sameMoment.toISOString() })) });
+    compactEvents = [candidate(1, '晋AB6P44', ['抓拍01', '抓拍01', '抓拍01'])];
+    const chip = compact.getByRole('button', { name: /晋AB6P44/ });
+    await chip.waitFor();
+    assert.equal((await chip.innerText()).match(/抓拍01/g).length, 1, '同一相机只显示一次');
+    assert.equal(await compact.locator('form .plate-candidates').count(), 1, '候选紧跟车牌输入');
+    const chipTop = await chip.evaluate(node => node.getBoundingClientRect().top);
+    assert.ok(chipTop < phaseTop, '候选不能排到阶段状态之后');
+    const shiftedTop = await compact.locator('.workbench-phase').evaluate(node => node.getBoundingClientRect().top);
+    assert.ok(shiftedTop - phaseTop <= allowedShift, `候选把下方内容推移过多：${shiftedTop - phaseTop}`);
+    compactEvents = [...compactEvents, candidate(10, '晋AB6P44', ['抓拍01'])];
+    await delay(2500);
+    assert.equal(await compact.getByRole('button', { name: /晋AB6P44/ }).count(), 1, '同一车牌重复批次只保留一项');
+    assert.equal((await compact.getByRole('button', { name: /晋AB6P44/ }).innerText()).match(/抓拍01/g).length, 1, '合并后相机仍只显示一次');
+    await compact.close();
+  }
   console.log('车牌候选工作台：双尺寸预填、冲突、人工输入、采样保护、下一辆水位、焦点和重连通过。');
 } finally { clearTimeout(deadline); await browser?.close(); vite.kill('SIGTERM'); }

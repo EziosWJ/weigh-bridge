@@ -126,4 +126,19 @@ func TestPlateCandidateAPI(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("watermark reader did not resume")
 	}
+	// A later batch of the same plate keeps one candidate slot; the newest
+	// group is returned and the older batch is not listed separately.
+	older := time.Now().UTC().Add(-21 * time.Second)
+	if err := db.GORM.Exec(`INSERT INTO wb_camera_license_snapshot (camera_id,serial_number,event_id,device_time,received_at,plate,normalized_plate,attributes,sha256,capture_bytes,background_bytes) VALUES (?,?,?,?,?,?,?,'{}',?,0,0)`, firstCameraID, "serial0", "older-batch", older.Add(-time.Second).Format(time.RFC3339Nano), older, "晋A12345", "晋A12345", "older-batch-hash").Error; err != nil {
+		t.Fatal(err)
+	}
+	deduped := decodeCameraData[page](t, serveJSON(router, "GET", endpoint, "", token))
+	if len(deduped.Items) != 2 {
+		t.Fatalf("same plate occupied extra slots: %+v", deduped.Items)
+	}
+	for _, item := range deduped.Items {
+		if item.Plate == "晋A12345" && len(item.SourceEvents) != 2 {
+			t.Fatalf("kept the older batch: %+v", item.SourceEvents)
+		}
+	}
 }

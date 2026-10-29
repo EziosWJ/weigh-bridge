@@ -128,5 +128,17 @@ func AggregatePlateCandidates(events []CandidateEvent, now time.Time) []PlateCan
 		}
 		return groups[i].LastReceivedAt.After(groups[j].LastReceivedAt)
 	})
-	return groups
+	// One candidate per plate: a later batch of the same plate replaces the
+	// earlier groups instead of occupying another display slot. The retained
+	// group keeps a valid <=15s source chain for server-side confirmation.
+	unique := make([]PlateCandidate, 0, len(groups))
+	plates := map[string]bool{}
+	for _, group := range groups {
+		if plates[group.Plate] {
+			continue
+		}
+		plates[group.Plate] = true
+		unique = append(unique, group)
+	}
+	return unique
 }

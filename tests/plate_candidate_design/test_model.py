@@ -20,7 +20,14 @@ def candidates(events, now):
             groups.append(group)
         group['last'] = event['received']
         group['sources'].append(event['camera'])
-    return sorted(groups, key=lambda g: g['last'], reverse=True)[:5]
+    ordered = sorted(groups, key=lambda g: g['last'], reverse=True)
+    unique, plates = [], set()
+    for group in ordered:
+        if group['plate'] in plates:
+            continue
+        plates.add(group['plate'])
+        unique.append(group)
+    return unique[:5]
 
 
 def event(id, camera, plate, received, **kw):
@@ -59,7 +66,7 @@ class CandidateModelTest(unittest.TestCase):
     def test_conflict_and_window(self):
         rows = [event(1, 'A', 'A123', 80), event(2, 'B', 'B123', 81),
                 event(3, 'B', 'A123', 96)]
-        self.assertEqual(len(candidates(rows, 100)), 3)
+        self.assertEqual([g['plate'] for g in candidates(rows, 100)], ['A123', 'B123'])
 
     def test_expiry_delayed_missing_and_disabled(self):
         rows = [event(1, 'A', 'A', 40), event(2, 'A', 'B', 100, recognized=39),

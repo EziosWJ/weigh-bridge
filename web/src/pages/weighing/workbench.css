@@ -98,6 +98,14 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .weighing-vehicle-bar form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .weighing-vehicle-bar form > label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 .weighing-vehicle-bar .plate-control { grid-column: 1 / -1; width: max-content; }
+/* 识别候选紧跟车牌输入：宽屏与车牌同行，较窄时在其后换行，不再占用下方整块空间。 */
+.plate-field { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.plate-candidates { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 1600px) { .plate-candidates { flex: 1 1 160px; } }
+.plate-candidates > li { display: flex; flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.plate-candidates .plate-candidate { height: auto; max-width: 100%; min-height: 32px; flex-shrink: 1; padding-block: 2px; font-size: 12px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
+.plate-candidates .plate-candidate[aria-pressed='true'] { border-color: var(--color-info); background: var(--color-info-background); color: var(--color-info); }
+.plate-candidates .plate-candidate:disabled { border-color: var(--color-border); color: var(--color-text-tertiary); }
 .plate-entry { gap: 8px; }
 .weighing-workbench .plate-entry > button { height: 48px; background: #1069a8; border-color: #3aaee9; color: white; }
 .weighing-workbench .plate-number { --plate-cell-width: 36px; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 48px; background-color: #091b28; font-size: 24px; }
@@ -173,6 +181,8 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .camera-source-label { display: none; }
   .weighing-console, .weighing-business [role='tabpanel'] > .grid { display: grid; grid-template-columns: minmax(0, 1fr); }
   .weighing-vehicle-bar form { grid-template-columns: minmax(0, 1fr); }
+  .plate-field { flex-direction: column; align-items: stretch; }
+  .plate-candidates { flex: 0 0 auto; }
   .weighing-vehicle-bar form > button { white-space: normal; }
   .workbench-phase { justify-content: flex-start; }
   .weighing-readout { font-size: 60px; }

@@ -25,6 +25,8 @@ import { TicketPrintActions } from './ticket-print-actions';
 import './workbench.css';
 
 const normalizeLegacy = (value: string) => value.trim().toUpperCase();
+const sourceCameraNames = (item: PlateCandidate) => [...new Set(item.sourceEvents.map(source => source.cameraName).filter(Boolean))].join('、');
+const clockTime = (value: string) => beijingTime(value).slice(11, 19);
 
 export function WeighingWorkbenchPage() {
  const { ready, storageError, refresh } = useWeighingStore();
@@ -108,6 +110,9 @@ function WorkbenchContent() {
   const blocked = businessBlocked || (!sampleReady ? conditionIssue || device?.captureBlockedReason : '') || '';
   const candidateBlocked = useRef(false);
   candidateBlocked.current = !!selected || located || !!data.capture || !!review || !!success || awaitingResult || lookingUp || submitting || businessOpen || data.owner === 'other';
+  const candidateConflict = new Set(candidates.map(item => item.plate)).size > 1;
+  // 候选标签已在车牌输入后列出，冲突时提示选择即可，不再重复选中的候选文字。
+  const candidateNotice = candidateConflict ? '存在多个候选，请核对后选择' : recognitionHint;
   const scaleCode = capabilities?.localScaleCode || params.get('scale') || '';
   const canConfirm = !!capabilities?.permissionCodes.includes('weighing:confirm');
   useEffect(() => {
@@ -134,15 +139,19 @@ function WorkbenchContent() {
           const initial = cursor === undefined;
           cursor = page.nextCursor;
           setCandidates(previous => {
-            const combined = new Map(previous.map(item => [item.id, item]));
-            for (const item of page.items) combined.set(item.id, item);
+            // 同一车牌只保留最近接收的候选项，避免分页或新批次重复占位。
+            const combined = new Map(previous.map(item => [item.plate, item]));
+            for (const item of page.items) {
+              const existing = combined.get(item.plate);
+              if (!existing || Date.parse(item.lastReceivedAt) >= Date.parse(existing.lastReceivedAt)) combined.set(item.plate, item);
+            }
             return [...combined.values()].filter(item => Date.parse(item.expiresAt) > Date.parse(page.serverTime)).sort((a, b) => Date.parse(b.lastReceivedAt) - Date.parse(a.lastReceivedAt)).slice(0, 5);
           });
           if (!initial && page.items.length && !candidateBlocked.current && !useWeighingStore.getState().busy) {
             const candidate = page.items[page.items.length - 1];
             if (candidateOwner.current === 'suggested' && selectedCandidate.current?.plate === candidate.plate) {
               selectedCandidate.current = candidate;
-              setRecognitionHint(`识别候选 ${candidate.plate} · ${candidate.sourceEvents.map(source => source.cameraName).join('、')} · ${beijingTime(candidate.sourceEvents.at(-1)?.recognizedAt ?? candidate.lastReceivedAt)} · 待人工核对`);
+              setRecognitionHint(`识别候选 ${candidate.plate} · ${sourceCameraNames(candidate)} · ${clockTime(candidate.sourceEvents.at(-1)?.recognizedAt ?? candidate.lastReceivedAt)} · 待人工核对`);
             } else if (candidateOwner.current === 'empty' && document.activeElement !== plateInput.current) {
               if (useWeighingStore.getState().data.owner === null) {
                 try { await useWeighingStore.getState().dispatch({ type: 'occupy', owner: 'self' }); } catch { return; }
@@ -150,7 +159,7 @@ function WorkbenchContent() {
               if (stopped || requestEpoch !== candidateEpoch.current || candidateBlocked.current || useWeighingStore.getState().busy || candidateOwner.current !== 'empty' || document.activeElement === plateInput.current || useWeighingStore.getState().data.owner !== 'self') return;
               candidateOwner.current = 'suggested'; selectedCandidate.current = candidate; editing.current = true;
               setPlate(candidate.plate);
-              setRecognitionHint(`识别候选 ${candidate.plate} · ${candidate.sourceEvents.map(source => source.cameraName).join('、')} · ${beijingTime(candidate.sourceEvents.at(-1)?.recognizedAt ?? candidate.lastReceivedAt)} · 待人工核对`);
+              setRecognitionHint(`识别候选 ${candidate.plate} · ${sourceCameraNames(candidate)} · ${clockTime(candidate.sourceEvents.at(-1)?.recognizedAt ?? candidate.lastReceivedAt)} · 待人工核对`);
             }
           }
         } catch { /* Manual entry remains available; calibrate on reconnect. */ cursor = undefined; }
@@ -441,24 +450,25 @@ function WorkbenchContent() {
           <div className="workbench-current-vehicle"><h2>当前车辆</h2><span className="text-xs text-text-tertiary">人工核对后定位运输</span></div>
           <form className="flex flex-wrap items-center gap-3" onSubmit={lookup}>
             <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span></label>
-            <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} onChange={changePlate} />
+            <div className="plate-field">
+              <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} onChange={changePlate} />
+              {candidates.length > 0 && <ul className="plate-candidates" aria-label="识别候选">
+                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className="plate-candidate" disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}`} onClick={() => {
+                  candidateOwner.current = 'manual'; selectedCandidate.current = item;
+                  setRecognitionHint(`已选择 ${item.plate} · ${sourceCameraNames(item)} · 待人工核对`);
+                  void changePlate(item.plate);
+                }}>{item.plate} · {sourceCameraNames(item)} · {clockTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button></li>)}
+              </ul>}
+            </div>
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在查找…' : '核对车牌并查找运输'}</Button>
           </form>
           <div className="workbench-phase" aria-label="当前作业状态" aria-live="polite"><strong>{phaseLabel}</strong>{hasWeighingContext && <span>{directionLabels[summaryDirection]}</span>}</div>
-          <p role="status" className={`plate-recognition mt-3 text-sm ${recognitionHint ? 'text-warning' : 'text-text-secondary'}`}>{recognitionHint ? <><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{recognitionHint}</> : located ? '车牌已人工核对；请继续核对现场车辆。' : '等待识别候选，可手工录入普通或新能源车牌后核对。'}</p>
+          <p role="status" className={`plate-recognition mt-3 text-sm ${candidateNotice ? 'text-warning' : 'text-text-secondary'}`}>{candidateNotice ? <><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{candidateNotice}</> : located ? '车牌已人工核对；请继续核对现场车辆。' : '等待识别候选，可手工录入普通或新能源车牌后核对。'}</p>
           {offerManualSource && data.draftPlateEvidence?.source === 'server' && !data.sampleReady && !awaitingResult && <Button type="button" size="sm" disabled={busy} onClick={() => {
             selectedCandidate.current = null;
             setRecognition(null);
             void run({ type: 'verifyPlate', evidence: { source: 'manual', confirmedPlate: searchedPlate, at: new Date().toISOString() } }).then(ok => { if (ok) { setOfferManualSource(false); setRecognitionHint('已改为人工录入来源，请核对现场车辆。'); } });
           }}>改为人工录入来源</Button>}
-          {candidates.length > 0 && <div className="mt-2 space-y-1 text-sm" aria-label="识别候选">
-            <p>{new Set(candidates.map(item => item.plate)).size > 1 ? '存在多个候选，请核对后选择' : '识别候选（请核对现场车辆）'}</p>
-            <div className="flex flex-wrap gap-2">{candidates.map(item => <Button key={item.id} size="sm" type="button" className="h-auto max-w-full whitespace-normal break-all text-left" disabled={candidateBlocked.current || busy} onClick={() => {
-              candidateOwner.current = 'manual'; selectedCandidate.current = item;
-              setRecognitionHint(`已选择 ${item.plate} · ${item.sourceEvents.map(source => source.cameraName).join('、')} · 待人工核对`);
-              void changePlate(item.plate);
-            }}>{item.plate} · {item.sourceEvents.map(source => source.cameraName).join('、')} · {beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button>)}</div>
-          </div>}
           <div className="workbench-business-entry">
             <div className="min-w-0 text-sm text-text-secondary"><p className="truncate" title={`${summaryMaterial} / ${summaryParty}`}>{summaryMaterial} / {summaryParty}</p></div>
             <Button size="lg" variant="primary" className="w-full" disabled={!located && !taskInfo && !awaitingResult} onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />{taskInfo || awaitingResult ? '查看运输资料' : '录入运输资料'}</Button>

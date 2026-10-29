@@ -52,3 +52,24 @@ func TestCandidateTimeBoundaries(t *testing.T) {
 		t.Fatal("candidate survived its 60s lifetime")
 	}
 }
+
+func TestAggregatePlateCandidatesDeduplicatesSamePlate(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	e := func(id int64, camera int64, plate string, age time.Duration) CandidateEvent {
+		at := now.Add(-age)
+		return CandidateEvent{ID: id, CameraID: camera, Plate: plate, ReceivedAt: at, RecognizedAt: at}
+	}
+	// The same plate arriving in a later batch (more than 15s apart) keeps only
+	// its newest group, so it cannot occupy several display slots.
+	got := AggregatePlateCandidates([]CandidateEvent{
+		e(1, 1, "A", 40*time.Second),
+		e(2, 1, "B", 20*time.Second),
+		e(3, 2, "A", 10*time.Second),
+	}, now)
+	if len(got) != 2 || got[0].Plate != "A" || got[1].Plate != "B" {
+		t.Fatalf("duplicate plate candidates: %+v", got)
+	}
+	if got[0].ID != 3 || len(got[0].SourceEvents) != 1 || got[0].SourceEvents[0].ID != 3 {
+		t.Fatalf("kept older group: %+v", got[0])
+	}
+}
