@@ -34,6 +34,28 @@ func TestCalibrationGeometryAndLimits(t *testing.T) {
 	}
 }
 
+func TestCalibrationAllowsUpwardOffsetWithinCenteredMargin(t *testing.T) {
+	c := Defaults()
+	c.OffsetYMM = -5
+	if err := ValidateConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	up := c.Calibration().Geometry()
+	c.OffsetYMM = 0
+	centered := c.Calibration().Geometry()
+	if up.FeedMM >= centered.FeedMM {
+		t.Fatalf("upward offset did not reduce feed: up=%+v centered=%+v", up, centered)
+	}
+	c.OffsetYMM = -6
+	if ValidateConfig(c) == nil {
+		t.Fatal("upward offset beyond centered top margin accepted")
+	}
+	c.OffsetYMM = -31
+	if ValidateConfig(c) == nil {
+		t.Fatal("vertical offset below range accepted")
+	}
+}
+
 func TestCalibrationSheetUsesEffectiveParameters(t *testing.T) {
 	c := Defaults()
 	c.FormLengthMM, c.PrintScale = 93.13, 1.02

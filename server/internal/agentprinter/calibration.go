@@ -43,12 +43,16 @@ func (c Calibration) Validate() error {
 			return errors.New("打印参数必须为有限数值")
 		}
 	}
-	if c.WidthMM < 100 || c.WidthMM > 210 || c.scale() < 0.5 || c.scale() > 1.5 || c.OffsetXMM < 0 || c.OffsetXMM > 30 || c.OffsetYMM < 0 || c.OffsetYMM > 30 || c.FormLengthMM < 85 || c.FormLengthMM > 300 {
-		return errors.New("打印尺寸、缩放或偏移超出允许范围")
+	if c.WidthMM < 100 || c.WidthMM > 210 || c.scale() < 0.5 || c.scale() > 1.5 || c.OffsetXMM < 0 || c.OffsetXMM > 30 || c.OffsetYMM < -30 || c.OffsetYMM > 30 || c.FormLengthMM < 85 || c.FormLengthMM > 300 {
+		return errors.New("打印尺寸、缩放或偏移超出允许范围（垂直偏移 -30～30 mm）")
 	}
-	w, _, feed, form := c.dimensions()
+	w, height, feed, form := c.dimensions()
 	pageWidth := int(math.Round(210 * printDPI / 25.4))
 	centerX := max(0, (pageWidth-w)/2)
+	centerY := max(0, (int(math.Round(c.FormLengthMM*printDPI/25.4))-height)/2)
+	if centerY+int(math.Round(float64(c.OffsetYMM)*printDPI/25.4)) < 0 {
+		return errors.New("垂直偏移上移超过内容居中留白，请减小上移量")
+	}
 	if w+centerX+int(math.Round(float64(c.OffsetXMM)*printDPI/25.4)) > pageWidth || feed*2 > form {
 		return errors.New("缩放后的内容或分带走纸超出纸宽／表长，请减小缩放或偏移")
 	}
@@ -64,7 +68,7 @@ func CalibrationSheet(c Config) *Sheet {
 		Calibration: cal, CalibrationPattern: true, Rows: [][]Field{
 			{{Label: "基准宽度／缩放", Value: fmt.Sprintf("%d mm / %g 倍", c.PrintWidthMM, cal.Scale)}},
 			{{Label: "实际内容宽高", Value: fmt.Sprintf("%.2f × %.2f mm", g.WidthMM, g.HeightMM)}},
-			{{Label: "右移／下移", Value: fmt.Sprintf("%d / %d mm", c.OffsetXMM, c.OffsetYMM)}},
+			{{Label: "水平／垂直偏移", Value: fmt.Sprintf("%d / %d mm", c.OffsetXMM, c.OffsetYMM)}},
 			{{Label: "表长／指令值", Value: fmt.Sprintf("%g / %.3f mm", c.FormLengthMM, g.EffectiveFormMM)}},
 			{{Label: "队列", Value: c.Queue}},
 		}}

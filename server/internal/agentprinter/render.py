@@ -12,8 +12,8 @@ FONT = '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc'
 
 
 def rounded(value):
-    # Match Go math.Round for these nonnegative physical dimensions.
-    return math.floor(value + 0.5)
+    # Match Go math.Round: half away from zero, including negative offsets.
+    return math.floor(value + 0.5) if value >= 0 else math.ceil(value - 0.5)
 
 
 def geometry(sheet):
@@ -25,7 +25,7 @@ def geometry(sheet):
     if not all(math.isfinite(v) for v in (width_mm, scale, form_length, x, y)):
         raise ValueError('calibration must be finite')
     if (not 100 <= width_mm <= 210 or not .5 <= scale <= 1.5
-            or not 85 <= form_length <= 300 or not 0 <= x <= 30 or not 0 <= y <= 30):
+            or not 85 <= form_length <= 300 or not 0 <= x <= 30 or not -30 <= y <= 30):
         raise ValueError('calibration outside allowed range')
     width = rounded(width_mm * 180 / 25.4)
     base_height = 576 if sheet.get('template') == 'weighing-compact-v2' else HEIGHT
@@ -36,6 +36,8 @@ def geometry(sheet):
         # Calibrated offsets translate from that centered position.
         dx += max(0, (rounded(210 * 180 / 25.4) - scaled_width) // 2)
         dy += max(0, (rounded(form_length * 180 / 25.4) - scaled_height) // 2)
+    if dy < 0:
+        raise ValueError('vertical offset exceeds centered top margin')
     feed_height = ((scaled_height + dy + 23) // 24) * 24
     form_units = rounded(form_length * 360 / 25.4)
     if scaled_width + dx > rounded(210 * 180 / 25.4) or feed_height * 2 > form_units:
@@ -128,8 +130,9 @@ def render_image(sheet):
     if sheet.get('calibrationPattern'):
         calibration_pattern(im, font_path)
     if offset_x or offset_y:
-        # Offsets add blank paper before the entire image; they must never
-        # squeeze the table or crop its title, marks, borders, or contents.
+        # Positive vertical offset adds blank paper above the image (moves it
+        # down); negative offset reduces the centered top margin (moves it up).
+        # It must never crop the title, marks, borders, or table contents.
         positioned = Image.new('1', (im.width + offset_x, im.height + offset_y), 1)
         positioned.paste(im, (offset_x, offset_y))
         return positioned

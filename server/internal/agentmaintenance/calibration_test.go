@@ -29,7 +29,7 @@ func TestFractionalCalibrationSaveApplyReopenAndRestore(t *testing.T) {
 	h := s.Handler()
 	cookie := login(t, h, dir)
 	c := initial
-	c.PrintScale, c.FormLengthMM, c.OffsetXMM, c.OffsetYMM = 1.02, 93.13, 4, 1
+	c.PrintScale, c.FormLengthMM, c.OffsetXMM, c.OffsetYMM = 1.02, 93.13, 4, -3
 	b, _ := json.Marshal(c)
 	w, _ := call(t, h, http.MethodPut, "/api/config", string(b), cookie)
 	if w.Code != 200 {
