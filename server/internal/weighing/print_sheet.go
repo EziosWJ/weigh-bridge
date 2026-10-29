@@ -59,6 +59,16 @@ func compactPrintSheet(ticket TicketView, title string) *PrintSheet {
 	if ticket.ReprintCount > 0 {
 		marks = append(marks, "补打第"+strconv.FormatInt(ticket.ReprintCount, 10)+"次")
 	}
+	netLabel := "净重（吨）"
+	if ticket.NetAdjustment != 0 {
+		direction := "扣"
+		amount := Tonnes(ticket.NetAdjustment)
+		if amount < 0 {
+			direction = "增"
+			amount = -amount
+		}
+		netLabel = "净重（吨，" + direction + amount.String() + "）"
+	}
 	return &PrintSheet{
 		Template: "weighing-compact-v2", WidthMM: 241, HeightMM: 93, Layers: 5,
 		Title: title, Marks: marks,
@@ -66,7 +76,7 @@ func compactPrintSheet(ticket TicketView, title string) *PrintSheet {
 			{field("单号", ticket.TicketNo)},
 			{field("车牌", ticket.Business.Plate), field("业务", direction)},
 			{field(partyLabel, ticket.Business.PartyName), field("物料", material)},
-			{field("毛重（吨）", ticket.FinalGross.String()), field("皮重（吨）", ticket.FinalTare.String()), field("净重（吨）", ticket.FinalNet.String())},
+			{field("毛重（吨）", ticket.FinalGross.String()), field("皮重（吨）", ticket.FinalTare.String()), field(netLabel, ticket.FinalNet.String())},
 			{field("首次称重", confirmedAt(ticket.FirstRecordID)), field("二次称重", confirmedAt(ticket.SecondRecordID))},
 			{field("操作员", ticket.IssuerName), field("司机签字", "________________")},
 		},

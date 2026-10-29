@@ -7644,8 +7644,8 @@ const docTemplate = `{
                 "clientId": {
                     "type": "string"
                 },
-                "finalWeights": {
-                    "$ref": "#/definitions/weighing.FinalWeights"
+                "netAdjustment": {
+                    "$ref": "#/definitions/weighing.NetAdjustmentInput"
                 },
                 "plateEvidence": {
                     "$ref": "#/definitions/weighing.RecognitionInput"
@@ -7846,6 +7846,26 @@ const docTemplate = `{
                     "$ref": "#/definitions/weighing.TicketView"
                 },
                 "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.NetAdjustmentInput": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "rateBp": {
+                    "type": "integer"
+                },
+                "remark": {
                     "type": "string"
                 }
             }
@@ -8108,10 +8128,16 @@ const docTemplate = `{
         "weighing.PriorFinalWeights": {
             "type": "object",
             "properties": {
+                "categoryName": {
+                    "type": "string"
+                },
                 "gross": {
                     "type": "string"
                 },
                 "net": {
+                    "type": "string"
+                },
+                "netAdjustment": {
                     "type": "string"
                 },
                 "tare": {
@@ -8128,11 +8154,23 @@ const docTemplate = `{
                 "candidate": {
                     "type": "string"
                 },
+                "confirmationId": {
+                    "type": "integer"
+                },
+                "corrected": {
+                    "type": "boolean"
+                },
                 "scenePlate": {
                     "type": "string"
                 },
                 "source": {
                     "type": "string"
+                },
+                "sourceEventRecordIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },
@@ -8147,6 +8185,9 @@ const docTemplate = `{
                 },
                 "finalWeights": {
                     "$ref": "#/definitions/weighing.FinalWeights"
+                },
+                "netAdjustment": {
+                    "$ref": "#/definitions/weighing.NetAdjustmentInput"
                 },
                 "reason": {
                     "type": "string"
@@ -8185,8 +8226,8 @@ const docTemplate = `{
                 "clientId": {
                     "type": "string"
                 },
-                "finalWeights": {
-                    "$ref": "#/definitions/weighing.FinalWeights"
+                "netAdjustment": {
+                    "$ref": "#/definitions/weighing.NetAdjustmentInput"
                 },
                 "otherBasisValid": {
                     "type": "boolean"
@@ -8371,6 +8412,9 @@ const docTemplate = `{
         "weighing.Summary": {
             "type": "object",
             "properties": {
+                "adjustment": {
+                    "type": "string"
+                },
                 "gross": {
                     "type": "string"
                 },
@@ -8394,6 +8438,9 @@ const docTemplate = `{
         "weighing.SummaryLine": {
             "type": "object",
             "properties": {
+                "adjustment": {
+                    "type": "string"
+                },
                 "direction": {
                     "type": "string"
                 },
@@ -8589,6 +8636,21 @@ const docTemplate = `{
                 "mode": {
                     "type": "string"
                 },
+                "netAdjustment": {
+                    "type": "string"
+                },
+                "netAdjustmentCategory": {
+                    "type": "string"
+                },
+                "netAdjustmentCategoryName": {
+                    "type": "string"
+                },
+                "netAdjustmentMode": {
+                    "type": "string"
+                },
+                "netAdjustmentRateBp": {
+                    "type": "integer"
+                },
                 "originalGross": {
                     "type": "string"
                 },
@@ -8629,6 +8691,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "syncStatus": {
                     "type": "string"
                 },
                 "tareDifference": {

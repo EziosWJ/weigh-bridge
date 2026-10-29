@@ -1,5 +1,12 @@
 # 当前实现、验证与剩余工作
 
+## 2026-10-29 净重扣减（扣水扣杂）
+
+- 按客户确认，正常二次称重出单不再改写最终毛重／皮重，只录入净重调整：支持按吨（0.001 吨）或按比例（0.01%），比例以调整前净重为基数、四舍五入到 0.001 吨；正常出单只能扣减，负数上调仅允许在作废后的更正重开。调整量不为 0 时类别必填、备注选填，类别使用可维护字典 `WEIGHING_DEDUCTION_CATEGORY`（初始水分大／质量差／杂质多／其他），单据保存名称快照。更正重开保留毛重／皮重更正能力。实现见 [ADR 0035](adr/0035-net-weight-adjustment.md) 及[业务规格](requirements/weighing-business-spec.md)。
+- 新增 schema `00035_net_adjustment.sql` 与 seed `00024_weighing_deduction_category.sql`；历史单默认无调整、不回写。schema 回退需恢复升级前备份。查询、汇总、CSV、单据详情和票面同步展示调整信息；票面不新增列，净重标签注明扣减／上调量，Agent 无需升级。
+- 云端单据载荷升至 schemaVersion 3，新增 `finalNet`、净重调整及上版净重字段；云端接收端必须先兼容版本 3，再发布厂端，否则含扣减单据的云端净重会偏大。本仓库只更新厂端与契约副本，云端仓库及真实双端联调尚未完成。
+- 验证：`go test ./...`、`task db:integration:postgres`（隔离 PostgreSQL 全量集成通过）、`task frontend:lint`、`task frontend:build`、`npm run test:weighing`、`npm run test:weighing:backend`（真实 API + Chromium，含净重调整、负数拒绝、重开毛皮更正、汇总和打印）通过。未做现场验收，未连接真实业务库或云端。
+
 ## 车牌候选工作台（Issue #9–#12）：软件验证完成，现场待验收
 
 - 2026-10-29 部署至 `fcc-com-02`（`10.126.126.2`）：Server 内嵌工作台更新，schema 从 33 升至 34；预备备份位于 `/opt/fcc/backups/plate-v1-preflight`，停服后最终备份位于 `/opt/fcc/backups/plate-v1-final`。现场备份在无网络临时 PostgreSQL 容器恢复并验证新增表及索引后才迁移；临时容器已清理。部署后 Server、Agent、MediaMTX 均 active，health／ready 和工作台资源正常，候选接口未登录返回 401，Agent 重新连接；摄像头心跳正常且近两分钟有新事件。原有 2 条 initiated 与 16 条 unknown 打印记录保留，未重放。尚未用真实车辆核对预填、称重或双摄流程。

@@ -53,6 +53,23 @@ func TestCompactPrintSheetUsesTicketSnapshotAndSelectedBasis(t *testing.T) {
 	}
 }
 
+func TestCompactPrintSheetShowsNetAdjustmentInLabel(t *testing.T) {
+	for _, test := range []struct {
+		adjustment WeightDifference
+		label      string
+		net        string
+	}{
+		{1500, "净重（吨，扣1.5）", "18.5"},
+		{-1500, "净重（吨，增1.5）", "21.5"},
+	} {
+		view := ticketView(Ticket{Status: "valid", OriginalGross: 30000, OriginalTare: 10000, FinalGross: 30000, FinalTare: 10000, NetAdjustment: test.adjustment})
+		sheet := compactPrintSheet(view, "")
+		if sheet.Rows[3][2].Label != test.label || sheet.Rows[3][2].Value != test.net {
+			t.Fatalf("adjustment %v: %+v", test.adjustment, sheet.Rows[3][2])
+		}
+	}
+}
+
 func TestCompactPrintSheetPreservesLegacyAndVoidMarksWithoutInventingMissingData(t *testing.T) {
 	sheet := compactPrintSheet(ticketView(Ticket{Mode: "test", Status: "void"}), "")
 	if sheet.Title != "酒厂过磅单" || strings.Join(sheet.Marks, ",") != "历史测试单,已作废" {

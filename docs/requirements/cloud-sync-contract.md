@@ -1,6 +1,6 @@
 # 厂云同步契约：第一版业务边界
 
-本文记录已确认的厂云目标行为，是两端规格共享的业务契约；云端和厂端已实现版本 2；隔离双端联调及仍待现场验收的范围见厂端当前状态。两端仓库保留一致副本，调整时同步维护。本厂详细业务、字段和例外以本地有效规格为准。基础资料接口字段见云端仓库的 `docs/requirements/weighbridge-sync-api-design.md`；单据字段及空值见本文版本 2 字段说明。
+本文记录已确认的厂云目标行为，是两端规格共享的业务契约；厂端已实现版本 3，云端须先兼容版本 3 再发布厂端；隔离双端联调及仍待现场验收的范围见厂端当前状态。两端仓库保留一致副本，调整时同步维护。本厂详细业务、字段和例外以本地有效规格为准。基础资料接口字段见云端仓库的 `docs/requirements/weighbridge-sync-api-design.md`；单据字段及空值见本文版本 3 字段说明。
 
 ## 接入与身份
 
@@ -42,8 +42,12 @@
 
 单据字段及空值、错误响应与重复变化处理等仍需双端核对。总部资料维护权限现阶段不讨论；旧备份恢复后流水号倒退的正式处理仍暂缓，不在本契约中决定。
 
-## 版本 2 实际单据字段及确认
+## 版本 3 实际单据字段及确认
 
-出单、重开变化的 `ticket` 固定包含 `ticketNo`、`previousTicketNo`、`title`、`plate`、`direction`、`materialCode`、`materialName`、`materialSpec`、`partyCode`、`partyName`、`firstConfirmedAt`、`secondConfirmedAt`、`issuedAt`、`issuerName`、`originalGross`、`originalTare`、`finalGross`、`finalTare`、`previousFinalGross`、`previousFinalTare`、`grossSource`、`tareSource`、`adjustmentRemark`、`adjustedBy`、`adjustedAt`、`driver`、`driverPhone`、`contactName` 和 `contactPhone`。空文本为 `""`；无原单号、上版重量或调整人时间时对应字段为 `null`。重量为最多三位小数的十进制吨字符串；两次确认时间取单据保存的称重依据，调整人取当版出单时的操作员快照。上版重量只在重开时来自原单快照，历史资料不从当前资料反填。净重与差额由接收方按原始和最终毛皮重计算。
+版本 3 相对版本 2 新增净重调整字段和显式最终净重；云端未兼容版本 3 时会把含扣减的单据净重算大，因此必须先升级云端接收端，再发布厂端。
+
+出单、重开变化的 `ticket` 固定包含 `ticketNo`、`previousTicketNo`、`title`、`plate`、`direction`、`materialCode`、`materialName`、`materialSpec`、`partyCode`、`partyName`、`firstConfirmedAt`、`secondConfirmedAt`、`issuedAt`、`issuerName`、`originalGross`、`originalTare`、`finalGross`、`finalTare`、`finalNet`、`netAdjustment`、`netAdjustmentMode`、`netAdjustmentRateBp`、`netAdjustmentCategory`、`netAdjustmentCategoryName`、`previousFinalGross`、`previousFinalTare`、`previousFinalNet`、`previousNetAdjustment`、`grossSource`、`tareSource`、`adjustmentRemark`、`adjustedBy`、`adjustedAt`、`driver`、`driverPhone`、`contactName` 和 `contactPhone`。空文本为 `""`；无原单号、上版重量、比例或调整人时间时对应字段为 `null`。
+
+重量为最多三位小数的十进制吨字符串；`netAdjustment` 为有符号调整量，正数扣减、负数上调；`netAdjustmentMode` 为 `amount` 或 `percent`，`netAdjustmentRateBp` 以 0.01% 为单位且仅比例录入时非空。两次确认时间取单据保存的称重依据，调整人取当版出单时的操作员快照。上版重量和上版净重只在重开时来自原单快照，历史资料不从当前资料反填。接收方以 `finalNet` 为准，并可用 `finalGross − finalTare − netAdjustment` 复核；毛重／皮重更正差额由接收方按原始和最终毛皮重计算。
 
 云端成功响应的 `data` 包含 `changeId` 和 `ticketNo`，厂端必须核对二者后才能确认。云端先校验请求的当前厂区编码，再处理去重：云端改码后即使旧变化曾成功，使用旧编码重试也会返回 401。旧编码的未确认出单或作废不能在该接口下继续处理；重开可用 `previousSiteCode` 查找已经成功作废的旧单，但不能绕过尚未成功的旧单作废。需要云端另定处理方案，不修改本地历史或待发载荷。

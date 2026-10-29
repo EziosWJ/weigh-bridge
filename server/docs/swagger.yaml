@@ -1016,8 +1016,8 @@ definitions:
         $ref: '#/definitions/weighing.Checks'
       clientId:
         type: string
-      finalWeights:
-        $ref: '#/definitions/weighing.FinalWeights'
+      netAdjustment:
+        $ref: '#/definitions/weighing.NetAdjustmentInput'
       plateEvidence:
         $ref: '#/definitions/weighing.RecognitionInput'
       reason:
@@ -1147,6 +1147,19 @@ definitions:
       data:
         $ref: '#/definitions/weighing.TicketView'
       message:
+        type: string
+    type: object
+  weighing.NetAdjustmentInput:
+    properties:
+      amount:
+        type: string
+      category:
+        type: string
+      mode:
+        type: string
+      rateBp:
+        type: integer
+      remark:
         type: string
     type: object
   weighing.Operation:
@@ -1318,9 +1331,13 @@ definitions:
     type: object
   weighing.PriorFinalWeights:
     properties:
+      categoryName:
+        type: string
       gross:
         type: string
       net:
+        type: string
+      netAdjustment:
         type: string
       tare:
         type: string
@@ -1331,10 +1348,18 @@ definitions:
         type: string
       candidate:
         type: string
+      confirmationId:
+        type: integer
+      corrected:
+        type: boolean
       scenePlate:
         type: string
       source:
         type: string
+      sourceEventRecordIds:
+        items:
+          type: integer
+        type: array
     type: object
   weighing.ReopenInput:
     properties:
@@ -1344,6 +1369,8 @@ definitions:
         $ref: '#/definitions/weighing.BusinessInput'
       finalWeights:
         $ref: '#/definitions/weighing.FinalWeights'
+      netAdjustment:
+        $ref: '#/definitions/weighing.NetAdjustmentInput'
       reason:
         type: string
       requestId:
@@ -1368,8 +1395,8 @@ definitions:
         $ref: '#/definitions/weighing.Checks'
       clientId:
         type: string
-      finalWeights:
-        $ref: '#/definitions/weighing.FinalWeights'
+      netAdjustment:
+        $ref: '#/definitions/weighing.NetAdjustmentInput'
       otherBasisValid:
         type: boolean
       plateEvidence:
@@ -1493,6 +1520,8 @@ definitions:
     type: object
   weighing.Summary:
     properties:
+      adjustment:
+        type: string
       gross:
         type: string
       net:
@@ -1508,6 +1537,8 @@ definitions:
     type: object
   weighing.SummaryLine:
     properties:
+      adjustment:
+        type: string
       direction:
         type: string
       gross:
@@ -1637,6 +1668,16 @@ definitions:
         type: integer
       mode:
         type: string
+      netAdjustment:
+        type: string
+      netAdjustmentCategory:
+        type: string
+      netAdjustmentCategoryName:
+        type: string
+      netAdjustmentMode:
+        type: string
+      netAdjustmentRateBp:
+        type: integer
       originalGross:
         type: string
       originalNet:
@@ -1664,6 +1705,8 @@ definitions:
       snapshotSchemaVersion:
         type: integer
       status:
+        type: string
+      syncStatus:
         type: string
       tareDifference:
         type: string

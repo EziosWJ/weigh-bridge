@@ -277,7 +277,11 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 		task.MaterialID = business.MaterialID
 		task.PartyID = business.PartyID
 		task.CarrierID = business.CarrierID
-		ticket, err := makeTicket(task, first, second, in.FinalWeights, in.AllowAdjust, e.Metadata.ActorID, name, &latest)
+		categoryName, err := resolveNetAdjustmentCategory(tx, in.NetAdjustment)
+		if err != nil {
+			return out, err
+		}
+		ticket, err := makeTicket(task, first, second, in.FinalWeights, in.NetAdjustment, categoryName, true, in.AllowAdjust, e.Metadata.ActorID, name, &latest)
 		if err != nil {
 			return out, err
 		}

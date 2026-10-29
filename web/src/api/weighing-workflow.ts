@@ -35,10 +35,11 @@ export interface WireTicket {
   business: WireBusiness; basis: WireRecord[]; previousTicketId: number | null;
   status: 'valid' | 'void'; issuedAt: string; issuerName: string;
   originalGross: string; originalTare: string; finalGross: string; finalTare: string; finalNet: string;
+  netAdjustment: string; netAdjustmentMode: 'amount' | 'percent'; netAdjustmentRateBp: number | null; netAdjustmentCategory: string; netAdjustmentCategoryName: string;
   grossSource: string; tareSource: string; adjustmentRemark: string;
   voidedAt: string | null; voidReason: string;
   printStatus?: 'unprinted' | 'unknown' | 'printed' | 'failed'; reprintCount?: number; lastPrintAttemptId?: number | null;
-  previousFinal?: { gross: string; tare: string; net: string } | null;
+  previousFinal?: { gross: string; tare: string; net: string; netAdjustment?: string; categoryName?: string } | null;
 }
 export interface CommandResult { taskId: number; recordId?: number; ticketId?: number; taskVersion: number; status: string }
 export interface Operation { status: 'not_found' | 'committed' | 'rejected'; result: CommandResult | null; error: string }
@@ -67,10 +68,16 @@ export function task(row: WireTask): TransportTask {
   return { ...business(row.business), siteCode:row.siteCode,scaleCode:row.scaleCode,id: String(row.id), taskNo: row.taskNo, version: row.version, createdAt: row.createTime, status: row.status === 'awaiting_second' ? 'second' : row.status, records: (row.records ?? []).map(record), history: (row.events ?? []).map(history) };
 }
 export function ticket(row: WireTicket, previous?: WireTicket): WeighingTicket {
-  if (!row.previousFinal && previous) row = { ...row, previousFinal: { gross: previous.finalGross, tare: previous.finalTare, net: String(Number(previous.finalGross)-Number(previous.finalTare)) } };
+  if (!row.previousFinal && previous) row = { ...row, previousFinal: { gross: previous.finalGross, tare: previous.finalTare, net: previous.finalNet, netAdjustment: previous.netAdjustment, categoryName: previous.netAdjustmentCategoryName } };
   const original = { gross: Number(row.originalGross), tare: Number(row.originalTare), net: Number(row.originalGross) - Number(row.originalTare) };
-  const after = { gross: Number(row.finalGross), tare: Number(row.finalTare), net: Number(row.finalGross) - Number(row.finalTare) };
-  return { ...business(row.business), ...after,siteCode:row.siteCode,siteName:row.siteName, printSheet: row.printSheet, legacyTest: row.mode === 'test', id: String(row.id), ticketNo: row.ticketNo, taskId: String(row.taskId), issuedAt: row.issuedAt, status: row.status, previousId: row.previousTicketId == null ? undefined : String(row.previousTicketId), unit: '吨', records: row.basis.map(record), history: [{ actor: row.issuerName, at: row.issuedAt, action: '生成过磅单' }, ...(row.voidedAt ? [{ at: row.voidedAt, action: '单据作废', reason: row.voidReason }] : [])], adjustment: { source: row.grossSource === 'manual' || row.tareSource === 'manual' ? 'manual' : 'collected', actor: row.issuerName, at: row.issuedAt, original, before: row.previousFinal ? { gross: Number(row.previousFinal.gross), tare: Number(row.previousFinal.tare), net: Number(row.previousFinal.net) } : original, after, grossDeduction: original.gross - after.gross, tareDeduction: original.tare - after.tare, reason: row.adjustmentRemark }, printStatus: row.printStatus ?? 'unprinted', reprintCount: row.reprintCount ?? 0, lastPrintAttemptId: row.lastPrintAttemptId == null ? undefined : String(row.lastPrintAttemptId), reprintAuthorized: false };
+  const netAdjustment = Number(row.netAdjustment ?? 0);
+  const gross = Number(row.finalGross);
+  const tare = Number(row.finalTare);
+  const serverNet = Number(row.finalNet);
+  const after = { gross, tare, net: Number.isFinite(serverNet) ? serverNet : gross - tare - netAdjustment };
+  const previousNet = row.previousFinal ? Number(row.previousFinal.net) : Number.NaN;
+  const before = row.previousFinal ? { gross: Number(row.previousFinal.gross), tare: Number(row.previousFinal.tare), net: Number.isFinite(previousNet) ? previousNet : Number(row.previousFinal.gross) - Number(row.previousFinal.tare) - Number(row.previousFinal.netAdjustment ?? 0) } : original;
+  return { ...business(row.business), ...after, netAdjustment, netAdjustmentMode: row.netAdjustmentMode ?? 'amount', netAdjustmentRateBp: row.netAdjustmentRateBp ?? undefined, netAdjustmentCategory: row.netAdjustmentCategory || undefined, netAdjustmentCategoryName: row.netAdjustmentCategoryName || undefined,siteCode:row.siteCode,siteName:row.siteName, printSheet: row.printSheet, legacyTest: row.mode === 'test', id: String(row.id), ticketNo: row.ticketNo, taskId: String(row.taskId), issuedAt: row.issuedAt, status: row.status, previousId: row.previousTicketId == null ? undefined : String(row.previousTicketId), unit: '吨', records: row.basis.map(record), history: [{ actor: row.issuerName, at: row.issuedAt, action: '生成过磅单' }, ...(row.voidedAt ? [{ at: row.voidedAt, action: '单据作废', reason: row.voidReason }] : [])], adjustment: { source: row.grossSource === 'manual' || row.tareSource === 'manual' || netAdjustment !== 0 ? 'manual' : 'collected', actor: row.issuerName, at: row.issuedAt, original, before, after, grossDeduction: original.gross - after.gross, tareDeduction: original.tare - after.tare, netAdjustment, netAdjustmentMode: row.netAdjustmentMode ?? 'amount', netAdjustmentRateBp: row.netAdjustmentRateBp ?? undefined, netAdjustmentCategory: row.netAdjustmentCategory || undefined, netAdjustmentCategoryName: row.netAdjustmentCategoryName || undefined, reason: row.adjustmentRemark }, printStatus: row.printStatus ?? 'unprinted', reprintCount: row.reprintCount ?? 0, lastPrintAttemptId: row.lastPrintAttemptId == null ? undefined : String(row.lastPrintAttemptId), reprintAuthorized: false };
 }
 
 export interface WireOriginal extends WireTask { originalGross: string; originalTare: string; originalNet: string; firstConfirmedAt: string; secondConfirmedAt: string; currentTicketId: number | null; currentTicketStatus: string }

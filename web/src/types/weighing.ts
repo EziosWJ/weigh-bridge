@@ -21,11 +21,14 @@ export interface HistoryEntry { actor?: string; at: string; role?: OperatorRole;
 export interface TransportTask extends BusinessInfo { siteCode?:string;scaleCode?:string; taskNo?: string; version?: number; id: string; createdAt: string; status: TaskStatus; records: WeighRecord[]; history: HistoryEntry[]; verifiedDate?: string; crossDayDoubt?: boolean; example?: boolean }
 export type PrintStatus = 'unprinted' | 'failed' | 'unknown' | 'printed';
 export interface WeightValues { gross: number; tare: number; net: number; sourceKg?: { gross: number; tare: number; net: number } }
+export type NetAdjustmentMode = 'amount' | 'percent';
+export interface NetAdjustmentInput { mode: NetAdjustmentMode; amount: number; rateBp: number; category: string; remark?: string }
+export interface NetAdjustment { amount: number; mode: NetAdjustmentMode; rateBp?: number; category?: string; categoryName?: string; remark?: string }
 export interface WeightDeduction { grossDeduction: number; tareDeduction: number; reason?: string }
 export type FinalWeightInput = Pick<WeightValues, 'gross' | 'tare'> & { reason?: string };
-export interface WeightAdjustment extends WeightDeduction { source?: 'manual' | 'collected'; actor: string; role?: OperatorRole; at: string; original: WeightValues; before: WeightValues; after: WeightValues }
+export interface WeightAdjustment extends WeightDeduction { source?: 'manual' | 'collected'; actor: string; role?: OperatorRole; at: string; original: WeightValues; before: WeightValues; after: WeightValues; netAdjustment: number; netAdjustmentMode: NetAdjustmentMode; netAdjustmentRateBp?: number; netAdjustmentCategory?: string; netAdjustmentCategoryName?: string }
 export interface PrintSheet { template: string; widthMm: number; heightMm: number; layers: number; title: string; marks: string[]; rows: { label: string; value: string }[][] }
-export interface WeighingTicket extends BusinessInfo { siteCode?:string;siteName?:string; printSheet?: PrintSheet; legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
+export interface WeighingTicket extends BusinessInfo { siteCode?:string;siteName?:string; printSheet?: PrintSheet; legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; netAdjustment?: number; netAdjustmentMode?: NetAdjustmentMode; netAdjustmentRateBp?: number; netAdjustmentCategory?: string; netAdjustmentCategoryName?: string; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
 export interface DeviceImage {
   id: string;
   /** Legacy Agent images keep front/rear; Server images use cameraName instead. */
@@ -55,7 +58,7 @@ export type WeighingCommand = (
  | { type: 'clearDraft' }
  | { type: 'firstWeigh'; input: TaskInput; checked: boolean; requestId: string }
  | { type: 'createTask'; input: TaskInput }
- | { type: 'confirm'; taskId: string; stage: 'first' | 'second'; checked: boolean; finalWeights?: FinalWeightInput; actor?: string }
+ | { type: 'confirm'; taskId: string; stage: 'first' | 'second'; checked: boolean; netAdjustment?: NetAdjustmentInput; actor?: string }
  | { type: 'resolveSubmission' }
  | { type: 'retrySubmission' }
  | { type: 'correctTask'; taskId: string; input: TaskInput; reason: string }
@@ -63,7 +66,7 @@ export type WeighingCommand = (
  | { type: 'terminate'; taskId: string; reason: string }
  | { type: 'verifyDay'; taskId: string; reason: string; doubtful: boolean; confirmed: boolean }
  | { type: 'voidTicket'; ticketId: string; reason: string }
- | { type: 'reopenTicket'; ticketId: string; input: TaskInput; reason: string; evidenceValid: boolean; finalWeights?: FinalWeightInput; actor?: string }
+ | { type: 'reopenTicket'; ticketId: string; input: TaskInput; reason: string; evidenceValid: boolean; finalWeights?: FinalWeightInput; netAdjustment?: NetAdjustmentInput; actor?: string }
  | { type: 'previewPrint'; ticketId: string }
  | { type: 'startPrint'; ticketId: string; intent: 'initial' | 'retry' | 'reprint'; reason?: string }
  | { type: 'resolvePrint'; ticketId: string; printed: boolean; status?: 'printed' | 'failed' | 'unknown'; reason: string }

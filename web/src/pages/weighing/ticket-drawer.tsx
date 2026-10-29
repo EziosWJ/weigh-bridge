@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { netAdjustmentText } from '@/lib/weighing/weights';
 import { useWeighingPage, useWeighingSummary } from '@/hooks/use-weighing-page';
 import { beijingDate } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
@@ -60,7 +61,7 @@ const ticketColumns: DataTableColumn<WireTicket>[] = [
     title: '最终毛 / 皮 / 净重（吨）',
     key: 'weight',
     width: 210,
-    render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span>,
+    render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div>,
   },
   {
     title: '状态 / 打印',
