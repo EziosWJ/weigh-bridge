@@ -119,6 +119,11 @@ func (r *Repository) ReceiveSnapshot(ctx context.Context, serial, hash string, p
 	// SQL errors must not print the plate or attributes to the server log.
 	accepted := true
 	err := r.db.WithContext(ctx).Session(&gorm.Session{Logger: logger.Discard}).Transaction(func(tx *gorm.DB) error {
+		// Serialize event insertion with candidate watermarks. Sequence values
+		// alone do not establish transaction commit order across cameras.
+		if err := LockPlateEvents(ctx, tx); err != nil {
+			return err
+		}
 		var binding EventBinding
 		if err := tx.Where("serial_number=? AND enabled=true", serial).First(&binding).Error; err != nil {
 			return normalizeDBError(err)

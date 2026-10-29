@@ -88,7 +88,9 @@ try {
   for (const name of ['入口相机', '出口相机']) {
     await call('/api/weighing/cameras', 'POST', { name, sourceUrl: `http://127.0.0.1:${cameraPort}/${encodeURIComponent(name)}`, captureEnabled: true, enabled: true });
   }
-  assert.equal((await call('/api/weighing/cameras')).cameras.length, 2, 'two named cameras are configured in the Server module');
+  const recognitionCameras = (await call('/api/weighing/cameras')).cameras;
+  assert.equal(recognitionCameras.length, 2, 'two named cameras are configured in the Server module');
+  for (const [index, camera] of recognitionCameras.entries()) await call(`/api/weighing/cameras/${camera.id}/events`, 'PUT', { serialNumber: `synthetic-camera-${index}`, enabled: true, timeoutSeconds: 180 });
   const operatorRole = (await call('/api/system/role/options')).find(row => row.roleCode === 'WEIGHING_OPERATOR');
   assert.ok(operatorRole, 'fresh database must seed the weighing operator role');
   for (const [username,nickname] of [['operator-one','现场操作员甲']]) {
@@ -136,6 +138,36 @@ try {
   await page.locator('header').getByRole('link',{name:'称重工作台',exact:true}).click();
   await delay(150);assert.equal(admin.pages().length,pageCount);
   await popup.close();
+
+  // Exercise real persisted metadata and the real workbench without storing
+  // manufacturer images or touching any physical devices.
+  const candidatePage = await admin.newPage();
+  candidatePage.setDefaultTimeout(10000);
+  const initialCandidates = candidatePage.waitForResponse(response => response.url().includes('/plate-candidates?') && response.status() === 200);
+  await candidatePage.goto(`${web}/weighing/workbench?scale=WB01`);
+  await initialCandidates;
+  const pushPlate = async (index, eventId, plate) => {
+    const response = await fetch(`${api}/api/v1/event/pull`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ operator:'CarLicenseSnapshot', deviceInfo:{serialNumber:`synthetic-camera-${index}`}, info:{eventId,time:new Date(Date.now()-1000).toISOString(),carLicenseAttriInfo:{Number:plate}} }) });
+    assert.equal(response.status, 200, 'synthetic plate ACK');
+  };
+  await pushPlate(0, 1, '晋A11111');
+  await candidatePage.waitForFunction(() => document.querySelector('#workbench-plate')?.value === 'A11111');
+  await pushPlate(1, 1, '晋A11111');
+  await candidatePage.getByText(/识别候选 晋A11111.*入口相机.*出口相机/).waitFor();
+  await pushPlate(1, 2, '晋A22222');
+  await candidatePage.getByText('存在多个候选，请核对后选择').waitFor();
+  assert.equal(await candidatePage.getByLabel('车牌号码').inputValue(), 'A11111');
+  await candidatePage.getByRole('button', {name:/晋A22222/}).click();
+  const confirmedResponse = candidatePage.waitForResponse(response => response.url().endsWith('/plate-confirmations'));
+  await candidatePage.getByRole('button', {name:'核对车牌并查找运输', exact:true}).click();
+  assert.equal((await (await confirmedResponse).json()).code, 200, 'server validates selected event');
+  await candidatePage.getByRole('button', {name:'释放操作权', exact:true}).click();
+  await candidatePage.getByLabel('车牌号码').fill('A33333');
+  await candidatePage.reload();
+  await candidatePage.getByRole('button', {name:'核对车牌并查找运输', exact:true}).waitFor();
+  assert.equal(await candidatePage.getByLabel('车牌号码').inputValue(), 'A33333', '刷新保留人工修改的车牌');
+  await candidatePage.close();
+  console.log('browser: real metadata candidates, conflict selection and confirmation passed');
 
   // Use the actual workbench, server samples and confirmation dialogs for both directions.
   const settings = await admin.newPage();

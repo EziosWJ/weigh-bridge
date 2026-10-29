@@ -13,6 +13,7 @@ import { PlateInput } from './plate-input';
 import { normalizePlate, plateError } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
+import { workflowApi, type PlateCandidate } from '@/api/weighing-workflow';
 import { directionLabels, roleLabels, taskStatusLabels, type PlateEvidence, type FinalWeightInput, type WeighingCommand, type WeighingState } from '@/types/weighing';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { weightValues } from '@/lib/weighing/weights';
@@ -62,9 +63,18 @@ function WorkbenchContent() {
   const [cameraSize, setCameraSize] = useState<CameraSize>('standard');
   const [review, setReview] = useState<{ data: WeighingState; title: string; value: WeighingReviewValue } | null>(null);
   const [success, setSuccess] = useState<{ taskId: string; stage: 'first' | 'second' } | null>(null);
-  const [recognition, setRecognition] = useState<{ scenePlate: string; candidate?: string } | null>(null);
-  const [recognitionHint, setRecognitionHint] = useState('');
-  const editing = useRef(!!data.draft.plate || !!linkedTask);
+  const initialAgentPlate = device?.plate?.at && !device.plate.at.startsWith('0001') && !device.plate.failed ? normalizePlate(device.plate.candidate) : '';
+  const [recognition, setRecognition] = useState<{ scenePlate: string; candidate?: string } | null>(initialAgentPlate ? { scenePlate: '', candidate: initialAgentPlate } : null);
+  const [recognitionHint, setRecognitionHint] = useState(initialAgentPlate ? `识别候选 ${initialAgentPlate}，请人工核对` : '');
+  const observedAt = useRef(device?.plate?.at ?? '');
+  const observedInitialized = useRef(!!device?.plate?.at && !device.plate.at.startsWith('0001'));
+  const [offerManualSource, setOfferManualSource] = useState(false);
+  const editing = useRef(!!linkedTask || Object.entries(data.draft).some(([key, value]) => key === 'direction' ? value !== 'inbound' : !!value));
+  const [candidates, setCandidates] = useState<PlateCandidate[]>([]);
+  const selectedCandidate = useRef<PlateCandidate | null>(null);
+  const candidateOwner = useRef<'empty' | 'suggested' | 'manual' | 'confirmed'>(editing.current ? 'manual' : 'empty');
+  const candidateEpoch = useRef(0);
+  const [candidateCycle, setCandidateCycle] = useState(0);
   const located = !!searchedPlate && searchedPlate === normalizeLegacy(plate) && (!linkedTask || linkedTask.plate === searchedPlate);
   const selected = linkedTask ?? (located ? data.tasks.find((task) => task.plate === searchedPlate && (task.status === 'first' || task.status === 'second')) : undefined);
   const awaitingResult = !!data.pending;
@@ -96,6 +106,62 @@ function WorkbenchContent() {
   const hasWeighingContext = located || !!taskInfo || awaitingResult;
   const sampleReady = data.sampleReady && data.capture?.plate === summaryPlate;
   const blocked = businessBlocked || (!sampleReady ? conditionIssue || device?.captureBlockedReason : '') || '';
+  const candidateBlocked = useRef(false);
+  candidateBlocked.current = !!selected || located || !!data.capture || !!review || !!success || awaitingResult || lookingUp || submitting || businessOpen || data.owner === 'other';
+  const scaleCode = capabilities?.localScaleCode || params.get('scale') || '';
+  const canConfirm = !!capabilities?.permissionCodes.includes('weighing:confirm');
+  useEffect(() => {
+    if (!scaleCode || !canConfirm) return;
+    let stopped = false;
+    const epochRef = candidateEpoch;
+    let cursor: string | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let request: AbortController | undefined;
+    let epoch = candidateEpoch.current;
+    const reset = () => { cursor = undefined; epoch = ++candidateEpoch.current; };
+    const visibility = () => { if (document.visibilityState === 'visible') reset(); else ++candidateEpoch.current; };
+    document.addEventListener('visibilitychange', visibility);
+    const poll = async () => {
+      if (stopped) return;
+      if (document.visibilityState === 'visible') {
+        const requestEpoch = epoch;
+        request = new AbortController();
+        const timeout = setTimeout(() => request?.abort(), 5000);
+        try {
+          const page = await workflowApi.plateCandidates(scaleCode, cursor, request.signal);
+          if (stopped || requestEpoch !== candidateEpoch.current) return;
+          if (!Array.isArray(page.items) || typeof page.nextCursor !== 'string' || typeof page.serverTime !== 'string') throw new Error('识别候选响应无效');
+          const initial = cursor === undefined;
+          cursor = page.nextCursor;
+          setCandidates(previous => {
+            const combined = new Map(previous.map(item => [item.id, item]));
+            for (const item of page.items) combined.set(item.id, item);
+            return [...combined.values()].filter(item => Date.parse(item.expiresAt) > Date.parse(page.serverTime)).sort((a, b) => Date.parse(b.lastReceivedAt) - Date.parse(a.lastReceivedAt)).slice(0, 5);
+          });
+          if (!initial && page.items.length && !candidateBlocked.current && !useWeighingStore.getState().busy) {
+            const candidate = page.items[page.items.length - 1];
+            if (candidateOwner.current === 'suggested' && selectedCandidate.current?.plate === candidate.plate) {
+              selectedCandidate.current = candidate;
+              setRecognitionHint(`识别候选 ${candidate.plate} · ${candidate.sourceEvents.map(source => source.cameraName).join('、')} · ${beijingTime(candidate.sourceEvents.at(-1)?.recognizedAt ?? candidate.lastReceivedAt)} · 待人工核对`);
+            } else if (candidateOwner.current === 'empty' && document.activeElement !== plateInput.current) {
+              if (useWeighingStore.getState().data.owner === null) {
+                try { await useWeighingStore.getState().dispatch({ type: 'occupy', owner: 'self' }); } catch { return; }
+              }
+              if (stopped || requestEpoch !== candidateEpoch.current || candidateBlocked.current || useWeighingStore.getState().busy || candidateOwner.current !== 'empty' || document.activeElement === plateInput.current || useWeighingStore.getState().data.owner !== 'self') return;
+              candidateOwner.current = 'suggested'; selectedCandidate.current = candidate; editing.current = true;
+              setPlate(candidate.plate);
+              setRecognitionHint(`识别候选 ${candidate.plate} · ${candidate.sourceEvents.map(source => source.cameraName).join('、')} · ${beijingTime(candidate.sourceEvents.at(-1)?.recognizedAt ?? candidate.lastReceivedAt)} · 待人工核对`);
+            }
+          }
+        } catch { /* Manual entry remains available; calibrate on reconnect. */ cursor = undefined; }
+        finally { clearTimeout(timeout); request = undefined; if (!stopped) timer = setTimeout(poll, 2000); }
+        return;
+      }
+      if (!stopped) timer = setTimeout(poll, 2000);
+    };
+    void poll();
+    return () => { stopped = true; ++epochRef.current; request?.abort(); if (timer) clearTimeout(timer); document.removeEventListener('visibilitychange', visibility); };
+  }, [scaleCode, canConfirm, candidateCycle]);
   useEffect(() => {
     const resume = (event: MessageEvent) => {
       if (event.origin !== window.location.origin || event.data?.type !== 'weighbridge-locate-task') return;
@@ -143,6 +209,7 @@ function WorkbenchContent() {
       warn('上次提交结果待核实', '请先查询原结果，避免重复称重或出单。');
       return;
     }
+    candidateBlocked.current = true;
     setLookingUp(true);
     try {
       let existing;
@@ -157,9 +224,14 @@ function WorkbenchContent() {
       setPlate(normalized); setSuccess(null); setReview(null); setBusinessTab('basic');
       if (data.firstRequests[data.draftRequestId] && !existing && !await run({ type: 'clearDraft' }, '', undefined, '车牌核对失败')) return;
       if (!await run({ type: 'draft', patch: { plate: normalized } }, '', undefined, '车牌核对失败')) return;
-      const evidence: PlateEvidence = { source: recognition?.candidate ? 'agent' : 'manual', scenePlate: recognition?.scenePlate, candidate: recognition?.candidate, confirmedPlate: normalized, at: new Date().toISOString() };
-      if (!await run({ type: 'verifyPlate', evidence }, '', undefined, '车牌核对失败')) return;
-      setSearchedPlate(normalized); editing.current = true;
+      const chosen = selectedCandidate.current;
+      const evidence: PlateEvidence = chosen ? { source: 'server', candidate: chosen.plate, confirmedPlate: normalized, at: new Date().toISOString(), corrected: chosen.plate !== normalized, sourceEventRecordIds: chosen.sourceEvents.map(source => source.eventRecordId) } : { source: recognition?.candidate ? 'agent' : 'manual', scenePlate: recognition?.scenePlate, candidate: recognition?.candidate, confirmedPlate: normalized, at: new Date().toISOString() };
+      if (!await run({ type: 'verifyPlate', evidence }, '', undefined, chosen ? '' : '车牌核对失败')) {
+        if (!chosen || !await run({ type: 'verifyPlate', evidence: { source: 'manual', confirmedPlate: normalized, at: new Date().toISOString() } })) return;
+        selectedCandidate.current = null;
+        setRecognitionHint('识别来源不可用，已按人工核对车牌办理。');
+      }
+      setSearchedPlate(normalized); editing.current = true; candidateOwner.current = 'confirmed';
       if (existing) {
         setParams({ task: existing.id });
         setFeedback(`已找到运输任务 ${existing.taskNo}，请核对本趟资料。`);
@@ -181,6 +253,7 @@ function WorkbenchContent() {
       plate: summaryPlate,
       plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() },
     }, '', undefined, repeat ? '重新采集失败' : '采集失败');
+    if (!ok && data.draftPlateEvidence?.source === 'server') { setOfferManualSource(true); setRecognitionHint('采集未完成；若识别来源已失效，请重新核对车牌或改为人工来源。'); }
     if (ok) toast.success({
       title: repeat ? '已重新采集' : '重量已采集',
       description: '请核对重量与现场图片后继续确认。',
@@ -295,9 +368,10 @@ function WorkbenchContent() {
 
   async function nextVehicle() {
     if (!await run({ type: 'clearDraft' }, '', undefined, '结束当前车辆失败')) return;
-    setRecognition(null); setRecognitionHint(''); editing.current = false;
+    ++candidateEpoch.current; setCandidateCycle(value => value + 1); setCandidates([]); selectedCandidate.current = null; candidateOwner.current = 'empty';
+    observedAt.current = useWeighingStore.getState().device?.plate?.at ?? '';
+    setRecognition(null); setRecognitionHint(''); setOfferManualSource(false); editing.current = false;
     setParams({}); setPlate(''); setSearchedPlate(''); setSuccess(null);
-    requestAnimationFrame(() => plateInput.current?.focus());
     toast.success('已结束当前车辆，可继续办理下一辆。');
   }
 
@@ -308,21 +382,25 @@ function WorkbenchContent() {
   }
 
   async function changePlate(value: string) {
+    candidateOwner.current = 'manual';
     editing.current = true; setSearchedPlate('');
     setPlate(value); setParams({}); setSuccess(null); setReview(null);
     if (data.firstRequests[data.draftRequestId] && !await run({ type: 'clearDraft' })) return;
     void run({ type: 'draft', patch: { plate: value } });
   }
 
-  const observedAt = useRef('');
   useEffect(() => {
     const observed = device?.plate;
-    if (!observed?.at || observed.at.startsWith('0001') || observedAt.current === observed.at) return;
+    if (!observed) return;
+    if (!observed.at || observed.at.startsWith('0001')) { observedInitialized.current = true; return; }
+    if (observedAt.current === observed.at) return;
     observedAt.current = observed.at;
     const candidate = observed.failed ? '' : normalizePlate(observed.candidate);
     setRecognition({ scenePlate: '', candidate });
-    if (editing.current) { setRecognitionHint(`新识别结果：${candidate || '识别失败'}，请核对当前车辆。`); return; }
+    if (!observedInitialized.current) { observedInitialized.current = true; setRecognitionHint(candidate ? `识别候选 ${candidate}，请人工核对` : '识别失败，请人工录入并核对车牌。'); return; }
+    if (editing.current || candidateBlocked.current || document.activeElement === plateInput.current) { setRecognitionHint(`新识别结果：${candidate || '识别失败'}，请核对当前车辆。`); return; }
     if (candidate) {
+      editing.current = true; candidateOwner.current = 'manual';
       setPlate(candidate);
       void useWeighingStore.getState().dispatch({type:'draft',patch:{plate:candidate}}).catch(() => {});
       setRecognitionHint(`识别候选 ${candidate}，待人工核对`);
@@ -368,6 +446,19 @@ function WorkbenchContent() {
           </form>
           <div className="workbench-phase" aria-label="当前作业状态" aria-live="polite"><strong>{phaseLabel}</strong>{hasWeighingContext && <span>{directionLabels[summaryDirection]}</span>}</div>
           <p role="status" className={`plate-recognition mt-3 text-sm ${recognitionHint ? 'text-warning' : 'text-text-secondary'}`}>{recognitionHint ? <><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{recognitionHint}</> : located ? '车牌已人工核对；请继续核对现场车辆。' : '等待识别候选，可手工录入普通或新能源车牌后核对。'}</p>
+          {offerManualSource && data.draftPlateEvidence?.source === 'server' && !data.sampleReady && !awaitingResult && <Button type="button" size="sm" disabled={busy} onClick={() => {
+            selectedCandidate.current = null;
+            setRecognition(null);
+            void run({ type: 'verifyPlate', evidence: { source: 'manual', confirmedPlate: searchedPlate, at: new Date().toISOString() } }).then(ok => { if (ok) { setOfferManualSource(false); setRecognitionHint('已改为人工录入来源，请核对现场车辆。'); } });
+          }}>改为人工录入来源</Button>}
+          {candidates.length > 0 && <div className="mt-2 space-y-1 text-sm" aria-label="识别候选">
+            <p>{new Set(candidates.map(item => item.plate)).size > 1 ? '存在多个候选，请核对后选择' : '识别候选（请核对现场车辆）'}</p>
+            <div className="flex flex-wrap gap-2">{candidates.map(item => <Button key={item.id} size="sm" type="button" className="h-auto max-w-full whitespace-normal break-all text-left" disabled={candidateBlocked.current || busy} onClick={() => {
+              candidateOwner.current = 'manual'; selectedCandidate.current = item;
+              setRecognitionHint(`已选择 ${item.plate} · ${item.sourceEvents.map(source => source.cameraName).join('、')} · 待人工核对`);
+              void changePlate(item.plate);
+            }}>{item.plate} · {item.sourceEvents.map(source => source.cameraName).join('、')} · {beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button>)}</div>
+          </div>}
           <div className="workbench-business-entry">
             <div className="min-w-0 text-sm text-text-secondary"><p className="truncate" title={`${summaryMaterial} / ${summaryParty}`}>{summaryMaterial} / {summaryParty}</p></div>
             <Button size="lg" variant="primary" className="w-full" disabled={!located && !taskInfo && !awaitingResult} onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />{taskInfo || awaitingResult ? '查看运输资料' : '录入运输资料'}</Button>

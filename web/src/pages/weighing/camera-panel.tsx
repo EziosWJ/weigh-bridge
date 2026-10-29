@@ -94,7 +94,7 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
     </div>;
   }
   if (!imageSrc) return <div className="space-y-2 text-sm text-text-secondary">{policy}{failures}
-    {capture.captureRequired === false ? <p>本次无抓拍图片，请核对现场车辆和重量。</p> : <p role="alert" className="text-error">缺少本次抓拍图片，请返回重新采集。</p>}{metadata}</div>;
+    {capture.captureRequired === false ? <p>本次无抓拍图片，请核对现场车辆和重量。</p> : <p role="alert" className="text-error">缺少本次抓拍图片，请返回重新采集。</p>}{metadata}<PlateEvidenceInfo evidence={capture.plateEvidence} /></div>;
   return <div className="space-y-2">
     <button type="button" className="relative block w-full overflow-hidden rounded-control border border-border bg-neutral-background text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label={`放大抓拍 ${cameraLabel}`} onClick={() => preview(true)}>
       <AgentImage key={imageSrc} src={imageSrc} alt={`${cameraLabel}抓拍`} className="aspect-video w-full object-contain" onLoadState={ok => mark(active?.id ?? 'legacy', ok)} />

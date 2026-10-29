@@ -270,7 +270,15 @@ export const useWeighingStore = create<Store>((set, get) => ({
           if (changedPlate || (command.patch.direction && command.patch.direction !== data.draft.direction)) await invalidate();
           updateData({ draft: { ...get().data.draft, ...command.patch }, ...(changedPlate ? { draftPlateEvidence: undefined } : {}) }); persist(); break;
         }
-        case 'verifyPlate': updateData({ draftPlateEvidence: command.evidence }); break;
+        case 'verifyPlate': {
+          let evidence = command.evidence;
+          if (evidence.source === 'server') {
+            await ensureLease();
+            const result = await workflowApi.post<{ confirmationId: number }>('/plate-confirmations', { scaleCode: lease!.scaleCode, ...sessionInput(), confirmedPlate: evidence.confirmedPlate, evidence });
+            evidence = { ...evidence, confirmationId: result.confirmationId };
+          }
+          updateData({ draftPlateEvidence: evidence }); break;
+        }
         case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: createId(), draftPlateEvidence: undefined }); persist(); await release(); break;
         case 'occupy': if (command.owner === 'other') throw new Error('请用另一个真实工作台取得操作权，不能伪造其他会话。'); if (command.owner === null) { await invalidate(); await release(); } else await acquire(); break;
         case 'takeover': await acquire('takeover', command.reason); clearSample(); break;

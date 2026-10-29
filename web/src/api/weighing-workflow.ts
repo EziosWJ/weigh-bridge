@@ -42,11 +42,15 @@ export interface WireTicket {
 }
 export interface CommandResult { taskId: number; recordId?: number; ticketId?: number; taskVersion: number; status: string }
 export interface Operation { status: 'not_found' | 'committed' | 'rejected'; result: CommandResult | null; error: string }
+export interface PlateSourceEvent { eventRecordId: number; cameraId: number; cameraName: string; receivedAt: string; recognizedAt: string; rawPlate?: string }
+export interface PlateCandidate { id: number; plate: string; sourceEvents: PlateSourceEvent[]; firstReceivedAt: string; lastReceivedAt: string; expiresAt: string }
+export interface PlateCandidatePage { items: PlateCandidate[]; nextCursor: string; serverTime: string }
 const base = '/api/weighing';
 export const workflowApi = {
   get: <T>(path: string) => http.get<T>(`${base}${path}`),
   post: <T>(path: string, body: unknown) => http.post<T>(`${base}${path}`, body),
   active: (plate: string, scale?: string) => http.get<WireTask | null>(`${base}/tasks/active`, { query: { plate,scale } }),
+  plateCandidates: (scale: string, after?: string, signal?: AbortSignal) => http.get<PlateCandidatePage>(`${base}/plate-candidates`, { query: { scale, after }, signal }),
   task: (id: string | number) => http.get<WireTask>(`${base}/tasks/${id}`),
   ticket: (id: string | number) => http.get<WireTicket>(`${base}/tickets/${id}`),
   operation: (requestId: string) => http.get<Operation>(`${base}/operations/${requestId}`),

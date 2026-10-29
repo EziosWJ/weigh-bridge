@@ -177,10 +177,13 @@ type Sample struct {
 func (Sample) TableName() string { return "wb_sample" }
 
 type RecognitionInput struct {
-	Source     string `json:"source"`
-	ScenePlate string `json:"scenePlate"`
-	Candidate  string `json:"candidate"`
-	At         string `json:"at"`
+	Source               string  `json:"source"`
+	ScenePlate           string  `json:"scenePlate"`
+	Candidate            string  `json:"candidate"`
+	At                   string  `json:"at"`
+	SourceEventRecordIDs []int64 `json:"sourceEventRecordIds"`
+	Corrected            bool    `json:"corrected"`
+	ConfirmationID       int64   `json:"confirmationId"`
 }
 type CaptureInput struct {
 	PlateEvidence *RecognitionInput `json:"plateEvidence"`

@@ -57,7 +57,7 @@ func (s *Service) Capture(ctx context.Context, in CaptureInput, e audit.Event) (
 	}
 	if in.PlateEvidence != nil {
 		value := in.PlateEvidence
-		if (value.Source != "manual" && value.Source != "agent") || !maxLength(value.ScenePlate, 20) || !maxLength(value.Candidate, 20) || !maxLength(value.At, 100) {
+		if (value.Source != "manual" && value.Source != "agent" && value.Source != "server") || !maxLength(value.ScenePlate, 20) || !maxLength(value.Candidate, 20) || !maxLength(value.At, 100) || (value.Source == "server" && value.ConfirmationID <= 0) {
 			return Sample{}, ErrInvalid
 		}
 	}

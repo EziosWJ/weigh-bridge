@@ -1,4 +1,5 @@
 import type { PlateEvidence } from '@/types/weighing';
+import { beijingTime } from '@/lib/weighing/query';
 
 export function PlateCloseup({ plate }: { plate: string }) {
   return <div className="flex flex-wrap items-center gap-3 rounded-control border border-border bg-neutral-background p-3" aria-label="车牌参考">
@@ -13,5 +14,8 @@ export function PlateEvidenceInfo({ evidence }: { evidence?: PlateEvidence }) {
     <p>原始识别候选：{evidence.candidate || '无（人工录入／识别失败）'}</p>
     <p>人工确认车牌：{evidence.confirmedPlate}</p>
     <p>录入来源：{evidence.source === 'simulated' ? '历史模拟识别后人工核对' : evidence.source === 'agent' ? 'Agent 识别后人工核对' : evidence.source === 'server' ? 'Server 摄像头识别后人工核对' : '人工录入'}</p>
+    {evidence.corrected && <p>车牌已人工修正</p>}
+    {evidence.sourceEvents?.map(source => <p key={source.eventRecordId}>来源：{source.cameraName} · {beijingTime(source.recognizedAt)} · 事件 {source.eventRecordId}</p>)}
+    {evidence.sourceEvents?.length ? <p>人工核对时间：{beijingTime(evidence.at)}</p> : null}
   </div> : <p className="text-sm text-text-tertiary">历史车牌识别来源：未记录</p>;
 }

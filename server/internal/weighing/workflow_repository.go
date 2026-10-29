@@ -379,6 +379,13 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 			observedAt = captured.Plate.At.Format(time.RFC3339Nano)
 		}
 		plateEvidence := snapshot(map[string]any{"source": source, "candidate": candidate, "confirmedPlate": business.Plate, "at": now, "observedAt": observedAt})
+		if in.PlateEvidence != nil && in.PlateEvidence.Source == "server" {
+			verified, err := readPlateConfirmation(tx, in.PlateEvidence.ConfirmationID, e.Metadata.ActorID, in.ScaleCode, session.Generation, business.Plate)
+			if err != nil {
+				return err
+			}
+			plateEvidence = snapshot(verified)
+		}
 		capturedAt := captured.CapturedAt
 		if capturedAt.IsZero() {
 			capturedAt = now
