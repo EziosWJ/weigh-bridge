@@ -6,6 +6,8 @@
 - 新增 schema `00035_net_adjustment.sql` 与 seed `00024_weighing_deduction_category.sql`；历史单默认无调整、不回写。schema 回退需恢复升级前备份。查询、汇总、CSV、单据详情和票面同步展示调整信息；票面不新增列，净重标签注明扣减／上调量，Agent 无需升级。
 - 云端单据载荷升至 schemaVersion 3，新增 `finalNet`、净重调整及上版净重字段；云端接收端必须先兼容版本 3，再发布厂端，否则含扣减单据的云端净重会偏大。本仓库只更新厂端与契约副本，云端仓库及真实双端联调尚未完成。
 - 验证：`go test ./...`、`task db:integration:postgres`（隔离 PostgreSQL 全量集成通过）、`task frontend:lint`、`task frontend:build`、`npm run test:weighing`、`npm run test:weighing:backend`（真实 API + Chromium，含净重调整、负数拒绝、重开毛皮更正、汇总和打印）通过。未做现场验收，未连接真实业务库或云端。
+- 2026-10-29 20:18 部署至 `fcc-com-02`（`10.126.126.2`，生产 Server 监听 80）：升级前备份 `/opt/fcc/backups/netdeduct-20261029-201730`（含停服前后两份数据库 dump、`configs`、`agent`、`migrations`、`bin`）；备份副本在隔离 PostgreSQL 18 容器恢复并演练迁移到 schema 35／seed 24，确认新列、约束、四类字典与历史单据不变后删除容器。生产 schema／seed 显式迁移至 35／24，历史 3 张单据净重调整均为 0。Server、Agent 正常，health／ready、内嵌页面与净重调整分包资源正常，Agent 重新连接串口／打印队列不变；3 笔 initiated 与 18 笔 unknown 打印记录保留、未重放。未用真实车辆出单验证净重扣减，未打印样张。
+- 云端口径：部署时云端仍是 `schemaVersion=2` 校验；本次厂端已升 v3，云端升级前新出的单据会被云端拒绝并保留在本地待同步队列重试，不会丢数据，但云端净重不会更新。需尽快升级云端接收端并做真实双端联调。
 
 ## 车牌候选工作台（Issue #9–#12）：软件验证完成，现场待验收
 
