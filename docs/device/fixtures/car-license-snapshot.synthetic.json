@@ -1,0 +1,43 @@
+{
+  "operator": "CarLicenseSnapshot",
+  "deviceInfo": {
+    "serialNumber": "synthetic-camera",
+    "platformId": "test"
+  },
+  "info": {
+    "eventId": 66,
+    "time": "2026-10-29T14:19:44+08:00",
+    "carLicenseAttriInfo": {
+      "Number": "晋A12345",
+      "CarLicenseAttriColor": 1,
+      "CarLicenseRowNum": 1,
+      "CarLicenseRect": {
+        "Left": 0,
+        "Right": 3,
+        "Top": 0,
+        "Bottom": 1
+      }
+    },
+    "carAttriInfo": {
+      "DriveEntryDirection": 0,
+      "Match": 1,
+      "Score": 95,
+      "CarRect": {
+        "Left": 0,
+        "Right": 3,
+        "Top": 0,
+        "Bottom": 1
+      }
+    },
+    "CaptureImage": {
+      "picture": "synthetic-image-not-saved"
+    },
+    "BackgroundImage": {
+      "width": 0,
+      "height": 0,
+      "pictureLength": 0,
+      "base64PicLength": 22,
+      "picture": "data:image/jpg;base64,"
+    }
+  }
+}

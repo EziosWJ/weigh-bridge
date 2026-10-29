@@ -61,13 +61,6 @@ func TestPostgresWeighingMasterMigrationRollbackRequiresRestore(t *testing.T) {
 	runMigrations(t, projectRoot(t), temporary.dsn)
 	database := openTemporaryDatabase(t, temporary.dsn)
 	defer func() { _ = database.Close() }()
-	// Seed 00018 adds reference master data; start from an empty baseline so
-	// the counts below describe only the rows this test writes.
-	for _, table := range []string{"wb_party_contact", "wb_party", "wb_material", "wb_material_category"} {
-		if err := database.GORM.Exec("DELETE FROM " + table).Error; err != nil {
-			t.Fatal(err)
-		}
-	}
 	if err := database.GORM.Exec("INSERT INTO wb_material_category (name, create_by, update_by) VALUES ('回退分类',1,1)").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -100,14 +93,6 @@ func TestPostgresWeighingMasterMigrationRollbackRequiresRestore(t *testing.T) {
 
 func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, deps app.Dependencies) {
 	t.Helper()
-	// Seed 00018 installs reference master data on a fresh database. This test
-	// exercises the empty-schema baseline, so clear those seeded rows first
-	// (child tables before parents) instead of weakening the assertions.
-	for _, table := range []string{"wb_party_contact", "wb_party", "wb_material", "wb_material_category"} {
-		if err := database.GORM.Exec("DELETE FROM " + table).Error; err != nil {
-			t.Fatalf("clear seeded %s: %v", table, err)
-		}
-	}
 	for _, table := range []string{"wb_material_category", "wb_material", "wb_party", "wb_party_contact", "wb_number_sequence"} {
 		var count int64
 		if err := database.GORM.Table(table).Count(&count).Error; err != nil || count != 0 {

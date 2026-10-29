@@ -23,6 +23,9 @@ func TestPostgresHistoricalTaskScopeUsesLocalAccess(t *testing.T) {
 	}
 	admin := loginAdmin(t, router)
 	ensureLocalSite(t, router, admin, 1, "CURRENT", "本厂", "WB01", "地磅", "local-agent")
+	if err := db.GORM.Exec(`INSERT INTO wb_material (code,name,create_by,update_by) VALUES ('TEST-M','测试物料',1,1); INSERT INTO wb_party (code,name,nature,is_supplier,create_by,update_by) VALUES ('TEST-P','测试主体','enterprise',1,1,1)`).Error; err != nil {
+		t.Fatal(err)
+	}
 	var taskID int64
 	err = db.GORM.Raw(`INSERT INTO wb_transport_task
   (task_no,mode,plate,direction,status,site_code,scale_code,material_id,party_id,business_snapshot,version,create_time,update_time,actor_id,actor_name)

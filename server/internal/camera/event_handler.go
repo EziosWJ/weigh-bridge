@@ -18,7 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const eventBodyLimit = 2 << 20
+const eventBodyLimit = 15 << 20
 
 var eventSlots = make(chan struct{}, 8)
 
@@ -63,6 +63,69 @@ func RegisterEventRoute(router gin.IRouter, service *Service) {
 		}
 		if json.Unmarshal(body, &envelope) != nil || !validEventText(envelope.Operator, 200) || !validEventText(envelope.DeviceInfo.SerialNumber, 200) || !validEventText(envelope.Info.Time, 200) || len(envelope.DeviceInfo.IP) > 200 || !validEventID(envelope.Info.EventID) {
 			c.Status(http.StatusBadRequest)
+			return
+		}
+		if envelope.Operator == "CarLicenseSnapshot" {
+			sum := sha256.Sum256(body)
+			hash := hex.EncodeToString(sum[:])
+			started := time.Now()
+			ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+			defer cancel()
+			accepted, err := service.receiveSnapshot(ctx, envelope.DeviceInfo.SerialNumber, hash, body, time.Now().UTC())
+			if err != nil {
+				reason := "storage"
+				if errors.Is(err, ErrInvalid) {
+					reason = err.Error()
+				}
+				if errors.Is(err, ErrNotFound) {
+					reason = "unknown device"
+				}
+				slog.Warn("camera snapshot receive failed", "reason", reason, "bytes", len(body), "sha256", hash)
+				if store, ok := service.store.(eventStore); ok && !errors.Is(err, ErrNotFound) {
+					category := "storage"
+					if errors.Is(err, ErrInvalid) {
+						category = "invalid"
+					}
+					diagnostic, _ := json.Marshal(map[string]string{"failure": category})
+					diagnosticCtx, stop := context.WithTimeout(c.Request.Context(), 5*time.Second)
+					_ = store.ReceiveEvent(diagnosticCtx, envelope.DeviceInfo.SerialNumber, envelope.Operator, string(envelope.Info.EventID), envelope.Info.Time, envelope.DeviceInfo.IP, time.Now().UTC(), hash, diagnostic)
+					stop()
+				}
+				switch {
+				case errors.Is(err, ErrNotFound):
+					c.Status(http.StatusForbidden)
+				case errors.Is(err, ErrInvalid):
+					c.Status(http.StatusBadRequest)
+				default:
+					c.Status(http.StatusServiceUnavailable)
+				}
+				return
+			}
+			ack, err := json.Marshal(struct {
+				Operator string `json:"operator"`
+				Info     struct {
+					EventID json.RawMessage `json:"eventID"`
+				} `json:"info"`
+				Result struct {
+					ErrorNo     int    `json:"errorNo"`
+					Description string `json:"description"`
+				} `json:"result"`
+			}{Operator: "CarLicenseSnapshot-Ack", Info: struct {
+				EventID json.RawMessage `json:"eventID"`
+			}{envelope.Info.EventID}, Result: struct {
+				ErrorNo     int    `json:"errorNo"`
+				Description string `json:"description"`
+			}{0, "ok"}})
+			if err != nil {
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			if accepted {
+				slog.Info("camera snapshot accepted", "bytes", len(body), "sha256", hash, "duration_ms", time.Since(started).Milliseconds())
+			} else {
+				slog.Info("camera snapshot expired", "bytes", len(body), "sha256", hash, "duration_ms", time.Since(started).Milliseconds())
+			}
+			c.Data(http.StatusOK, "application/json", ack)
 			return
 		}
 		store, ok := service.store.(eventStore)
@@ -237,7 +300,15 @@ func registerEventManagement(router gin.IRouter, h *Handler) {
 				}
 			}
 		}
-		writeResult(c, gin.H{"binding": binding, "state": state, "events": events}, nil)
+		snapshots := []LicenseSnapshot{}
+		if snapshotsStore, ok := h.service.store.(snapshotStore); ok {
+			snapshots, err = snapshotsStore.Snapshots(c, id)
+			if err != nil {
+				writeResult(c, nil, err)
+				return
+			}
+		}
+		writeResult(c, gin.H{"binding": binding, "state": state, "events": events, "snapshots": snapshots}, nil)
 	})
 	router.PUT("/cameras/:id/events", manage, func(c *gin.Context) {
 		id, err := pathID(c)

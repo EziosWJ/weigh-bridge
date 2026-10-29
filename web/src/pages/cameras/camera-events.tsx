@@ -41,6 +41,13 @@ export function CameraEventDialog({ camera, canManage, onClose }: { camera: Came
       <p className="text-sm">状态：{labels[data.state]}；最近心跳：{data.binding.lastHeartbeatAt ? formatDateTime(data.binding.lastHeartbeatAt) : "无"}</p>
       <p className="text-xs">设备时间：{data.binding.deviceTime || "无"}；自报 IP：{data.binding.deviceIp || "无"}（仅供诊断）</p>
       <Button size="sm" onClick={() => void load()}>刷新状态</Button>
+      <div className="max-h-80 overflow-auto text-sm"><strong>最近车牌识别（最多 50 条）</strong>
+        {!data.snapshots?.length && <p>暂无成功接收的记录</p>}
+        {data.snapshots?.map(item => <div key={item.id} className="mt-2 border-t border-border pt-2">
+          <p>{formatDateTime(item.receivedAt)} · {item.plate || "未识别车牌"} · 设备 {item.serialNumber} · 事件号 {item.eventId} · 已保存</p>
+          <p>设备时间：{item.deviceTime}</p>
+        </div>)}
+      </div>
       <div className="max-h-60 overflow-auto text-xs"><strong>最近诊断（最多 100 条）</strong>{data.events?.map(event => <div key={event.id} className="mt-2 break-all border-t border-border pt-2">{formatDateTime(event.receivedAt)} · {event.operator} · 事件号 {event.eventId}<pre className="whitespace-pre-wrap">{JSON.stringify(event.diagnostic, null, 2)}</pre></div>)}</div>
     </div>}
   </FormDialog>;

@@ -288,3 +288,23 @@ func TestMasterSyncIntervalValidationAndNotification(t *testing.T) {
 		t.Fatal("failed audit must not notify")
 	}
 }
+
+func TestCameraEventMaxAgeConfiguration(t *testing.T) {
+	store := newMemoryStore()
+	store.configs[1] = Config{ID: 1, ConfigKey: CameraEventMaxAgeKey, ConfigValue: "5", ValueType: "NUMBER", IsBuiltin: builtin, Status: 1}
+	svc := NewService(store)
+	for _, value := range []string{"0", "10081", "1.5", ""} {
+		if err := svc.Update(context.Background(), audit.Metadata{}, 1, Input{ConfigValue: value}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("value %q: %v", value, err)
+		}
+	}
+	if err := svc.Update(context.Background(), audit.Metadata{}, 1, Input{ConfigValue: " 10 "}); err != nil {
+		t.Fatal(err)
+	}
+	if store.configs[1].ConfigValue != "10" || len(store.auditEvents) != 1 {
+		t.Fatal("value or audit missing")
+	}
+	if err := svc.Status(context.Background(), audit.Metadata{}, 1, 0); !errors.Is(err, ErrBuiltin) {
+		t.Fatal("builtin disabled")
+	}
+}

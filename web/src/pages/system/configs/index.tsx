@@ -84,6 +84,7 @@ const DEFAULT_FILTERS: FilterState = {
 };
 
 const LOG_CLEAR_ENABLED_KEY = "system.log-clear-enabled";
+const CAMERA_EVENT_MAX_AGE_KEY = "weighing.camera-event-max-age-minutes";
 const MASTER_SYNC_INTERVAL_KEY = "weighing.master-sync-interval-minutes";
 const CAPTURE_REQUIRED_KEY = "weighing.capture-required";
 const TICKET_TITLE_KEY = "weighing.ticket-title";
@@ -120,6 +121,9 @@ const configFormSchema = z
   .superRefine((values, context) => {
     const value = values.configValue.trim();
 
+    if (values.configKey === CAMERA_EVENT_MAX_AGE_KEY && (!/^\d+$/.test(value) || Number(value) < 1 || Number(value) > 10080)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["configValue"], message: "请输入 1 至 10080 的整数分钟" });
+    }
     if (values.valueType === "NUMBER" && value && !Number.isFinite(Number(value))) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -164,7 +168,7 @@ function isBuiltinConfig(config: SystemConfigRecord) {
 
 function isEditableBuiltinConfig(config: SystemConfigRecord) {
   if (!isBuiltinConfig(config)) return false;
-  if (config.configKey === MASTER_SYNC_INTERVAL_KEY) return config.valueType === "NUMBER";
+  if ([MASTER_SYNC_INTERVAL_KEY, CAMERA_EVENT_MAX_AGE_KEY].includes(config.configKey ?? "")) return config.valueType === "NUMBER";
   if (config.configKey === TICKET_TITLE_KEY) {
     return config.valueType === "TEXT";
   }
@@ -641,12 +645,15 @@ export function SystemConfigsPage() {
               variant="ghost"
               disabled={
                 record.configKey === MASTER_SYNC_INTERVAL_KEY ||
+                record.configKey === CAMERA_EVENT_MAX_AGE_KEY ||
                 record.configKey === CAPTURE_REQUIRED_KEY ||
                 record.configKey === TICKET_TITLE_KEY ||
                 record.configKey?.startsWith("weighing.local-")
               }
               title={
-                record.configKey === CAPTURE_REQUIRED_KEY
+                record.configKey === CAMERA_EVENT_MAX_AGE_KEY
+                  ? "车牌事件有效期始终启用，请直接编辑分钟数"
+                  : record.configKey === CAPTURE_REQUIRED_KEY
                   ? "请通过编辑布尔值切换强制抓拍"
                   : record.configKey === TICKET_TITLE_KEY
                     ? "单据标题始终启用，请直接编辑配置值"
@@ -1042,7 +1049,9 @@ function ConfigFormDialog({
           {mode === "edit" && editingConfig?.isBuiltin === 1 && (
             <div className="mt-space-4 rounded-admin border border-border bg-neutral-background px-space-4 py-space-3 text-sm text-text-secondary">
               {builtinValueOnly
-                ? editingConfig.configKey === CAPTURE_REQUIRED_KEY
+                ? editingConfig.configKey === CAMERA_EVENT_MAX_AGE_KEY
+                  ? "填写 1 至 10080 分钟，保存后立即生效；超过有效期的车牌事件不保存并应答。"
+                  : editingConfig.configKey === CAPTURE_REQUIRED_KEY
                   ? "开启后须完成本次指定摄像头抓拍及上传；关闭后允许无图确认称重，缺少图片追溯依据。保存后生效，未确认采样须重新采集。"
                   : editingConfig.configKey === TICKET_TITLE_KEY
                     ? "标题用于此后生成的正式过磅单；历史单据沿用升级基准或自身标题快照，不随本次修改重写。"

@@ -120,6 +120,7 @@ export interface CameraEventBinding {
 export interface CameraEventDiagnostic {
   id: number; operator: string; eventId: string; deviceTime: string; receivedAt: string; sha256: string; diagnostic: unknown;
 }
+export interface CameraSnapshot { id: number; eventId: string; serialNumber: string; deviceTime: string; receivedAt: string; plate: string; }
 export interface CameraEvents {
-  binding: CameraEventBinding; state: "unconfigured" | "unknown" | "offline" | "online"; events: CameraEventDiagnostic[];
+  binding: CameraEventBinding; state: "unconfigured" | "unknown" | "offline" | "online"; events: CameraEventDiagnostic[]; snapshots?: CameraSnapshot[];
 }
