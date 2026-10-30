@@ -17,35 +17,43 @@ import (
 )
 
 type syncTicket struct {
-	TicketNo           string     `json:"ticketNo"`
-	PreviousTicketNo   *string    `json:"previousTicketNo"`
-	Title              string     `json:"title"`
-	Plate              string     `json:"plate"`
-	Direction          string     `json:"direction"`
-	MaterialCode       string     `json:"materialCode"`
-	MaterialName       string     `json:"materialName"`
-	MaterialSpec       string     `json:"materialSpec"`
-	PartyCode          string     `json:"partyCode"`
-	PartyName          string     `json:"partyName"`
-	FirstConfirmedAt   time.Time  `json:"firstConfirmedAt"`
-	SecondConfirmedAt  time.Time  `json:"secondConfirmedAt"`
-	IssuedAt           time.Time  `json:"issuedAt"`
-	IssuerName         string     `json:"issuerName"`
-	OriginalGross      string     `json:"originalGross"`
-	OriginalTare       string     `json:"originalTare"`
-	FinalGross         string     `json:"finalGross"`
-	FinalTare          string     `json:"finalTare"`
-	PreviousFinalGross *string    `json:"previousFinalGross"`
-	PreviousFinalTare  *string    `json:"previousFinalTare"`
-	GrossSource        string     `json:"grossSource"`
-	TareSource         string     `json:"tareSource"`
-	AdjustmentRemark   string     `json:"adjustmentRemark"`
-	AdjustedBy         *string    `json:"adjustedBy"`
-	AdjustedAt         *time.Time `json:"adjustedAt"`
-	Driver             string     `json:"driver"`
-	DriverPhone        string     `json:"driverPhone"`
-	ContactName        string     `json:"contactName"`
-	ContactPhone       string     `json:"contactPhone"`
+	TicketNo                  string     `json:"ticketNo"`
+	PreviousTicketNo          *string    `json:"previousTicketNo"`
+	Title                     string     `json:"title"`
+	Plate                     string     `json:"plate"`
+	Direction                 string     `json:"direction"`
+	MaterialCode              string     `json:"materialCode"`
+	MaterialName              string     `json:"materialName"`
+	MaterialSpec              string     `json:"materialSpec"`
+	PartyCode                 string     `json:"partyCode"`
+	PartyName                 string     `json:"partyName"`
+	FirstConfirmedAt          time.Time  `json:"firstConfirmedAt"`
+	SecondConfirmedAt         time.Time  `json:"secondConfirmedAt"`
+	IssuedAt                  time.Time  `json:"issuedAt"`
+	IssuerName                string     `json:"issuerName"`
+	OriginalGross             string     `json:"originalGross"`
+	OriginalTare              string     `json:"originalTare"`
+	FinalGross                string     `json:"finalGross"`
+	FinalTare                 string     `json:"finalTare"`
+	FinalNet                  string     `json:"finalNet"`
+	NetAdjustment             string     `json:"netAdjustment"`
+	NetAdjustmentMode         string     `json:"netAdjustmentMode"`
+	NetAdjustmentRateBP       *int       `json:"netAdjustmentRateBp"`
+	NetAdjustmentCategory     string     `json:"netAdjustmentCategory"`
+	NetAdjustmentCategoryName string     `json:"netAdjustmentCategoryName"`
+	PreviousFinalGross        *string    `json:"previousFinalGross"`
+	PreviousFinalTare         *string    `json:"previousFinalTare"`
+	PreviousFinalNet          *string    `json:"previousFinalNet"`
+	PreviousNetAdjustment     *string    `json:"previousNetAdjustment"`
+	GrossSource               string     `json:"grossSource"`
+	TareSource                string     `json:"tareSource"`
+	AdjustmentRemark          string     `json:"adjustmentRemark"`
+	AdjustedBy                *string    `json:"adjustedBy"`
+	AdjustedAt                *time.Time `json:"adjustedAt"`
+	Driver                    string     `json:"driver"`
+	DriverPhone               string     `json:"driverPhone"`
+	ContactName               string     `json:"contactName"`
+	ContactPhone              string     `json:"contactPhone"`
 }
 type syncVoid struct {
 	Reason string    `json:"reason"`
@@ -82,7 +90,7 @@ func enqueueTicketChange(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, act
 	if _, err := rand.Read(id[:]); err != nil {
 		return err
 	}
-	c := syncChange{SchemaVersion: 2, ChangeID: hex.EncodeToString(id[:]), SiteCode: ticket.SiteCode, TicketNo: ticket.TicketNo, Type: kind}
+	c := syncChange{SchemaVersion: 3, ChangeID: hex.EncodeToString(id[:]), SiteCode: ticket.SiteCode, TicketNo: ticket.TicketNo, Type: kind}
 	if kind == "void" {
 		if ticket.VoidedAt == nil {
 			return errors.New("missing void time")
@@ -93,7 +101,7 @@ func enqueueTicketChange(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, act
 			return errors.New("missing ticket basis")
 		}
 		b := ticket.Business
-		t := &syncTicket{TicketNo: ticket.TicketNo, Title: ticket.TicketTitle, Plate: b.Plate, Direction: b.Direction, MaterialCode: b.MaterialCode, MaterialName: b.MaterialName, MaterialSpec: b.MaterialSpec, PartyCode: b.PartyCode, PartyName: b.PartyName, FirstConfirmedAt: ticket.Basis[0].ConfirmedAt, SecondConfirmedAt: ticket.Basis[1].ConfirmedAt, IssuedAt: ticket.IssuedAt, IssuerName: ticket.IssuerName, OriginalGross: ticket.OriginalGross.String(), OriginalTare: ticket.OriginalTare.String(), FinalGross: ticket.FinalGross.String(), FinalTare: ticket.FinalTare.String(), GrossSource: ticket.GrossSource, TareSource: ticket.TareSource, AdjustmentRemark: ticket.AdjustmentRemark, AdjustedAt: ticket.AdjustedAt, Driver: b.Driver, DriverPhone: b.DriverPhone, ContactName: b.ContactName, ContactPhone: b.ContactPhone}
+		t := &syncTicket{TicketNo: ticket.TicketNo, Title: ticket.TicketTitle, Plate: b.Plate, Direction: b.Direction, MaterialCode: b.MaterialCode, MaterialName: b.MaterialName, MaterialSpec: b.MaterialSpec, PartyCode: b.PartyCode, PartyName: b.PartyName, FirstConfirmedAt: ticket.Basis[0].ConfirmedAt, SecondConfirmedAt: ticket.Basis[1].ConfirmedAt, IssuedAt: ticket.IssuedAt, IssuerName: ticket.IssuerName, OriginalGross: ticket.OriginalGross.String(), OriginalTare: ticket.OriginalTare.String(), FinalGross: ticket.FinalGross.String(), FinalTare: ticket.FinalTare.String(), FinalNet: finalNet(ticket.FinalGross, ticket.FinalTare, ticket.NetAdjustment).String(), NetAdjustment: ticket.NetAdjustment.String(), NetAdjustmentMode: ticket.NetAdjustmentMode, NetAdjustmentRateBP: ticket.NetAdjustmentRateBP, NetAdjustmentCategory: ticket.NetAdjustmentCategory, NetAdjustmentCategoryName: ticket.NetAdjustmentCategoryName, GrossSource: ticket.GrossSource, TareSource: ticket.TareSource, AdjustmentRemark: ticket.AdjustmentRemark, AdjustedAt: ticket.AdjustedAt, Driver: b.Driver, DriverPhone: b.DriverPhone, ContactName: b.ContactName, ContactPhone: b.ContactPhone}
 		if ticket.AdjustedBy != nil {
 			t.AdjustedBy = &ticket.IssuerName
 		}
@@ -101,8 +109,12 @@ func enqueueTicketChange(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, act
 			c.PreviousSiteCode = previous.SiteCode
 			t.PreviousTicketNo = &previous.TicketNo
 			gross, tare := previous.FinalGross.String(), previous.FinalTare.String()
+			net := finalNet(previous.FinalGross, previous.FinalTare, previous.NetAdjustment).String()
+			adjustment := previous.NetAdjustment.String()
 			t.PreviousFinalGross = &gross
 			t.PreviousFinalTare = &tare
+			t.PreviousFinalNet = &net
+			t.PreviousNetAdjustment = &adjustment
 		}
 		c.Ticket = t
 	}

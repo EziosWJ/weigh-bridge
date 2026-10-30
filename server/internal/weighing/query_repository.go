@@ -163,7 +163,7 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 	result := Summary{Rows: []SummaryLine{}}
 	var query *gorm.DB
 	var err error
-	var column, gross, tare, direction string
+	var column, gross, tare, adjustment, direction string
 	if kind == "originals" {
 		query, err = originalQuery(r.db.WithContext(ctx), q)
 		if err != nil {
@@ -173,6 +173,7 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 		column = "t.business_snapshot"
 		gross = originalGrossSQL
 		tare = originalTareSQL
+		adjustment = "0"
 		direction = "t.direction"
 	} else {
 		query, err = ticketQuery(r.db.WithContext(ctx), q)
@@ -183,6 +184,7 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 		column = "k.business_snapshot"
 		gross = "k.final_gross_milli_tonne"
 		tare = "k.final_tare_milli_tonne"
+		adjustment = "k.net_adjustment_milli_tonne"
 		direction = jsonIDExpression(query, column, "direction")
 	}
 	dimensions := []struct{ key, expression string }{{"site_code", "t.site_code"}, {"direction", direction}, {"material_id", jsonIDExpression(query, column, "materialId")}, {"material_name", jsonIDExpression(query, column, "materialName")}, {"material_spec", jsonIDExpression(query, column, "materialSpec")}, {"party_id", jsonIDExpression(query, column, "partyId")}, {"party_name", jsonIDExpression(query, column, "partyName")}}
@@ -192,18 +194,19 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 		selects = append(selects, d.expression+" AS "+d.key)
 		groups = append(groups, d.expression)
 	}
-	selects = append(selects, "COUNT(*) AS task_count", "SUM("+gross+") AS gross", "SUM("+tare+") AS tare", "SUM(("+gross+")-("+tare+")) AS net")
+	selects = append(selects, "COUNT(*) AS task_count", "SUM("+gross+") AS gross", "SUM("+tare+") AS tare", "SUM("+adjustment+") AS adjustment", "SUM(("+gross+")-("+tare+")-("+adjustment+")) AS net")
 	if err := query.Select(strings.Join(selects, ",")).Group(strings.Join(groups, ",")).Order("material_id,party_id,direction").Scan(&result.Rows).Error; err != nil {
 		return result, err
 	}
 	for _, row := range result.Rows {
-		if row.Gross < 0 || row.Tare < 0 || row.Net < 0 || int64(result.Gross) > math.MaxInt64-int64(row.Gross) || int64(result.Tare) > math.MaxInt64-int64(row.Tare) || int64(result.Net) > math.MaxInt64-int64(row.Net) {
+		if row.Gross < 0 || row.Tare < 0 || row.Net <= 0 || int64(result.Gross) > math.MaxInt64-int64(row.Gross) || int64(result.Tare) > math.MaxInt64-int64(row.Tare) || int64(result.Net) > math.MaxInt64-int64(row.Net) || (row.Adjustment > 0 && int64(result.Adjustment) > math.MaxInt64-int64(row.Adjustment)) || (row.Adjustment < 0 && int64(result.Adjustment) < math.MinInt64-int64(row.Adjustment)) {
 			return result, ErrInvalid
 		}
 		result.TaskCount += row.TaskCount
 		result.Gross += row.Gross
 		result.Tare += row.Tare
 		result.Net += row.Net
+		result.Adjustment += row.Adjustment
 	}
 	return result, nil
 }

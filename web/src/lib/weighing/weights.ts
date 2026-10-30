@@ -1,4 +1,4 @@
-import type { FinalWeightInput, WeighRecord, WeightDeduction, WeightValues } from '../../types/weighing';
+import type { FinalWeightInput, NetAdjustmentInput, WeighRecord, WeightDeduction, WeightValues } from '../../types/weighing';
 
 export const weightInMilliTonnes = (value: number) => {
   if (!Number.isFinite(value)) throw new Error('重量必须是有效吨数');
@@ -87,4 +87,50 @@ export function weightDeduction(original: WeightValues, final: WeightValues, rea
 
 export function formatAdjustment(value: number): string {
   return `${formatWeight(value)}（${value < 0 ? '上调' : value > 0 ? '下调' : '未调整'}）`;
+}
+
+export interface ResolvedNetAdjustment { amount: number; rateBp?: number }
+
+function roundRatio(numerator: number, denominator: number): number {
+  const half = denominator / 2;
+  return numerator >= 0 ? Math.floor((numerator + half) / denominator) : -Math.floor((-numerator + half) / denominator);
+}
+
+/** Resolves the signed net adjustment in tonnes from the pre-adjustment net basis. */
+export function resolveNetAdjustment(basis: WeightValues, input: NetAdjustmentInput, allowUpward = false): ResolvedNetAdjustment {
+  if (![basis.gross, basis.tare, basis.net].every(Number.isFinite) || basis.tare <= 0 || basis.net <= 0) {
+    throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，待设备提供正确重量后重新采集；首次重量有误时须重称，不能通过调整净重出单。');
+  }
+  const grossMilli = weightInMilliTonnes(basis.gross);
+  const tareMilli = weightInMilliTonnes(basis.tare);
+  const netMilli = grossMilli - tareMilli;
+  if (netMilli <= 0) throw new Error('原始毛重必须大于原始皮重');
+  let amountMilli = 0;
+  let rateBp: number | undefined;
+  if (input.mode === 'percent') {
+    if (!Number.isInteger(input.rateBp) || Math.abs(input.rateBp) > 10000) throw new Error('调整比例最多两位小数，且绝对值不超过 100%');
+    rateBp = input.rateBp;
+    if (!allowUpward && rateBp < 0) throw new Error('正常出单只能扣减净重；提高净重请在更正重开中办理');
+    if (rateBp !== 0) {
+      amountMilli = roundRatio(netMilli * rateBp, 10000);
+      if (amountMilli === 0) throw new Error('调整比例折算不足 0.001 吨，请改为按吨录入');
+    }
+  } else {
+    amountMilli = weightInMilliTonnes(input.amount);
+    if (!allowUpward && amountMilli < 0) throw new Error('正常出单只能扣减净重；提高净重请在更正重开中办理');
+  }
+  const finalNetMilli = netMilli - amountMilli;
+  if (finalNetMilli <= 0 || finalNetMilli >= grossMilli) throw new Error('调整后净重必须大于零且小于最终毛重');
+  if (amountMilli !== 0 && !input.category.trim()) throw new Error('请选择净重调整类别');
+  return { amount: tonnes(amountMilli), ...(rateBp === undefined ? {} : { rateBp }) };
+}
+
+export function netAdjustedWeights(basis: WeightValues, input: NetAdjustmentInput, allowUpward = false): WeightValues {
+  const resolved = resolveNetAdjustment(basis, input, allowUpward);
+  return { gross: basis.gross, tare: basis.tare, net: tonnes(weightInMilliTonnes(basis.net) - weightInMilliTonnes(resolved.amount)) };
+}
+
+export function netAdjustmentText(amount: number): string {
+  if (!Number.isFinite(amount) || amount === 0) return '未调整';
+  return `${formatWeight(Math.abs(amount))}（${amount > 0 ? '扣减' : '上调'}）`;
 }

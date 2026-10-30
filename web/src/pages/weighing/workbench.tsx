@@ -14,7 +14,7 @@ import { normalizePlate, plateError } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import { workflowApi, type PlateCandidate } from '@/api/weighing-workflow';
-import { directionLabels, roleLabels, taskStatusLabels, type PlateEvidence, type FinalWeightInput, type WeighingCommand, type WeighingState } from '@/types/weighing';
+import { directionLabels, roleLabels, taskStatusLabels, type PlateEvidence, type NetAdjustmentInput, type WeighingCommand, type WeighingState } from '@/types/weighing';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { weightValues } from '@/lib/weighing/weights';
 import { formatWeight, formatWeightValue } from '@/lib/weighing/weights';
@@ -269,7 +269,7 @@ function WorkbenchContent() {
     });
   }
 
-  async function confirm(reviewed: WeighingState, finalWeights: FinalWeightInput) {
+  async function confirm(reviewed: WeighingState, netAdjustment?: NetAdjustmentInput) {
     if (!sameWeighingReview(reviewed, useWeighingStore.getState().data, selected?.id)) {
       setReview(null);
       setReviewError('');
@@ -278,7 +278,7 @@ function WorkbenchContent() {
     }
     const checked = true;
     const command: WeighingCommand = selected
-      ? { type: 'confirm', taskId: selected.id, stage, checked, finalWeights }
+      ? { type: 'confirm', taskId: selected.id, stage, checked, netAdjustment }
       : { type: 'firstWeigh', input: data.draft, checked, requestId: data.draftRequestId };
     setReviewError('');
     setSubmitting(true);
@@ -557,7 +557,7 @@ function WorkbenchContent() {
         setFeedback(selected ? '请核对本趟车辆、重量与图片；业务资料有误可前往任务详情办理纠错。' : '请修改本趟资料后重新核对；车牌或现场情况有变化时重新采集。');
         toast.info({ title: '已返回修改', description: '调整后请重新打开核对并确认。' });
       }}
-      onConfirm={finalWeights => confirm(review.data, finalWeights)}
+      onConfirm={netAdjustment => confirm(review.data, netAdjustment)}
     />}
   </div>;
 }

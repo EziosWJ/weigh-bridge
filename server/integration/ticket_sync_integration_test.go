@@ -44,7 +44,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatal("invalid outbox payload")
 	}
 	ticket := issue["ticket"].(map[string]any)
-	if issue["siteCode"] != "SITE01" || ticket["partyName"] != "首磅供收方" || ticket["originalGross"] != "30" || ticket["finalGross"] != "31" {
+	if issue["siteCode"] != "SITE01" || ticket["partyName"] != "首磅供收方" || ticket["originalGross"] != "30" || ticket["finalGross"] != "30" || ticket["finalTare"] != "10" || ticket["finalNet"] != "18.5" || ticket["netAdjustment"] != "1.5" || ticket["netAdjustmentCategory"] != "WATER" || ticket["netAdjustmentCategoryName"] != "水分大" {
 		t.Fatalf("snapshot mapping: %s", rows[0].Payload)
 	}
 	if reopen["siteCode"] != "F001" || reopen["previousSiteCode"] != issue["siteCode"] || reopen["ticket"].(map[string]any)["previousTicketNo"] != issue["ticketNo"] {

@@ -24,11 +24,13 @@ type SummaryLine struct {
 	Gross        Tonnes `json:"gross" swaggertype:"string"`
 	Tare         Tonnes `json:"tare" swaggertype:"string"`
 	Net          Tonnes `json:"net" swaggertype:"string"`
+	Adjustment   Tonnes `json:"adjustment" swaggertype:"string"`
 }
 type Summary struct {
-	Rows      []SummaryLine `json:"rows"`
-	TaskCount int64         `json:"taskCount"`
-	Gross     Tonnes        `json:"gross" swaggertype:"string"`
-	Tare      Tonnes        `json:"tare" swaggertype:"string"`
-	Net       Tonnes        `json:"net" swaggertype:"string"`
+	Rows       []SummaryLine `json:"rows"`
+	TaskCount  int64         `json:"taskCount"`
+	Gross      Tonnes        `json:"gross" swaggertype:"string"`
+	Tare       Tonnes        `json:"tare" swaggertype:"string"`
+	Net        Tonnes        `json:"net" swaggertype:"string"`
+	Adjustment Tonnes        `json:"adjustment" swaggertype:"string"`
 }
