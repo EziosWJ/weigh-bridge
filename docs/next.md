@@ -1,5 +1,11 @@
 # 当前实现、验证与剩余工作
 
+## 2026-10-30 摄像头车牌识别模拟器
+
+- 新增独立开发工具 `task device:camera`：默认控制页 `127.0.0.1:8092`、Server `http://127.0.0.1:8900`、序列号 `camera-sim-01`，可用 `--listen`、`--server`、`--serial`、`--heartbeat` 配置。模拟器按现有厂家协议自动发送心跳并向 `POST /api/v1/event/pull` 上报 `CarLicenseSnapshot`，每次主动识别生成新的 19 位事件号，校验 HTTP 状态、`CarLicenseSnapshot-Ack`／`heartbeat-ack`、`errorNo` 和回填事件号；失败原因在页面展示，并允许原样重试同一事件。车牌由模拟器随机生成并通过与业务一致的 `weighing.IsBusinessPlate` 校验。未修改 Server 权限、去重、有效期、绑定和候选规则，也未新增数据库 migration。
+- 控制页明确标注「模拟器 · 非真实摄像头」，展示当前车牌、序列号、Server／上报地址、心跳及最近上报结果；提供「刷新车牌并上报」「再次上报当前车牌」和失败后的「重试上次上报」。本期不实现 RTSP 视频或抓拍图片，不直接写数据库，不绕过正式称重的设备、抓拍和人工确认要求。启动、绑定、可信网络、工作台核对步骤及边界见[模拟器说明](device/camera-simulator.md)。
+- 验证：`go test ./internal/camsim` 通过，覆盖车牌规则、事件号、心跳、ACK 校验、HTTP 状态及连接失败原因、原样重试、控制页和参数校验；隔离 Chromium 冒烟 `task device:camera:smoke` 通过，覆盖独立二进制、心跳、两种上报、HTTP 503、厂家 ACK 错误、手动重试、390px 布局和退出清理，冒烟使用临时回环假 Server，不需业务库；隔离 PostgreSQL 集成 `TestCameraSimulatorPlateCandidateChain` 通过，使用临时数据库和真实 API 路由验证未绑定 403、绑定后原样重试成功、工作台候选按同车合并及未登录拒绝。`task backend:check` 通过。未连接真实摄像机、业务数据库或现场网络，不增加现场验收结论；真实设备报文、图像、昼夜识别和长期稳定性仍须按[上报配置说明](device/camera-event-reporting.md)验收。
+
 ## 2026-10-30 车牌输入框简化
 
 - 车牌号码改为连续输入框，移除示例号码和分格线，空值提示“请输入车牌号码”；省份选择、普通／新能源校验及完整车牌粘贴保持。前端 lint、build 和 `test:weighing:agent-capture` 通过，覆盖大写、完整车牌粘贴与新能源后缀显示；未部署或现场验收。
