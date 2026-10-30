@@ -243,7 +243,7 @@ func localSiteRoundTrip(t *testing.T, router http.Handler, masterToken, operator
 	// unnecessary because the local Agent mock is passed directly.
 	device.weight("10")
 	secondSample := weighingData[weighing.Sample](t, router, http.MethodPost, "/api/weighing/samples", encodeLocalSite(t, firstSampleInput), operatorToken)
-	secondInput := map[string]any{"scaleCode": scaleCode, "clientId": client, "sessionToken": session.SessionToken, "taskId": first.TaskID, "sampleId": secondSample.ID, "requestId": fmt.Sprintf("local-second-%s-%s", scaleCode, plate), "version": first.TaskVersion, "checks": checks, "finalWeights": map[string]any{"gross": "30", "tare": "10", "remark": ""}}
+	secondInput := map[string]any{"scaleCode": scaleCode, "clientId": client, "sessionToken": session.SessionToken, "taskId": first.TaskID, "sampleId": secondSample.ID, "requestId": fmt.Sprintf("local-second-%s-%s", scaleCode, plate), "version": first.TaskVersion, "checks": checks}
 	completed := weighingData[weighing.CommandResult](t, router, http.MethodPost, fmt.Sprintf("/api/weighing/tasks/%d/second-confirmation", first.TaskID), encodeLocalSite(t, secondInput), operatorToken)
 	if completed.TicketID == 0 || completed.TaskID != first.TaskID {
 		t.Fatalf("factory %s completion: %+v", scaleCode, completed)

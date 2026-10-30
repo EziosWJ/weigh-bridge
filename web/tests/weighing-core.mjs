@@ -21,7 +21,7 @@ const compile = async (relative) => {
 await writeFile(path.join(temporary, 'package.json'), '{"type":"module"}');
 await Promise.all(['types/weighing.ts', 'lib/weighing/plate.ts', 'lib/weighing/camera.ts', 'lib/weighing/weights.ts', 'lib/weighing/seed.ts', 'lib/weighing/engine.ts', 'lib/weighing/migration.ts', 'lib/weighing/query.ts'].map(compile));
 const { createInitialState } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/seed.js')));
-const { formatWeightInputValue, formatWeightValue, formatWeight, needsLegacyWeightReview, weightValues } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/weights.js')));
+const { formatWeightInputValue, formatWeightValue, formatWeight, needsLegacyWeightReview, weightValues, resolveNetAdjustment, netAdjustedWeights } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/weights.js')));
 const { applyCommand } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/engine.js')));
 const { migrateWeighingState } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/migration.js')));
 const { beijingDate, filterTasks, filterTickets, exportTasksCsv, exportTicketsCsv, exportSummaryCsv, filterOriginalWeighings, exportOriginalWeighingsCsv, exportOriginalSummaryCsv } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/query.js')));
@@ -714,4 +714,15 @@ test('车辆离场后人工上调重开无需采集，不增加原始记录或�
   const rows = filterOriginalWeighings(state.tasks, state.tickets, { keyword: old.taskId });
   assert.equal(rows.length, 1); assert.equal(rows[0].confirmedAt, originalRows[0].confirmedAt);
   assert.deepEqual(rows[0].original, originalRows[0].original);
+});
+
+test('净重调整按吨或比例解析，正常出单禁止上调，比例四舍五入到 0.001 吨', () => {
+  const basis = { gross: 30, tare: 10, net: 20 };
+  assert.deepEqual(resolveNetAdjustment(basis, { mode: 'amount', amount: 1.5, rateBp: 0, category: 'WATER' }), { amount: 1.5 });
+  assert.deepEqual(netAdjustedWeights(basis, { mode: 'percent', amount: 0, rateBp: 125, category: 'WATER' }), { gross: 30, tare: 10, net: 19.75 });
+  assert.deepEqual(netAdjustedWeights({ gross: 2, tare: 1, net: 1 }, { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' }), { gross: 2, tare: 1, net: 0.999 });
+  assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }), /只能扣减/);
+  assert.equal(resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }, true).amount, -0.5);
+  assert.throws(() => resolveNetAdjustment({ gross: 1, tare: 0.001, net: 0.999 }, { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' }), /不足 0.001/);
+  assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: 0.5, rateBp: 0, category: '' }), /类别/);
 });

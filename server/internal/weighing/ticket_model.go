@@ -3,48 +3,55 @@ package weighing
 import "time"
 
 type Ticket struct {
-	SyncStatus            string        `json:"syncStatus" gorm:"->"`
-	SiteCode              string        `json:"siteCode"`
-	SiteName              string        `json:"siteName"`
-	PrintStatus           string        `json:"printStatus" gorm:"->"`
-	ReprintCount          int64         `json:"reprintCount" gorm:"->"`
-	LastPrintAttemptID    *int64        `json:"lastPrintAttemptId" gorm:"->"`
-	ID                    int64         `json:"id" gorm:"primaryKey"`
-	TicketNo              string        `json:"ticketNo"`
-	TaskID                int64         `json:"taskId"`
-	Revision              int64         `json:"revision"`
-	PreviousTicketID      *int64        `json:"previousTicketId"`
-	Mode                  string        `json:"mode"`
-	Status                string        `json:"status"`
-	FirstRecordID         int64         `json:"firstRecordId"`
-	SecondRecordID        int64         `json:"secondRecordId"`
-	Business              BusinessInfo  `json:"business" gorm:"column:business_snapshot;serializer:json"`
-	Basis                 []WeighRecord `json:"basis" gorm:"column:basis_snapshot;serializer:json"`
-	SnapshotSchemaVersion int           `json:"snapshotSchemaVersion"`
-	OriginalGross         Tonnes        `json:"originalGross" gorm:"column:original_gross_milli_tonne" swaggertype:"string"`
-	OriginalTare          Tonnes        `json:"originalTare" gorm:"column:original_tare_milli_tonne" swaggertype:"string"`
-	FinalGross            Tonnes        `json:"finalGross" gorm:"column:final_gross_milli_tonne" swaggertype:"string"`
-	FinalTare             Tonnes        `json:"finalTare" gorm:"column:final_tare_milli_tonne" swaggertype:"string"`
-	GrossSource           string        `json:"grossSource"`
-	TareSource            string        `json:"tareSource"`
-	AdjustmentRemark      string        `json:"adjustmentRemark"`
-	AdjustedBy            *int64        `json:"adjustedBy"`
-	AdjustedAt            *time.Time    `json:"adjustedAt"`
-	IssuedAt              time.Time     `json:"issuedAt"`
-	IssuedBy              int64         `json:"issuedBy"`
-	IssuerName            string        `json:"issuerName"`
-	TicketTitle           string        `json:"ticketTitle"`
-	VoidedAt              *time.Time    `json:"voidedAt"`
-	VoidedBy              *int64        `json:"voidedBy"`
-	VoidReason            string        `json:"voidReason"`
+	SyncStatus                string           `json:"syncStatus" gorm:"->"`
+	SiteCode                  string           `json:"siteCode"`
+	SiteName                  string           `json:"siteName"`
+	PrintStatus               string           `json:"printStatus" gorm:"->"`
+	ReprintCount              int64            `json:"reprintCount" gorm:"->"`
+	LastPrintAttemptID        *int64           `json:"lastPrintAttemptId" gorm:"->"`
+	ID                        int64            `json:"id" gorm:"primaryKey"`
+	TicketNo                  string           `json:"ticketNo"`
+	TaskID                    int64            `json:"taskId"`
+	Revision                  int64            `json:"revision"`
+	PreviousTicketID          *int64           `json:"previousTicketId"`
+	Mode                      string           `json:"mode"`
+	Status                    string           `json:"status"`
+	FirstRecordID             int64            `json:"firstRecordId"`
+	SecondRecordID            int64            `json:"secondRecordId"`
+	Business                  BusinessInfo     `json:"business" gorm:"column:business_snapshot;serializer:json"`
+	Basis                     []WeighRecord    `json:"basis" gorm:"column:basis_snapshot;serializer:json"`
+	SnapshotSchemaVersion     int              `json:"snapshotSchemaVersion"`
+	OriginalGross             Tonnes           `json:"originalGross" gorm:"column:original_gross_milli_tonne" swaggertype:"string"`
+	OriginalTare              Tonnes           `json:"originalTare" gorm:"column:original_tare_milli_tonne" swaggertype:"string"`
+	FinalGross                Tonnes           `json:"finalGross" gorm:"column:final_gross_milli_tonne" swaggertype:"string"`
+	FinalTare                 Tonnes           `json:"finalTare" gorm:"column:final_tare_milli_tonne" swaggertype:"string"`
+	GrossSource               string           `json:"grossSource"`
+	TareSource                string           `json:"tareSource"`
+	NetAdjustment             WeightDifference `json:"netAdjustment" gorm:"column:net_adjustment_milli_tonne" swaggertype:"string"`
+	NetAdjustmentMode         string           `json:"netAdjustmentMode"`
+	NetAdjustmentRateBP       *int             `json:"netAdjustmentRateBp"`
+	NetAdjustmentCategory     string           `json:"netAdjustmentCategory"`
+	NetAdjustmentCategoryName string           `json:"netAdjustmentCategoryName"`
+	AdjustmentRemark          string           `json:"adjustmentRemark"`
+	AdjustedBy                *int64           `json:"adjustedBy"`
+	AdjustedAt                *time.Time       `json:"adjustedAt"`
+	IssuedAt                  time.Time        `json:"issuedAt"`
+	IssuedBy                  int64            `json:"issuedBy"`
+	IssuerName                string           `json:"issuerName"`
+	TicketTitle               string           `json:"ticketTitle"`
+	VoidedAt                  *time.Time       `json:"voidedAt"`
+	VoidedBy                  *int64           `json:"voidedBy"`
+	VoidReason                string           `json:"voidReason"`
 }
 
 func (Ticket) TableName() string { return "wb_ticket" }
 
 type PriorFinalWeights struct {
-	Gross Tonnes `json:"gross" swaggertype:"string"`
-	Tare  Tonnes `json:"tare" swaggertype:"string"`
-	Net   Tonnes `json:"net" swaggertype:"string"`
+	Gross         Tonnes           `json:"gross" swaggertype:"string"`
+	Tare          Tonnes           `json:"tare" swaggertype:"string"`
+	Net           Tonnes           `json:"net" swaggertype:"string"`
+	NetAdjustment WeightDifference `json:"netAdjustment" swaggertype:"string"`
+	CategoryName  string           `json:"categoryName"`
 }
 type TicketView struct {
 	PrintSheet    *PrintSheet        `json:"printSheet,omitempty"`
@@ -57,5 +64,10 @@ type TicketView struct {
 }
 
 func ticketView(ticket Ticket) TicketView {
-	return TicketView{Ticket: ticket, OriginalNet: ticket.OriginalGross - ticket.OriginalTare, FinalNet: ticket.FinalGross - ticket.FinalTare, GrossDifference: WeightDifference(ticket.OriginalGross - ticket.FinalGross), TareDifference: WeightDifference(ticket.OriginalTare - ticket.FinalTare)}
+	return TicketView{Ticket: ticket, OriginalNet: ticket.OriginalGross - ticket.OriginalTare, FinalNet: ticket.FinalGross - ticket.FinalTare - Tonnes(ticket.NetAdjustment), GrossDifference: WeightDifference(ticket.OriginalGross - ticket.FinalGross), TareDifference: WeightDifference(ticket.OriginalTare - ticket.FinalTare)}
+}
+
+// finalNet applies the signed net adjustment after gross/tare corrections.
+func finalNet(gross, tare Tonnes, adjustment WeightDifference) Tonnes {
+	return gross - tare - Tonnes(adjustment)
 }

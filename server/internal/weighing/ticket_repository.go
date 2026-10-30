@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"strings"
 	"time"
 
@@ -15,7 +16,92 @@ import (
 
 var ErrForbidden = errors.New("无权执行此操作")
 
-func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
+const deductionCategoryDictCode = "WEIGHING_DEDUCTION_CATEGORY"
+
+// resolveNetAdjustmentCategory validates the operator-facing reason against the
+// active dictionary and returns the label snapshot stored on the ticket.
+func resolveNetAdjustmentCategory(tx *gorm.DB, in *NetAdjustmentInput) (string, error) {
+	if in == nil || !in.Requested() {
+		return "", nil
+	}
+	code := strings.TrimSpace(in.Category)
+	if code == "" || len(code) > 40 {
+		return "", ErrInvalid
+	}
+	var label string
+	row := tx.Table("sys_dict_data AS d").
+		Select("d.dict_label").
+		Joins("JOIN sys_dict_type AS t ON t.id=d.dict_type_id").
+		Where("t.dict_code=? AND t.status=1 AND t.deleted=0 AND d.deleted=0 AND d.dict_value=?", deductionCategoryDictCode, code).
+		Limit(1).Row()
+	if err := row.Scan(&label); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrInvalid
+		}
+		return "", err
+	}
+	if strings.TrimSpace(label) == "" {
+		return "", ErrInvalid
+	}
+	return label, nil
+}
+
+// resolveNetAdjustment turns the operator input into a signed absolute amount.
+// Percentage mode uses the adjusted net basis and rounds to 0.001 吨, half away
+// from zero. Negative amounts are accepted only when reopening a void ticket.
+func resolveNetAdjustment(in *NetAdjustmentInput, base Tonnes, allowUpward bool) (WeightDifference, string, *int, error) {
+	if in == nil {
+		return 0, "amount", nil, nil
+	}
+	mode := in.Mode
+	if mode == "" {
+		mode = "amount"
+	}
+	switch mode {
+	case "amount":
+		if in.Amount == nil || in.RateBP != nil {
+			return 0, "", nil, ErrInvalid
+		}
+		amount := *in.Amount
+		if amount < 0 && !allowUpward {
+			return 0, "", nil, ErrInvalid
+		}
+		if amount == 0 {
+			return 0, "amount", nil, nil
+		}
+		return amount, "amount", nil, nil
+	case "percent":
+		if in.RateBP == nil {
+			return 0, "", nil, ErrInvalid
+		}
+		rate := *in.RateBP
+		if rate < -10000 || rate > 10000 || (rate < 0 && !allowUpward) {
+			return 0, "", nil, ErrInvalid
+		}
+		if rate == 0 {
+			return 0, "amount", nil, nil
+		}
+		if int64(base) > math.MaxInt64/10000 {
+			return 0, "", nil, ErrWeight
+		}
+		amount := WeightDifference(roundRatio(int64(base)*int64(rate), 10000))
+		if amount == 0 || (amount < 0 && !allowUpward) {
+			return 0, "", nil, ErrInvalid
+		}
+		return amount, "percent", &rate, nil
+	default:
+		return 0, "", nil, ErrInvalid
+	}
+}
+
+func roundRatio(numerator, denominator int64) int64 {
+	if numerator >= 0 {
+		return (numerator + denominator/2) / denominator
+	}
+	return -((-numerator + denominator/2) / denominator)
+}
+
+func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjustment *NetAdjustmentInput, categoryName string, allowUpward, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
 	gross, tare := first.Weight, second.Weight
 	if task.Direction == "outbound" {
 		gross, tare = second.Weight, first.Weight
@@ -30,17 +116,45 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAd
 	if values.Gross <= 0 || values.Tare <= 0 || values.Gross <= values.Tare || !maxLength(values.Remark, 2000) {
 		return Ticket{}, ErrWeight
 	}
-	changed := values.Gross != gross || values.Tare != tare
+	if adjustment != nil && !maxLength(adjustment.Remark, 2000) {
+		return Ticket{}, ErrWeight
+	}
+	amount, mode, rateBP, err := resolveNetAdjustment(adjustment, values.Gross-values.Tare, allowUpward)
+	if err != nil {
+		return Ticket{}, err
+	}
+	if amount != 0 && strings.TrimSpace(categoryName) == "" {
+		return Ticket{}, ErrInvalid
+	}
+	if amount == 0 {
+		mode, rateBP, categoryName = "amount", nil, ""
+	}
+	net := finalNet(values.Gross, values.Tare, amount)
+	if net <= 0 || net >= values.Gross {
+		return Ticket{}, ErrWeight
+	}
+	changed := values.Gross != gross || values.Tare != tare || amount != 0
 	if changed && !canAdjust {
 		return Ticket{}, ErrForbidden
 	}
+	remark := ""
+	if adjustment != nil {
+		remark = strings.TrimSpace(adjustment.Remark)
+	}
+	if remark == "" && final != nil {
+		remark = strings.TrimSpace(final.Remark)
+	}
 	now := time.Now().UTC()
-	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", IssuedAt: now, IssuedBy: actor, IssuerName: name}
+	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", NetAdjustment: amount, NetAdjustmentMode: mode, NetAdjustmentRateBP: rateBP, IssuedAt: now, IssuedBy: actor, IssuerName: name}
+	if amount != 0 {
+		ticket.NetAdjustmentCategory = strings.TrimSpace(adjustment.Category)
+		ticket.NetAdjustmentCategoryName = strings.TrimSpace(categoryName)
+	}
 	if changed {
 		ticket.AdjustedBy = ptr(actor)
 		ticket.AdjustedAt = &now
-		ticket.AdjustmentRemark = strings.TrimSpace(values.Remark)
-		if ticket.AdjustmentRemark == "" {
+		ticket.AdjustmentRemark = remark
+		if ticket.AdjustmentRemark == "" && amount == 0 {
 			ticket.AdjustmentRemark = "磅精度调整"
 		}
 	}
@@ -57,6 +171,7 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, canAd
 	// Validation completes before any fact or number is written.
 	return ticket, nil
 }
+
 func insertTicket(ctx context.Context, tx *gorm.DB, ticket *Ticket, dataDir string) error {
 	identity, err := localsite.Read(ctx, tx)
 	if err != nil {
@@ -116,7 +231,11 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 			return out, err
 		}
 		second := newRecord(sample, task.ID, e.Metadata.ActorID, name)
-		ticket, err := makeTicket(task, first, second, in.FinalWeights, in.AllowAdjust, e.Metadata.ActorID, name, nil)
+		categoryName, err := resolveNetAdjustmentCategory(tx, in.NetAdjustment)
+		if err != nil {
+			return out, err
+		}
+		ticket, err := makeTicket(task, first, second, nil, in.NetAdjustment, categoryName, false, in.AllowAdjust, e.Metadata.ActorID, name, nil)
 		if err != nil {
 			return out, err
 		}
@@ -186,7 +305,7 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 			if err != nil {
 				return err
 			}
-			view.PreviousFinal = &PriorFinalWeights{Gross: previous.FinalGross, Tare: previous.FinalTare, Net: previous.FinalGross - previous.FinalTare}
+			view.PreviousFinal = &PriorFinalWeights{Gross: previous.FinalGross, Tare: previous.FinalTare, Net: finalNet(previous.FinalGross, previous.FinalTare, previous.NetAdjustment), NetAdjustment: previous.NetAdjustment, CategoryName: previous.NetAdjustmentCategoryName}
 		}
 		return nil
 	}, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})

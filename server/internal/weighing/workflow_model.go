@@ -31,6 +31,7 @@ type Tonnes = agentproto.Weight
 type WeightDifference Tonnes
 
 func (v WeightDifference) MarshalJSON() ([]byte, error) { return Tonnes(v).MarshalJSON() }
+func (v WeightDifference) String() string               { return Tonnes(v).String() }
 func (v *WeightDifference) UnmarshalJSON(data []byte) error {
 	var text string
 	if err := json.Unmarshal(data, &text); err != nil {
@@ -301,17 +302,37 @@ type ConfirmationInput struct {
 	ReviewedVersions *ReviewedVersions `json:"reviewedVersions"`
 	AllowAdjust      bool              `json:"-"`
 	CaptureInput
-	RequestID    string        `json:"requestId"`
-	SampleID     int64         `json:"sampleId"`
-	Version      int64         `json:"version"`
-	Checks       Checks        `json:"checks"`
-	FinalWeights *FinalWeights `json:"finalWeights"`
+	RequestID     string              `json:"requestId"`
+	SampleID      int64               `json:"sampleId"`
+	Version       int64               `json:"version"`
+	Checks        Checks              `json:"checks"`
+	NetAdjustment *NetAdjustmentInput `json:"netAdjustment"`
 }
 type FinalWeights struct {
 	Gross  Tonnes `json:"gross" swaggertype:"string"`
 	Tare   Tonnes `json:"tare" swaggertype:"string"`
 	Remark string `json:"remark"`
 }
+
+// NetAdjustmentInput is a signed net-weight adjustment. Positive values deduct
+// from the net weight; negative values are accepted only when reopening a void
+// ticket. Mode is "amount" or "percent"; percent uses RateBP in 0.01% units and
+// the server resolves the absolute amount from the adjusted net basis.
+type NetAdjustmentInput struct {
+	Mode     string            `json:"mode"`
+	Amount   *WeightDifference `json:"amount,omitempty" swaggertype:"string"`
+	RateBP   *int              `json:"rateBp,omitempty"`
+	Category string            `json:"category"`
+	Remark   string            `json:"remark"`
+}
+
+func (in *NetAdjustmentInput) Requested() bool {
+	if in == nil {
+		return false
+	}
+	return (in.Amount != nil && *in.Amount != 0) || (in.RateBP != nil && *in.RateBP != 0)
+}
+
 type CommandResult struct {
 	PrintAttemptID int64  `json:"printAttemptId,omitempty"`
 	TaskID         int64  `json:"taskId"`

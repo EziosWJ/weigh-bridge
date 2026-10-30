@@ -24,6 +24,18 @@ func csvText(value string) string {
 	return value
 }
 func csvTime(value time.Time) string { return value.In(beijing).Format("2006-01-02 15:04:05") }
+func adjustmentModeText(mode string) string {
+	if mode == "percent" {
+		return "按比例"
+	}
+	return "按吨"
+}
+func adjustmentRateText(bp *int) string {
+	if bp == nil {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimRight(strconv.FormatFloat(float64(*bp)/100, 'f', 2, 64), "0"), ".")
+}
 func idText(value *int64) string {
 	if value == nil {
 		return ""
@@ -58,9 +70,9 @@ func (s *Service) Export(ctx context.Context, kind string, q PageQuery, e audit.
 		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, []string{"数据性质", "厂区编码", "厂区", "过磅单号", "任务ID", "版本", "关联原单ID", "状态", "出单时间（北京）", "车牌", "方向", "物料编码", "物料", "规格", "供收方编码", "供收方", "原始毛重（吨）", "原始皮重（吨）", "原始净重（吨）", "最终毛重（吨）", "最终皮重（吨）", "最终净重（吨）", "毛重调整差额（吨）", "皮重调整差额（吨）", "毛重来源", "皮重来源", "调整备注", "首次依据ID", "二次依据ID"})
+		rows = append(rows, []string{"数据性质", "厂区编码", "厂区", "过磅单号", "任务ID", "版本", "关联原单ID", "状态", "出单时间（北京）", "车牌", "方向", "物料编码", "物料", "规格", "供收方编码", "供收方", "原始毛重（吨）", "原始皮重（吨）", "原始净重（吨）", "最终毛重（吨）", "最终皮重（吨）", "净重调整量（吨）", "最终净重（吨）", "调整方式", "调整比例（%）", "调整类别", "毛重调整差额（吨）", "皮重调整差额（吨）", "毛重来源", "皮重来源", "调整备注", "首次依据ID", "二次依据ID"})
 		for _, v := range values {
-			rows = append(rows, []string{"", v.SiteCode, csvText(v.SiteName), v.TicketNo, strconv.FormatInt(v.TaskID, 10), strconv.FormatInt(v.Revision, 10), idText(v.PreviousTicketID), v.Status, csvTime(v.IssuedAt), csvText(v.Business.Plate), v.Business.Direction, v.Business.MaterialCode, csvText(v.Business.MaterialName), csvText(v.Business.MaterialSpec), v.Business.PartyCode, csvText(v.Business.PartyName), v.OriginalGross.String(), v.OriginalTare.String(), (v.OriginalGross - v.OriginalTare).String(), v.FinalGross.String(), v.FinalTare.String(), (v.FinalGross - v.FinalTare).String(), (v.OriginalGross - v.FinalGross).String(), (v.OriginalTare - v.FinalTare).String(), v.GrossSource, v.TareSource, csvText(v.AdjustmentRemark), strconv.FormatInt(v.FirstRecordID, 10), strconv.FormatInt(v.SecondRecordID, 10)})
+			rows = append(rows, []string{"", v.SiteCode, csvText(v.SiteName), v.TicketNo, strconv.FormatInt(v.TaskID, 10), strconv.FormatInt(v.Revision, 10), idText(v.PreviousTicketID), v.Status, csvTime(v.IssuedAt), csvText(v.Business.Plate), v.Business.Direction, v.Business.MaterialCode, csvText(v.Business.MaterialName), csvText(v.Business.MaterialSpec), v.Business.PartyCode, csvText(v.Business.PartyName), v.OriginalGross.String(), v.OriginalTare.String(), (v.OriginalGross - v.OriginalTare).String(), v.FinalGross.String(), v.FinalTare.String(), v.NetAdjustment.String(), finalNet(v.FinalGross, v.FinalTare, v.NetAdjustment).String(), adjustmentModeText(v.NetAdjustmentMode), adjustmentRateText(v.NetAdjustmentRateBP), csvText(v.NetAdjustmentCategoryName), (v.OriginalGross - v.FinalGross).String(), (v.OriginalTare - v.FinalTare).String(), v.GrossSource, v.TareSource, csvText(v.AdjustmentRemark), strconv.FormatInt(v.FirstRecordID, 10), strconv.FormatInt(v.SecondRecordID, 10)})
 		}
 		count = int64(len(values))
 	case "tasks":
@@ -79,9 +91,9 @@ func (s *Service) Export(ctx context.Context, kind string, q PageQuery, e audit.
 		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, []string{"数据性质", "厂区编码", "方向", "物料ID", "物料", "规格", "供收方ID", "供收方", "有效任务数", "毛重合计（吨）", "皮重合计（吨）", "净重合计（吨）"})
+		rows = append(rows, []string{"数据性质", "厂区编码", "方向", "物料ID", "物料", "规格", "供收方ID", "供收方", "有效任务数", "毛重合计（吨）", "皮重合计（吨）", "净重调整合计（吨）", "净重合计（吨）"})
 		for _, v := range values.Rows {
-			rows = append(rows, []string{"", v.SiteCode, v.Direction, v.MaterialID, csvText(v.MaterialName), csvText(v.MaterialSpec), v.PartyID, csvText(v.PartyName), strconv.FormatInt(v.TaskCount, 10), v.Gross.String(), v.Tare.String(), v.Net.String()})
+			rows = append(rows, []string{"", v.SiteCode, v.Direction, v.MaterialID, csvText(v.MaterialName), csvText(v.MaterialSpec), v.PartyID, csvText(v.PartyName), strconv.FormatInt(v.TaskCount, 10), v.Gross.String(), v.Tare.String(), v.Adjustment.String(), v.Net.String()})
 		}
 		count = int64(len(values.Rows))
 	default:

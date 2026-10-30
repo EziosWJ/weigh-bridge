@@ -6,7 +6,7 @@ import { plateError } from '@/lib/weighing/plate';
 import { workflowApi, task as taskView, ticket as ticketView, type CommandResult, type WireSample, type WireSession, type WireTicket } from '@/api/weighing-workflow';
 import type { ApiPageResult } from '@/types/api';
 import type { WeighingCapabilities } from '@/api/weighing';
-import { emptyTaskInput, type DeviceConfig, type DeviceState, type TaskInput, type TransportTask, type WeighingCommand, type WeighingState } from '@/types/weighing';
+import { emptyTaskInput, type DeviceConfig, type DeviceState, type NetAdjustmentInput, type TaskInput, type TransportTask, type WeighingCommand, type WeighingState } from '@/types/weighing';
 import { useAuthStore } from './auth-store';
 import { useWeighingMasterStore } from './weighing-master-store';
 
@@ -21,6 +21,17 @@ try {
 } catch { /* An in-memory client still obeys the server lease. */ }
 const defaults = (): DeviceConfig => ({ role: 'operator', weight: 0, stable: false, timedOut: true, deviceError: false, online: false, evidence: false });
 function empty(): WeighingState { return { version: 3, categories: [], materials: [], parties: [], tasks: [], tickets: [], config: defaults(), draft: emptyTaskInput(), draftRequestId: createId(), firstRequests: {}, sampleReady: false, owner: null, history: [], sequence: 0 }; }
+function netAdjustmentBody(input?: NetAdjustmentInput): Record<string, unknown> | undefined {
+  if (!input) return undefined;
+  const value = input.mode === 'percent' ? input.rateBp : input.amount;
+  if (!Number.isFinite(value) || value === 0) return undefined;
+  return {
+    mode: input.mode,
+    ...(input.mode === 'percent' ? { rateBp: input.rateBp } : { amount: String(input.amount) }),
+    category: input.category,
+    remark: input.remark ?? '',
+  };
+}
 interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'void' | 'print' }
 interface UIState { draft: TaskInput; draftRequestId: string; pending: PendingRequest | null }
 interface Store {
@@ -326,7 +337,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
           if (!command.checked || !sample || !lease?.sessionToken) throw new Error('请重新采集并完成人工核对');
           const current = data.tasks.find(t => t.id === command.taskId);
           const requestId = createId();
-          const body = { scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}) };
+          const adjustment = netAdjustmentBody(command.netAdjustment);
+          const body = { scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(adjustment ? { netAdjustment: adjustment } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/second-confirmation`, body, requestId, taskId: command.taskId, stage: 'second' }); break;
         }
         case 'correctTask':
@@ -347,7 +359,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
           const current = data.tasks.find(t => t.id === previous?.taskId);
           if (!previous || !current) throw new Error('请先刷新原任务与单据');
           const requestId = createId();
-          const body = { requestId, taskVersion: current.version, reason: command.reason, business: businessInput(command.input), basisValid: command.evidenceValid, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}) };
+          const adjustment = netAdjustmentBody(command.netAdjustment);
+          const body = { requestId, taskVersion: current.version, reason: command.reason, business: businessInput(command.input), basisValid: command.evidenceValid, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}), ...(adjustment ? { netAdjustment: adjustment } : {}) };
           await send({ actorId, path: `/tickets/${command.ticketId}/reopen`, body, requestId, taskId: current.id, stage: 'second', operation: 'reopen' }); break;
         }
         case 'reweigh': {

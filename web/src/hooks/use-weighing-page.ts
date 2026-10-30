@@ -3,7 +3,7 @@ import { http } from '@/lib/http';
 import type { ApiPageResult, ApiQueryParams } from '@/types/api';
 import type { WeighingFilter } from '@/types/weighing';
 
-export interface WeighingSummary { taskCount: number; gross: string; tare: string; net: string; rows: unknown[] }
+export interface WeighingSummary { taskCount: number; gross: string; tare: string; net: string; adjustment: string; rows: unknown[] }
 export function weighingQuery(kind: string, filter: WeighingFilter): ApiQueryParams {
   return { ...filter, status: kind === 'tasks' && filter.status === 'second' ? 'awaiting_second' : filter.status };
 }

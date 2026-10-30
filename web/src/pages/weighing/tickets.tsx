@@ -29,7 +29,7 @@ import { TicketReopenDialog } from "./ticket-reopen-dialog";
 
 import { originalWeights } from "@/lib/weighing/weights";
 import { WeightAdjustmentDetails } from "./deduction-fields";
-import { formatWeight, needsAdjustmentReview } from "@/lib/weighing/weights";
+import { formatWeight, needsAdjustmentReview, netAdjustmentText } from "@/lib/weighing/weights";
 
 const linkClass = "text-primary hover:underline";
 type TicketOperation = "void" | "reopen";
@@ -38,7 +38,7 @@ const operationTitles: Record<"void", string> = { void: "作废单据" };
 function TicketWeights({ ticket }: { ticket: WeighingTicket }) {
   const original = ticket.adjustment?.original ?? originalWeights(ticket.records);
   const final = { gross: ticket.gross, tare: ticket.tare, net: ticket.net, sourceKg: ticket.sourceKg };
-  return <div className="space-y-3">{needsAdjustmentReview(original, final) && <p role="alert" className="rounded-control border border-warning-border bg-warning-background px-3 py-2 text-sm text-warning">旧记录换算为吨并保留三位小数后出现重量关系异常，请核对迁移前来源重量。</p>}<div className="grid gap-space-4 sm:grid-cols-3"><DetailItem label="最终毛重" value={formatWeight(ticket.gross)} /><DetailItem label="最终皮重" value={formatWeight(ticket.tare)} /><DetailItem label="最终净重" value={<strong className="tabular-nums">{formatWeight(ticket.net)}</strong>} /></div></div>;
+  return <div className="space-y-3">{needsAdjustmentReview(original, final) && <p role="alert" className="rounded-control border border-warning-border bg-warning-background px-3 py-2 text-sm text-warning">旧记录换算为吨并保留三位小数后出现重量关系异常，请核对迁移前来源重量。</p>}<div className="grid gap-space-4 sm:grid-cols-4"><DetailItem label="最终毛重" value={formatWeight(ticket.gross)} /><DetailItem label="最终皮重" value={formatWeight(ticket.tare)} /><DetailItem label="净重调整" value={netAdjustmentText(ticket.netAdjustment ?? 0)} /><DetailItem label="最终净重" value={<strong className="tabular-nums">{formatWeight(ticket.net)}</strong>} /></div></div>;
 }
 
 export function WeighingTicketsPage() {
@@ -61,7 +61,7 @@ export function WeighingTicketsPage() {
     {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteName||row.siteCode||"—"},
     { title: '方向 / 物料规格', key: 'business', width: 180, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
-    { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong></span> },
+    { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div> },
     { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag><div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
     { title: '同步状态', key: 'sync', width: 110, render: (_, row) => <StatusTag tone={row.syncStatus === 'synced' ? 'success' : row.syncStatus === 'failed' ? 'error' : row.syncStatus === 'pending' ? 'warning' : 'neutral'}>{row.syncStatus === 'synced' ? '已同步' : row.syncStatus === 'failed' ? '同步失败' : row.syncStatus === 'pending' ? '待同步' : '未纳入同步'}</StatusTag> },
     { title: '出单时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
@@ -71,7 +71,7 @@ export function WeighingTicketsPage() {
   return <div className="weighing-list-page"><PageHeader title="最终单据" description="" /><DeviceBanner compact />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} ticket />
     {summary.error && <p role="alert" className="text-error">{summary.error}</p>}
-    <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="单据" description={`筛选 ${result.total} 张；当前有效 ${summary.result?.taskCount ?? '—'} 趟，最终净重合计 ${summary.result?.net ?? '—'} 吨`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <><Button size="sm" onClick={() => download('tickets')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('tickets-summary')}>导出净重汇总 CSV</Button></>}</>} />
+    <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="单据" description={`筛选 ${result.total} 张；当前有效 ${summary.result?.taskCount ?? '—'} 趟，最终净重合计 ${summary.result?.net ?? '—'} 吨（净重调整合计 ${summary.result?.adjustment ?? '—'} 吨）`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <><Button size="sm" onClick={() => download('tickets')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('tickets-summary')}>导出净重汇总 CSV</Button></>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="最终单据列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1304} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>

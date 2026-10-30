@@ -20,12 +20,13 @@ type ReweighInput struct {
 	Reason            string `json:"reason"`
 }
 type ReopenInput struct {
-	RequestID    string        `json:"requestId"`
-	TaskVersion  int64         `json:"taskVersion"`
-	Reason       string        `json:"reason"`
-	Business     BusinessInput `json:"business"`
-	BasisValid   bool          `json:"basisValid"`
-	FinalWeights *FinalWeights `json:"finalWeights"`
-	AllowAdjust  bool          `json:"-"`
-	AllowCorrect bool          `json:"-"`
+	RequestID     string              `json:"requestId"`
+	TaskVersion   int64               `json:"taskVersion"`
+	Reason        string              `json:"reason"`
+	Business      BusinessInput       `json:"business"`
+	BasisValid    bool                `json:"basisValid"`
+	FinalWeights  *FinalWeights       `json:"finalWeights"`
+	NetAdjustment *NetAdjustmentInput `json:"netAdjustment"`
+	AllowAdjust   bool                `json:"-"`
+	AllowCorrect  bool                `json:"-"`
 }

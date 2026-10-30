@@ -6,11 +6,11 @@ import { toast } from '@/components/common/toast-store';
 import { Field } from '@/components/common/field';
 import { Input } from '@/components/ui/input';
 import { plateError } from '@/lib/weighing/plate';
-import { adjustedWeights, formatWeight, originalWeights } from '@/lib/weighing/weights';
+import { adjustedWeights, formatWeight, netAdjustmentText, originalWeights, resolveNetAdjustment } from '@/lib/weighing/weights';
 import { useWeighingStore } from '@/store/weighing-store';
-import { emptyTaskInput, type FinalWeightInput, type TaskInput } from '@/types/weighing';
+import { emptyTaskInput, type FinalWeightInput, type NetAdjustmentInput, type TaskInput } from '@/types/weighing';
 import { BusinessFields } from './shared';
-import { WeightDeductionFields } from './deduction-fields';
+import { GrossTareCorrectionFields, NetAdjustmentFields } from './deduction-fields';
 
 const linkClass = 'text-primary hover:underline';
 
@@ -27,6 +27,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
   const [input, setInput] = useState<TaskInput>(emptyTaskInput);
   const [reason, setReason] = useState('');
   const [finalWeights, setFinalWeights] = useState<FinalWeightInput>({ gross: 0, tare: 0 });
+  const [netAdjustment, setNetAdjustment] = useState<NetAdjustmentInput>({ mode: 'amount', amount: 0, rateBp: 0, category: '', remark: '' });
   const [error, setError] = useState('');
   const basis = useRef(data);
   const lastLoaded = useRef<string | null>(null);
@@ -78,6 +79,13 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
         tare: changed && original ? original.tare : loadedTicket.tare,
         reason: '',
       });
+      setNetAdjustment({
+        mode: loadedTicket.netAdjustmentMode ?? 'amount',
+        amount: loadedTicket.netAdjustment ?? 0,
+        rateBp: loadedTicket.netAdjustmentRateBp ?? 0,
+        category: loadedTicket.netAdjustmentCategory ?? '',
+        remark: loadedTicket.adjustment?.reason ?? '',
+      });
       basis.current = current;
     })().catch(failure => {
       if (!cancelled) {
@@ -96,6 +104,9 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
   const ticket = ticketId ? data.tickets.find(item => item.id === ticketId) : undefined;
   const task = ticket ? data.tasks.find(item => item.id === ticket.taskId) : undefined;
   const currentOriginal = task ? originalWeights(task.records) : undefined;
+  const correctedBasis = currentOriginal && Number.isFinite(finalWeights.gross) && Number.isFinite(finalWeights.tare) && finalWeights.gross > finalWeights.tare
+    ? { gross: finalWeights.gross, tare: finalWeights.tare, net: finalWeights.gross - finalWeights.tare }
+    : currentOriginal;
   const successors = ticket ? data.tickets.filter(item => item.previousId === ticket.id) : [];
   const canReopen = !!ticket && ticket.status === 'void' && successors.length === 0 && !data.tickets.some(item => item.taskId === ticket.taskId && item.status === 'valid');
 
@@ -124,6 +135,14 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
         setError(failure instanceof Error ? failure.message : '请核对最终毛重和皮重。');
         return;
       }
+      if (correctedBasis) {
+        try {
+          resolveNetAdjustment(correctedBasis, netAdjustment, true);
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : '请核对净重调整。');
+          return;
+        }
+      }
     }
     setError('');
     setConfirming(true);
@@ -147,6 +166,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
         reason: reason.trim(),
         evidenceValid: true,
         finalWeights,
+        netAdjustment,
       }, basis.current);
       const latest = useWeighingStore.getState().data;
       setConfirming(false);
@@ -188,12 +208,15 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
         {(!ready || loading) && ticketId && <p role="status" className="text-text-secondary">正在加载原单与称重依据…</p>}
         {ready && !loading && !ticket && <p role="alert" className="text-error">{error || '未找到该单据，请刷新后重试。'}</p>}
         {ticket && ready && !loading && <>
-          <p>对照原始称重录入更正后的最终毛皮重，系统计算调整差额；原单及采集依据保留，并关联原单，同任务最多一张有效单据。</p>
+          <p>日常净重扣减按“正数扣减、负数上调”记录；毛重／皮重更正仅用于异常纠错。原单及采集依据保留，并关联原单，同任务最多一张有效单据。</p>
           {!canReopen && <p role="alert" className="text-error">该单据已有更正单，或同任务已有有效单据，请沿关联记录办理。</p>}
           <BusinessFields value={input} onChange={setInput} lockDirection />
-          <p className="text-sm">上版最终毛／皮／净重：{formatWeight(ticket.gross)} / {formatWeight(ticket.tare)} / {formatWeight(ticket.net)}</p>
+          <p className="text-sm">上版最终毛／皮／净重：{formatWeight(ticket.gross)} / {formatWeight(ticket.tare)} / {formatWeight(ticket.net)}；净重调整：{netAdjustmentText(ticket.netAdjustment ?? 0)}</p>
           <Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(ticket.taskId)}`}>需要实际单磅重称：前往原任务采集，完成后返回本单重开</Link>
-          {currentOriginal && <WeightDeductionFields original={currentOriginal} value={finalWeights} onChange={setFinalWeights} />}
+          {currentOriginal && <>
+            <GrossTareCorrectionFields original={currentOriginal} value={finalWeights} onChange={setFinalWeights} />
+            {correctedBasis && <NetAdjustmentFields basis={correctedBasis} value={netAdjustment} onChange={setNetAdjustment} allowUpward />}
+          </>}
         </>}
         <Field label="操作原因 / 核实说明" htmlFor="ticket-operation-reason" required><Input id="ticket-operation-reason" required value={reason} onChange={event => setReason(event.target.value)} /></Field>
         {error && <p role="alert" className="text-error">{error}</p>}
@@ -202,7 +225,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
     <ConfirmDialog
       open={confirming}
       title="确认两磅依据有效"
-      description={<><p>已核验本次采用的两磅依据仍有效（包含单磅重称时沿用的另一磅）。</p><p className="mt-2">确认后将按当前资料生成关联更正的新单据；原单及原始称重依据保留。</p></>}
+      description={<><p>已核验本次采用的两磅依据仍有效（包含单磅重称时沿用的另一磅）。</p><p className="mt-2">确认后将按当前资料和净重调整生成关联更正的新单据；原单及原始称重依据保留。</p></>}
       confirmText="确认保存"
       cancelText="返回修改"
       loading={submitting}

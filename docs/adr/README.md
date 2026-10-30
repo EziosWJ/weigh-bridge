@@ -14,7 +14,8 @@
 | [0034 可维护的本地身份](0034-editable-local-identity.md) | 本地业务不以可变厂区／地磅编码关联，保留历史快照和打印防重 |
 | [0032 成功采集后冻结](0032-freeze-successful-capture.md) | 采集时校验并冻结，确认不依赖后续设备状态，避免实时变化打断人工核对 |
 | [0013 正式称重证据](0013-formal-weighing-evidence.md) | 设备依据、人工确认及本地校验，不用手输原始值代替采集 |
-| [0014 原始与最终重量](0014-manual-weight-adjustment.md) | 双向调整、单磅重称和单据版本留痕，适应现场纠错同时保留原始依据 |
+| [0014 原始与最终重量](0014-manual-weight-adjustment.md) | 单磅重称和单据版本留痕，适应现场纠错同时保留原始依据；日常毛皮重双向调整已由 0035 取代 |
+| [0035 净重调整](0035-net-weight-adjustment.md) | 日常出单只扣减净重（按吨或比例、类别留痕），毛皮重更正限于更正重开，避免改写设备原始毛皮重 |
 | [0027 可选抓拍](0027-optional-weighing-capture.md) | 默认强制、管理员可关闭，以当时策略和缺图状态保留例外依据 |
 | [0019 单磅单 Agent](0019-one-agent-per-scale.md) | 首连接保持、明确踢出和结果核实，避免真实 Agent 与 mock 抢占 |
 | [0015 独立模拟](0015-agent-owned-simulation.md) | 独立 mock 或设备输入模拟，业务使用统一处理链路 |

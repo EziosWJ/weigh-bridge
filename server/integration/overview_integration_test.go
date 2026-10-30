@@ -20,7 +20,7 @@ func checkBusinessOverview(t *testing.T, database *platformdatabase.Database, ro
 	db := database.GORM
 	repo := weighing.NewRepository(db)
 	current := weighingData[weighing.Overview](t, router, "GET", "/api/weighing/overview", "", admin)
-	if current.ValidTickets != 1 || current.Inbound.Net != 19000 || current.Outbound.TaskCount != 0 || len(current.RecentTickets) != 1 {
+	if current.ValidTickets != 1 || current.Inbound.Net != 18500 || current.Outbound.TaskCount != 0 || len(current.RecentTickets) != 1 {
 		t.Fatalf("overview counted void/reopened versions: %+v", current)
 	}
 	var ticket weighing.Ticket
@@ -70,7 +70,7 @@ func checkBusinessOverview(t *testing.T, database *platformdatabase.Database, ro
 			if test.direction == "outbound" {
 				direction = got.Outbound
 			}
-			if direction.TaskCount != 1 || direction.Net != 19000 {
+			if direction.TaskCount != 1 || direction.Net != 18500 {
 				t.Fatalf("direction/net %s: %+v", test.name, got)
 			}
 		}

@@ -356,7 +356,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	device.weight(conditions["weight"].(string))
 	sampleBody := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "taskId": first.TaskID}
 	invalidSecond := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
-	secondInput := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": invalidSecond.ID, "requestId": "invalid-original-0001", "version": 1, "checks": checks, "finalWeights": map[string]any{"gross": "50", "tare": "10"}}
+	secondInput := map[string]any{"scaleCode": "SCALE01", "clientId": "browser-b", "sessionToken": takenOver.SessionToken, "sampleId": invalidSecond.ID, "requestId": "invalid-original-0001", "version": 1, "checks": checks}
 	secondPath := "/api/weighing/tasks/" + itoa(first.TaskID) + "/second-confirmation"
 	assertEnvelopeCode(t, serveJSON(router, "POST", secondPath, encode(secondInput), token), 200, 400, weighing.ErrWeight.Error())
 	unchanged := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(first.TaskID), "", token)
@@ -368,7 +368,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	secondSample := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(sampleBody), token)
 	secondInput["sampleId"] = secondSample.ID
 	secondInput["requestId"] = "second-request-0001"
-	secondInput["finalWeights"] = map[string]any{"gross": "31", "tare": "11", "remark": ""}
+	secondInput["netAdjustment"] = map[string]any{"mode": "amount", "amount": "1.5", "category": "WATER", "remark": "水分大"}
 
 	{
 		if err := database.GORM.Exec(`ALTER TABLE sys_oper_log ADD CONSTRAINT reject_weighing_audit CHECK (operation_type <> 'second.confirm') NOT VALID`).Error; err != nil {
@@ -396,7 +396,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("second result: %+v %+v", completed, completedReplay)
 	}
 	ticket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(completed.TicketID), "", token)
-	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 31000 || ticket.FinalTare != 11000 || ticket.GrossDifference != -1000 || ticket.AdjustmentRemark != "磅精度调整" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !regexp.MustCompile(`^SITE01-\d{8}-\d{4,}$`).MatchString(ticket.TicketNo) {
+	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 30000 || ticket.FinalTare != 10000 || ticket.NetAdjustment != 1500 || ticket.FinalNet != 18500 || ticket.NetAdjustmentCategory != "WATER" || ticket.NetAdjustmentCategoryName != "水分大" || ticket.GrossDifference != 0 || ticket.TareDifference != 0 || ticket.AdjustmentRemark != "水分大" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !regexp.MustCompile(`^SITE01-\d{8}-\d{4,}$`).MatchString(ticket.TicketNo) {
 		t.Fatalf("test ticket weights: %+v", ticket)
 	}
 	if ticket.SiteCode != "SITE01" {
@@ -444,17 +444,17 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	config := configs[0]
 	identity := weighing.SiteConfigurationInput{ServerURL: config.ServerURL, Code: "F001", Name: config.Name, ScaleCode: config.ScaleCode, ScaleName: config.ScaleName, AgentID: config.AgentID, Enabled: config.Enabled, Version: config.Version}
 	changedIdentity := weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
-	reopenBody := map[string]any{"requestId": "manual-reopen-0001", "taskVersion": voided.TaskVersion, "reason": "旧依据人工更正", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}}
+	reopenBody := map[string]any{"requestId": "manual-reopen-0001", "taskVersion": voided.TaskVersion, "reason": "旧依据人工更正", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustment": map[string]any{"mode": "amount", "amount": "2", "category": "OTHER", "remark": "其他"}}
 	reopened := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(reopenBody), token)
 	if reopened.TicketID == ticket.ID {
 		t.Fatal("reopen reused old ticket identity")
 	}
 	oldTicket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(ticket.ID), "", token)
-	if oldTicket.Status != "void" || oldTicket.FinalGross != 31000 || oldTicket.FinalTare != 11000 || oldTicket.OriginalTare != 10000 {
+	if oldTicket.Status != "void" || oldTicket.FinalGross != 30000 || oldTicket.FinalTare != 10000 || oldTicket.FinalNet != 18500 || oldTicket.NetAdjustment != 1500 || oldTicket.OriginalTare != 10000 {
 		t.Fatalf("old ticket snapshot rewritten: %+v", oldTicket)
 	}
 	newTicket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(reopened.TicketID), "", token)
-	if newTicket.PreviousTicketID == nil || *newTicket.PreviousTicketID != ticket.ID || newTicket.PreviousFinal == nil || newTicket.PreviousFinal.Gross != 31000 {
+	if newTicket.PreviousTicketID == nil || *newTicket.PreviousTicketID != ticket.ID || newTicket.PreviousFinal == nil || newTicket.PreviousFinal.Gross != 30000 || newTicket.PreviousFinal.Net != 18500 || newTicket.PreviousFinal.NetAdjustment != 1500 {
 		t.Fatalf("reopen chain/prior final weights: %+v", newTicket)
 	}
 	checkTicketSyncOutbox(t, database.GORM, ticket.ID, newTicket.ID)
@@ -495,12 +495,13 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	}
 	badReopen["requestId"] = "valid-reopen-0003"
 	badReopen["finalWeights"] = map[string]any{"gross": "31", "tare": "12"}
+	badReopen["netAdjustment"] = map[string]any{"mode": "amount", "amount": "0.5", "category": "WATER", "remark": ""}
 	finalReopen := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(newTicket.ID)+"/reopen", encode(badReopen), token)
 	if finalReopen.TicketID == 0 {
 		t.Fatal("missing reopened ticket")
 	}
 	frozen := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(newTicket.ID), "", token)
-	if frozen.Status != "void" || frozen.OriginalTare != 10000 || frozen.FinalGross != 32000 {
+	if frozen.Status != "void" || frozen.OriginalTare != 10000 || frozen.FinalGross != 32000 || frozen.FinalNet != 19000 || frozen.NetAdjustment != 2000 {
 		t.Fatalf("replacement mutated previous evidence: %+v", frozen)
 	}
 	checkWeighingQueriesAndPrint(t, router, token, first.TaskID, finalReopen.TicketID)
@@ -593,7 +594,7 @@ func checkWeighingQueriesAndPrint(t *testing.T, router http.Handler, token strin
 	}
 	raw := weighingData[weighing.Summary](t, router, "GET", "/api/weighing/originals/summary", "", token)
 	final := weighingData[weighing.Summary](t, router, "GET", "/api/weighing/tickets/summary", "", token)
-	if raw.TaskCount != 1 || raw.Net != 18000 || final.TaskCount != 1 || final.Net != 19000 {
+	if raw.TaskCount != 1 || raw.Net != 18000 || final.TaskCount != 1 || final.Net != 18500 || final.Adjustment != 500 {
 		t.Fatalf("raw/final summaries or duplicate reopened versions: %+v %+v", raw, final)
 	}
 	versions := weighingData[weighing.Page[weighing.Ticket]](t, router, "GET", "/api/weighing/tickets?taskId="+itoa(taskID)+"&pageSize=1", "", token)
@@ -645,8 +646,11 @@ func checkWeighingQueriesAndPrint(t *testing.T, router http.Handler, token strin
 	retry := weighingData[weighing.CommandResult](t, router, "POST", path+"/print-attempts", `{"requestId":"print-retry-0003","intent":"reprint","reason":"打印失败后重新打印"}`, token)
 	weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/print-attempts/"+itoa(retry.PrintAttemptID)+"/result", `{"requestId":"print-printed-0003","status":"printed","reason":"操作员确认已出纸"}`, token)
 	printed := weighingData[weighing.TicketView](t, router, "GET", path, "", token)
-	if printed.PrintStatus != "printed" || printed.ReprintCount != 2 || printed.FinalGross != 31000 || printed.FinalTare != 12000 {
+	if printed.PrintStatus != "printed" || printed.ReprintCount != 2 || printed.FinalGross != 31000 || printed.FinalTare != 12000 || printed.FinalNet != 18500 || printed.NetAdjustment != 500 {
 		t.Fatalf("printing changed weights or reprint count: %+v", printed)
+	}
+	if printed.PrintSheet == nil || len(printed.PrintSheet.Rows) != 6 || printed.PrintSheet.Rows[3][2].Label != "净重（吨，扣0.5）" || printed.PrintSheet.Rows[3][2].Value != "18.5" {
+		t.Fatalf("print sheet net adjustment: %+v", printed.PrintSheet)
 	}
 	task := weighingData[weighing.TaskDetail](t, router, "GET", "/api/weighing/tasks/"+itoa(taskID), "", token)
 	if task.Status != "completed" {
