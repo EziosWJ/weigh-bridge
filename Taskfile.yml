@@ -103,6 +103,25 @@ tasks:
     cmds:
       - node scripts/check-d12-simulator.mjs
 
+  device:camera:
+    desc: 启动摄像头车牌识别模拟器与控制页（8092，需先启动 Server）
+    dir: server
+    cmds:
+      - go run ./cmd/cam-simulator {{.CLI_ARGS}}
+
+  device:camera:build:
+    summary: Build the standalone camera plate recognition simulator
+    dir: server
+    cmds:
+      - go build -trimpath -o ../bin/weighbridge-camera-simulator ./cmd/cam-simulator
+
+  device:camera:smoke:
+    summary: Verify the camera simulator control page and cleanup in Chromium
+    deps:
+      - device:camera:build
+    cmds:
+      - node scripts/check-camera-simulator.mjs
+
   agent:build:
     summary: Build the standalone Agent mock executable
     dir: server

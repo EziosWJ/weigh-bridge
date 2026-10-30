@@ -35,7 +35,7 @@ task agent -- --env-file /绝对路径/agent.env --state-dir /绝对路径/agent
 
 日常仪表联调可运行 `task device:d12`，通过 <http://127.0.0.1:8091> 操控 D12 重量、动态位、停发和坏帧，把显示的 `/dev/pts/...` 写入根目录 `agent.env`，再在另一终端运行 `task agent`。无需新增 Agent 身份，也不与真实 Agent 抢占地磅连接。启动、配置和故障语义见 [D12 模拟器说明](../docs/device/d12-simulator.md)，软件验证见[交付记录](../docs/history/requirements/d12-simulator-delivery.md)。
 
-摄像头输入由 Server 直接读取 RTSP，开发可参考[模拟源说明](../docs/device/camera-simulation-dev-memo.md)；Agent 不再配置或转流相机。仪表在 Agent 的设备输入端模拟；完整采集与业务闭环需另行联调。`agent-mock` 是轻量业务联调与自动化测试入口，同磅不能与真实 Agent 同时连接。
+摄像头输入由 Server 直接读取 RTSP，开发可参考[模拟源说明](../docs/device/camera-simulation-dev-memo.md)；Agent 不再配置或转流相机。摄像头不在身边时，可用 `task device:camera` 启动独立车牌识别模拟器，按厂家协议发送心跳和车牌事件，说明见[摄像头车牌识别模拟器](../docs/device/camera-simulator.md)。仪表在 Agent 的设备输入端模拟；完整采集与业务闭环需另行联调。`agent-mock` 是轻量业务联调与自动化测试入口，同磅不能与真实 Agent 同时连接。
 
 ## mock 本机启动
 
