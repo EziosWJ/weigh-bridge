@@ -116,7 +116,7 @@ export function CapturePhoto({ capture, onReady, onPreviewChange, hideWeight = f
   </div>;
 }
 
-export type CameraSize = 'small' | 'standard' | 'large';
+export type CameraSize = 'standard' | 'large';
 
 function previewMessage(camera: CameraRecord, stream: CameraStream | null, error: string) {
   if (error) return `预览信息读取失败：${error}`;
@@ -201,8 +201,8 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
   return <ContentCard className="weighing-camera shadow-none" bodyClassName="p-0">
     <div className="workbench-camera-toolbar flex flex-wrap items-center justify-between gap-2 px-4 py-3">
       <h2 className="flex items-center gap-2 text-base font-semibold"><Camera className="h-4 w-4 text-text-tertiary" aria-hidden />现场画面<span className="camera-source-label">{selected?.enabled ? '实时预览' : '本次抓拍'}</span></h2>
-      <div className="flex items-center gap-1" role="group" aria-label="摄像头画面大小">
-        {([['small', '小窗'], ['standard', '标准'], ['large', '大窗']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} className={size === value ? 'bg-neutral-background text-primary' : ''} onClick={() => onSizeChange(value)}>{label}</Button>)}
+      <div className="camera-layout-options flex items-center gap-1" role="group" aria-label="摄像头画面大小">
+        {([['standard', '标准'], ['large', '视频优先']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} className={size === value ? 'bg-neutral-background text-primary' : ''} onClick={() => onSizeChange(value)}>{label}</Button>)}
       </div>
     </div>
     <div className="workbench-camera-views" role="group" aria-label="摄像头">

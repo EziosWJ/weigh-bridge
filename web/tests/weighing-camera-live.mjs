@@ -155,6 +155,10 @@ try {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, '抓拍缩略图不得撑破视口');
   }
   await page.setViewportSize({ width: 1366, height: 768 });
+  const standardWidth = (await page.locator('.weighing-camera').boundingBox()).width;
+  await page.getByRole('button', { name: '视频优先', exact: true }).click();
+  assert.ok((await page.locator('.weighing-camera').boundingBox()).width > standardWidth + 100, '视频优先明显加宽画面');
+  await page.getByRole('button', { name: '标准', exact: true }).click();
   await page.getByRole('button', { name: '等待抓拍', exact: true }).click();
   await page.getByText('等待采集', { exact: true }).waitFor();
   assert.ok((await page.locator('.workbench-camera-evidence').boundingBox()).height <= 128, '等待空态保持紧凑');
@@ -168,17 +172,22 @@ try {
   await page.getByRole('button', { name: '完整抓拍', exact: true }).click();
   await page.getByText('已取得 2/2 张', { exact: true }).waitFor();
 
-  await page.getByRole('button', { name: '放大实时画面', exact: true }).click();
+  await page.getByRole('button', { name: '全屏查看实时画面', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '入口实时画面', exact: true });
   await dialog.waitFor();
-  assert.equal(await page.evaluate(() => {
-    const videos = [...document.querySelectorAll('video')];
-    return videos.length === 2 && videos[0].srcObject === videos[1].srcObject;
-  }), true, '放大必须复用同一个 MediaStream');
-  assert.equal(posts, beforeHidden + 1, '放大不得新增 WHEP 连接');
+  assert.equal(await page.locator('.camera-live-feed video').count(), 1, '全屏复用原视频');
+  assert.equal(posts, beforeHidden + 1, '全屏不得新增 WHEP 连接');
+  const bounds = await dialog.boundingBox();
+  assert.ok(bounds.width >= 1366 && bounds.height >= 768, '全屏应占满视口');
+  await dialog.getByRole('button', { name: '退出实时画面全屏' }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '全屏查看实时画面');
+  await page.evaluate(() => { document.querySelector('.camera-live-feed').requestFullscreen = () => Promise.reject(new Error('拒绝全屏')); });
+  await page.getByRole('button', { name: '全屏查看实时画面', exact: true }).click();
+  await dialog.waitFor();
+  assert.equal(await dialog.evaluate(el => el.classList.contains('is-window-expanded')), true, '原生全屏失败时铺满窗口');
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
-  assert.equal(await page.getByRole('button', { name: '放大实时画面', exact: true }).evaluate(button => button === document.activeElement), true);
   await cameraGroup().getByRole('button', { name: /^装车区/ }).click();
   await live();
   assert.equal(posts, beforeHidden + 2);
@@ -240,6 +249,7 @@ try {
   // A failed preview must not become an extra gate for formal capture.
   let samples = 0;
   let confirmations = 0;
+  await page.route('**/api/system/dict/TRANSPORT_DIRECTION/items', route => route.fulfill({ json: { code: 200, data: [] } }));
   await page.route('**/api/weighing/**', async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === '/api/weighing/cameras') return route.fulfill({ json: { code: 200, data: { ...cameraList(), cameras: cameraList().cameras.map(camera => ({ ...camera, enabled: true })) } } });
@@ -258,8 +268,9 @@ try {
   await page.getByText('视频映射同步失败', { exact: false }).waitFor();
   const captureButton = page.getByRole('button', { name: '采集重量', exact: true });
   assert.equal(await captureButton.isEnabled(), true, '视频故障不阻塞原有健康设备的采集');
+  const sampleResponse = page.waitForResponse(response => response.url().endsWith('/samples') && response.status() === 409);
   await captureButton.click();
-  await page.getByText('测试：Agent 收到采集请求', { exact: true }).waitFor();
+  await sampleResponse;
   assert.equal(samples, 1);
   assert.equal(confirmations, 0);
   assert.deepEqual(errors, []);

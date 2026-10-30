@@ -1,3 +1,4 @@
+import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { useDeferredValue, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DataTable } from '@/components/common/data-table';
@@ -13,10 +14,11 @@ import { useWeighingStore } from '@/store/weighing-store';
 import { useWeighingPage, useWeighingSummary, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireOriginal } from '@/api/weighing-workflow';
 import type { DataTableColumn } from '@/types';
-import { directionLabels, type WeighingFilter } from '@/types/weighing';
+import { type WeighingFilter } from '@/types/weighing';
 import { DeviceBanner, WeighingFilters, ListDate } from './shared';
 
 export function WeighingOriginalsPage() {
+  const directionLabels = useTransportDirections();
   const capabilities = useWeighingStore(state => state.capabilities);
   const [filter, setFilter] = useState<WeighingFilter>({});
   const deferred = useDeferredValue(filter);

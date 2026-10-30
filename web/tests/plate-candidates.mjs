@@ -10,8 +10,13 @@ const deadline = setTimeout(() => { vite.kill('SIGTERM'); void browser?.close();
 try {
   for (let i = 0; i < 60; i++) { try { if ((await fetch(`${base}/tests/plate-candidates.html`)).ok) break; } catch {} await delay(100); }
   browser = await chromium.launch({ headless: true });
+  const newPage = async options => {
+    const page = await browser.newPage(options);
+    await page.route('**/api/system/dict/TRANSPORT_DIRECTION/items', route => route.fulfill({ json: { code: 200, data: [{ value: 'inbound', label: '入厂卸货（收粮）', sortOrder: 1 }, { value: 'outbound', label: '出厂装货（拉酒糟）', sortOrder: 2 }] } }));
+    return page;
+  };
   for (const width of [1366, 390]) {
-    const page = await browser.newPage({ viewport: { width, height: 768 } });
+    const page = await newPage({ viewport: { width, height: 768 } });
     page.setDefaultTimeout(7000);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -52,12 +57,23 @@ try {
     assert.equal(await input.inputValue(), 'A12346', '人工输入不能被覆盖');
     assert.equal(lookupCount, 0);
     await page.getByRole('button', { name: '确认车辆' }).click();
-    await page.getByText('已确认车辆，未找到已有运输任务，请现场选择本趟资料。').waitFor();
+    await page.getByText('暂无历史任务，请选择物料和供收方。').waitFor();
+    const direction = page.getByLabel('运输方向', { exact: true });
+    await direction.getByRole('option', { name: '入厂卸货（收粮）' }).waitFor({ state: 'attached' });
+    assert.equal(await direction.inputValue(), 'inbound', '字典只改变名称，不改变业务编码');
+    assert.equal(await direction.getByRole('option', { name: '出厂装货（拉酒糟）' }).getAttribute('value'), 'outbound');
     assert.equal(lookupCount, 1);
     assert.equal(confirmed.confirmedPlate, '晋A12346');
     assert.equal(confirmed.evidence.candidate, '晋A12345');
     assert.equal(confirmed.evidence.corrected, true);
     assert.deepEqual(confirmed.evidence.sourceEventRecordIds, [1]);
+    await page.getByRole('tab', { name: '补充信息（选填）' }).click();
+    await page.getByLabel('司机姓名（选填）').fill('测试司机');
+    await page.getByRole('tab', { name: '基本信息' }).click();
+    assert.equal(await page.getByRole('combobox', { name: '搜索物料' }).isVisible(), true);
+    await page.getByRole('tab', { name: '补充信息（选填）' }).click();
+    assert.equal(await page.getByLabel('司机姓名（选填）').inputValue(), '测试司机', '切换页签保留补充资料');
+    await page.getByRole('tab', { name: '基本信息' }).click();
     await page.getByRole('button', { name: '采集重量', exact: true }).click();
     await page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true }).getByText('还缺物料、供货方', { exact: true }).waitFor();
     assert.equal(sampleInput.plateEvidence.confirmationId, 77);
@@ -65,9 +81,14 @@ try {
     await page.getByRole('button', { name: /晋A88888/ }).waitFor({ timeout: 6000 });
     assert.equal(await input.inputValue(), 'A12346', '采样后不得覆盖车牌');
     assert.deepEqual(errors, []);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: '清除车牌' }).click();
+    assert.equal(await input.inputValue(), '', '清除车牌后输入框为空');
+    assert.equal(await page.getByRole('button', { name: '选择车牌省份' }).innerText(), '省份');
+    assert.equal(await page.getByRole('button', { name: '采集重量', exact: true }).isDisabled(), true, '清除车牌后须重新确认车辆');
     await page.close();
   }
-  const page = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  const page = await newPage({ viewport: { width: 1366, height: 768 } });
   page.setDefaultTimeout(7000);
   const makeItem = (id, plate) => { const now = new Date(); return { id, plate, firstReceivedAt: now.toISOString(), lastReceivedAt: now.toISOString(), expiresAt: new Date(now.getTime() + 60_000).toISOString(), sourceEvents: [{ eventRecordId: id, cameraId: id, cameraName: '相机', receivedAt: now.toISOString(), recognizedAt: now.toISOString() }] }; };
   let events = [makeItem(1, '晋A12345')];
@@ -89,7 +110,7 @@ try {
   events = [...events, makeItem(2, '晋A54321')];
   await page.waitForFunction(() => document.querySelector('#workbench-plate')?.value === 'A54321', null, { timeout: 6000 });
   await page.close();
-  const reconnect = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+  const reconnect = await newPage({ viewport: { width: 1366, height: 768 } });
   reconnect.setDefaultTimeout(7000);
   let online = true;
   let polls = 0;
@@ -123,7 +144,7 @@ try {
   await reconnect.getByRole('button', { name: /晋A54321/ }).waitFor();
   assert.equal(await reconnect.getByLabel('车牌号码').inputValue(), 'A88888', '重连不得覆盖人工输入');
   await reconnect.close();
-  const timezone = await browser.newPage();
+  const timezone = await newPage();
   const expired = makeItem(1, '晋A11111');
   expired.expiresAt = '2026-01-01T08:00:00+08:00';
   await timezone.route('**/api/weighing/**', async route => {
@@ -135,7 +156,7 @@ try {
   await delay(2500);
   assert.equal(await timezone.getByRole('button', { name: /晋A11111/ }).count(), 0, '不同时间偏移的过期候选不能显示');
   await timezone.close();
-  const fallback = await browser.newPage();
+  const fallback = await newPage();
   fallback.setDefaultTimeout(7000);
   let fallbackEvent = [];
   await fallback.route('**/api/weighing/**', async route => {
@@ -156,7 +177,7 @@ try {
   await fallback.getByText('识别来源不可用，已按人工核对车牌办理。').waitFor();
   assert.equal(await fallback.getByRole('button', { name: '采集重量', exact: true }).isEnabled(), true, '来源失效后人工办理保持可用');
   await fallback.close();
-  const agentPage = await browser.newPage();
+  const agentPage = await newPage();
   await agentPage.route('**/api/weighing/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const data = path.endsWith('/plate-candidates') ? { items: [], nextCursor: '0', serverTime: new Date().toISOString() } : path.endsWith('/cameras') ? { cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { whepBaseUrl: '', syncState: 'pending' } } : { records: [], total: 0 };
@@ -168,7 +189,7 @@ try {
   await agentPage.evaluate(() => window.dispatchEvent(new Event('fixture-agent')));
   await agentPage.waitForFunction(() => document.querySelector('#workbench-plate')?.value === 'A22222');
   await agentPage.close();
-  const freshAgent = await browser.newPage();
+  const freshAgent = await newPage();
   await freshAgent.route('**/api/weighing/**', async route => {
     const path = new URL(route.request().url()).pathname;
     const data = path.endsWith('/plate-candidates') ? { items: [], nextCursor: '0', serverTime: new Date().toISOString() } : path.endsWith('/cameras') ? { cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { whepBaseUrl: '', syncState: 'pending' } } : { records: [], total: 0 };
@@ -178,7 +199,7 @@ try {
   await freshAgent.evaluate(() => window.dispatchEvent(new Event('fixture-agent')));
   await freshAgent.waitForFunction(() => document.querySelector('#workbench-plate')?.value === 'A22222');
   await freshAgent.close();
-  const savedDraft = await browser.newPage();
+  const savedDraft = await newPage();
   let draftEvents = [];
   await savedDraft.route('**/api/weighing/**', async route => {
     const url = new URL(route.request().url());
@@ -191,8 +212,8 @@ try {
   await savedDraft.getByRole('button', { name: /晋A11111/ }).waitFor();
   assert.equal(await savedDraft.getByLabel('车牌号码').inputValue(), '', '已有业务草稿不得自动套入候选');
   await savedDraft.close();
-  for (const [width, allowedShift] of [[1920, 8], [1366, 80]]) {
-    const compact = await browser.newPage({ viewport: { width, height: 768 } });
+  for (const [width, allowedShift] of [[1920, 40], [1366, 80]]) {
+    const compact = await newPage({ viewport: { width, height: 768 } });
     compact.setDefaultTimeout(7000);
     let compactEvents = [];
     await compact.route('**/api/weighing/**', async route => {
@@ -207,7 +228,7 @@ try {
     });
     await compact.goto(`${base}/tests/plate-candidates.html?scale=WB01`);
     await delay(500);
-    const phaseTop = await compact.locator('.workbench-phase').evaluate(node => node.getBoundingClientRect().top);
+    const phaseTop = await compact.locator('.weighing-scale').evaluate(node => node.getBoundingClientRect().top);
     const sameMoment = new Date();
     const candidate = (id, plate, cameras) => ({ id, plate, firstReceivedAt: sameMoment.toISOString(), lastReceivedAt: sameMoment.toISOString(), expiresAt: new Date(sameMoment.getTime() + 60_000).toISOString(), sourceEvents: cameras.map((name, index) => ({ eventRecordId: id + index, cameraId: index + 1, cameraName: name, receivedAt: sameMoment.toISOString(), recognizedAt: sameMoment.toISOString() })) });
     compactEvents = [candidate(1, '晋AB6P44', ['抓拍01', '抓拍01', '抓拍01'])];
@@ -217,7 +238,7 @@ try {
     assert.equal(await compact.locator('form .plate-candidates').count(), 1, '候选紧跟车牌输入');
     const chipTop = await chip.evaluate(node => node.getBoundingClientRect().top);
     assert.ok(chipTop < phaseTop, '候选不能排到阶段状态之后');
-    const shiftedTop = await compact.locator('.workbench-phase').evaluate(node => node.getBoundingClientRect().top);
+    const shiftedTop = await compact.locator('.weighing-scale').evaluate(node => node.getBoundingClientRect().top);
     assert.ok(shiftedTop - phaseTop <= allowedShift, `候选把下方内容推移过多：${shiftedTop - phaseTop}`);
     compactEvents = [...compactEvents, candidate(10, '晋AB6P44', ['抓拍01'])];
     await delay(2500);

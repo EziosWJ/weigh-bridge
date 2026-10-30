@@ -1,3 +1,4 @@
+import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { CapturePhoto } from './camera-panel';
 import { useWeighingPage, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireTask } from '@/api/weighing-workflow';
@@ -24,7 +25,7 @@ import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
 import { formatWeight } from "@/lib/weighing/weights";
 import type { DataTableColumn } from "@/types";
-import { directionLabels, emptyTaskInput, taskStatusLabels, type TaskInput, type WeighingFilter } from "@/types/weighing";
+import { emptyTaskInput, taskStatusLabels, type TaskInput, type WeighingFilter } from "@/types/weighing";
 import { BusinessFields, DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
 import { BusinessSnapshot, WeighRecords } from "./record-info";
 
@@ -33,6 +34,7 @@ type TaskOperation = "correct" | "reweigh" | "terminate";
 const operationTitles: Record<TaskOperation, string> = { correct: "业务纠错", reweigh: "单磅重称", terminate: "终止运输任务" };
 
 export function WeighingTasksPage() {
+  const directionLabels = useTransportDirections();
   const capabilities = useWeighingStore(state => state.capabilities);
   const [params] = useSearchParams();
   const [filter, setFilter] = useState<WeighingFilter>({ status: 'second' });

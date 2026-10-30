@@ -1,11 +1,13 @@
+import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { DetailItem } from "@/components/common/detail-item";
 import { beijingTime } from "@/lib/weighing/query";
 import { formatWeight } from "@/lib/weighing/weights";
-import { directionLabels, roleLabels, partyNatureLabels, type BusinessInfo, type WeighRecord } from "@/types/weighing";
+import { roleLabels, partyNatureLabels, type BusinessInfo, type WeighRecord } from "@/types/weighing";
 import { CapturePhoto } from "./camera-panel";
 
 /** 只展示业务发生时的快照，旧记录缺少的字段不从当前资料反填。 */
 export function BusinessSnapshot({ value }: { value: BusinessInfo }) {
+  const directionLabels = useTransportDirections();
   return <div className="space-y-space-5">
     <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-3">
       <DetailItem label="车牌" value={value.plate} />

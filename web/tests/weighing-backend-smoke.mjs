@@ -215,10 +215,7 @@ try {
   const locate = async plate => {
     await page.getByRole('textbox', { name: '车牌号码', exact: true }).fill(plate);
     await page.getByRole('button', { name: '确认车辆', exact: true }).click();
-    await page.waitForFunction(() => {
-      const phase = document.querySelector('.workbench-phase')?.textContent ?? '';
-      return (phase.includes('首磅') || phase.includes('回磅')) && !phase.includes('等待确认车辆');
-    });
+    await page.getByRole('heading', { name: /^(首磅|回磅)（(毛重|皮重)）$/ }).waitFor();
   };
   const reviewAndConfirm = async (stage, kind) => {
     const dialog = page.getByRole('dialog', { name: `核对${stage}（${kind}）`, exact: true });
@@ -266,10 +263,9 @@ try {
         if (width >= 1100) {
           const station = await page.locator('.weighing-station').boundingBox();
           assert.ok(station.y + station.height >= height - 12, '桌面设备区应铺满剩余高度');
-          const phase = await page.getByLabel('当前作业状态', { exact: true }).boundingBox();
           const lookup = await page.getByRole('button', { name: '确认车辆', exact: true }).boundingBox();
-          assert.ok(phase.y >= lookup.y + lookup.height, '称重阶段和运输方向应独占一行');
-          assert.ok(await page.locator('.workbench-phase').evaluate(el => parseFloat(getComputedStyle(el).fontSize) >= 22), '阶段与方向应醒目显示');
+          const basic = await page.getByRole('tab', { name: '基本信息' }).boundingBox();
+          assert.ok(basic.y >= lookup.y + lookup.height, '资料页签位于车辆确认下方');
           assert.ok((await page.locator('.plate-entry').boundingBox()).width <= 360, '车牌输入不应随面板拉长');
         }
         if (width === 390) await page.screenshot({ path: resolve(root, '.task/industrial-workbench-mobile.png'), fullPage: true });
@@ -299,9 +295,9 @@ try {
     if (direction === 'inbound') {
       await firstReview.getByText(`还缺物料、${partyLabel}`, { exact: true }).waitFor();
       assert.equal(await firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }).isDisabled(), true, '缺资料不能直接确认');
-      // 关闭后重开保留冻结样本；补充信息在工作台折叠区直接录入。
+      // 关闭后重开保留冻结样本；补充信息在工作台页签内直接录入。
       await firstReview.getByRole('button', { name: '关闭核对', exact: true }).click();
-      await page.locator('details.workbench-extra > summary').click();
+      await page.getByRole('tab', { name: '补充信息（选填）' }).click();
       await page.getByLabel('司机姓名（选填）', { exact: true }).fill('工作台直接录入验证');
       await page.screenshot({ path: resolve(root, '.task/industrial-workbench-inline-business.png'), fullPage: true });
       await page.getByRole('button', { name: `继续核对首磅（${firstKind}）`, exact: true }).click();
@@ -574,7 +570,7 @@ try {
   const recognitionReview = page.getByRole('dialog',{name:'核对首磅（皮重）',exact:true});
   await recognitionReview.waitFor();
   await recognitionReview.getByRole('button',{name:'关闭核对',exact:true}).click();
-  for(const label of ['小窗','大窗','标准']) await page.getByRole('button',{name:label,exact:true}).click();
+  for(const label of ['视频优先','标准']) await page.getByRole('button',{name:label,exact:true}).click();
   const enlargeCapture = page.getByRole('button',{name:/放大抓拍/}).first();
   await enlargeCapture.click();
   await page.getByRole('dialog',{name:'抓拍图片预览',exact:true}).getByRole('button',{name:'关闭图片预览'}).click();
@@ -626,12 +622,12 @@ try {
   await pick('物料','服务端冒烟高粱'); await pick('供货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
   await readerPage.goto(`${web}/weighing/workbench?scale=WB01`);
-  await readerPage.getByRole('textbox',{name:'车牌号码',exact:true}).fill('川A54326');
-  await readerPage.getByRole('button',{name:'确认车辆',exact:true}).click();
   assert.equal(await readerPage.getByRole('button',{name:'采集重量',exact:true}).isDisabled(),true,'其他账号持有会话时必须禁用采集');
-  await readerPage.locator('#takeover-reason').fill('现场操作员接管验证');
   await readerPage.getByRole('button',{name:'接管操作权',exact:true}).click();
-  await readerPage.getByText('操作员已接管，记录已保留。',{exact:true}).waitFor();
+  assert.equal(await readerPage.getByRole('button',{name:'确认接管',exact:true}).isDisabled(),true,'接管原因必填');
+  await readerPage.locator('#takeover-reason').fill('现场操作员接管验证');
+  await readerPage.getByRole('button',{name:'确认接管',exact:true}).click();
+  await readerPage.getByText('当前地磅已由本会话接管。',{exact:true}).waitFor();
   const takenOverReview = page.getByRole('dialog',{name:'核对首磅（毛重）',exact:true});
   await takenOverReview.getByRole('alert').waitFor({ timeout: 20_000 });
   assert.equal(await takenOverReview.isVisible(), true, '操作权变化后保留原核对内容');

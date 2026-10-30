@@ -1,3 +1,4 @@
+import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { useDeferredValue, useState } from 'react';
 import { CalendarDays, FileText, RefreshCw, RotateCcw, Search, X } from 'lucide-react';
 import type { WireTicket } from '@/api/weighing-workflow';
@@ -21,12 +22,12 @@ import { useWeighingPage, useWeighingSummary } from '@/hooks/use-weighing-page';
 import { beijingDate } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import type { DataTableColumn } from '@/types';
-import { directionLabels, printStatusLabels, type WeighingFilter } from '@/types/weighing';
+import { printStatusLabels, type Direction, type WeighingFilter } from '@/types/weighing';
 import { ListDate } from './shared';
 
 const linkClass = 'text-primary hover:underline';
 
-const ticketColumns: DataTableColumn<WireTicket>[] = [
+const ticketColumns = (directionLabels: Record<Direction, string>): DataTableColumn<WireTicket>[] => [
   {
     title: '出单时间 ↓',
     key: 'issuedAt',
@@ -87,6 +88,7 @@ type TicketDrawerProps = {
 };
 
 export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
+  const directionLabels = useTransportDirections();
   const { materials, parties } = useWeighingStore(state => state.data);
   const [filter, setFilter] = useState<WeighingFilter>({});
   const [page, setPage] = useState(1);
@@ -134,8 +136,8 @@ export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
             </Select>
             <Select aria-label="筛选方向" value={filter.direction ?? ''} onChange={event => updateFilter({ direction: event.target.value })}>
               <option value="">全部方向</option>
-              <option value="inbound">入厂卸货</option>
-              <option value="outbound">出厂装货</option>
+              <option value="inbound">{directionLabels.inbound}</option>
+              <option value="outbound">{directionLabels.outbound}</option>
             </Select>
             <Select aria-label="筛选物料" value={filter.materialId ?? ''} onChange={event => updateFilter({ materialId: event.target.value })}>
               <option value="">全部物料</option>
@@ -182,7 +184,7 @@ export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
           fixedEdges
           ariaLabel="过磅单列表"
           className="ticket-drawer-table"
-          columns={ticketColumns}
+          columns={ticketColumns(directionLabels)}
           dataSource={result.records}
           loading={result.loading}
           error={result.error}

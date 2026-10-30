@@ -1,3 +1,4 @@
+import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { useWeighingPage, useWeighingSummary, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireTicket } from '@/api/weighing-workflow';
 import { WorkbenchLink } from "@/components/common/workbench-link";
@@ -20,7 +21,7 @@ import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
 import type { DataTableColumn } from "@/types";
-import { directionLabels, printStatusLabels, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
+import { printStatusLabels, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
 import { DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
 import { BusinessSnapshot, WeighRecords } from "./record-info";
 import { TicketPrintActions } from "./ticket-print-actions";
@@ -42,6 +43,7 @@ function TicketWeights({ ticket }: { ticket: WeighingTicket }) {
 }
 
 export function WeighingTicketsPage() {
+  const directionLabels = useTransportDirections();
   const capabilities = useWeighingStore(state => state.capabilities);
   const [params] = useSearchParams();
   const [filter, setFilter] = useState<WeighingFilter>({});
@@ -80,6 +82,7 @@ export function WeighingTicketsPage() {
 }
 
 export function WeighingTicketDetailPage() {
+  const directionLabels = useTransportDirections();
   const { id } = useParams();
   const { data, dispatch, capabilities, loadTask, loadTicket } = useWeighingStore();
   const [operation, setOperation] = useState<"void" | null>(null);

@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { WeighingWorkbenchPage } from '@/pages/weighing/workbench';
+import { ToastProvider } from '@/components/common/toast';
 import { useWeighingStore } from '@/store/weighing-store';
 import '@/styles/globals.css';
 
@@ -18,4 +19,4 @@ device: { agentId: 'fixture', scaleCode: 'WB01', weight: '18.5', stable: true, d
 
 window.addEventListener('fixture-agent', () => useWeighingStore.setState(state => ({ device: state.device ? { ...state.device, plate: { candidate: '晋A22222', failed: false, at: new Date(Date.now() + 1000).toISOString() } } : null })));
 
-createRoot(document.getElementById('root')!).render(<MemoryRouter initialEntries={[`/weighing/workbench?scale=WB01${completed ? '&task=1' : ''}`]}><WeighingWorkbenchPage /></MemoryRouter>);
+createRoot(document.getElementById('root')!).render(<ToastProvider><MemoryRouter initialEntries={[`/weighing/workbench?scale=WB01${completed ? '&task=1' : ''}`]}><WeighingWorkbenchPage /></MemoryRouter></ToastProvider>);

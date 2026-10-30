@@ -1,3 +1,4 @@
+import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { useCallback, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { RefreshCw } from 'lucide-react';
@@ -12,7 +13,6 @@ import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
 import { beijingTime } from '@/lib/weighing/query';
 import { formatWeightValue } from '@/lib/weighing/weights';
-import { directionLabels } from '@/types/weighing';
 import type { DataTableColumn } from '@/types';
 import { DeviceOverview } from './dashboard/device-overview';
 import { useOverviewResource } from './dashboard/use-overview-resource';
@@ -20,6 +20,7 @@ import { useOverviewResource } from './dashboard/use-overview-resource';
 const linkClass = 'text-sm text-primary hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary';
 
 export function DashboardPage() {
+  const directionLabels = useTransportDirections();
   const [revision, setRevision] = useState(0);
   const caps = useOverviewResource(weighingApi.capabilities, revision);
   const permissions = caps.data?.permissionCodes ?? [];
@@ -56,8 +57,8 @@ export function DashboardPage() {
   ];
   const cards = [
     { label: '今日有效单', value: data?.validTickets, unit: '张', detail: '今日出单且当前有效' },
-    { label: '今日入厂卸货净重', value: data ? formatWeightValue(Number(data.inbound.net)) : undefined, unit: '吨', detail: data ? `${data.inbound.taskCount} 趟` : '— 趟' },
-    { label: '今日出厂装货净重', value: data ? formatWeightValue(Number(data.outbound.net)) : undefined, unit: '吨', detail: data ? `${data.outbound.taskCount} 趟` : '— 趟' },
+    { label: `今日${directionLabels.inbound}净重`, value: data ? formatWeightValue(Number(data.inbound.net)) : undefined, unit: '吨', detail: data ? `${data.inbound.taskCount} 趟` : '— 趟' },
+    { label: `今日${directionLabels.outbound}净重`, value: data ? formatWeightValue(Number(data.outbound.net)) : undefined, unit: '吨', detail: data ? `${data.outbound.taskCount} 趟` : '— 趟' },
     { label: '当前待回磅', value: data?.awaitingCount, unit: '趟', detail: data ? `其中隔日 ${data.overnightCount} 趟` : '其中隔日 — 趟' },
   ];
 

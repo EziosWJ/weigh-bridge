@@ -1,5 +1,15 @@
 # 当前实现、验证与剩余工作
 
+## 2026-10-30 工作台实时视频全屏
+
+- 实时视频支持原生全屏及窗口内回退，退出按钮和 Escape 返回工作台，复用原视频流；桌面提供标准与视频优先两档，窄屏自动布局。实时预览仍不代替正式抓拍。
+- `task frontend:lint`、`task frontend:build`、`test:weighing:camera-live` 通过；浏览器覆盖两档宽度、全屏退出、拒绝全屏后的窗口回退、视频重连及采集隔离。未连接真实摄像头或现场验收。
+
+## 2026-10-30 运输方向字典显示
+
+- 工作台、概览及任务／单据查询页面使用 `TRANSPORT_DIRECTION` 的 `inbound`／`outbound` 名称，缺项或读取失败时各自回退原名称；业务编码与毛皮顺序不变。票面仍由 Server 使用固定方向文字，字典修改不改写票面。仓库迁移未包含该字典，本次未连接或修改业务数据库。
+- `task frontend:lint`、`task frontend:build` 和隔离浏览器 `plate-candidates.mjs` 通过，覆盖自定义名称、业务值、页签切换和车牌流程；未部署或现场验收。
+
 ## 2026-10-30 摄像头车牌识别模拟器
 
 - 新增独立开发工具 `task device:camera`：默认控制页 `127.0.0.1:8092`、Server `http://127.0.0.1:8900`、序列号 `camera-sim-01`，可用 `--listen`、`--server`、`--serial`、`--heartbeat` 配置。模拟器按现有厂家协议自动发送心跳并向 `POST /api/v1/event/pull` 上报 `CarLicenseSnapshot`，每次主动识别生成新的 19 位事件号，校验 HTTP 状态、`CarLicenseSnapshot-Ack`／`heartbeat-ack`、`errorNo` 和回填事件号；失败原因在页面展示，并允许原样重试同一事件。车牌由模拟器随机生成并通过与业务一致的 `weighing.IsBusinessPlate` 校验。未修改 Server 权限、去重、有效期、绑定和候选规则，也未新增数据库 migration。
