@@ -159,12 +159,12 @@ try {
   assert.equal(await candidatePage.getByLabel('车牌号码').inputValue(), 'A11111');
   await candidatePage.getByRole('button', {name:/晋A22222/}).click();
   const confirmedResponse = candidatePage.waitForResponse(response => response.url().endsWith('/plate-confirmations'));
-  await candidatePage.getByRole('button', {name:'核对车牌并查找运输', exact:true}).click();
+  await candidatePage.getByRole('button', {name:'确认车辆', exact:true}).click();
   assert.equal((await (await confirmedResponse).json()).code, 200, 'server validates selected event');
   await candidatePage.getByRole('button', {name:'释放操作权', exact:true}).click();
   await candidatePage.getByLabel('车牌号码').fill('A33333');
   await candidatePage.reload();
-  await candidatePage.getByRole('button', {name:'核对车牌并查找运输', exact:true}).waitFor();
+  await candidatePage.getByRole('button', {name:'确认车辆', exact:true}).waitFor();
   assert.equal(await candidatePage.getByLabel('车牌号码').inputValue(), 'A33333', '刷新保留人工修改的车牌');
   await candidatePage.close();
   console.log('browser: real metadata candidates, conflict selection and confirmation passed');
@@ -191,42 +191,57 @@ try {
     throw Error('Agent weight did not become stable');
   };
   const openBusiness = async () => {
-    const dialog = page.getByRole('dialog', { name: /^(录入|查看)运输资料$/ });
-    if (!await dialog.isVisible()) await page.getByRole('button', { name: /^(录入|查看)运输资料$/ }).click();
+    const dialog = page.getByRole('dialog', { name: '查看运输资料', exact: true });
+    if (!await dialog.isVisible()) await page.getByRole('button', { name: '查看完整资料', exact: true }).click();
     return dialog;
   };
   const closeBusiness = async () => {
-    const dialog = page.getByRole('dialog', { name: /^(录入|查看)运输资料$/ });
+    const dialog = page.getByRole('dialog', { name: '查看运输资料', exact: true });
     if (await dialog.isVisible()) await dialog.getByRole('button', { name: '关闭运输资料', exact: true }).click();
   };
   const setDirection = async direction => {
-    const business = await openBusiness();
-    await business.getByLabel('运输方向', { exact: false }).selectOption(direction);
-    await closeBusiness();
+    const control = page.getByLabel('运输方向', { exact: false });
+    await control.waitFor();
+    await control.selectOption(direction);
   };
-  const pick = async (label, name) => {
-    await openBusiness();
-    const field = page.getByRole('combobox', { name: `搜索${label}`, exact: true });
+  const pickIn = async (scope, label, name, waitForSelected = true) => {
+    const field = scope.getByRole('combobox', { name: `搜索${label}`, exact: true });
     await field.scrollIntoViewIfNeeded();
     await field.fill(name);
     await page.getByRole('option').filter({ hasText: name }).first().click();
-    await page.getByLabel(`${label}已选资料`,{exact:true}).waitFor();
-    await closeBusiness();
+    if (waitForSelected) await scope.getByLabel(`${label}已选资料`, { exact: true }).waitFor();
   };
+  const pick = async (label, name) => pickIn(page, label, name);
   const locate = async plate => {
     await page.getByRole('textbox', { name: '车牌号码', exact: true }).fill(plate);
-    await page.getByRole('button', { name: '核对车牌并查找运输', exact: true }).click();
+    await page.getByRole('button', { name: '确认车辆', exact: true }).click();
+    await page.waitForFunction(() => {
+      const phase = document.querySelector('.workbench-phase')?.textContent ?? '';
+      return (phase.includes('首磅') || phase.includes('回磅')) && !phase.includes('等待确认车辆');
+    });
   };
   const reviewAndConfirm = async (stage, kind) => {
     const dialog = page.getByRole('dialog', { name: `核对${stage}（${kind}）`, exact: true });
-    if (!await dialog.isVisible()) await page.getByRole('button', { name: `开始核对${stage}（${kind}）`, exact: true }).click();
-    await dialog.getByText('本次抓拍',{exact:true}).waitFor();
-    if (stage === '回磅') await dialog.getByRole('button', { name: '下一步：核对最终重量', exact: true }).click();
-    await dialog.getByRole('button', { name: stage === '回磅' ? '确认称重并出单' : `确认${stage}（${kind}）`, exact: true }).click();
-    await page.getByRole('heading', { name: `${stage}已完成`, exact: true }).waitFor();
+    try {
+      await dialog.waitFor({ timeout: 2500 });
+    } catch {
+      await page.getByRole('button', { name: `继续核对${stage}（${kind}）`, exact: true }).click();
+      await dialog.waitFor();
+    }
+    await dialog.getByText('本次抓拍', { exact: true }).waitFor();
+    if (stage === '回磅') {
+      await dialog.getByText('预计净重（未出单）', { exact: true }).waitFor();
+      await dialog.getByRole('button', { name: '下一步：核对最终重量', exact: true }).click();
+    }
+    await dialog.getByRole('button', { name: stage === '回磅' ? '确认回磅并出单' : `确认${stage}（${kind}）`, exact: true }).click();
+    await page.getByRole('heading', { name: stage === '首磅' ? '首磅已完成 · 等待回磅' : /^回磅已完成/ }).waitFor();
     const business = await openBusiness();
     assert.equal(await business.locator('input, select, textarea').count(), 0, '已有运输资料保持只读查看');
     await closeBusiness();
+  };
+  const waitEnabled = async locator => {
+    for (let n = 0; n < 100; n += 1) { if (await locator.isEnabled()) return; await delay(100); }
+    throw new Error('等待按钮可用超时');
   };
   for (const [direction, plate, firstWeight, secondWeight] of [['inbound', '川A54321', 30, 10], ['outbound', '川A54322', 10, 30]]) {
     await setWeight(firstWeight);
@@ -252,18 +267,17 @@ try {
           const station = await page.locator('.weighing-station').boundingBox();
           assert.ok(station.y + station.height >= height - 12, '桌面设备区应铺满剩余高度');
           const phase = await page.getByLabel('当前作业状态', { exact: true }).boundingBox();
-          const lookup = await page.getByRole('button', { name: '核对车牌并查找运输', exact: true }).boundingBox();
+          const lookup = await page.getByRole('button', { name: '确认车辆', exact: true }).boundingBox();
           assert.ok(phase.y >= lookup.y + lookup.height, '称重阶段和运输方向应独占一行');
           assert.ok(await page.locator('.workbench-phase').evaluate(el => parseFloat(getComputedStyle(el).fontSize) >= 22), '阶段与方向应醒目显示');
           assert.ok((await page.locator('.plate-entry').boundingBox()).width <= 360, '车牌输入不应随面板拉长');
         }
         if (width === 390) await page.screenshot({ path: resolve(root, '.task/industrial-workbench-mobile.png'), fullPage: true });
-        assert.equal(await page.locator('.weighing-business').count(), 0, '运输表单只应在弹窗内展示');
-        const dialog = await openBusiness();
-        const box = await dialog.boundingBox();
-        assert.ok(box.x >= 0 && box.x + box.width <= width && box.y >= 0 && box.y + box.height <= height, '资料弹窗应完整适配视口');
-        if (width === 1366) assert.ok(box.width >= 1000, '桌面资料使用大弹窗');
-        await closeBusiness();
+        assert.equal(await page.locator('.weighing-business').count(), 0, '运输表单直接在工作台展示');
+        const materialField = page.getByRole('combobox', { name: '搜索物料', exact: true });
+        assert.equal(await materialField.count(), 1, '首磅物料直接在工作台选择');
+        const materialBox = await materialField.boundingBox();
+        assert.ok(materialBox.x >= 0 && materialBox.x + materialBox.width <= width, '工作台资料控件不横向溢出');
       }
       await page.setViewportSize({ width: 1366, height: 768 });
       await page.evaluate(() => scrollTo(0, 0));
@@ -271,53 +285,60 @@ try {
       console.log('browser: industrial camera controls and responsive layout passed');
     }
 
-    // Capturing before selecting master data must remain supported.
+    const firstKind = direction === 'inbound' ? '毛重' : '皮重';
+    const partyLabel = direction === 'inbound' ? '供货方' : '收货方';
+    // 出厂方向先在工作台直接选择资料，再采集并直达核对。
+    if (direction === 'outbound') {
+      await pick('物料', '服务端冒烟高粱');
+      await pick(partyLabel, '服务端个人供运人');
+    }
+    // 采集后直达核对；资料未齐时在核对窗口补齐，不再额外点击“开始核对”。
     await page.getByRole('button', { name: '采集重量', exact: true }).click();
-    await page.getByRole('button', { name: '补齐资料后核对', exact: true }).click();
-    await page.getByRole('dialog', { name: '录入运输资料', exact: true }).waitFor();
-    assert.equal(await page.getByRole('combobox', { name: '搜索物料', exact: true }).evaluate(el => el === document.activeElement), true, '缺资料时应打开弹窗并聚焦缺失字段');
+    let firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
+    await firstReview.waitFor();
     if (direction === 'inbound') {
-      const business = await openBusiness();
-      await business.getByRole('button', { name: '浏览选择物料', exact: true }).click();
-      await page.getByRole('dialog', { name: '选择物料', exact: true }).waitFor();
-      await page.keyboard.press('Escape');
-      assert.equal(await business.isVisible(), true, '关闭资料选择窗口应保留运输弹窗');
-      await business.getByRole('tab', { name: '补充运输信息（选填）', exact: true }).click();
-      await business.getByLabel('司机姓名（选填）', { exact: true }).fill('弹窗录入验证');
-      await closeBusiness();
-      await openBusiness();
-      assert.equal(await business.getByLabel('司机姓名（选填）', { exact: true }).inputValue(), '弹窗录入验证', '关闭重开应保留草稿');
-      await business.getByRole('tab', { name: '基本信息', exact: true }).click();
-    }
-    await pick('物料', '服务端冒烟高粱');
-    await pick(direction === 'inbound' ? '供货方' : '收货方', '服务端个人供运人');
-    if (direction === 'inbound') {
+      await firstReview.getByText(`还缺物料、${partyLabel}`, { exact: true }).waitFor();
+      assert.equal(await firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }).isDisabled(), true, '缺资料不能直接确认');
+      // 关闭后重开保留冻结样本；补充信息在工作台折叠区直接录入。
+      await firstReview.getByRole('button', { name: '关闭核对', exact: true }).click();
+      await page.locator('details.workbench-extra > summary').click();
+      await page.getByLabel('司机姓名（选填）', { exact: true }).fill('工作台直接录入验证');
+      await page.screenshot({ path: resolve(root, '.task/industrial-workbench-inline-business.png'), fullPage: true });
+      await page.getByRole('button', { name: `继续核对首磅（${firstKind}）`, exact: true }).click();
+      firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
+      await firstReview.waitFor();
+      await pickIn(firstReview, '物料', '服务端冒烟高粱');
+      await pickIn(firstReview, partyLabel, '服务端个人供运人', false);
+      await firstReview.getByText(`还缺物料、${partyLabel}`, { exact: true }).waitFor({ state: 'detached' });
+      await firstReview.getByText('工作台直接录入验证', { exact: false }).waitFor();
+      await waitEnabled(firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }));
       const sampleResponse = page.waitForResponse(response => response.url().endsWith('/api/weighing/samples') && response.request().method() === 'POST', { timeout: 25_000 });
-      await page.getByRole('button', { name: '重新采集重量', exact: true }).click();
+      await firstReview.getByRole('button', { name: '重新采集重量', exact: true }).click();
       assert.equal((await (await sampleResponse).json()).data.expiresAt, null, '新采样不设置到期时间');
-    }
-    if (direction === 'inbound') {
-      const business = await openBusiness();
-      await page.screenshot({ path: resolve(root, '.task/industrial-workbench-business-dialog.png'), fullPage: true });
-      await business.getByRole('button', { name: '完成录入并核对', exact: true }).click();
-      assert.equal(await business.isVisible(), false, '开始核对时应关闭资料弹窗');
+      firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
+      await firstReview.waitFor();
       // A successful sample survives time, later vehicle movement and disconnect.
       await delay(31_000);
       await setWeight(29);
       await fetch(`${mockUrl}/api/control`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'disconnect' }) });
       await page.waitForFunction(() => document.body.textContent.includes('Agent 离线'));
-      const review = page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true });
-      assert.equal(await review.isVisible(), true, '设备变化后仍保留核对窗口');
-      assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isEnabled(), true, '设备离线不阻止确认已采集结果');
-      assert.equal(await review.getByRole('alert').count(), 0, '设备变化不使成功采集失效');
+      firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
+      assert.equal(await firstReview.isVisible(), true, '设备变化后仍保留核对窗口');
+      assert.equal(await firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }).isEnabled(), true, '设备离线不阻止确认已采集结果');
+      assert.equal(await firstReview.getByRole('alert').count(), 0, '设备变化不使成功采集失效');
       // Reopening must keep the sampled 30 t, even though live weight is now 29 t.
-      await review.getByRole('button', { name: '关闭核对', exact: true }).click();
-      await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
-      assert.equal((await review.locator('.review-weight').innerText()).replace(/\s+/g, ''), '30吨', '核对使用采集重量，不能使用实时读数');
+      await firstReview.getByRole('button', { name: '关闭核对', exact: true }).click();
+      await page.getByText('已采集待确认', { exact: true }).waitFor();
+      await page.getByRole('button', { name: `继续核对首磅（${firstKind}）`, exact: true }).click();
+      firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
+      assert.equal((await firstReview.locator('.review-weight').innerText()).replace(/\s+/g, ''), '30吨', '核对使用采集重量，不能使用实时读数');
       await page.route('**/api/weighing/scales/WB01/device', route => route.abort(), { times: 1 });
       await delay(1000);
-      assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isEnabled(), true, '状态查询失败不清除已采集结果');
+      assert.equal(await firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }).isEnabled(), true, '状态查询失败不清除已采集结果');
       console.log('browser: frozen capture remains confirmable after weight change, disconnect and failed polling');
+    } else {
+      assert.equal(await firstReview.getByText(/还缺/).count(), 0, '工作台已选资料时核对不再提示缺项');
+      await firstReview.getByText('本次抓拍', { exact: true }).waitFor();
     }
     let correctedIdentity;
     if (direction === 'inbound') {
@@ -461,12 +482,11 @@ try {
   await locate('川A54323');
   await pick('物料', '服务端冒烟高粱'); await pick('供货方', '服务端个人供运人');
   await page.getByRole('button', { name: '采集重量', exact: true }).click();
-  await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
   await page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true }).getByRole('button', { name: '确认首磅（毛重）', exact: true }).click();
   await page.getByRole('heading', { name: '提交结果待核实', exact: true }).waitFor();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '查询上次提交结果', exact: true }).click();
-  await page.getByRole('heading', { name: '首磅已完成', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '首磅已完成 · 等待回磅', exact: true }).waitFor();
   const recovered = (await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54323')}`)).records;
   assert.equal(recovered.length, 1);
   assert.equal((await call(`/api/weighing/tasks/${recovered[0].id}`)).records.length, 1);
@@ -476,14 +496,13 @@ try {
   await page.reload(); await locate('川A54324');
   await pick('物料', '服务端冒烟高粱'); await pick('供货方', '服务端个人供运人');
   await page.getByRole('button', { name: '采集重量', exact: true }).click();
-  await page.getByRole('button', { name: '开始核对首磅（毛重）', exact: true }).click();
   await page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true }).getByRole('button', { name: '确认首磅（毛重）', exact: true }).click();
   await page.getByRole('heading', { name: '提交结果待核实', exact: true }).waitFor();
   await page.getByRole('button', { name: '查询上次提交结果', exact: true }).click();
   await page.getByText(/尚未查到已提交结果，可能仍在处理/).waitFor();
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54324')}`)).total, 0);
   await page.getByRole('button', { name: '按原请求重试', exact: true }).click();
-  await page.getByRole('heading', { name: '首磅已完成', exact: true }).waitFor();
+  await page.getByRole('heading', { name: '首磅已完成 · 等待回磅', exact: true }).waitFor();
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54324')}`)).total, 1);
   await page.getByRole('button', { name: '办理下一辆车', exact: true }).click();
 
@@ -496,8 +515,8 @@ try {
   await page.getByRole('button',{name:'办理下一辆车',exact:true}).click();
   await locate('川A54327');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
-  await page.getByRole('button',{name:'开始核对回磅（皮重）',exact:true}).click();
   let invalidDialog=page.getByRole('dialog',{name:'核对回磅（皮重）',exact:true});
+  await invalidDialog.waitFor();
   const contextRegion=invalidDialog.getByRole('region',{name:'本趟运输核对依据',exact:true});
   assert.equal(await contextRegion.count(),1);
   await invalidDialog.getByRole('button',{name:'下一步：核对最终重量',exact:true}).click();
@@ -505,13 +524,13 @@ try {
   await weightRegion.waitFor();
   await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('0.5');
   await invalidDialog.getByLabel('调整类别（扣减或上调时必填）',{exact:true}).selectOption('WATER');
-  assert.equal(await invalidDialog.getByRole('button',{name:'确认称重并出单',exact:true}).isDisabled(),true);
+  assert.equal(await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).isDisabled(),true);
   assert.match(await invalidDialog.getByRole('alert').last().innerText(),/无法出单：.*请返回.*重新采集/);
   assert.ok((await invalidDialog.boundingBox()).width>=1000);
   await page.setViewportSize({width:390,height:844});
   assert.equal(await invalidDialog.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
   assert.equal(await weightRegion.isVisible(),true);
-  const confirmBox=await invalidDialog.getByRole('button',{name:'确认称重并出单',exact:true}).boundingBox();
+  const confirmBox=await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).boundingBox();
   assert.ok(confirmBox.y>=0&&confirmBox.y+confirmBox.height<=844);
   await page.setViewportSize({width:1366,height:768});
   await invalidDialog.getByRole('button',{name:'上一步',exact:true}).click();
@@ -519,16 +538,16 @@ try {
   await setWeight(1.2);
   // Live changes preserve the old sample; replacing it is now explicit.
   await page.getByRole('button',{name:'重新采集重量',exact:true}).click();
-  await page.getByRole('button',{name:'开始核对回磅（皮重）',exact:true}).click();
   invalidDialog=page.getByRole('dialog',{name:'核对回磅（皮重）',exact:true});
+  await invalidDialog.waitFor();
   await invalidDialog.getByRole('button',{name:'下一步：核对最终重量',exact:true}).click();
   await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('-0.5');
   assert.match(await invalidDialog.getByRole('alert').last().innerText(),/正常出单只能扣减净重/);
   await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('0.3');
   await invalidDialog.getByLabel('调整类别（扣减或上调时必填）',{exact:true}).selectOption('WATER');
   await invalidDialog.getByText('净重调整：0.3 吨（扣减）',{exact:true}).waitFor();
-  await invalidDialog.getByRole('button',{name:'确认称重并出单',exact:true}).click();
-  await page.getByRole('heading',{name:'回磅已完成',exact:true}).waitFor();
+  await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).click();
+  await page.getByRole('heading',{name:/^回磅已完成/,exact:true}).waitFor();
   const correctedTask=(await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54327')}`)).records[0];
   const correctedTicket=(await call(`/api/weighing/tickets?taskId=${correctedTask.id}`)).records[0];
   assert.deepEqual([correctedTicket.finalGross,correctedTicket.finalTare,correctedTicket.finalNet,correctedTicket.netAdjustment],['5','1.2','3.5','0.3']);
@@ -545,10 +564,13 @@ try {
   await page.getByRole('textbox',{name:'车牌号码',exact:true}).fill('苏ad12345');
   assert.equal(await page.getByRole('textbox',{name:'车牌号码',exact:true}).inputValue(),'AD12345');
   assert.ok(await page.getByRole('textbox',{name:'车牌号码',exact:true}).evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollLeft === 0), '新能源七位后缀应完整显示，无需横向滚动');
-  await page.getByRole('button',{name:'核对车牌并查找运输',exact:true}).click();
+  await page.getByRole('button',{name:'确认车辆',exact:true}).click();
   await setDirection('outbound');
   await pick('物料','服务端冒烟高粱'); await pick('收货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
+  const recognitionReview = page.getByRole('dialog',{name:'核对首磅（皮重）',exact:true});
+  await recognitionReview.waitFor();
+  await recognitionReview.getByRole('button',{name:'关闭核对',exact:true}).click();
   for(const label of ['小窗','大窗','标准']) await page.getByRole('button',{name:label,exact:true}).click();
   const enlargeCapture = page.getByRole('button',{name:/放大抓拍/}).first();
   await enlargeCapture.click();
@@ -600,11 +622,9 @@ try {
   await page.goto(`${web}/weighing/workbench?scale=WB01`); await locate('川A54325');
   await pick('物料','服务端冒烟高粱'); await pick('供货方','服务端个人供运人');
   await page.getByRole('button',{name:'采集重量',exact:true}).click();
-  await page.getByRole('button',{name:'开始核对首磅（毛重）',exact:true}).waitFor();
-  await page.getByRole('button',{name:'开始核对首磅（毛重）',exact:true}).click();
   await readerPage.goto(`${web}/weighing/workbench?scale=WB01`);
   await readerPage.getByRole('textbox',{name:'车牌号码',exact:true}).fill('川A54326');
-  await readerPage.getByRole('button',{name:'核对车牌并查找运输',exact:true}).click();
+  await readerPage.getByRole('button',{name:'确认车辆',exact:true}).click();
   assert.equal(await readerPage.getByRole('button',{name:'采集重量',exact:true}).isDisabled(),true,'其他账号持有会话时必须禁用采集');
   await readerPage.locator('#takeover-reason').fill('现场操作员接管验证');
   await readerPage.getByRole('button',{name:'接管操作权',exact:true}).click();

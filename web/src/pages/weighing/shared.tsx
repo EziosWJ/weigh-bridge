@@ -1,5 +1,5 @@
 import { WorkbenchLink } from "@/components/common/workbench-link";
-import { useCallback, useMemo, useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { ArrowRight, Info } from 'lucide-react';
 import { Field } from '@/components/common/field';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
@@ -8,14 +8,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { weighingApi } from '@/api/weighing';
-import { useAuthStore } from '@/store/auth-store';
 import { useWeighingStore } from '@/store/weighing-store';
 import { beijingTime } from '@/lib/weighing/query';
 import type { HistoryEntry, TaskInput, WeighingFilter } from '@/types/weighing';
-import { roleLabels, partyRoleLabels, partyNatureLabels } from '@/types/weighing';
+import { roleLabels } from '@/types/weighing';
 import { PlateInput } from './plate-input';
 import { WeighingLookup } from './lookup-field';
+import { supplementarySummary, useBusinessOptions } from './business-options';
 import './list.css';
 
 export function ListDate({ value }: { value: string }) {
@@ -33,37 +32,85 @@ export function DeviceBanner({ compact = false }: { compact?: boolean }) {
   </aside>;
 }
 
-export function BusinessFields({ value, onChange, lockDirection = false, hidePlate = false, compact = false, onPatch, help, tab, onTabChange }: { onPatch?: (patch: Partial<TaskInput>) => void; value: TaskInput; onChange: (value: TaskInput) => void; lockDirection?: boolean; hidePlate?: boolean; compact?: boolean; help?: ReactNode; tab?: string; onTabChange?: (value: string) => void }) {
+/** 运输方向控件：工作台简单行、标准表单字段和带说明的资料弹窗三种排布。 */
+export function BusinessDirectionControl({ value, update, lockDirection = false, variant = 'field' }: {
+  value: TaskInput;
+  update: (patch: Partial<TaskInput>) => void;
+  lockDirection?: boolean;
+  variant?: 'field' | 'simple' | 'panel';
+}) {
+  const inbound = value.direction === 'inbound';
+  const first = inbound ? '毛重' : '皮重';
+  const second = inbound ? '皮重' : '毛重';
+  const title = inbound ? '入厂卸货 · 先毛后皮' : '出厂装货 · 先皮后毛';
+  const detail = inbound
+    ? '车辆进厂后先称车辆和货物的总重量（毛重），卸货完成后再称空车重量（皮重）。'
+    : '车辆进厂后先称空车重量（皮重），装货完成后再称车辆和货物的总重量（毛重）。';
+  const note = '首磅确认后建立运输任务；回磅确认后生成正式过磅单。净重 = 毛重 − 皮重。';
+  const select = <Select id="business-direction" aria-label="运输方向" className={variant === 'panel' ? 'w-auto min-w-[140px]' : undefined} value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>;
+  if (variant === 'simple') return <div className="workbench-direction">
+    <label htmlFor="business-direction" className="block text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
+    {select}
+    <p className="text-xs text-text-tertiary">{inbound ? '先毛后皮' : '先皮后毛'} · 首磅{first}，回磅{second}{lockDirection ? ' · 方向已锁定' : ''}</p>
+  </div>;
+  if (variant === 'panel') return <div className="business-direction-row md:col-span-2">
+    <div className="business-direction-control">
+      <label htmlFor="business-direction" className="shrink-0 text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
+      {select}
+      <span className="business-direction-chip">{inbound ? '先毛后皮' : '先皮后毛'}</span>
+      {lockDirection && <span className="business-direction-lock">方向已锁定</span>}
+    </div>
+    <div className="business-direction-help" role="note">
+      <Info className="h-4 w-4" aria-hidden />
+      <div>
+        <strong>{title}</strong>
+        <p>{lockDirection ? '首次称重后方向不可变更；回磅沿用原方向继续办理。' : detail}</p>
+        <div className="business-direction-steps" aria-label="称重顺序">
+          <span className="business-direction-step"><b>首磅</b>{first}</span>
+          <ArrowRight className="h-3.5 w-3.5 business-direction-arrow" aria-hidden />
+          <span className="business-direction-step is-second"><b>回磅</b>{second}</span>
+        </div>
+        <p>{note}</p>
+      </div>
+    </div>
+  </div>;
+  return <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定；回磅沿用原方向，净重 = 毛重 − 皮重。' : '入厂卸货先称毛重、卸货后称皮重；出厂装货先称皮重、装货后称毛重。首磅建立任务，回磅确认后出单；净重 = 毛重 − 皮重。'}>{select}</Field>;
+}
+
+/** 首磅现场必填项：物料和按方向限定的供收方。 */
+export function BusinessRequiredFields({ value, update, hidePlate = true, compact = false }: {
+  value: TaskInput;
+  update: (patch: Partial<TaskInput>) => void;
+  hidePlate?: boolean;
+  compact?: boolean;
+}) {
   const legacyPlate = useRef(value.plate);
-  const { materials, parties } = useWeighingStore(s => s.data);
-  const update = (patch: Partial<TaskInput>) => onPatch ? onPatch(patch) : onChange({ ...value, ...patch });
-  const materialOptions = useMemo(() => materials.filter(m => m.enabled || m.id === value.materialId).map(m => ({ id: m.id, name: m.name, code: m.code, details: [m.spec || '未填写规格', m.code], tags: ['吨'], disabled: !m.enabled })), [materials, value.materialId]);
-  const partyOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r])], disabled: !p.enabled })), [parties, value.partyId, value.direction]);
-  const carrierOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.carrierId) && p.roles.includes('carrier')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], '承运商'], disabled: !p.enabled })), [parties, value.carrierId]);
-  const loadMaterials = useCallback(async () => {
-    const token = useAuthStore.getState().token;
-    const materials = await weighingApi.materials();
-    if (token !== useAuthStore.getState().token) throw new Error('登录状态已变化，请重新打开选择框');
-    useWeighingStore.setState(s => ({ data: { ...s.data, materials } }));
-    return materials.filter(m => m.enabled || m.id === value.materialId).map(m => ({ id: m.id, name: m.name, code: m.code, details: [m.spec || '未填写规格', m.code], tags: ['吨'], disabled: !m.enabled }));
-  }, [value.materialId]);
-  const loadParties = useCallback(async () => {
-    const token = useAuthStore.getState().token;
-    const parties = await weighingApi.parties();
-    if (token !== useAuthStore.getState().token) throw new Error('登录状态已变化，请重新打开选择框');
-    useWeighingStore.setState(s => ({ data: { ...s.data, parties } }));
-    return parties;
-  }, []);
-  const loadPartyOptions = useCallback(async () => (await loadParties())
-    .filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer'))
-    .map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r])], disabled: !p.enabled })), [loadParties, value.partyId, value.direction]);
-  const loadCarrierOptions = useCallback(async () => (await loadParties())
-    .filter(p => (p.enabled || p.id === value.carrierId) && p.roles.includes('carrier'))
-    .map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], '承运商'], disabled: !p.enabled })), [loadParties, value.carrierId]);
+  const { materialOptions, partyOptions, loadMaterials, loadPartyOptions } = useBusinessOptions(value);
+  const partyLabel = value.direction === 'inbound' ? '供货方' : '收货方';
+  const material = <WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials} onChange={materialId => update({ materialId })} />;
+  const party = <WeighingLookup label={partyLabel} value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} onChange={partyId => { const p = useWeighingStore.getState().data.parties.find(item => item.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} />;
+  if (compact) return <>
+    {!hidePlate && <div className="workbench-compact-field"><span>车牌<span className="text-error">*</span></span><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></div>}
+    <div className="workbench-compact-field"><span>物料<span className="text-error">*</span></span>{material}</div>
+    <div className="workbench-compact-field"><span>{partyLabel}<span className="text-error">*</span></span>{party}</div>
+  </>;
+  return <>
+    {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></Field>}
+    <Field label="物料" required>{material}</Field>
+    <div className="min-w-0">
+      <Field label={partyLabel} required>{party}</Field>
+    </div>
+  </>;
+}
+
+/** 选填补充资料；工作台折叠展示，资料表单直接展开。 */
+export function BusinessSupplementaryFields({ value, update }: {
+  value: TaskInput;
+  update: (patch: Partial<TaskInput>) => void;
+}) {
+  const { parties, carrierOptions, loadCarrierOptions } = useBusinessOptions(value);
   const party = parties.find(p => p.id === value.partyId);
-  const carrier = parties.find(p => p.id === value.carrierId);
-  const supplementSummary = [carrier && `承运：${carrier.name}`, value.contactName && `联系人：${value.contactName}`, value.driver && `司机：${value.driver}`, value.driverPhone && `司机电话：${value.driverPhone}`, value.remark && `备注：${value.remark}`].filter(Boolean).join(' · ') || '按需填写承运方、联系人、司机或备注';
-  const supplementary = <>
+  return <>
     <Field label="承运方（选填）" help="可与供收方相同，须具有承运商身份"><WeighingLookup label="承运方" value={value.carrierId ?? ''} options={carrierOptions} loadOptions={loadCarrierOptions} onChange={carrierId => update({ carrierId })} /></Field>
     {!!party?.contacts.length && <Field label="选择主体联系人" htmlFor="business-contact"><Select id="business-contact" value={party.contacts.find(c => c.name === value.contactName && c.phone === value.contactPhone)?.id ?? ''} onChange={e => { const contact = party.contacts.find(c => c.id === e.target.value); if (contact) update({ contactName: contact.name, contactPhone: contact.phone }); }}><option value="">手工填写本趟联系信息</option>{party.contacts.map(c => <option key={c.id} value={c.id}>{c.name} · {c.phone || '无电话'}{c.isDefault ? '（默认）' : ''}</option>)}</Select></Field>}
     <Field label="本趟联系人（选填）" htmlFor="business-contact-name"><Input id="business-contact-name" value={value.contactName ?? ''} onChange={e => update({ contactName: e.target.value })} /></Field>
@@ -72,47 +119,24 @@ export function BusinessFields({ value, onChange, lockDirection = false, hidePla
     <Field label="司机电话（选填）" htmlFor="business-driver-phone"><Input id="business-driver-phone" type="tel" value={value.driverPhone ?? ''} onChange={e => update({ driverPhone: e.target.value })} /></Field>
     <Field label="备注（选填）" htmlFor="business-remark"><Textarea id="business-remark" value={value.remark} onChange={e => update({ remark: e.target.value })} rows={2} /></Field>
   </>;
-  const directionInbound = value.direction === 'inbound';
-  const directionFirst = directionInbound ? '毛重' : '皮重';
-  const directionSecond = directionInbound ? '皮重' : '毛重';
-  const directionTitle = directionInbound ? '入厂卸货 · 先毛后皮' : '出厂装货 · 先皮后毛';
-  const directionDetail = directionInbound
-    ? '车辆进厂后先称车辆和货物的总重量（毛重），卸货完成后再称空车重量（皮重）。'
-    : '车辆进厂后先称空车重量（皮重），装货完成后再称车辆和货物的总重量（毛重）。';
-  const directionNote = '首磅确认后建立运输任务；回磅确认后生成正式过磅单。净重 = 毛重 − 皮重。';
+}
+
+export function BusinessFields({ value, onChange, lockDirection = false, hidePlate = false, compact = false, onPatch, help, tab, onTabChange }: { onPatch?: (patch: Partial<TaskInput>) => void; value: TaskInput; onChange: (value: TaskInput) => void; lockDirection?: boolean; hidePlate?: boolean; compact?: boolean; help?: ReactNode; tab?: string; onTabChange?: (value: string) => void }) {
+  const update = (patch: Partial<TaskInput>) => onPatch ? onPatch(patch) : onChange({ ...value, ...patch });
+  const { parties } = useBusinessOptions(value);
+  const legacyPlate = useRef(value.plate);
   const basic = <>
     {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></Field>}
-    {compact ? <div className="business-direction-row md:col-span-2">
-      <div className="business-direction-control">
-        <label htmlFor="business-direction" className="shrink-0 text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
-        <Select id="business-direction" className="w-auto min-w-[140px]" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select>
-        <span className="business-direction-chip">{directionInbound ? '先毛后皮' : '先皮后毛'}</span>
-        {lockDirection && <span className="business-direction-lock">方向已锁定</span>}
-      </div>
-      <div className="business-direction-help" role="note">
-        <Info className="h-4 w-4" aria-hidden />
-        <div>
-          <strong>{directionTitle}</strong>
-          <p>{lockDirection ? '首次称重后方向不可变更；回磅沿用原方向继续办理。' : directionDetail}</p>
-          <div className="business-direction-steps" aria-label="称重顺序">
-            <span className="business-direction-step"><b>首磅</b>{directionFirst}</span>
-            <ArrowRight className="h-3.5 w-3.5 business-direction-arrow" aria-hidden />
-            <span className="business-direction-step is-second"><b>回磅</b>{directionSecond}</span>
-          </div>
-          <p>{directionNote}</p>
-        </div>
-      </div>
-    </div> : <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定；回磅沿用原方向，净重 = 毛重 − 皮重。' : '入厂卸货先称毛重、卸货后称皮重；出厂装货先称皮重、装货后称毛重。首磅建立任务，回磅确认后出单；净重 = 毛重 − 皮重。'}><Select id="business-direction" value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">入厂卸货</option><option value="outbound">出厂装货</option></Select></Field>}
-    <Field label="物料" required><WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials} onChange={materialId => update({ materialId })} /></Field>
-    <div className="min-w-0">
-    <Field label={value.direction === 'inbound' ? '供货方' : '收货方'} required><WeighingLookup label={value.direction === 'inbound' ? '供货方' : '收货方'} value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} onChange={partyId => { const p = useWeighingStore.getState().data.parties.find(p => p.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} /></Field>
-    </div>
+    <BusinessDirectionControl value={value} update={update} lockDirection={lockDirection} variant={compact ? 'panel' : 'field'} />
+    <BusinessRequiredFields value={value} update={update} hidePlate />
   </>;
+  const supplementary = <BusinessSupplementaryFields value={value} update={update} />;
+  const summary = supplementarySummary(value, parties);
   if (!compact) return <div className="grid gap-x-4 md:grid-cols-2">{basic}{supplementary}</div>;
   return <SectionTabs label="本趟运输资料" value={tab} onValueChange={onTabChange} items={[
     { value: 'basic', label: '基本信息', content: <div className="grid gap-x-4 md:grid-cols-2">{basic}</div> },
     { value: 'supplementary', label: '补充运输信息（选填）', content: <>
-      <p aria-label="补充运输信息摘要" className="mb-4 break-words text-xs text-text-secondary">{supplementSummary}</p>
+      <p aria-label="补充运输信息摘要" className="mb-4 break-words text-xs text-text-secondary">{summary}</p>
       <div className="grid gap-x-4 md:grid-cols-2">{supplementary}</div>
     </> },
     ...(help ? [{ value: 'help', label: '找不到资料？', content: help }] : []),

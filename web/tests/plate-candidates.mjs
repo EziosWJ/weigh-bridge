@@ -51,15 +51,15 @@ try {
     await page.getByRole('button', { name: /晋A99999/ }).waitFor({ timeout: 6000 });
     assert.equal(await input.inputValue(), 'A12346', '人工输入不能被覆盖');
     assert.equal(lookupCount, 0);
-    await page.getByRole('button', { name: '核对车牌并查找运输' }).click();
-    await page.getByText('未找到已有运输任务，请录入本趟资料。').waitFor();
+    await page.getByRole('button', { name: '确认车辆' }).click();
+    await page.getByText('已确认车辆，未找到已有运输任务，请现场选择本趟资料。').waitFor();
     assert.equal(lookupCount, 1);
     assert.equal(confirmed.confirmedPlate, '晋A12346');
     assert.equal(confirmed.evidence.candidate, '晋A12345');
     assert.equal(confirmed.evidence.corrected, true);
     assert.deepEqual(confirmed.evidence.sourceEventRecordIds, [1]);
     await page.getByRole('button', { name: '采集重量', exact: true }).click();
-    await page.getByText('重量已采集，确认前请选择物料。').waitFor();
+    await page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true }).getByText('还缺物料、供货方', { exact: true }).waitFor();
     assert.equal(sampleInput.plateEvidence.confirmationId, 77);
     events = [...events, item(4, '晋A88888', '相机四')];
     await page.getByRole('button', { name: /晋A88888/ }).waitFor({ timeout: 6000 });
@@ -152,7 +152,7 @@ try {
   await delay(500);
   fallbackEvent = [makeItem(1, '晋A12345')];
   await fallback.waitForFunction(() => document.querySelector('#workbench-plate')?.value === 'A12345');
-  await fallback.getByRole('button', { name: '核对车牌并查找运输' }).click();
+  await fallback.getByRole('button', { name: '确认车辆' }).click();
   await fallback.getByText('识别来源不可用，已按人工核对车牌办理。').waitFor();
   assert.equal(await fallback.getByRole('button', { name: '采集重量', exact: true }).isEnabled(), true, '来源失效后人工办理保持可用');
   await fallback.close();

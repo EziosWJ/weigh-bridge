@@ -50,10 +50,14 @@ try {
   await page.waitForFunction(() => JSON.parse(document.querySelector('output').textContent).sampleReady);
   assert.equal(captures, 1, '应经过真实 store 向 /samples 发起采集');
   assert.equal(confirmations, 0, '采集不能自动确认正式称重');
-  const business = page.getByRole('dialog', { name: '录入运输资料', exact: true });
-  if (await business.isVisible()) await page.getByRole('button', { name: '关闭运输资料', exact: true }).click();
-  await page.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
-  await page.getByRole('img', { name: '装车区抓拍', exact: true }).waitFor();
+  const review = page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true });
+  await review.waitFor();
+  await review.getByText('还缺物料、供货方', { exact: true }).waitFor();
+  const photos = review.getByRole('group', { name: '本次抓拍图片', exact: true });
+  await photos.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
+  await photos.getByRole('img', { name: '装车区抓拍', exact: true }).waitFor();
+  assert.equal(await review.getByRole('button', { name: '确认首磅（毛重）', exact: true }).isDisabled(), true, '缺资料不能确认');
+  await review.getByRole('button', { name: '关闭核对', exact: true }).click();
 
   failCapture = true;
   await open('ready');
@@ -73,8 +77,11 @@ try {
   await capture.click();
   await page.waitForFunction(() => JSON.parse(document.querySelector('output').textContent).sampleReady);
   assert.equal(JSON.parse(await page.locator('output').textContent()).images, 0);
-  await page.getByText('本次无抓拍图片，请核对现场车辆和重量。', { exact: true }).waitFor();
+  const optionalReview = page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true });
+  await optionalReview.waitFor();
+  await optionalReview.getByText('本次未强制抓拍，允许无图确认；请对照现场车辆核对。', { exact: true }).waitFor();
   assert.equal(confirmations, 0, '无图采集仍不能自动确认');
+  await optionalReview.getByRole('button', { name: '关闭核对', exact: true }).click();
   await open('optional-review');
   const confirm = page.getByRole('button', { name: '确认首磅（毛重）', exact: true });
   await confirm.waitFor();

@@ -18,7 +18,7 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import type { CaptureSnapshot, NetAdjustmentInput, WeightValues } from '@/types/weighing';
-import { formatWeightValue, netAdjustedWeights, netAdjustmentText, resolveNetAdjustment } from '@/lib/weighing/weights';
+import { formatWeight, formatWeightValue, netAdjustedWeights, netAdjustmentText, resolveNetAdjustment } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
 import { StatusTag } from '@/components/common/status-tag';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
@@ -36,6 +36,7 @@ export interface WeighingReviewValue {
   kind: string;
   firstWeight?: string;
   original?: WeightValues;
+  expected?: WeightValues;
   capture?: CaptureSnapshot;
   supplementary: { label: string; value: string }[];
 }
@@ -88,13 +89,16 @@ function supplementaryIcon(label: string) {
 }
 
 /** 集中核对保留本次快照；失效后保留内容供查看，同时禁止提交。 */
-export function WeighingReviewDialog({ value, title, invalidReason = '', submitting = false, submitError = '', onCancel, onMismatch, onConfirm }: {
+export function WeighingReviewDialog({ value, title, missing = [], businessEditor, invalidReason = '', submitting = false, submitError = '', onCancel, onRecapture, onMismatch, onConfirm }: {
   value: WeighingReviewValue;
   title: string;
+  missing?: string[];
+  businessEditor?: ReactNode;
   invalidReason?: string;
   submitting?: boolean;
   submitError?: string;
   onCancel: () => void;
+  onRecapture?: () => void;
   onMismatch: () => void;
   onConfirm: (netAdjustment?: NetAdjustmentInput) => void;
 }) {
@@ -120,7 +124,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
     }
   }
   const requiresImage = !!value.capture && value.capture.captureRequired !== false && value.capture.imageStatus !== 'disabled';
-  const reviewReady = !!value.capture && (!requiresImage || imageReady) && !invalidReason;
+  const reviewReady = !!value.capture && (!requiresImage || imageReady) && !invalidReason && missing.length === 0;
   const finalReady = reviewReady && !adjustmentError;
   const imageCount = value.capture ? value.capture.images?.length || (value.capture.imageSrc ? 1 : 0) : 0;
   const capturePolicy = value.capture?.captureRequired === false ? '非强制抓拍' : '强制抓拍';
@@ -151,6 +155,11 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
           <TriangleAlert className="h-5 w-5" aria-hidden />
           <div><strong>当前核对内容已失效</strong><p>{invalidReason} 当前显示原核对内容，不能提交；请关闭窗口后重新采集。</p></div>
         </div>}
+        {!invalidReason && missing.length > 0 && <div className="review-missing" role="status">
+          <TriangleAlert className="h-5 w-5" aria-hidden />
+          <div><strong>还缺{missing.join('、')}</strong><p>重量与抓拍已冻结；补齐以下资料后可直接确认，无需重新采集。</p></div>
+        </div>}
+        {!invalidReason && missing.length > 0 && businessEditor && <section className="review-business-fill" aria-label="补齐本趟资料">{businessEditor}</section>}
 
         <section className="review-summary" aria-label="本次称重摘要">
           <div className="review-hero review-hero--vehicle">
@@ -197,6 +206,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
                 <ReviewFact icon={<Package className="h-4 w-4" aria-hidden />} label="物料及规格／编码" value={value.material} wide />
                 <ReviewFact icon={<Building2 className="h-4 w-4" aria-hidden />} label={value.partyLabel} value={value.party} wide />
                 {value.firstWeight && <ReviewFact icon={<Scale className="h-4 w-4" aria-hidden />} label="首次称重依据" value={value.firstWeight} wide emphasis />}
+                {value.expected && <ReviewFact icon={<Scale className="h-4 w-4" aria-hidden />} label="预计净重（未出单）" value={formatWeight(value.expected.net)} wide emphasis />}
               </div>
             </ReviewSubsection>
             <ReviewSubsection title="补充运输信息" extra="选填">
@@ -223,6 +233,7 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
       <DialogFooter className="weighing-review-footer">
         <div className="review-footer-status">
           {submitting && <p role="status" className="review-footer-info">正在保存称重，请勿关闭窗口…</p>}
+          {!submitting && missing.length > 0 && <p className="review-footer-info">补齐{missing.join('、')}后可直接确认，重量与图片无需重新采集。</p>}
           {!submitting && requiresImage && !imageReady && <p className="review-footer-info">正在加载本次抓拍图片…</p>}
           {invalidReason && <p className="review-footer-alert">核对已失效，请返回重新采集。</p>}
           {showFinal && adjustmentError && <p role="alert" className="review-footer-error">无法出单：{adjustmentError}</p>}
@@ -232,16 +243,18 @@ export function WeighingReviewDialog({ value, title, invalidReason = '', submitt
             <div className="review-final-item"><span>最终皮重</span><strong>{formatWeightValue(calculatedWeights.tare)}<small>吨</small></strong></div>
             <div className="review-final-item review-final-item--net"><span>最终净重</span><strong>{formatWeightValue(calculatedWeights.net)}<small>吨</small></strong></div>
             <p className="review-deduction-line">净重调整：{netAdjustmentText(resolvedAdjustment)}</p>
-          </div> : <div className="review-confirm-note"><FileCheck2 className="h-4 w-4" aria-hidden /><span>{second ? '下一步核对原始重量并录入净重调整；确认后才生成正式单据。' : `确认后保存首磅（${value.kind}）并建立运输任务。`}</span></div>}
+          </div> : <div className="review-confirm-note"><FileCheck2 className="h-4 w-4" aria-hidden /><span>{second ? '下一步核对原始重量并录入净重调整；确认后才生成正式单据。' : `确认后保存首磅（${value.kind}）并建立运输任务。`} 请同时确认车辆已完全上磅、现场与资料一致。</span></div>}
         </div>
         <div className="review-actions">
           {showFinal ? <>
             <Button size="lg" disabled={submitting} onClick={() => setStep('review')}><ArrowLeft className="h-4 w-4" aria-hidden />上一步</Button>
+            {onRecapture && <Button size="lg" disabled={submitting} onClick={onRecapture}>重新采集重量</Button>}
             <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!finalReady || submitting} aria-busy={submitting} onClick={() => { if (finalReady && !submitting) onConfirm(resolvedAdjustment === 0 ? undefined : netAdjustment); }}>
-              <Check className="h-4 w-4" aria-hidden />{submitting ? '正在保存…' : '确认称重并出单'}
+              <Check className="h-4 w-4" aria-hidden />{submitting ? '正在保存…' : '确认回磅并出单'}
             </Button>
           </> : <>
             <Button size="lg" disabled={submitting} onClick={invalidReason ? onCancel : onMismatch}><ArrowLeft className="h-4 w-4" aria-hidden />{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
+            {onRecapture && <Button size="lg" disabled={submitting} onClick={onRecapture}>重新采集重量</Button>}
             {second ? <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!reviewReady || submitting} onClick={() => { if (reviewReady && !submitting) setStep('final'); }}>
               <ArrowRight className="h-4 w-4" aria-hidden />下一步：核对最终重量
             </Button> : <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!reviewReady || submitting} onClick={() => { if (reviewReady && !submitting) onConfirm(); }}>
