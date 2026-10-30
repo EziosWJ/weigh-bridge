@@ -48,7 +48,7 @@ func (s *Service) verifyCameraRuntime(c Config) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return errors.New("Agent 未确认采用新的摄像头配置，已停止切换并尝试回退")
+			return errors.New("Agent 未确认启用新的设备配置（运行配置摘要未更新），已停止切换并尝试回退")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

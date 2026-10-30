@@ -215,7 +215,11 @@ func ReadEnvironment(path string, cfg Config) (Config, error) {
 
 // ConfigDigest lets maintenance compare the running process with agent.env
 // without exposing the connection key in heartbeat files or API responses.
+// Display metadata (site/scale code and names) comes from the Server, not from
+// the device environment: a legacy or hand-written agent.env may still carry it,
+// and it must not make an applied configuration look unloaded.
 func ConfigDigest(c Config) string {
+	c.SiteCode, c.SiteName, c.ScaleName = "", "", ""
 	data, _ := json.Marshal(c)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
