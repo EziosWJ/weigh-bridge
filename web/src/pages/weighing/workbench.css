@@ -54,7 +54,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .workbench-notice { border-left: 3px solid var(--color-warning); overflow-wrap: anywhere; }
 .weighing-station { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(420px, 1fr); align-items: stretch; gap: 8px; }
 .weighing-camera, .weighing-console, .weighing-business { min-width: 0; }
-.weighing-camera, .weighing-console > section, .weighing-business > section { border: 1px solid var(--color-border); border-radius: 9px; background: linear-gradient(115deg, #152d3d, #0e202e 70%); box-shadow: inset 0 1px #ffffff08; }
+.weighing-camera, .weighing-console > section, .weighing-business > section { border: 1px solid var(--color-border); border-radius: 9px; background: #102331; }
 .weighing-camera { display: flex; flex-direction: column; overflow: hidden; }
 .weighing-camera > div { display: flex; flex: 1; flex-direction: column; padding: 0; }
 .workbench-camera-toolbar { min-height: 56px; border-bottom: 1px solid var(--color-border); }
@@ -108,7 +108,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .plate-candidates .plate-candidate:disabled { border-color: var(--color-border); color: var(--color-text-tertiary); }
 .plate-entry { gap: 8px; }
 .weighing-workbench .plate-entry > button { height: 48px; background: #1069a8; border-color: #3aaee9; color: white; }
-.weighing-workbench .plate-number { --plate-cell-width: 36px; flex: 0 1 auto; min-width: 0; max-width: 100%; height: 48px; background-color: #091b28; font-size: 24px; }
+.weighing-workbench .plate-number { flex: 0 1 auto; min-width: 0; max-width: 100%; height: 48px; background-color: #091b28; font-size: 24px; }
 .workbench-phase { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 8px; padding: 8px 12px; border-left: 3px solid var(--color-info); background: var(--color-info-background); font-size: 22px; line-height: 1.4; font-weight: 600; }
 .workbench-phase strong { color: var(--color-info); }
 .workbench-phase > span { padding-left: 12px; border-left: 1px solid var(--color-info-border); }
@@ -128,7 +128,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .instrument-source { line-height: 1.6; }
 .workbench-current-action > div { padding: 12px; }
 .workbench-current-action [aria-label='当前称重操作'] > button, .workbench-current-action [aria-label='当前称重操作'] > div > button { min-height: 48px; font-size: 16px; }
-.workbench-current-action button.bg-primary { background: linear-gradient(100deg, #078ac4, #1766dc); border-color: #4dc3f2; color: #fff; box-shadow: 0 3px 14px #0389e221; }
+.workbench-current-action button.bg-primary { background: #168fe5; color: #fff; }
 .workbench-current-action button.bg-primary:hover { filter: brightness(1.12); }
 .workbench-current-action [role='alert'] { border-left: 3px solid var(--color-warning); padding-left: 12px; }
 .weighing-business > section > header { padding: 12px 20px; border-bottom: 1px solid var(--color-border); }
@@ -205,7 +205,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .workbench-business-dialog .weighing-business [role='tabpanel'] > .grid { grid-template-columns: minmax(0, 1fr); }
 }
 
-@media (max-width: 639px) { .weighing-workbench .plate-number { --plate-cell-width: clamp(24px, calc((100vw - 174px) / 7), 29px); } .workbench-phase { font-size: 20px; } }
+@media (max-width: 639px) { .workbench-phase { font-size: 20px; } }
 
 /* 工作台过磅单快速查询抽屉 */
 .ticket-drawer {
@@ -358,74 +358,45 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 
 .review-summary {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.15fr) minmax(180px, .7fr);
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-bottom: 12px;
+  border: 1px solid #315065;
+  border-radius: 6px;
+  background: #0b1d29;
 }
 .review-hero {
-  position: relative;
   min-width: 0;
-  overflow: hidden;
-  padding: 14px 16px;
-  border: 1px solid #315065;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #132f40, #0c202d);
+  padding: 10px 14px;
 }
-.review-hero::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
-  background: #168fe5;
-}
-.review-hero--weight { border-color: #2b6380; background: linear-gradient(135deg, #0e2b3a, #081a24); }
-.review-hero--weight::after { background: #3ce0f5; }
-.review-hero--stage::after { background: #41d8a0; }
+.review-hero--weight { border-left: 1px solid #29485c; }
 .review-hero-label { display: flex; align-items: center; gap: 6px; color: #91aabb; font-size: 12px; line-height: 18px; }
 .review-hero-label svg { flex-shrink: 0; color: #65d9fb; }
 .review-plate {
-  margin-top: 8px;
+  margin-top: 4px;
   color: #fff;
-  font-size: clamp(26px, 3.2vw, 40px);
+  font-size: 30px;
   font-weight: 700;
   letter-spacing: .04em;
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
 .review-plate:focus { outline: none; }
-.review-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.review-chip { border: 1px solid #315065; border-radius: 4px; padding: 1px 7px; color: #afc5d5; font-size: 12px; line-height: 18px; }
-.review-chip--kind { border-color: #24617b; background: #10344a; color: #65d9fb; }
 .review-weight {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin-top: 6px;
+  margin-top: 4px;
   color: #3ce0f5;
   font-family: Bahnschrift, 'DIN Alternate', 'Arial Narrow', sans-serif;
-  font-size: clamp(42px, 5vw, 58px);
+  font-size: 38px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 .review-weight > span { color: #91aabb; font-family: inherit; font-size: 16px; font-weight: 500; }
-.review-weight-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; color: #afc5d5; font-size: 12px; line-height: 18px; }
-.review-stable { display: inline-flex; align-items: center; gap: 4px; color: #41d8a0; }
-.review-stable svg { flex-shrink: 0; }
-.review-stage { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.review-stage strong { color: #edf8ff; font-size: 24px; line-height: 1.2; }
-.review-stage > span { color: #afc5d5; font-size: 12px; line-height: 18px; }
-.review-stage-step { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: #91aabb; font-size: 11px; }
-.review-stage-step > span:not(:last-child) {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border: 1px solid #315065;
-  border-radius: 50%;
-}
-.review-stage-step > span.active { border-color: #3ce0f5; background: #10344a; color: #3ce0f5; }
-.review-stage-step > span.done { border-color: #24634f; background: #10382f; color: #41d8a0; }
+.review-compact-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 12px; padding: 9px 14px; border: 1px solid #315065; border-radius: 6px; background: #0b1d29; color: #afc5d5; font-size: 13px; }
+.review-compact-summary strong { color: #edf8ff; font-size: 18px; }
+.review-compact-summary b { color: #edf8ff; font-variant-numeric: tabular-nums; }
 
 .review-main { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; min-width: 0; gap: 12px; }
 .review-section { overflow: hidden; border: 1px solid #315065; border-radius: 8px; background: #0b1d29; }
@@ -443,44 +414,29 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .review-section-title h3 { color: #edf8ff; font-size: 15px; font-weight: 600; }
 .review-section-extra { flex-shrink: 0; color: #91aabb; font-size: 12px; white-space: nowrap; }
 .review-section-body { padding: 16px; }
-.review-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.review-facts--supplementary { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.review-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
 .review-fact {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
   min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid #27465a;
-  border-radius: 6px;
-  background: #0a1b27;
+  padding: 2px 0;
 }
 .review-fact--wide { grid-column: 1 / -1; }
-.review-fact--emphasis { border-color: #24617b; background: #0d2a3a; }
-.review-fact-icon { display: grid; place-items: center; width: 34px; height: 34px; flex-shrink: 0; border-radius: 6px; background: #12384e; color: #65d9fb; }
+.review-fact--emphasis .review-fact-value { color: #bceef6; }
 .review-fact-label { color: #91aabb; font-size: 12px; line-height: 1.5; }
 .review-fact-value { margin-top: 3px; color: #edf8ff; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
 .review-fact--wide .review-fact-value { font-size: 16px; }
-.review-subsection { display: grid; gap: 12px; }
-.review-subsection + .review-subsection { margin-top: 16px; padding-top: 16px; border-top: 1px solid #29485c; }
-.review-subsection-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.review-subsection-head h4 { color: #d8e9f3; font-size: 13px; font-weight: 600; }
-.review-subsection-head > span { flex-shrink: 0; padding: 1px 7px; border: 1px solid #315065; border-radius: 4px; color: #91aabb; font-size: 11px; line-height: 18px; }
-.review-subsection-empty { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border: 1px dashed #315065; border-radius: 6px; background: #0a1b27; color: #91aabb; font-size: 13px; line-height: 1.5; }
-.review-subsection-empty > svg { flex-shrink: 0; color: #65d9fb; }
 .review-final-step { display: grid; gap: 12px; }
-.review-final-step-head { padding: 16px 18px; border: 1px solid #24617b; border-radius: 8px; background: linear-gradient(135deg, #0d2a3a, #0a1b27); }
+.review-final-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 16px; border: 1px solid #24617b; border-radius: 8px; background: #0d2a3a; }
 .review-step-badge { display: inline-flex; align-items: center; gap: 6px; color: #65d9fb; font-size: 12px; line-height: 18px; }
-.review-final-step-head h3 { margin-top: 4px; color: #edf8ff; font-size: 20px; font-weight: 600; line-height: 1.35; }
+.review-final-title { display: flex; align-items: center; gap: 4px; }
+.review-final-step-head h3 { color: #edf8ff; font-size: 20px; font-weight: 600; line-height: 1.35; }
 .review-final-step-head h3:focus { outline: none; }
-.review-final-step-head p { margin-top: 4px; color: #afc5d5; font-size: 13px; line-height: 1.65; }
 .review-empty { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #73404a; border-radius: 6px; background: #3d242b; color: #ffd6d6; }
 .review-empty > svg { flex-shrink: 0; margin-top: 2px; color: #ff8585; }
 .review-empty strong { display: block; font-size: 13px; }
 .review-empty p { margin-top: 2px; font-size: 12px; line-height: 1.5; }
 .review-hint { margin-top: 10px; color: #ffb454; font-size: 12px; line-height: 1.6; }
 .weighing-review .workbench-capture-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: none; overflow: visible; }
-.weighing-review .workbench-capture-thumbnail img { height: 180px; }
+.weighing-review .workbench-capture-thumbnail img { height: 120px; }
 .weighing-review .workbench-capture-photo p { font-size: 13px; }
 
 .weighing-review .weighing-review-footer {
@@ -497,21 +453,15 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .review-footer-info { color: #afc5d5; }
 .review-footer-alert { color: #ffb454; }
 .review-footer-error { color: #ff8585; }
-.review-final-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 440px; }
-.review-final-item { padding: 7px 9px; border: 1px solid #29485c; border-radius: 5px; background: #0a1b27; }
-.review-final-item span { display: block; color: #91aabb; font-size: 11px; }
-.review-final-item strong { display: block; margin-top: 2px; color: #edf8ff; font-family: Bahnschrift, 'DIN Alternate', 'Arial Narrow', sans-serif; font-size: 18px; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
-.review-final-item strong small { margin-left: 2px; color: #91aabb; font-family: inherit; font-size: 11px; font-weight: 500; }
-.review-final-item--net strong { color: #3ce0f5; }
-.review-deduction-line { grid-column: 1 / -1; color: #91aabb; font-size: 11px; line-height: 1.5; }
 .review-confirm-note { display: flex; align-items: center; gap: 8px; color: #afc5d5; font-size: 12px; line-height: 1.5; }
 .review-confirm-note > svg { flex-shrink: 0; color: #41d8a0; }
 .review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .review-actions > button { min-width: 150px; }
 
+@media (min-width: 1100px) {
+  .review-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 @media (max-width: 900px) {
-  .review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .review-hero--stage { grid-column: 1 / -1; }
   .weighing-review .workbench-capture-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weighing-review .workbench-capture-thumbnail img { height: 150px; }
 }
@@ -520,19 +470,17 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .review-header-icon { display: none; }
   .weighing-review .review-eyebrow-title { font-size: 20px; }
   .weighing-review .weighing-review-body { padding: 12px; }
-  .review-final-step-head { padding: 13px; }
+  .review-final-step-head { padding: 8px 12px; }
   .review-final-step-head h3 { font-size: 18px; }
-  .review-summary { grid-template-columns: minmax(0, 1fr); }
-  .review-hero--stage { grid-column: auto; }
+  .review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-facts { grid-template-columns: minmax(0, 1fr); }
   .weighing-review .workbench-capture-gallery { grid-template-columns: minmax(0, 1fr); }
   .weighing-review .workbench-capture-thumbnail img { height: 200px; }
-  .review-weight { font-size: 42px; }
+  .review-weight { font-size: 34px; }
   .weighing-review .weighing-review-footer { flex-direction: column; align-items: stretch; flex-wrap: nowrap; padding: 12px; }
   .review-footer-status { width: 100%; }
   .review-actions { width: 100%; flex-direction: column; }
   .review-actions > button { width: 100%; min-width: 0; }
-  .review-final-summary { width: 100%; max-width: none; }
 }
 
 /* 运输方向说明：明确首磅／回磅顺序及净重口径 */

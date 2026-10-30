@@ -44,6 +44,20 @@ try {
   const open = scenario => page.goto(`${base}/tests/weighing-agent-capture.html?scale=WB01&scenario=${scenario}`);
   await open('ready');
   await page.getByRole('heading', { name: '现场画面', exact: false }).waitFor();
+  const plateInput = page.getByRole('textbox', { name: '车牌号码', exact: true });
+  assert.equal(await plateInput.getAttribute('placeholder'), '请输入车牌号码');
+  assert.equal(await plateInput.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
+  await plateInput.fill('ad12345');
+  assert.equal(await plateInput.inputValue(), 'AD12345');
+  assert.equal(await plateInput.evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollLeft === 0), true);
+  await plateInput.evaluate(el => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', '苏A12345');
+    el.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData }));
+  });
+  assert.equal(await plateInput.inputValue(), 'A12345');
+  assert.equal(await page.getByRole('button', { name: '选择车牌省份' }).innerText(), '苏');
+  await open('ready');
   const capture = page.getByRole('button', { name: '采集重量', exact: true });
   assert.equal(await capture.isEnabled(), true, '真实 Agent 没有预览图片时，也必须允许发起首次采集');
   await capture.click();

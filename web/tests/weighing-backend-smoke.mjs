@@ -313,7 +313,8 @@ try {
       await firstReview.getByText('工作台直接录入验证', { exact: false }).waitFor();
       await waitEnabled(firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }));
       const sampleResponse = page.waitForResponse(response => response.url().endsWith('/api/weighing/samples') && response.request().method() === 'POST', { timeout: 25_000 });
-      await firstReview.getByRole('button', { name: '重新采集重量', exact: true }).click();
+      await firstReview.getByRole('button', { name: '关闭核对', exact: true }).click();
+      await page.getByRole('button', { name: '重新采集重量', exact: true }).click();
       assert.equal((await (await sampleResponse).json()).data.expiresAt, null, '新采样不设置到期时间');
       firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
       await firstReview.waitFor();
@@ -523,7 +524,7 @@ try {
   const weightRegion=invalidDialog.getByRole('region',{name:'净重调整',exact:true});
   await weightRegion.waitFor();
   await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('0.5');
-  await invalidDialog.getByLabel('调整类别（扣减或上调时必填）',{exact:true}).selectOption('WATER');
+  await invalidDialog.getByLabel('调整备注（扣减或上调时必填）',{exact:true}).selectOption('WATER');
   assert.equal(await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).isDisabled(),true);
   assert.match(await invalidDialog.getByRole('alert').last().innerText(),/无法出单：.*请返回.*重新采集/);
   assert.ok((await invalidDialog.boundingBox()).width>=1000);
@@ -544,14 +545,16 @@ try {
   await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('-0.5');
   assert.match(await invalidDialog.getByRole('alert').last().innerText(),/正常出单只能扣减净重/);
   await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('0.3');
-  await invalidDialog.getByLabel('调整类别（扣减或上调时必填）',{exact:true}).selectOption('WATER');
-  await invalidDialog.getByText('净重调整：0.3 吨（扣减）',{exact:true}).waitFor();
+  await invalidDialog.getByLabel('调整备注（扣减或上调时必填）',{exact:true}).selectOption('OTHER');
+  await invalidDialog.getByLabel('自定义备注（选填）',{exact:true}).fill('雨水浸湿');
+  await invalidDialog.getByText('0.3 吨（扣减）',{exact:true}).waitFor();
   await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).click();
   await page.getByRole('heading',{name:/^回磅已完成/,exact:true}).waitFor();
   const correctedTask=(await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54327')}`)).records[0];
   const correctedTicket=(await call(`/api/weighing/tickets?taskId=${correctedTask.id}`)).records[0];
   assert.deepEqual([correctedTicket.finalGross,correctedTicket.finalTare,correctedTicket.finalNet,correctedTicket.netAdjustment],['5','1.2','3.5','0.3']);
-  assert.equal(correctedTicket.netAdjustmentCategoryName,'水分大');
+  assert.equal(correctedTicket.netAdjustmentCategoryName,'其他');
+  assert.equal(correctedTicket.adjustmentRemark,'雨水浸湿');
   assert.deepEqual((await call(`/api/weighing/tasks/${correctedTask.id}`)).records.map(row=>row.weight),['5','1.2']);
   await page.getByRole('button',{name:'办理下一辆车',exact:true}).click();
 

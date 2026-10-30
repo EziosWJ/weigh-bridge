@@ -18,6 +18,8 @@
     "test:dashboard": "node tests/dashboard.mjs",
     "test:notifications": "node tests/notifications.mjs",
     "test:weighing": "node tests/weighing-core.mjs",
+    "test:net-adjustment": "node tests/net-adjustment.mjs",
+    "test:review-final": "node tests/review-final.mjs",
     "test:weighing:agent-capture": "node tests/weighing-agent-capture.mjs",
     "test:weighing:camera-live": "node tests/weighing-camera-live.mjs",
     "test:weighing:invalid-original": "node tests/weighing-invalid-original.mjs",

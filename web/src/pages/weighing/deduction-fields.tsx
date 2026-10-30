@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { DetailItem } from '@/components/common/detail-item';
+import { HelpHint } from '@/components/common/help-hint';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { DICT_CODES, WEIGHING_DEDUCTION_CATEGORY_OPTIONS } from '@/constants/dicts';
@@ -12,6 +13,7 @@ import {
   netAdjustedWeights,
   netAdjustmentText,
   originalWeights,
+  resolveNetAdjustment,
   weightInMilliTonnes,
 } from '@/lib/weighing/weights';
 import { beijingTime } from '@/lib/weighing/query';
@@ -35,7 +37,7 @@ function DecimalField({ id, label, value, step, min, onChange, hint }: {
 }) {
   const [display, setDisplay] = useState(() => (Number.isFinite(value) ? formatWeightInputValue(value) : ''));
   return <div className="space-y-1.5">
-    <label htmlFor={id} className="block text-form-label font-medium text-text-primary">{label}</label>
+    <div className="flex items-center gap-1"><label htmlFor={id} className="block text-form-label font-medium text-text-primary">{label}</label>{hint && <HelpHint label={`${label}说明`} align="right" above>{hint}</HelpHint>}</div>
     <Input id={id} type="number" inputMode="decimal" min={min} step={step} value={display} onChange={event => {
       setDisplay(event.target.value);
       onChange(event.target.value === '' ? Number.NaN : event.target.valueAsNumber);
@@ -43,7 +45,6 @@ function DecimalField({ id, label, value, step, min, onChange, hint }: {
       if (!Number.isFinite(value)) return;
       try { weightInMilliTonnes(value); setDisplay(formatWeightInputValue(value)); } catch { /* Keep invalid input visible for correction. */ }
     }} />
-    {hint && <p className="text-xs text-text-tertiary">{hint}</p>}
   </div>;
 }
 
@@ -65,9 +66,8 @@ export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) 
       {original && <><DetailItem label="原始毛重" value={formatWeight(original.gross)} /><DetailItem label="原始皮重" value={formatWeight(original.tare)} /><DetailItem label="原始净重" value={formatWeight(original.net)} /></>}
       <DetailItem label="净重调整" value={netAdjustmentText(amount)} />
       <DetailItem label="调整方式" value={mode === 'percent' && rateBp !== undefined ? `按比例 ${formatRate(rateBp)}` : '按吨'} />
-      <DetailItem label="调整类别" value={categoryName || '未填写'} />
+      <DetailItem label="调整备注" value={[categoryName, snapshot?.reason].filter(Boolean).filter((item, index, items) => items.indexOf(item) === index).join('：') || '未填写'} />
       {(grossDeduction !== 0 || tareDeduction !== 0) && <><DetailItem label="毛重更正差额" value={formatAdjustment(grossDeduction)} /><DetailItem label="皮重更正差额" value={formatAdjustment(tareDeduction)} /></>}
-      <DetailItem label="调整备注" value={snapshot?.reason || ticket.adjustment?.reason || '未填写'} />
     </div>
     <DetailItem label="重量来源" value={snapshot?.source === 'manual' || amount !== 0 || grossDeduction !== 0 || tareDeduction !== 0 ? '人工调整（原始采集依据保留）' : '沿用采集依据'} />
     {snapshot ? <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
@@ -127,51 +127,50 @@ export function NetAdjustmentFields({ basis, value, onChange, allowUpward = fals
   allowUpward?: boolean;
   showError?: boolean;
 }) {
+  const [legacyRemarkCategory] = useState(() => value.remark && value.category !== 'OTHER' ? value.category : '');
   const { options: categoryOptions } = useDictOptions(DICT_CODES.WEIGHING_DEDUCTION_CATEGORY, {
     fallback: WEIGHING_DEDUCTION_CATEGORY_OPTIONS,
   });
   let final: WeightValues | undefined;
   let error = '';
-  try { final = netAdjustedWeights(basis, value, allowUpward); } catch (failure) { error = failure instanceof Error ? failure.message : '请核对净重调整'; }
-  const amount = final ? final.net - basis.net : 0;
+  let amount = 0;
+  try { final = netAdjustedWeights(basis, value, allowUpward); amount = resolveNetAdjustment(basis, value, allowUpward).amount; } catch (failure) { error = failure instanceof Error ? failure.message : '请核对净重调整'; }
   const setMode = (mode: NetAdjustmentMode) => onChange({ ...value, mode, amount: mode === 'amount' ? (Number.isFinite(value.amount) ? value.amount : 0) : value.amount, rateBp: mode === 'percent' ? (Number.isFinite(value.rateBp) ? value.rateBp : 0) : value.rateBp });
   return <fieldset className="min-w-0 space-y-3">
-    <legend className="text-sm font-semibold">核对原始重量并录入净重调整</legend>
-    <p className="text-xs leading-relaxed text-text-tertiary">毛重、皮重沿用设备原始值；正常出单只能扣减净重，可按吨或按比例录入。负数表示上调，仅更正重开可用。</p>
+    <legend className="text-sm font-semibold">核对原始重量并录入净重调整 <HelpHint label="净重调整规则">毛重、皮重沿用设备原始值；正常出单只能扣减净重，可按吨或按比例录入。负数表示上调，仅更正重开可用。调整后净重须大于零且小于最终毛重；比例折算不足 0.001 吨时请改按吨录入。</HelpHint></legend>
     <div className="grid gap-3 sm:grid-cols-3">
-      <DetailItem label="原始毛重" value={<span className="font-semibold tabular-nums">{formatWeight(basis.gross)}</span>} />
-      <DetailItem label="原始皮重" value={<span className="font-semibold tabular-nums">{formatWeight(basis.tare)}</span>} />
-      <DetailItem label="调整前净重" value={<span className="font-semibold tabular-nums">{formatWeight(basis.net)}</span>} />
+      <DetailItem label="原始毛重" value={<strong className="text-2xl tabular-nums">{formatWeight(basis.gross)}</strong>} />
+      <DetailItem label="原始皮重" value={<strong className="text-2xl tabular-nums">{formatWeight(basis.tare)}</strong>} />
+      <DetailItem label="调整前净重" value={<strong className="text-2xl tabular-nums">{formatWeight(basis.net)}</strong>} />
     </div>
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div className="space-y-1.5">
-        <label htmlFor="net-adjustment-mode" className="block text-form-label font-medium text-text-primary">录入方式</label>
-        <Select id="net-adjustment-mode" value={value.mode} onChange={event => setMode(event.target.value as NetAdjustmentMode)}>
-          <option value="amount">按吨</option>
-          <option value="percent">按比例</option>
-        </Select>
+        <span className="block text-form-label font-medium text-text-primary">录入方式</span>
+        <div role="radiogroup" aria-label="录入方式" className="flex h-control-md gap-2">
+          {([['amount', '按吨'], ['percent', '按比例']] as const).map(([mode, label]) => <label key={mode} className="flex-1 cursor-pointer">
+            <input className="peer sr-only" type="radio" name="net-adjustment-mode" value={mode} checked={value.mode === mode} onChange={() => setMode(mode)} />
+            <span className="flex h-full items-center justify-center rounded-control border border-border bg-surface px-3 text-sm text-text-primary peer-checked:border-primary peer-checked:bg-info-background peer-checked:text-info peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-primary">{label}</span>
+          </label>)}
+        </div>
       </div>
       {value.mode === 'amount' ? <DecimalField key="amount" id="net-adjustment-amount" label="净重调整量（吨）" value={value.amount} step="0.001" min={allowUpward ? undefined : '0'} onChange={amount => onChange({ ...value, amount })} hint="正数扣减；负数上调（仅更正重开）" /> : <DecimalField key="percent" id="net-adjustment-rate" label="净重调整比例（%）" value={value.rateBp / 100} step="0.01" min={allowUpward ? undefined : '0'} onChange={rate => onChange({ ...value, rateBp: Number.isFinite(rate) ? Math.round(rate * 100) : Number.NaN })} hint="最多两位小数；按调整前净重计算，四舍五入到 0.001 吨" />}
-    </div>
-    <div className="grid gap-3 sm:grid-cols-2">
       <div className="space-y-1.5">
-        <label htmlFor="net-adjustment-category" className="block text-form-label font-medium text-text-primary">调整类别（扣减或上调时必填）</label>
-        <Select id="net-adjustment-category" value={value.category} onChange={event => onChange({ ...value, category: event.target.value })}>
-          <option value="">请选择类别</option>
+        <label htmlFor="net-adjustment-category" className="block text-form-label font-medium text-text-primary">调整备注（扣减或上调时必填）</label>
+        <Select id="net-adjustment-category" value={value.category} onChange={event => onChange({ ...value, category: event.target.value, remark: '' })}>
+          <option value="">请选择调整原因</option>
           {categoryOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </Select>
       </div>
-      <div className="space-y-1.5">
-        <label htmlFor="net-adjustment-remark" className="block text-form-label font-medium text-text-primary">调整备注（选填）</label>
-        <Input id="net-adjustment-remark" placeholder="补充说明，可不填" value={value.remark ?? ''} onChange={event => onChange({ ...value, remark: event.target.value })} />
-      </div>
+      {(value.category === 'OTHER' || (legacyRemarkCategory !== '' && value.category === legacyRemarkCategory)) && <div className="space-y-1.5">
+        <label htmlFor="net-adjustment-remark" className="block text-form-label font-medium text-text-primary">自定义备注（选填）</label>
+        <Input id="net-adjustment-remark" placeholder="请输入其他调整原因" value={value.remark ?? ''} onChange={event => onChange({ ...value, remark: event.target.value })} />
+      </div>}
     </div>
     <div className="grid gap-4 rounded-control bg-neutral-background p-3 sm:grid-cols-2">
-      <DetailItem label="系统计算：净重调整量" value={final ? netAdjustmentText(amount) : '待核对调整量'} />
-      <DetailItem label="调整后净重" value={final ? <strong className="text-2xl tabular-nums text-primary">{formatWeight(final.net)}</strong> : <span className="text-text-tertiary">待核对调整量</span>} />
+      <DetailItem label="系统计算：净重调整量" value={final ? <strong className="text-2xl tabular-nums">{netAdjustmentText(amount)}</strong> : '待核对调整量'} />
+      <DetailItem label="调整后净重" value={final ? <strong className="text-3xl tabular-nums text-primary">{formatWeight(final.net)}</strong> : <span className="text-text-tertiary">待核对调整量</span>} />
     </div>
     {amount < 0 && <p role="status" className="text-sm text-warning">当前为向上调整净重 {formatWeight(-amount)}；仅更正重开允许，原始依据保留。</p>}
     {showError && error && <p role="alert" className="text-sm text-error">{error}</p>}
-    <p className="text-xs leading-relaxed text-text-tertiary">调整后净重须大于零且小于最终毛重。按比例时以调整前净重为基数，四舍五入到 0.001 吨；折算不足 0.001 吨请改按吨录入。</p>
   </fieldset>;
 }

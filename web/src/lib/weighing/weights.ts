@@ -121,7 +121,7 @@ export function resolveNetAdjustment(basis: WeightValues, input: NetAdjustmentIn
   }
   const finalNetMilli = netMilli - amountMilli;
   if (finalNetMilli <= 0 || finalNetMilli >= grossMilli) throw new Error('调整后净重必须大于零且小于最终毛重');
-  if (amountMilli !== 0 && !input.category.trim()) throw new Error('请选择净重调整类别');
+  if (amountMilli !== 0 && !input.category.trim()) throw new Error('请选择净重调整备注');
   return { amount: tonnes(amountMilli), ...(rateBp === undefined ? {} : { rateBp }) };
 }
 

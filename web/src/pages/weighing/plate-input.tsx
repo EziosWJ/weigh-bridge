@@ -17,7 +17,7 @@ export function PlateInput({ value, onChange, id, inputRef, disabled, legacyValu
   return <div className="plate-control" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); document.getElementById(`${controlId}-province`)?.focus(); } }}>
     <div className="plate-entry">
       <Button id={`${controlId}-province`} aria-label="选择车牌省份" aria-expanded={open} aria-controls={`${controlId}-provinces`} disabled={disabled} onClick={() => setOpen(!open)}>{province || '省份'}</Button>
-      <input ref={inputRef} id={controlId} aria-label="车牌号码" className="plate-number" autoComplete="off" spellCheck={false} value={tail} maxLength={PLATE_MAX_LENGTH} disabled={disabled} placeholder="A12345" aria-invalid={!!error} aria-describedby={`${controlId}-hint`} onBlur={() => setTouched(true)} onChange={event => {
+      <input ref={inputRef} id={controlId} aria-label="车牌号码" className="plate-number" autoComplete="off" spellCheck={false} value={tail} maxLength={PLATE_MAX_LENGTH} disabled={disabled} placeholder="请输入车牌号码" aria-invalid={!!error} aria-describedby={`${controlId}-hint`} onBlur={() => setTouched(true)} onChange={event => {
         onChange(limitPlate(event.target.value, province));
       }} onPaste={event => {
         const pasted = normalizePlate(event.clipboardData.getData('text'));

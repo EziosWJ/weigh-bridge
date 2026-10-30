@@ -2,25 +2,22 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
-  Building2,
   Camera,
   Check,
-  CircleCheck,
   ClipboardCheck,
   FileCheck2,
-  FileText,
   Info,
   Package,
   Scale,
   Truck,
-  UserRound,
   X,
   TriangleAlert,
 } from 'lucide-react';
 import type { CaptureSnapshot, NetAdjustmentInput, WeightValues } from '@/types/weighing';
-import { formatWeight, formatWeightValue, netAdjustedWeights, netAdjustmentText, resolveNetAdjustment } from '@/lib/weighing/weights';
+import { formatWeight, formatWeightValue, resolveNetAdjustment } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
 import { StatusTag } from '@/components/common/status-tag';
+import { HelpHint } from '@/components/common/help-hint';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
 import { NetAdjustmentFields } from './deduction-fields';
 import { CapturePhoto } from './camera-panel';
@@ -41,8 +38,7 @@ export interface WeighingReviewValue {
   supplementary: { label: string; value: string }[];
 }
 
-function ReviewFact({ icon, label, value, wide = false, emphasis = false }: {
-  icon: ReactNode;
+function ReviewFact({ label, value, wide = false, emphasis = false }: {
   label: string;
   value?: ReactNode;
   wide?: boolean;
@@ -50,7 +46,6 @@ function ReviewFact({ icon, label, value, wide = false, emphasis = false }: {
 }) {
   const empty = value === undefined || value === null || value === '';
   return <div className={cn('review-fact', wide && 'review-fact--wide', emphasis && 'review-fact--emphasis')}>
-    <span className="review-fact-icon" aria-hidden>{icon}</span>
     <div className="min-w-0">
       <p className="review-fact-label">{label}</p>
       <p className="review-fact-value">{empty ? '—' : value}</p>
@@ -73,23 +68,8 @@ function ReviewSection({ icon, title, extra, children }: {
   </section>;
 }
 
-function ReviewSubsection({ title, extra, children }: { title: string; extra: string; children: ReactNode }) {
-  return <div className="review-subsection">
-    <div className="review-subsection-head"><h4>{title}</h4><span>{extra}</span></div>
-    {children}
-  </div>;
-}
-
-function supplementaryIcon(label: string) {
-  if (label.includes('承运')) return <Truck className="h-4 w-4" aria-hidden />;
-  if (label.includes('联系人')) return <UserRound className="h-4 w-4" aria-hidden />;
-  if (label.includes('司机')) return <UserRound className="h-4 w-4" aria-hidden />;
-  if (label.includes('备注')) return <FileText className="h-4 w-4" aria-hidden />;
-  return <Info className="h-4 w-4" aria-hidden />;
-}
-
 /** 集中核对保留本次快照；失效后保留内容供查看，同时禁止提交。 */
-export function WeighingReviewDialog({ value, title, missing = [], businessEditor, invalidReason = '', submitting = false, submitError = '', onCancel, onRecapture, onMismatch, onConfirm }: {
+export function WeighingReviewDialog({ value, title, missing = [], businessEditor, invalidReason = '', submitting = false, submitError = '', onCancel, onMismatch, onConfirm }: {
   value: WeighingReviewValue;
   title: string;
   missing?: string[];
@@ -113,12 +93,10 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   useEffect(() => { heading.current?.focus(); }, []);
   useEffect(() => { if (showFinal) finalHeading.current?.focus(); }, [showFinal]);
   let adjustmentError = '';
-  let calculatedWeights: WeightValues | undefined;
   let resolvedAdjustment = 0;
   if (value.original) {
     try {
       resolvedAdjustment = resolveNetAdjustment(value.original, netAdjustment).amount;
-      calculatedWeights = netAdjustedWeights(value.original, netAdjustment);
     } catch (error) {
       adjustmentError = error instanceof Error ? error.message : '请核对净重调整';
     }
@@ -128,7 +106,6 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   const finalReady = reviewReady && !adjustmentError;
   const imageCount = value.capture ? value.capture.images?.length || (value.capture.imageSrc ? 1 : 0) : 0;
   const capturePolicy = value.capture?.captureRequired === false ? '非强制抓拍' : '强制抓拍';
-  const imageSummary = imageCount ? `${imageCount} 张抓拍` : requiresImage ? '等待抓拍' : '本次无图';
 
   return <Dialog open onOpenChange={open => { if (!open && !submitting) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen && !submitting} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay />
@@ -161,59 +138,37 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
         </div>}
         {!invalidReason && missing.length > 0 && businessEditor && <section className="review-business-fill" aria-label="补齐本趟资料">{businessEditor}</section>}
 
-        <section className="review-summary" aria-label="本次称重摘要">
+        {showFinal ? <section className="review-compact-summary" aria-label="本次称重摘要">
+          <strong>{value.plate || '待核对'}</strong><span>{value.direction}</span><span>回磅 · {value.kind}</span><span>本次采集 <b>{formatWeight(value.weight)}</b></span>
+        </section> : <section className="review-summary" aria-label="本次称重摘要">
           <div className="review-hero review-hero--vehicle">
             <p className="review-hero-label"><Truck className="h-4 w-4" aria-hidden />当前车辆</p>
             <h3 ref={heading} tabIndex={-1} className="review-plate">{value.plate || '待核对'}</h3>
-            <div className="review-meta">
-              <span className="review-chip">{value.direction}</span>
-              <span className="review-chip review-chip--kind">{value.kind}</span>
-            </div>
           </div>
           <div className="review-hero review-hero--weight">
             <p className="review-hero-label"><Scale className="h-4 w-4" aria-hidden />本次采集{value.kind}</p>
             <div className="review-weight">{formatWeightValue(value.weight)}<span>吨</span></div>
-            <div className="review-weight-meta">
-              <span className="review-stable"><CircleCheck className="h-4 w-4" aria-hidden />重量稳定</span>
-              <span aria-hidden>·</span>
-              <span>{imageSummary}</span>
-            </div>
           </div>
-          <div className="review-hero review-hero--stage">
-            <p className="review-hero-label"><ClipboardCheck className="h-4 w-4" aria-hidden />办理阶段</p>
-            <div className="review-stage"><strong>{second ? '回磅' : '首磅'}</strong><span>{second ? '确认后生成正式单据' : '确认后建立运输任务'}</span></div>
-            <div className="review-stage-step" aria-label={second ? '第二步，共两步' : '第一步，共两步'}>
-              <span className={second ? 'done' : 'active'}>1</span>
-              <span className={second ? 'active' : ''}>2</span>
-              <span>{second ? '出单' : '回磅'}</span>
-            </div>
-          </div>
-        </section>
+        </section>}
 
         {showFinal ? <section className="review-final-step" aria-label="净重调整">
           <div className="review-final-step-head">
             <span className="review-step-badge"><Info className="h-3.5 w-3.5" aria-hidden />第 2 步 / 共 2 步</span>
-            <h3 ref={finalHeading} tabIndex={-1}>最终重量确认</h3>
-            <p>毛重、皮重沿用设备原始值；请核对原始重量并录入净重扣减。确认后将生成正式单据，原始采集依据保留。</p>
+            <div className="review-final-title"><h3 ref={finalHeading} tabIndex={-1}>最终重量确认</h3><HelpHint label="最终重量确认说明">毛重、皮重沿用设备原始值；请核对原始重量并录入净重扣减。确认后将生成正式单据，原始采集依据保留。</HelpHint></div>
           </div>
           <ReviewSection icon={<Scale className="h-4 w-4" aria-hidden />} title="净重调整" extra={<StatusTag tone="info">可扣减</StatusTag>}>
             <NetAdjustmentFields basis={value.original!} value={netAdjustment} onChange={setNetAdjustment} showError={false} />
           </ReviewSection>
         </section> : <section className="review-main" aria-label="本趟运输核对依据">
-          <ReviewSection icon={<Package className="h-4 w-4" aria-hidden />} title="业务核对" extra={<span className="review-section-extra">请与现场车辆核对</span>}>
-            <ReviewSubsection title="基本信息" extra="必填">
-              <div className="review-facts">
-                <ReviewFact icon={<Package className="h-4 w-4" aria-hidden />} label="物料及规格／编码" value={value.material} wide />
-                <ReviewFact icon={<Building2 className="h-4 w-4" aria-hidden />} label={value.partyLabel} value={value.party} wide />
-                {value.firstWeight && <ReviewFact icon={<Scale className="h-4 w-4" aria-hidden />} label="首次称重依据" value={value.firstWeight} wide emphasis />}
-                {value.expected && <ReviewFact icon={<Scale className="h-4 w-4" aria-hidden />} label="预计净重（未出单）" value={formatWeight(value.expected.net)} wide emphasis />}
-              </div>
-            </ReviewSubsection>
-            <ReviewSubsection title="补充运输信息" extra="选填">
-              {value.supplementary.length > 0 ? <div className="review-facts review-facts--supplementary">
-                {value.supplementary.map((item, index) => <ReviewFact key={`${item.label}-${index}`} icon={supplementaryIcon(item.label)} label={item.label} value={item.value} wide={item.label === '备注'} />)}
-              </div> : <p className="review-subsection-empty"><Info className="h-4 w-4" aria-hidden />本次未填写补充运输信息</p>}
-            </ReviewSubsection>
+          <ReviewSection icon={<Package className="h-4 w-4" aria-hidden />} title="业务核对" extra={<HelpHint label="业务核对说明" align="right">请与现场车辆核对。</HelpHint>}>
+            <div className="review-facts">
+              <ReviewFact label="运输方向" value={value.direction} />
+              <ReviewFact label="物料及规格／编码" value={value.material} />
+              <ReviewFact label={value.partyLabel} value={value.party} />
+              {value.firstWeight && <ReviewFact label="首次称重依据" value={value.firstWeight} emphasis />}
+              {value.expected && <ReviewFact label="预计净重（未出单）" value={formatWeight(value.expected.net)} emphasis />}
+              {value.supplementary.map((item, index) => <ReviewFact key={`${item.label}-${index}`} label={item.label} value={item.value} wide={item.label === '备注'} />)}
+            </div>
           </ReviewSection>
 
           <ReviewSection
@@ -238,23 +193,16 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
           {invalidReason && <p className="review-footer-alert">核对已失效，请返回重新采集。</p>}
           {showFinal && adjustmentError && <p role="alert" className="review-footer-error">无法出单：{adjustmentError}</p>}
           {submitError && <p className="review-footer-error">保存失败：{submitError}</p>}
-          {showFinal && calculatedWeights ? <div className="review-final-summary" aria-live="polite">
-            <div className="review-final-item"><span>最终毛重</span><strong>{formatWeightValue(calculatedWeights.gross)}<small>吨</small></strong></div>
-            <div className="review-final-item"><span>最终皮重</span><strong>{formatWeightValue(calculatedWeights.tare)}<small>吨</small></strong></div>
-            <div className="review-final-item review-final-item--net"><span>最终净重</span><strong>{formatWeightValue(calculatedWeights.net)}<small>吨</small></strong></div>
-            <p className="review-deduction-line">净重调整：{netAdjustmentText(resolvedAdjustment)}</p>
-          </div> : <div className="review-confirm-note"><FileCheck2 className="h-4 w-4" aria-hidden /><span>{second ? '下一步核对原始重量并录入净重调整；确认后才生成正式单据。' : `确认后保存首磅（${value.kind}）并建立运输任务。`} 请同时确认车辆已完全上磅、现场与资料一致。</span></div>}
+          {!showFinal && <div className="review-confirm-note"><FileCheck2 className="h-4 w-4" aria-hidden /><span>请确认车辆已完全上磅，现场与资料一致。</span><HelpHint label="称重确认说明" above>{second ? '下一步核对原始重量并录入净重调整；确认后才生成正式单据。' : `确认后保存首磅（${value.kind}）并建立运输任务。`}</HelpHint></div>}
         </div>
         <div className="review-actions">
           {showFinal ? <>
             <Button size="lg" disabled={submitting} onClick={() => setStep('review')}><ArrowLeft className="h-4 w-4" aria-hidden />上一步</Button>
-            {onRecapture && <Button size="lg" disabled={submitting} onClick={onRecapture}>重新采集重量</Button>}
             <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!finalReady || submitting} aria-busy={submitting} onClick={() => { if (finalReady && !submitting) onConfirm(resolvedAdjustment === 0 ? undefined : netAdjustment); }}>
               <Check className="h-4 w-4" aria-hidden />{submitting ? '正在保存…' : '确认回磅并出单'}
             </Button>
           </> : <>
             <Button size="lg" disabled={submitting} onClick={invalidReason ? onCancel : onMismatch}><ArrowLeft className="h-4 w-4" aria-hidden />{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
-            {onRecapture && <Button size="lg" disabled={submitting} onClick={onRecapture}>重新采集重量</Button>}
             {second ? <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!reviewReady || submitting} onClick={() => { if (reviewReady && !submitting) setStep('final'); }}>
               <ArrowRight className="h-4 w-4" aria-hidden />下一步：核对最终重量
             </Button> : <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!reviewReady || submitting} onClick={() => { if (reviewReady && !submitting) onConfirm(); }}>

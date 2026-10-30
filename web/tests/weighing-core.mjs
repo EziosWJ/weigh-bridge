@@ -724,5 +724,5 @@ test('净重调整按吨或比例解析，正常出单禁止上调，比例四�
   assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }), /只能扣减/);
   assert.equal(resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }, true).amount, -0.5);
   assert.throws(() => resolveNetAdjustment({ gross: 1, tare: 0.001, net: 0.999 }, { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' }), /不足 0.001/);
-  assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: 0.5, rateBp: 0, category: '' }), /类别/);
+  assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: 0.5, rateBp: 0, category: '' }), /备注/);
 });

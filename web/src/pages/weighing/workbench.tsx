@@ -6,6 +6,7 @@ import { SectionTabs } from '@/components/common/section-tabs';
 import { DetailItem } from '@/components/common/detail-item';
 import { PageHeader } from '@/components/common/page-header';
 import { StatusTag } from '@/components/common/status-tag';
+import { HelpHint } from '@/components/common/help-hint';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast-store';
 import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogBody, DialogFooter } from '@/components/ui/dialog';
@@ -581,18 +582,16 @@ function WorkbenchContent() {
             </h2>
             <StatusTag tone={confirmedRecord ? 'info' : frozenCapture ? 'info' : !data.config.online || data.config.deviceError ? 'warning' : data.config.stable ? 'success' : 'warning'}>{confirmedRecord ? '已确认' : frozenCapture ? '已采集' : !data.config.online ? '设备离线' : data.config.deviceError ? '设备异常' : data.config.stable ? '稳定' : '未稳定'}</StatusTag>
           </div>
-          <div className={`workbench-status is-${status.tone}`} role="status" aria-live="polite">
+          {!(frozenCapture && status.label === '已采集待确认' && data.config.online && !data.config.deviceError && frozenCapture.imageStatus !== 'capture_failed') && <div className={`workbench-status is-${status.tone}`} role="status" aria-live="polite">
             <strong>{status.label}</strong>
-            <span>{status.detail}</span>
-            <span className="workbench-status-next">下一步：{status.next}</span>
-          </div>
+            <span>{status.detail}</span><span className="workbench-status-next">下一步：{status.next}</span>
+          </div>}
           <div className="weighing-instrument">
-            <p className="instrument-label min-w-0 text-sm text-text-secondary"><Truck className="h-8 w-8" aria-hidden />{confirmedRecord ? '本次已确认重量' : frozenCapture ? '已采集重量（已冻结）' : '当前设备重量'}</p>
+            <div className="space-y-2"><p className="instrument-label min-w-0 text-sm text-text-secondary"><Truck className="h-8 w-8" aria-hidden />{confirmedRecord ? '本次已确认重量' : frozenCapture ? '已采集重量（已冻结）' : '当前设备重量'}</p>{sampleReady && !awaitingResult && !successfulTask && <Button disabled={busy} aria-busy={busy} onClick={recapture}>{busy ? '正在采集…' : '重新采集重量'}</Button>}</div>
             <p className="weighing-readout" aria-label="当前重量">{liveVisible && Number.isFinite(shownWeight) ? formatWeightValue(shownWeight) : '—'}<span>吨</span></p>
           </div>
-          <p className="instrument-source text-xs text-text-tertiary">{confirmedRecord ? `采集时间：${beijingTime(confirmedRecord.at)}` : frozenCapture ? `采集时间：${beijingTime(frozenCapture.at)} · 本次采集已冻结，设备后续变化不撤销` : device?.receivedAt && !device.receivedAt.startsWith('0001') ? `最近上报：${beijingTime(device.receivedAt)} · Agent 设备数据` : '等待 Agent 上报重量与稳定状态'}</p>
-          {frozenCapture && data.config.online && !data.config.deviceError && Number.isFinite(data.config.weight) && <p className="workbench-live-weight text-xs text-text-secondary">实时读数 {formatWeight(data.config.weight)}（未采集，不改变已冻结重量）</p>}
-          {stage === 'second' && expected && <p className="workbench-expected">预计净重 <strong>{formatWeight(expected.net)}</strong><span>未出单，以确认后的正式单据为准</span></p>}
+          <p className="instrument-source text-xs text-text-tertiary">{confirmedRecord ? `采集时间：${beijingTime(confirmedRecord.at)}` : frozenCapture ? `采集时间：${beijingTime(frozenCapture.at)}` : device?.receivedAt && !device.receivedAt.startsWith('0001') ? `最近上报：${beijingTime(device.receivedAt)}` : '等待 Agent 上报重量与稳定状态'}</p>
+          {stage === 'second' && expected && <p className="workbench-expected">预计净重 <strong>{formatWeight(expected.net)}</strong><span>未出单</span><HelpHint label="预计净重说明">预计净重仅供参考，以确认后的正式单据为准。</HelpHint></p>}
         </ContentCard>
         <ContentCard className="workbench-current-action shadow-none" bodyClassName="p-4">
           <div className="space-y-3" aria-label="当前称重操作">
@@ -608,12 +607,10 @@ function WorkbenchContent() {
               </div>
             </>
             : sampleReady ? <>
-              <h2 className="font-semibold text-info">重量与图片已冻结</h2>
-              <p className="text-sm text-text-secondary">{missingFields.length ? `还缺${missingFields.join('、')}，补齐后可直接确认。` : '资料已齐全，请核对车辆、重量和现场图片后确认。'}</p>
+              <div className="flex items-center gap-1"><h2 className="font-semibold text-info">重量与图片已冻结</h2>{missingFields.length === 0 && <HelpHint label="核对提示">请核对车辆、重量和现场图片后确认。设备后续变化不撤销本次采集。</HelpHint>}</div>
               {missingFields.length > 0 && <p role="alert" className="text-sm text-warning">请选择{missingFields.join('、')}后再确认。</p>}
               <div className="flex flex-wrap gap-2">
                 <Button size="lg" variant="primary" className="flex-1" onClick={openReview}><ClipboardCheck className="h-4 w-4" aria-hidden />继续核对{stage === 'first' ? '首磅' : '回磅'}（{kind}）</Button>
-                <Button size="lg" disabled={busy} aria-busy={busy} onClick={recapture}>{busy ? '正在采集…' : '重新采集重量'}</Button>
               </div>
             </>
             : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : status.next}</span><Button size="lg" className="w-full" disabled>采集重量</Button>{data.owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <div className="space-y-2"><label htmlFor="takeover-reason" className="text-sm">接管原因</label><input id="takeover-reason" className="w-full rounded-control border border-border px-3 py-2" placeholder="请输入接管原因，便于后续追溯" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /><Button disabled={!takeoverReason.trim() || busy} onClick={() => void takeover()}>接管操作权</Button></div>}</>
