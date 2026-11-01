@@ -84,7 +84,15 @@ try {
     assert.ok(token, 'missing local login token')
     const local = await fetch(baseURL+'/api/weighing/local-status', { headers: { Authorization: token }, signal: AbortSignal.timeout(3000) })
     assert.equal(local.status, 200)
-    assert.deepEqual((await local.json()).data, { siteId: 1, configured: true, initialized: true }, 'API startup prepares the internal identity without a setup form')
+    const localStatus = (await local.json()).data
+    if (cycle === 0) {
+      assert.deepEqual(localStatus, { siteCode: '', scaleCode: '', configured: false, initialized: false }, 'new installation must await factory identity')
+      const setup = await fetch(baseURL+'/api/weighing/site-config/initialize', { method: 'POST', headers: { Authorization: token, 'Content-Type': 'application/json' }, body: JSON.stringify({ siteCode: 'F001', scaleCode: 'WB01' }), signal: AbortSignal.timeout(3000) })
+      assert.equal(setup.status, 200)
+      assert.equal((await setup.json()).code, 200, 'factory identity setup must succeed')
+    } else {
+      assert.deepEqual(localStatus, { siteCode: 'F001', scaleCode: 'WB01', configured: true, initialized: true }, 'restart must preserve factory identity')
+    }
     if (cycle === 0) {
       const agentEnvPath = join(root, 'agent/agent.env')
       // The installer creates a keyless same-host default. Remove it so this
@@ -124,7 +132,7 @@ try {
     assert.equal(await readFile(join(root, 'agent/state/unknown-attempt.json'), 'utf8'), '{"status":"unknown"}\n')
     assert.equal(await readFile(join(root, 'data/agent-images/preserved-evidence.txt'), 'utf8'), 'preserved image evidence\n')
   }
-  console.log('PASS: 本地管理员一次性初始化、启动自动建立本厂身份、Agent 配对与受控保留设备配置、真实 API 内嵌页面、health/ready、重启保留现场身份/证据/未知账本；未启动真实设备。')
+  console.log('PASS: 本地管理员与本厂身份一次性初始化、Agent 配对与受控保留设备配置、真实 API 内嵌页面、health/ready、重启保留现场身份/证据/未知账本；未启动真实设备。')
 } finally {
   await stop()
   await database?.close()
