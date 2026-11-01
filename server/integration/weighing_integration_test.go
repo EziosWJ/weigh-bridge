@@ -117,6 +117,11 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	}
 	adminToken := loginAdmin(t, router)
 	ensureLocalSite(t, router, adminToken, 1, "SITE01", "原厂区", "SCALE01", "一号地磅", "integration-agent")
+	// A fresh site has neither uploaded tickets nor a master-sync timestamp.
+	emptySync := weighingData[weighing.SyncOverview](t, router, "GET", "/api/weighing/sync/overview", "", adminToken)
+	if emptySync.PendingTickets != 0 || emptySync.LastSuccess != nil || emptySync.MasterLastSuccess != nil {
+		t.Fatalf("empty sync overview: %+v", emptySync)
+	}
 	testLocalSetup(t, database, router, adminToken, 1)
 	addCaptureCameras(t, database, "rtsp://camera/foundation-1", "rtsp://camera/foundation-2")
 	checkWeighingMasters(t, router, adminToken)
@@ -192,7 +197,10 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	} {
 		assertEnvelopeCode(t, serveJSON(router, request.method, request.path, request.body, tokenResponse.Data.TokenValue), 403, 403, "无权执行此操作")
 	}
-	assertEnvelopeCode(t, serveJSON(router, http.MethodGet, "/api/weighing/sync/overview", "", adminToken), 200, 200, "success")
+	populatedSync := weighingData[weighing.SyncOverview](t, router, "GET", "/api/weighing/sync/overview", "", adminToken)
+	if populatedSync.LastSuccess == nil || populatedSync.MasterLastSuccess == nil {
+		t.Fatalf("confirmed sync times missing: %+v", populatedSync)
+	}
 	disabledDeps := deps
 	disabledDeps.Weighing = weighing.NewService(weighing.NewRepository(database.GORM), nil)
 	disabledRouter, err := app.Build(testAPIConfig(), database, disabledDeps)

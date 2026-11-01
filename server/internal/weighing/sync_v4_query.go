@@ -2,6 +2,7 @@ package weighing
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"time"
 )
@@ -124,21 +125,25 @@ func (r *Repository) SyncOverview(ctx context.Context) (SyncOverview, error) {
 		) x`).Scan(&result.NeedsActionTickets).Error; err != nil {
 		return result, err
 	}
-	var lastSuccess *time.Time
+	var lastSuccess sql.NullTime
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT MAX(value) FROM (
 			SELECT MAX(synced_at) AS value FROM wb_ticket_sync_change_v4 WHERE status = 'synced'
 			UNION ALL
 			SELECT MAX(synced_at) FROM wb_ticket_sync_change WHERE status = 'synced'
-		) x`).Scan(&lastSuccess).Error; err != nil {
+		) x`).Row().Scan(&lastSuccess); err != nil {
 		return result, err
 	}
-	result.LastSuccess = lastSuccess
-	var masterLast *time.Time
-	if err := r.db.WithContext(ctx).Raw("SELECT last_success FROM wb_master_sync_state WHERE id = 1").Scan(&masterLast).Error; err != nil {
+	if lastSuccess.Valid {
+		result.LastSuccess = &lastSuccess.Time
+	}
+	var masterLast sql.NullTime
+	if err := r.db.WithContext(ctx).Raw("SELECT last_success FROM wb_master_sync_state WHERE id = 1").Row().Scan(&masterLast); err != nil {
 		return result, err
 	}
-	result.MasterLastSuccess = masterLast
+	if masterLast.Valid {
+		result.MasterLastSuccess = &masterLast.Time
+	}
 	state, err := r.readSyncReconcileState(ctx)
 	if err != nil {
 		return result, err

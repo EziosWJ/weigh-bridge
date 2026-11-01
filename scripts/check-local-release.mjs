@@ -93,6 +93,12 @@ try {
     } else {
       assert.deepEqual(localStatus, { siteCode: 'F001', scaleCode: 'WB01', configured: true, initialized: true }, 'restart must preserve factory identity')
     }
+    const overviewResponse = await fetch(baseURL+'/api/weighing/sync/overview', { headers: { Authorization: token }, signal: AbortSignal.timeout(3000) })
+    assert.equal(overviewResponse.status, 200, 'empty sync overview must be available')
+    const overview = await overviewResponse.json()
+    assert.equal(overview.code, 200)
+    assert.equal(overview.data.lastSuccess, null)
+    assert.equal(overview.data.masterLastSuccess, null)
     if (cycle === 0) {
       const agentEnvPath = join(root, 'agent/agent.env')
       // The installer creates a keyless same-host default. Remove it so this
