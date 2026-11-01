@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { weighingApi } from "@/api/weighing";
+import { syncApi } from "@/api/sync";
 import type { WeighingCapabilities } from "@/api/weighing";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ContentCard } from "@/components/common/content-card";
 import { toast } from "@/components/common/toast-store";
 import { Field } from "@/components/common/field";
@@ -24,6 +26,7 @@ export function LocalIdentityConfiguration() {
   // Name maintenance (configured factory).
   const [name, setName] = useState("");
   const [scaleName, setScaleName] = useState("");
+  const [codeWarning, setCodeWarning] = useState<{ code: string; scaleCode: string; name: string; scaleName: string; pending: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,11 +85,30 @@ export function LocalIdentityConfiguration() {
       setError("厂区名称与地磅名称不能为空。");
       return;
     }
+    const next = { code: nextSiteCode, scaleCode: nextScaleCode, name: nextName, scaleName: nextScaleName };
+    if (nextSiteCode !== identity.code && capabilities?.permissionCodes.includes("weighing:sync:tickets")) {
+      try {
+        const overview = await syncApi.overview();
+        if (overview.pendingTickets > 0) {
+          setCodeWarning({ ...next, pending: overview.pendingTickets });
+          return;
+        }
+      } catch (failure) {
+        setError(getErrorMessage(failure, "无法读取待同步信息，暂不能修改厂区编码。"));
+        return;
+      }
+    }
+    await persist(next);
+  }
+
+  async function persist(next: { code: string; scaleCode: string; name: string; scaleName: string }) {
+    if (!identity) return;
     setSaving(true);
     setError("");
     try {
-      await weighingApi.saveSiteConfiguration({ code: nextSiteCode, scaleCode: nextScaleCode, name: nextName, scaleName: nextScaleName, enabled: identity.enabled === 0 ? 0 : 1, version: identity.version });
+      await weighingApi.saveSiteConfiguration({ code: next.code, scaleCode: next.scaleCode, name: next.name, scaleName: next.scaleName, enabled: identity.enabled === 0 ? 0 : 1, version: identity.version });
       toast.success({ title: "本厂身份已保存", description: "历史单据保持原编号；编码变更后设备将重新连接。" });
+      setCodeWarning(null);
       await load();
     } catch (failure) {
       setError(getErrorMessage(failure, "本厂身份保存失败"));
@@ -98,7 +120,8 @@ export function LocalIdentityConfiguration() {
   const manage = capabilities?.permissionCodes.some(code => code === "system:config" || code === "weighing:site:manage") ?? false;
   if (!loading && !manage) return null;
   const codePattern = "1～40 位字母、数字、点、下划线或连字符";
-  return <ContentCard title="本厂身份" description="厂区编码由总部预先分配；编码修改后，历史单据保留原编号，设备将重新连接。" className="mb-space-6">
+  return <>
+    <ContentCard title="本厂身份" description="厂区编码由总部预先分配；编码修改后，历史单据保留原编号，设备将重新连接。" className="mb-space-6">
     {loading ? <p role="status" className="text-sm text-text-tertiary">正在加载本厂身份…</p>
     : capabilities && !capabilities.configured ? (
       <form onSubmit={(event) => { event.preventDefault(); void initialize(); }}>
@@ -145,5 +168,16 @@ export function LocalIdentityConfiguration() {
       </form>
     ) : <Button onClick={() => void load()}>重新加载本厂身份</Button>}
     {error && <p role="alert" className="mt-space-3 text-sm text-error">{error}</p>}
-  </ContentCard>;
+    </ContentCard>
+    <ConfirmDialog
+      open={!!codeWarning}
+      title="厂区编码变更提示"
+      description={codeWarning ? `本厂还有 ${codeWarning.pending} 张单据的变化未获云端确认。改码后旧编码不再接受新写入，待上传变化不会自动改写；请先完成同步或明确处置。确认继续修改厂区编码吗？` : undefined}
+      confirmText="继续改码"
+      danger
+      loading={saving}
+      onCancel={() => setCodeWarning(null)}
+      onConfirm={() => { const next = codeWarning; if (next) void persist(next); }}
+    />
+  </>;
 }

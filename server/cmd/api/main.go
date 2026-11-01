@@ -248,10 +248,24 @@ func main() {
 			defer ticker.Stop()
 			for {
 				_ = weighService.RunTicketSync(monitoringContext)
+				_ = weighService.RunSyncV4(monitoringContext)
 				select {
 				case <-monitoringContext.Done():
 					return
 				case <-ticker.C:
+				}
+			}
+		}()
+		go func() {
+			_ = weighService.RunScheduledSyncReconcile(monitoringContext, configService)
+			for {
+				timer := time.NewTimer(weighService.NextSyncReconcileDelay(monitoringContext, configService))
+				select {
+				case <-monitoringContext.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+					_ = weighService.RunScheduledSyncReconcile(monitoringContext, configService)
 				}
 			}
 		}()

@@ -20,6 +20,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
+import { formatDateTime } from "@/lib/datetime";
+import { protocolLabel, reconcileLabels, syncLabels } from "./sync/labels";
 import type { DataTableColumn } from "@/types";
 import { printStatusLabels, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
 import { DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
@@ -54,6 +56,7 @@ export function WeighingTicketsPage() {
   const result = useWeighingPage<WireTicket>('tickets', deferred, page, pageSize);
   const summary = useWeighingSummary('tickets', deferred, result.revision);
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
+  const canSyncAdmin = capabilities?.permissionCodes.includes('weighing:sync:tickets') ?? false;
   const canReopenTicket = (row: WireTicket) => row.status === 'void'
     && can('reopen')
     && (capabilities?.sites.some(site => site.canOperate) ?? false);
@@ -65,16 +68,17 @@ export function WeighingTicketsPage() {
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
     { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div> },
     { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag><div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
-    { title: '同步状态', key: 'sync', width: 110, render: (_, row) => <StatusTag tone={row.syncStatus === 'synced' ? 'success' : row.syncStatus === 'failed' ? 'error' : row.syncStatus === 'pending' ? 'warning' : 'neutral'}>{row.syncStatus === 'synced' ? '已同步' : row.syncStatus === 'failed' ? '同步失败' : row.syncStatus === 'pending' ? '待同步' : '未纳入同步'}</StatusTag> },
+    { title: '同步状态', key: 'sync', width: 140, render: (_, row) => { const item = syncLabels[row.syncStatus ?? 'untracked'] ?? syncLabels.untracked; return <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 text-text-tertiary">{protocolLabel(row.syncProtocol)}{row.syncReason ? ` · ${row.syncReason}` : ''}</div></div>; } },
+    { title: '最近对账', key: 'reconcile', width: 130, render: (_, row) => { const item = row.reconcileStatus ? reconcileLabels[row.reconcileStatus] : null; return item ? <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 text-text-tertiary">{formatDateTime(row.reconcileAt)}</div></div> : <span className="text-text-tertiary">未对账</span>; } },
     { title: '出单时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
-    { title: '操作', key: 'actions', width: 168, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
+    { title: '操作', key: 'actions', width: 210, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{canSyncAdmin && <Link className={linkClass} to={`/weighing/sync/tickets/${row.id}`}>同步</Link>}{can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
   ];
   if (params.get('ticket')) return <Navigate replace to={`/weighing/tickets/${encodeURIComponent(params.get('ticket')!)}`} />;
   return <div className="weighing-list-page"><PageHeader title="最终单据" description="" /><DeviceBanner compact />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} ticket />
     {summary.error && <p role="alert" className="text-error">{summary.error}</p>}
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="单据" description={`筛选 ${result.total} 张；当前有效 ${summary.result?.taskCount ?? '—'} 趟，最终净重合计 ${summary.result?.net ?? '—'} 吨（净重调整合计 ${summary.result?.adjustment ?? '—'} 吨）`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <><Button size="sm" onClick={() => download('tickets')}>导出明细 CSV</Button><Button size="sm" onClick={() => download('tickets-summary')}>导出净重汇总 CSV</Button></>}</>} />
-      <DataTable compact stickyHeader fixedEdges ariaLabel="最终单据列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1304} />
+      <DataTable compact stickyHeader fixedEdges ariaLabel="最终单据列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1440} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
     <TicketReopenDialog ticketId={reopenTicketId} onClose={() => setReopenTicketId(null)} />

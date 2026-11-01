@@ -55,6 +55,13 @@ func TestSchemaAndSeedResponsibilitiesStaySeparate(t *testing.T) {
 			initialState := regexp.MustCompile(`(?m)^INSERT INTO wb_master_sync_state \(id\) VALUES \(1\);\s*$`)
 			contents = initialState.ReplaceAll(contents, nil)
 		}
+		if filepath.Base(name) == "00036_cloud_sync_v4.sql" {
+			// The automatic reconciliation state row is required immediately
+			// after schema migration, including upgrades that apply seed
+			// migrations separately.
+			initialState := regexp.MustCompile(`(?m)^INSERT INTO wb_sync_reconcile_state \(id\) VALUES \(1\);\s*$`)
+			contents = initialState.ReplaceAll(contents, nil)
+		}
 		if filepath.Base(name) == "00013_sample_without_timeout.sql" {
 			// Restore the former NOT NULL constraint on rollback with a data backfill.
 			// Keep rejecting any other DML, including seed inserts.

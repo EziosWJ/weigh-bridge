@@ -126,6 +126,20 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	}
 	device := startWeighingAgentWithConfig(t, router, hub, deviceConfig)
 	checkWeighingFirstConfirmation(t, router, adminToken, database, device)
+	syncPage := weighingData[weighing.Page[weighing.TicketView]](t, router, "GET", "/api/weighing/sync/tickets?page=1&pageSize=10", "", adminToken)
+	if syncPage.Total == 0 {
+		t.Fatal("sync ticket list returned no tickets")
+	}
+	var sawV4 bool
+	for _, ticket := range syncPage.Records {
+		if ticket.SyncProtocol == 4 {
+			sawV4 = true
+			break
+		}
+	}
+	if !sawV4 {
+		t.Fatalf("sync ticket list did not expose digest-protocol tickets: %+v", syncPage.Records)
+	}
 	created := serveJSON(router, http.MethodPost, "/api/system/user", `{"username":"weighing-operator","nickname":"操作员","status":1}`, adminToken)
 	assertEnvelopeCode(t, created, 200, 200, "success")
 	var userID int64
@@ -172,9 +186,13 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 		{"POST", "/api/weighing/tasks/first-confirmation", `{}`},
 		{"GET", "/api/weighing/tasks/export", ``},
 		{"POST", fmt.Sprintf("/api/weighing/tickets/%d/print-attempts", ticketID), `{"requestId":"denied-print-0001","intent":"initial"}`},
+		{"GET", "/api/weighing/sync/tickets", ``},
+		{"GET", "/api/weighing/sync/overview", ``},
+		{"POST", "/api/weighing/sync/changes/1/retry", `{}`},
 	} {
 		assertEnvelopeCode(t, serveJSON(router, request.method, request.path, request.body, tokenResponse.Data.TokenValue), 403, 403, "无权执行此操作")
 	}
+	assertEnvelopeCode(t, serveJSON(router, http.MethodGet, "/api/weighing/sync/overview", "", adminToken), 200, 200, "success")
 	disabledDeps := deps
 	disabledDeps.Weighing = weighing.NewService(weighing.NewRepository(database.GORM), nil)
 	disabledRouter, err := app.Build(testAPIConfig(), database, disabledDeps)
@@ -458,6 +476,11 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("reopen chain/prior final weights: %+v", newTicket)
 	}
 	checkTicketSyncOutbox(t, database.GORM, ticket.ID, newTicket.ID)
+	// Simulate a ticket already tracked under v2/v3 before the upgrade. Later
+	// void/reopen of that ticket must stay on v2/v3 instead of mixing protocols.
+	if err := database.GORM.Exec("INSERT INTO wb_ticket_sync_change (ticket_id, change_id, ticket_no, change_type, payload, status, synced_at) VALUES (?, 'legacy-reopen', ?, 'reopen', '{}', 'synced', now())", newTicket.ID, newTicket.TicketNo).Error; err != nil {
+		t.Fatal(err)
+	}
 	identity.Code, identity.Version = "SITE01", changedIdentity.Version
 	weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
 	terminated := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tasks/"+itoa(newTrip.TaskID)+"/termination", encode(map[string]any{"requestId": "terminate-trip-0001", "version": newTrip.TaskVersion, "reason": "取消新趟运输"}), token)
@@ -465,6 +488,13 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("termination: %+v", terminated)
 	}
 	voidedAgain := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(newTicket.ID)+"/void", `{"requestId":"void-new-ticket-0002","reason":"实际重称皮重"}`, token)
+	var legacyVoid, v4Void int64
+	if err := database.GORM.Table("wb_ticket_sync_change").Where("ticket_id=? AND change_type='void'", newTicket.ID).Count(&legacyVoid).Error; err != nil || legacyVoid != 1 {
+		t.Fatalf("legacy void dispatch: %d %v", legacyVoid, err)
+	}
+	if err := database.GORM.Table("wb_ticket_sync_change_v4").Where("ticket_id=? AND change_type='void'", newTicket.ID).Count(&v4Void).Error; err != nil || v4Void != 0 {
+		t.Fatalf("legacy ticket mixed protocols: %d %v", v4Void, err)
+	}
 	conditions["weight"] = "12"
 	device.weight(conditions["weight"].(string))
 	replacement := weighingData[weighing.Sample](t, router, "POST", "/api/weighing/samples", encode(oldCaptureBody), token)
@@ -497,6 +527,13 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	badReopen["finalWeights"] = map[string]any{"gross": "31", "tare": "12"}
 	badReopen["netAdjustment"] = map[string]any{"mode": "amount", "amount": "0.5", "category": "WATER", "remark": ""}
 	finalReopen := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(newTicket.ID)+"/reopen", encode(badReopen), token)
+	var legacyReopen, v4Reopen int64
+	if err := database.GORM.Table("wb_ticket_sync_change").Where("ticket_id=? AND change_type='reopen'", finalReopen.TicketID).Count(&legacyReopen).Error; err != nil || legacyReopen != 1 {
+		t.Fatalf("legacy reopen dispatch: %d %v", legacyReopen, err)
+	}
+	if err := database.GORM.Table("wb_ticket_sync_change_v4").Where("ticket_id=? AND change_type='reopen'", finalReopen.TicketID).Count(&v4Reopen).Error; err != nil || v4Reopen != 0 {
+		t.Fatalf("legacy reopen mixed protocols: %d %v", v4Reopen, err)
+	}
 	if finalReopen.TicketID == 0 {
 		t.Fatal("missing reopened ticket")
 	}

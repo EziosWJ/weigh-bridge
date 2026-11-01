@@ -147,6 +147,8 @@ type MasterSyncLog struct {
 	TriggerType string    `json:"triggerType"`
 	SyncType    string    `json:"syncType"`
 	TicketNo    string    `json:"ticketNo"`
+	Digest      string    `json:"digest"`
+	Category    string    `json:"category"`
 	Success     bool      `json:"success"`
 	Reason      string    `json:"reason"`
 }

@@ -85,44 +85,99 @@ type ticketSyncChange struct {
 func (ticketSyncChange) TableName() string { return "wb_ticket_sync_change" }
 
 // enqueueTicketChange runs in the same transaction as the business action.
+// A ticket that was already issued under v2/v3 keeps using that protocol for
+// its void/reopen so the two protocols are never mixed for one ticket.
 func enqueueTicketChange(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, actor string) error {
+	protocol, err := ticketSyncProtocol(tx, ticket, previous, kind)
+	if err != nil {
+		return err
+	}
+	if protocol == 3 {
+		return enqueueTicketChangeV3(tx, ticket, previous, kind, actor)
+	}
+	return enqueueTicketChangeV4(tx, ticket, previous, kind, actor)
+}
+
+func ticketSyncProtocol(tx *gorm.DB, ticket Ticket, previous *Ticket, kind string) (int, error) {
+	subject := ticket.ID
+	if kind == "reopen" {
+		if previous == nil {
+			return 0, errors.New("missing previous ticket")
+		}
+		subject = previous.ID
+	}
+	var count int64
+	if err := tx.Table("wb_ticket_sync_change").Where("ticket_id = ?", subject).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 3, nil
+	}
+	if err := tx.Table("wb_ticket_sync_change_v4").Where("ticket_id = ?", subject).Count(&count).Error; err != nil {
+		return 0, err
+	}
+	if count > 0 {
+		return 4, nil
+	}
+	return 4, nil
+}
+
+func enqueueTicketChangeV3(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, actor string) error {
 	var id [16]byte
 	if _, err := rand.Read(id[:]); err != nil {
 		return err
 	}
 	c := syncChange{SchemaVersion: 3, ChangeID: hex.EncodeToString(id[:]), SiteCode: ticket.SiteCode, TicketNo: ticket.TicketNo, Type: kind}
 	if kind == "void" {
-		if ticket.VoidedAt == nil {
-			return errors.New("missing void time")
+		void, err := buildVoidSnapshot(ticket, actor)
+		if err != nil {
+			return err
 		}
-		c.Void = &syncVoid{Reason: ticket.VoidReason, Actor: actor, At: *ticket.VoidedAt}
+		c.Void = void
 	} else {
-		if len(ticket.Basis) != 2 {
-			return errors.New("missing ticket basis")
-		}
-		b := ticket.Business
-		t := &syncTicket{TicketNo: ticket.TicketNo, Title: ticket.TicketTitle, Plate: b.Plate, Direction: b.Direction, MaterialCode: b.MaterialCode, MaterialName: b.MaterialName, MaterialSpec: b.MaterialSpec, PartyCode: b.PartyCode, PartyName: b.PartyName, FirstConfirmedAt: ticket.Basis[0].ConfirmedAt, SecondConfirmedAt: ticket.Basis[1].ConfirmedAt, IssuedAt: ticket.IssuedAt, IssuerName: ticket.IssuerName, OriginalGross: ticket.OriginalGross.String(), OriginalTare: ticket.OriginalTare.String(), FinalGross: ticket.FinalGross.String(), FinalTare: ticket.FinalTare.String(), FinalNet: finalNet(ticket.FinalGross, ticket.FinalTare, ticket.NetAdjustment).String(), NetAdjustment: ticket.NetAdjustment.String(), NetAdjustmentMode: ticket.NetAdjustmentMode, NetAdjustmentRateBP: ticket.NetAdjustmentRateBP, NetAdjustmentCategory: ticket.NetAdjustmentCategory, NetAdjustmentCategoryName: ticket.NetAdjustmentCategoryName, GrossSource: ticket.GrossSource, TareSource: ticket.TareSource, AdjustmentRemark: ticket.AdjustmentRemark, AdjustedAt: ticket.AdjustedAt, Driver: b.Driver, DriverPhone: b.DriverPhone, ContactName: b.ContactName, ContactPhone: b.ContactPhone}
-		if ticket.AdjustedBy != nil {
-			t.AdjustedBy = &ticket.IssuerName
+		snapshot, err := buildTicketSnapshot(ticket, previous)
+		if err != nil {
+			return err
 		}
 		if previous != nil {
 			c.PreviousSiteCode = previous.SiteCode
-			t.PreviousTicketNo = &previous.TicketNo
-			gross, tare := previous.FinalGross.String(), previous.FinalTare.String()
-			net := finalNet(previous.FinalGross, previous.FinalTare, previous.NetAdjustment).String()
-			adjustment := previous.NetAdjustment.String()
-			t.PreviousFinalGross = &gross
-			t.PreviousFinalTare = &tare
-			t.PreviousFinalNet = &net
-			t.PreviousNetAdjustment = &adjustment
 		}
-		c.Ticket = t
+		c.Ticket = snapshot
 	}
 	payload, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
 	return tx.Create(&ticketSyncChange{TicketID: ticket.ID, PreviousTicketID: ticket.PreviousTicketID, ChangeID: c.ChangeID, TicketNo: c.TicketNo, ChangeType: kind, Payload: string(payload), Status: "pending"}).Error
+}
+
+func buildVoidSnapshot(ticket Ticket, actor string) (*syncVoid, error) {
+	if ticket.VoidedAt == nil {
+		return nil, errors.New("missing void time")
+	}
+	return &syncVoid{Reason: ticket.VoidReason, Actor: actor, At: *ticket.VoidedAt}, nil
+}
+
+func buildTicketSnapshot(ticket Ticket, previous *Ticket) (*syncTicket, error) {
+	if len(ticket.Basis) != 2 {
+		return nil, errors.New("missing ticket basis")
+	}
+	b := ticket.Business
+	t := &syncTicket{TicketNo: ticket.TicketNo, Title: ticket.TicketTitle, Plate: b.Plate, Direction: b.Direction, MaterialCode: b.MaterialCode, MaterialName: b.MaterialName, MaterialSpec: b.MaterialSpec, PartyCode: b.PartyCode, PartyName: b.PartyName, FirstConfirmedAt: ticket.Basis[0].ConfirmedAt, SecondConfirmedAt: ticket.Basis[1].ConfirmedAt, IssuedAt: ticket.IssuedAt, IssuerName: ticket.IssuerName, OriginalGross: ticket.OriginalGross.String(), OriginalTare: ticket.OriginalTare.String(), FinalGross: ticket.FinalGross.String(), FinalTare: ticket.FinalTare.String(), FinalNet: finalNet(ticket.FinalGross, ticket.FinalTare, ticket.NetAdjustment).String(), NetAdjustment: ticket.NetAdjustment.String(), NetAdjustmentMode: ticket.NetAdjustmentMode, NetAdjustmentRateBP: ticket.NetAdjustmentRateBP, NetAdjustmentCategory: ticket.NetAdjustmentCategory, NetAdjustmentCategoryName: ticket.NetAdjustmentCategoryName, GrossSource: ticket.GrossSource, TareSource: ticket.TareSource, AdjustmentRemark: ticket.AdjustmentRemark, AdjustedAt: ticket.AdjustedAt, Driver: b.Driver, DriverPhone: b.DriverPhone, ContactName: b.ContactName, ContactPhone: b.ContactPhone}
+	if ticket.AdjustedBy != nil {
+		t.AdjustedBy = &ticket.IssuerName
+	}
+	if previous != nil {
+		t.PreviousTicketNo = &previous.TicketNo
+		gross, tare := previous.FinalGross.String(), previous.FinalTare.String()
+		net := finalNet(previous.FinalGross, previous.FinalTare, previous.NetAdjustment).String()
+		adjustment := previous.NetAdjustment.String()
+		t.PreviousFinalGross = &gross
+		t.PreviousFinalTare = &tare
+		t.PreviousFinalNet = &net
+		t.PreviousNetAdjustment = &adjustment
+	}
+	return t, nil
 }
 
 func postTicketChange(ctx context.Context, address string, change ticketSyncChange) error {

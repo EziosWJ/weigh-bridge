@@ -56,6 +56,11 @@ export const router = createBrowserRouter([
       { path: "weighing/parties/new", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingPartyEditPage })) },
       { path: "weighing/parties/:id/edit", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingPartyEditPage })) },
       { path: "weighing/categories", lazy: () => import("@/pages/weighing/materials").then((module) => ({ Component: module.WeighingCategoriesPage })) },
+      { path: "weighing/sync", element: <Navigate to="/weighing/sync/tickets" replace /> },
+      { path: "weighing/sync/tickets", lazy: () => import("@/pages/weighing/sync/tickets").then((module) => ({ Component: module.SyncTicketsPage })) },
+      { path: "weighing/sync/tickets/:id", lazy: () => import("@/pages/weighing/sync/detail").then((module) => ({ Component: module.SyncTicketDetailPage })) },
+      { path: "weighing/sync/master", lazy: () => import("@/pages/weighing/sync/master").then((module) => ({ Component: module.SyncMasterPage })) },
+      { path: "weighing/sync/logs", lazy: () => import("@/pages/system/logs/sync-logs").then((module) => ({ Component: module.SystemSyncLogsPage })) },
       {
         index: true,
         element: <HomeRedirect />,
@@ -137,7 +142,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "system/sync-log",
-        lazy: () => import("@/pages/system/logs/sync-logs").then((module) => ({ Component: module.SystemSyncLogsPage })),
+        element: <Navigate to="/weighing/sync/logs" replace />,
       },
       {
         path: "system/oper-log",

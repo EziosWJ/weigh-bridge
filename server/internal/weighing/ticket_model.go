@@ -4,6 +4,10 @@ import "time"
 
 type Ticket struct {
 	SyncStatus                string           `json:"syncStatus" gorm:"->"`
+	SyncProtocol              int              `json:"syncProtocol" gorm:"->"`
+	SyncReason                string           `json:"syncReason" gorm:"->"`
+	ReconcileStatus           string           `json:"reconcileStatus" gorm:"->"`
+	ReconcileAt               *time.Time       `json:"reconcileAt" gorm:"->"`
 	SiteCode                  string           `json:"siteCode"`
 	SiteName                  string           `json:"siteName"`
 	PrintStatus               string           `json:"printStatus" gorm:"->"`

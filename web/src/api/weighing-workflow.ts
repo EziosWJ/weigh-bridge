@@ -28,7 +28,8 @@ export interface WireSession {
 }
 export interface WireTicket {
  imagesComplete?:boolean;
- siteCode:string;siteName:string; syncStatus?: 'pending' | 'synced' | 'failed' | 'untracked';
+ siteCode:string;siteName:string; syncStatus?: 'pending' | 'waiting_predecessor' | 'temporary_failure' | 'needs_admin' | 'conflict' | 'synced' | 'failed' | 'untracked';
+ syncProtocol?: number; syncReason?: string; reconcileStatus?: 'consistent' | 'pending' | 'needs_review' | 'conflict' | 'unknown' | ''; reconcileAt?: string | null;
   printSheet?: PrintSheet;
   mode?: string;
   id: number; taskId: number; ticketNo: string; revision: number;

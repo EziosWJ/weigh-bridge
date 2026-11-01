@@ -6,8 +6,11 @@ import {
   LayoutDashboard,
   Bell,
   Camera,
+  Cloud,
+  Database,
   Network,
   PanelLeft,
+  RefreshCw,
   Table2,
   Upload,
   Wrench,
@@ -324,12 +327,15 @@ export function buildAppNavigation({
     return sortNavigationItems(items);
   }
   let result = permissionCodes.includes("system:config") ? withConfigurationEntry(merged) : merged;
-  if (isAdmin && !hasNavigationPath(result, "/system/sync-log")) {
-    const entry: NavItem = { label: "同步日志", path: "/system/sync-log", icon: ListChecks, sortOrder: 3 };
-    const index = result.findIndex(item => item.path === "/log");
-    result = index >= 0
-      ? result.map((item, i) => i === index ? { ...item, children: sortNavigationItems([...(item.children ?? []), entry]) } : item)
-      : sortNavigationItems([...result, { label: "日志管理", path: "/log", icon: ListChecks, sortOrder: 2, children: [entry] }]);
+  if (isAdmin && !hasNavigationPath(result, "/weighing/sync/tickets")) {
+    result = sortNavigationItems([...result, {
+      label: "厂云同步", path: "/weighing/sync", icon: Cloud, sortOrder: 11,
+      children: [
+        { label: "单据同步", path: "/weighing/sync/tickets", icon: RefreshCw },
+        { label: "基础资料同步", path: "/weighing/sync/master", icon: Database },
+        { label: "同步日志", path: "/weighing/sync/logs", icon: ListChecks },
+      ],
+    }]);
   }
   return result;
 }
@@ -365,6 +371,10 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/weighing/materials": "物料资料",
   "/weighing/parties": "往来主体",
   "/weighing/categories": "物料分类",
+  "/weighing/sync": "厂云同步",
+  "/weighing/sync/tickets": "单据同步",
+  "/weighing/sync/master": "基础资料同步",
+  "/weighing/sync/logs": "同步日志",
   "/dashboard": "系统概览",
   "/notifications": "我的通知",
   "/announcements": "公告",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ const (
 	CaptureRequiredKey    = "weighing.capture-required"
 	CameraEventMaxAgeKey  = "weighing.camera-event-max-age-minutes"
 	MasterSyncIntervalKey = "weighing.master-sync-interval-minutes"
+	SyncReconcileTimeKey  = "weighing.sync-reconcile-time"
 )
 
 var (
@@ -261,6 +263,15 @@ func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config,
 			return ErrInvalid
 		}
 		value = normalized
+	case SyncReconcileTimeKey:
+		if old.ValueType != "STRING" {
+			return ErrInvalid
+		}
+		normalized, ok := normalizeClock(in.ConfigValue)
+		if !ok {
+			return ErrInvalid
+		}
+		value = normalized
 	default:
 		return ErrBuiltin
 	}
@@ -277,6 +288,19 @@ func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config,
 		s.onMasterSyncIntervalChanged()
 	}
 	return nil
+}
+
+func normalizeClock(value string) (string, bool) {
+	parts := strings.Split(strings.TrimSpace(value), ":")
+	if len(parts) != 2 {
+		return "", false
+	}
+	hour, hourErr := strconv.Atoi(parts[0])
+	minute, minuteErr := strconv.Atoi(parts[1])
+	if hourErr != nil || minuteErr != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return "", false
+	}
+	return fmt.Sprintf("%02d:%02d", hour, minute), true
 }
 
 func normalizeBooleanValue(value string) (string, bool) {
@@ -320,7 +344,7 @@ func (s *Service) Status(c context.Context, m audit.Metadata, id, st int64) erro
 	if e != nil {
 		return e
 	}
-	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey || old.ConfigKey == MasterSyncIntervalKey || old.ConfigKey == CameraEventMaxAgeKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
+	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey || old.ConfigKey == MasterSyncIntervalKey || old.ConfigKey == SyncReconcileTimeKey || old.ConfigKey == CameraEventMaxAgeKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
 		return ErrBuiltin
 	}
 	return s.store.SetStatus(c, id, int(st), event(m, "config.status", "config", id, "更新配置状态"))

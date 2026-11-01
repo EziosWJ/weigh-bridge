@@ -20,6 +20,8 @@ type Service struct {
 	printMu            sync.Mutex
 	masterSyncMu       sync.Mutex
 	ticketSyncMu       sync.Mutex
+	syncReconcileMu    sync.Mutex
+	syncV4Client       *syncV4Client
 	masterSyncEnabled  bool
 	masterSyncAddress  string
 	store              Store
@@ -31,7 +33,7 @@ type Service struct {
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {
-	s := &Service{store: store, devices: devices}
+	s := &Service{store: store, devices: devices, syncV4Client: newSyncV4Client()}
 	if devices != nil {
 		if repo, ok := store.(*Repository); ok {
 			devices.SetPrintHandler(repo.AgentPrintResult)

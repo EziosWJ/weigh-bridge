@@ -26,6 +26,7 @@ func RegisterRoutes(router gin.IRouter, h *Handler) {
 	registerSiteRoutes(router, h)
 	registerSiteConfigurationRoutes(router, h)
 	registerMasterSyncRoutes(router, h)
+	registerSyncV4Routes(router, h)
 	router.GET("/capabilities", h.capabilities)
 	router.GET("/local-status", func(c *gin.Context) { v, e := h.service.LocalStatus(c); writeResult(c, v, e) })
 	registerWorkflowRoutes(router, h)
