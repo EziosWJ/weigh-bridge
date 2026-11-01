@@ -45,7 +45,9 @@ function fieldDifferences(detail: unknown): FieldDifference[] {
 }
 
 function differenceValue(value: unknown): string {
-  return value == null || value === "" ? "—" : String(value);
+  if (value == null) return "未提供";
+  if (value === "") return "空字符串";
+  return String(value);
 }
 
 export function SyncTicketDetailPage() {
