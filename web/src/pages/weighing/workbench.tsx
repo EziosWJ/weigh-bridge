@@ -594,8 +594,8 @@ function WorkbenchContent() {
       </div>
     </div>
     <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
-      <DialogOverlay />
-      <DialogContent className="workbench-business-dialog flex max-w-[1200px] flex-col">
+      <DialogOverlay className="workbench-modal-overlay" />
+      <DialogContent className="workbench-business-dialog workbench-modal flex max-w-[1200px] flex-col">
         <DialogHeader><div><DialogTitle>查看运输资料</DialogTitle><DialogDescription>{taskInfo ? '本趟资料快照只读；纠错请前往任务详情。' : '当前提交信息。'}</DialogDescription></div><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
         <DialogBody><div className="weighing-business min-w-0">{taskInfo ? <ContentCard title={successfulTask ? '本趟运输' : '核对本趟运输'} extra={<StatusTag>{awaitingResult ? '提交待核实' : taskStatusLabels[taskInfo.status]}</StatusTag>}>
           <SectionTabs key={taskInfo.id} label="本趟运输信息" items={[

@@ -75,7 +75,7 @@ export function WorkbenchShell() {
     <main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
     <Dialog open={takeoverOpen} onOpenChange={open => { if (!busy) { setTakeoverOpen(open); if (!open) setTakeoverReason(''); } }} trapFocus restoreFocus lockScroll closeOnEscape={!busy} closeOnOverlayClick={!busy}>
       <DialogOverlay />
-      <DialogContent className="max-w-[480px]">
+      <DialogContent className="workbench-modal max-w-[480px]">
         <DialogHeader><div><DialogTitle>接管操作权</DialogTitle><DialogDescription>当前地磅正由其他会话使用，请填写接管原因以便追溯。</DialogDescription></div></DialogHeader>
         <DialogBody><label htmlFor="takeover-reason" className="mb-2 block text-sm font-medium">接管原因 <span className="text-error">*</span></label><Textarea id="takeover-reason" autoFocus rows={3} placeholder="请输入接管原因" value={takeoverReason} onChange={e => setTakeoverReason(e.target.value)} /></DialogBody>
         <DialogFooter><Button disabled={busy} onClick={() => { setTakeoverOpen(false); setTakeoverReason(''); }}>取消</Button><Button variant="primary" disabled={!takeoverReason.trim() || busy || !!pending} aria-busy={busy} title={pending ? '上次提交结果待核实，请先查询原结果' : undefined} onClick={() => {

@@ -108,8 +108,8 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   const capturePolicy = value.capture?.captureRequired === false ? '非强制抓拍' : '强制抓拍';
 
   return <Dialog open onOpenChange={open => { if (!open && !submitting) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen && !submitting} restoreFocus lockScroll closeOnOverlayClick={false}>
-    <DialogOverlay />
-    <DialogContent className="weighing-review flex max-h-[calc(100dvh-32px)] max-w-[1180px] flex-col">
+    <DialogOverlay className="workbench-modal-overlay" />
+    <DialogContent className="weighing-review workbench-modal flex max-h-[calc(100dvh-32px)] max-w-[1180px] flex-col">
       <DialogHeader className="weighing-review-header">
         <div className="flex min-w-0 items-center gap-3">
           <span className="review-header-icon" aria-hidden><ClipboardCheck className="h-5 w-5" /></span>

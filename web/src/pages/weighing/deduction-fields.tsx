@@ -139,9 +139,21 @@ export function NetAdjustmentFields({ basis, value, onChange, allowUpward = fals
   return <fieldset className="min-w-0 space-y-3">
     <legend className="text-sm font-semibold">核对原始重量并录入净重调整 <HelpHint label="净重调整规则">毛重、皮重沿用设备原始值；正常出单只能扣减净重，可按吨或按比例录入。负数表示上调，仅更正重开可用。调整后净重须大于零且小于最终毛重；比例折算不足 0.001 吨时请改按吨录入。</HelpHint></legend>
     <div className="grid gap-3 sm:grid-cols-3">
-      <DetailItem label="原始毛重" value={<strong className="text-2xl tabular-nums">{formatWeight(basis.gross)}</strong>} />
-      <DetailItem label="原始皮重" value={<strong className="text-2xl tabular-nums">{formatWeight(basis.tare)}</strong>} />
-      <DetailItem label="调整前净重" value={<strong className="text-2xl tabular-nums">{formatWeight(basis.net)}</strong>} />
+      <DetailItem
+        className="rounded-control border border-border border-l-[3px] border-l-info bg-neutral-background px-3 py-2.5"
+        label="原始毛重"
+        value={<strong className="text-2xl font-semibold tabular-nums text-text-primary">{formatWeight(basis.gross)}</strong>}
+      />
+      <DetailItem
+        className="rounded-control border border-border border-l-[3px] border-l-text-secondary bg-neutral-background px-3 py-2.5"
+        label="原始皮重"
+        value={<strong className="text-2xl font-semibold tabular-nums text-text-primary">{formatWeight(basis.tare)}</strong>}
+      />
+      <DetailItem
+        className="rounded-control border border-border border-l-[3px] border-l-success bg-neutral-background px-3 py-2.5"
+        label="调整前净重"
+        value={<strong className="text-2xl font-semibold tabular-nums text-success">{formatWeight(basis.net)}</strong>}
+      />
     </div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div className="space-y-1.5">
@@ -166,7 +178,7 @@ export function NetAdjustmentFields({ basis, value, onChange, allowUpward = fals
         <Input id="net-adjustment-remark" placeholder="请输入其他调整原因" value={value.remark ?? ''} onChange={event => onChange({ ...value, remark: event.target.value })} />
       </div>}
     </div>
-    <div className="grid gap-4 rounded-control bg-neutral-background p-3 sm:grid-cols-2">
+    <div className="grid gap-4 rounded-control border border-border border-l-[3px] border-l-primary bg-neutral-background p-3 sm:grid-cols-2">
       <DetailItem label="系统计算：净重调整量" value={final ? <strong className="text-2xl tabular-nums">{netAdjustmentText(amount)}</strong> : '待核对调整量'} />
       <DetailItem label="调整后净重" value={final ? <strong className="text-3xl tabular-nums text-primary">{formatWeight(final.net)}</strong> : <span className="text-text-tertiary">待核对调整量</span>} />
     </div>

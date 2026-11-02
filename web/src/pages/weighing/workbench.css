@@ -292,13 +292,40 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .workbench-business-entry { gap: 8px; margin-top: 8px; padding-top: 8px; }
 }
 
+/* 工作台弹窗：加深遮罩并强化外缘，避免与页面卡片混淆。 */
+/* 使用 body:has 提升优先级，覆盖弹窗自身的 bg-surface、border-border、shadow-admin 工具类。 */
+body:has(.weighing-workbench) .workbench-modal-overlay {
+  background: rgb(2 6 23 / 0.6);
+}
+body:has(.weighing-workbench) .workbench-modal {
+  border-color: #5f9fbd;
+  box-shadow:
+    0 0 0 1px rgb(2 8 13 / 0.95),
+    0 0 0 2px rgb(101 217 251 / 0.12),
+    0 30px 90px rgb(0 0 0 / 0.72);
+}
+.workbench-modal::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgb(101 217 251 / 0.18);
+  border-radius: inherit;
+  pointer-events: none;
+}
+body:has(.weighing-workbench) .workbench-business-dialog {
+  background:
+    radial-gradient(110% 130% at 100% 0%, #143d52 0%, transparent 46%),
+    linear-gradient(155deg, #102331 0%, #091923 100%);
+}
+.workbench-business-dialog > header {
+  background: #0c1d2a;
+}
+
 /* 集中核对窗口：摘要、业务、抓拍、清单和固定操作栏 */
 .weighing-review {
   background:
     radial-gradient(110% 130% at 100% 0%, #143d52 0%, transparent 46%),
     linear-gradient(155deg, #102331 0%, #091923 100%);
-  border-color: #315065;
-  box-shadow: 0 24px 80px #0009;
 }
 .weighing-review .weighing-review-header {
   align-items: center;
