@@ -61,6 +61,8 @@ export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) 
   const categoryName = snapshot?.netAdjustmentCategoryName ?? ticket.netAdjustmentCategoryName;
   const grossDeduction = snapshot?.grossDeduction ?? 0;
   const tareDeduction = snapshot?.tareDeduction ?? 0;
+  const manualReturn = ticket.records.some(record => record.source === 'manual') || ticket.grossSource === 'manual' || ticket.tareSource === 'manual';
+  const adjusted = amount !== 0 || grossDeduction !== 0 || tareDeduction !== 0;
   return <div className="space-y-4">
     <div className="grid gap-3 sm:grid-cols-3">
       {original && <><DetailItem label="原始毛重" value={formatWeight(original.gross)} /><DetailItem label="原始皮重" value={formatWeight(original.tare)} /><DetailItem label="原始净重" value={formatWeight(original.net)} /></>}
@@ -69,7 +71,7 @@ export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) 
       <DetailItem label="调整备注" value={[categoryName, snapshot?.reason].filter(Boolean).filter((item, index, items) => items.indexOf(item) === index).join('：') || '未填写'} />
       {(grossDeduction !== 0 || tareDeduction !== 0) && <><DetailItem label="毛重更正差额" value={formatAdjustment(grossDeduction)} /><DetailItem label="皮重更正差额" value={formatAdjustment(tareDeduction)} /></>}
     </div>
-    <DetailItem label="重量来源" value={snapshot?.source === 'manual' || amount !== 0 || grossDeduction !== 0 || tareDeduction !== 0 ? '人工调整（原始采集依据保留）' : '沿用采集依据'} />
+    <DetailItem label="重量来源" value={manualReturn && !adjusted ? '含人工补录回磅（非设备采集）' : adjusted || snapshot?.source === 'manual' ? '人工调整（原始采集依据保留）' : '沿用采集依据'} />
     {snapshot ? <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
       <DetailItem label="操作人／记录身份" value={`${snapshot.actor} · ${snapshot.role ? roleLabels[snapshot.role] : '账号操作'}`} />
       <DetailItem label="操作时间" value={beijingTime(snapshot.at)} />

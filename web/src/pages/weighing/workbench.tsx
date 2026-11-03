@@ -14,6 +14,7 @@ import { PlateInput } from './plate-input';
 import { normalizePlate, plateError } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
+import { weighingApi } from '@/api/weighing';
 import { workflowApi, type PlateCandidate } from '@/api/weighing-workflow';
 import { roleLabels, taskStatusLabels, type PlateEvidence, type NetAdjustmentInput, type TaskInput, type TransportTask, type WeightValues, type WeighingCommand, type WeighingState } from '@/types/weighing';
 import { useTransportDirections } from '@/hooks/use-transport-directions';
@@ -73,6 +74,10 @@ function WorkbenchContent() {
   const [reviewError, setReviewError] = useState('');
   const [cameraSize, setCameraSize] = useState<CameraSize>('standard');
   const [review, setReview] = useState<{ data: WeighingState; title: string } | null>(null);
+  const [completionOpen, setCompletionOpen] = useState(false);
+  const [autoPrintTicket, setAutoPrintTicket] = useState('');
+  const [autoPrintNotice, setAutoPrintNotice] = useState('');
+  const [checkingAutoPrint, setCheckingAutoPrint] = useState(false);
   const [success, setSuccess] = useState<{ taskId: string; stage: 'first' | 'second' } | null>(null);
   const initialAgentPlate = device?.plate?.at && !device.plate.at.startsWith('0001') && !device.plate.failed ? normalizePlate(device.plate.candidate) : '';
   const [recognition, setRecognition] = useState<{ scenePlate: string; candidate?: string } | null>(initialAgentPlate ? { scenePlate: '', candidate: initialAgentPlate } : null);
@@ -400,6 +405,18 @@ function WorkbenchContent() {
       toast.warning({ title: '提交结果待核实', description: '请求已发出但结果未知，请先查询原结果，避免重复称重或出单。', duration: 6000 });
     } else if (taskId) {
       setSuccess({ taskId, stage }); setRecognition(null); setRecognitionHint('');
+      setCheckingAutoPrint(stage === 'second'); setCompletionOpen(true);
+      setAutoPrintTicket(''); setAutoPrintNotice('');
+      if (stage === 'second') {
+        try {
+          const settings = await weighingApi.capabilities();
+          const currentTicket = useWeighingStore.getState().data.tickets.find(item => item.taskId === taskId && item.status === 'valid');
+          if (settings.autoPrintEnabled && currentTicket?.printStatus === 'unprinted') setAutoPrintTicket(currentTicket.id);
+        } catch {
+          setAutoPrintNotice('自动打印配置读取失败，请手动打印。');
+        } finally { setCheckingAutoPrint(false); }
+      }
+
       const savedTicket = next.tickets.find(item => item.taskId === taskId && item.status === 'valid');
       toast.success({
         title: stage === 'first' ? '首磅已保存' : '回磅已保存',
@@ -432,6 +449,7 @@ function WorkbenchContent() {
     if (resolved?.committed && taskId) {
       setParams({ task: taskId });
       setSuccess({ taskId, stage: pending.stage });
+      setAutoPrintTicket(''); setAutoPrintNotice(''); setCompletionOpen(true);
       toast.success({ title: '已查询到原成功结果', description: '沿用原记录，无需重复提交。' });
     } else {
       setSuccess(null);
@@ -452,7 +470,7 @@ function WorkbenchContent() {
       navigate(pending.operation === 'print' ? `/weighing/tickets/${useWeighingStore.getState().data.tickets.find(t => t.taskId === result.taskId && t.status === 'valid')?.id}` : `/weighing/tasks/${result.taskId}`);
       return;
     }
-    setParams({ task: result.taskId }); setSuccess({ taskId: result.taskId, stage: pending.stage });
+    setParams({ task: result.taskId }); setSuccess({ taskId: result.taskId, stage: pending.stage }); setAutoPrintTicket(''); setAutoPrintNotice(''); setCompletionOpen(true);
     toast.success({ title: '已按原请求恢复', description: '沿用服务端记录，无需重复称重。' });
   }
 
@@ -461,7 +479,7 @@ function WorkbenchContent() {
     ++candidateEpoch.current; setCandidateCycle(value => value + 1); setCandidates([]); selectedCandidate.current = null; candidateOwner.current = 'empty';
     observedAt.current = useWeighingStore.getState().device?.plate?.at ?? '';
     setRecognition(null); setRecognitionHint(''); setOfferManualSource(false); editing.current = false;
-    setParams({}); setPlate(''); setSearchedPlate(''); setSuccess(null);
+    setParams({}); setPlate(''); setSearchedPlate(''); setSuccess(null); setCompletionOpen(false); setAutoPrintTicket(''); setAutoPrintNotice('');
     toast.success('已结束当前车辆，可继续办理下一辆。');
   }
 
@@ -571,7 +589,7 @@ function WorkbenchContent() {
             : successfulTask ? <>
               <h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成 · 等待回磅' : ticket ? '回磅已完成 · 已出单' : '回磅已完成'}</h2>
               {ticket && <p className="text-sm text-text-secondary">最终净重 {formatWeight(ticket.net)}{ticket.ticketNo ? ` · 单据号 ${ticket.ticketNo}` : ''}</p>}
-              {ticket && <TicketPrintActions ticketId={ticket.id} />}
+              {ticket && !completionOpen && <TicketPrintActions ticketId={ticket.id} />}
               <Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button>
               {ticket && <Link target="weighbridge-management" className="inline-block text-sm text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link>}
             </>
@@ -590,6 +608,17 @@ function WorkbenchContent() {
         </ContentCard>
       </div>
     </div>
+    <Dialog open={completionOpen} onOpenChange={setCompletionOpen} closeOnEscape={false} closeOnOverlayClick={false} trapFocus restoreFocus lockScroll>
+      <DialogOverlay className="workbench-modal-overlay" />
+      <DialogContent className="workbench-modal">
+        <DialogHeader><div><DialogTitle>{successfulStage === 'first' ? '首磅称重已办理完成' : '回磅已完成'}</DialogTitle><DialogDescription>{successfulStage === 'first' ? '车辆等待回磅，是否开始办理下一辆车？' : '请确认打印状态后继续办理。'}</DialogDescription></div></DialogHeader>
+        <DialogBody><div className="space-y-3">
+          <p>车牌：{summaryPlate}</p>
+          {ticket && <><p>单据号：{ticket.ticketNo} · 最终净重：{formatWeight(ticket.net)}</p>{autoPrintNotice && <p role="alert" className="text-warning">{autoPrintNotice}</p>}{checkingAutoPrint ? <p role="status">正在读取自动打印配置…</p> : <TicketPrintActions ticketId={ticket.id} autoPrint={autoPrintTicket === ticket.id} />}</>}
+        </div></DialogBody>
+        <DialogFooter><Button disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => setCompletionOpen(false)}>{successfulStage === 'first' ? '留在当前页面' : '返回当前页面'}</Button><Button variant="primary" disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => void nextVehicle()}>开始办理下一辆</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
       <DialogOverlay className="workbench-modal-overlay" />
       <DialogContent className="workbench-business-dialog workbench-modal flex max-w-[1200px] flex-col">

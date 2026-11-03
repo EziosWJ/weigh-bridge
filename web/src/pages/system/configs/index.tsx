@@ -86,6 +86,7 @@ const DEFAULT_FILTERS: FilterState = {
 const LOG_CLEAR_ENABLED_KEY = "system.log-clear-enabled";
 const CAMERA_EVENT_MAX_AGE_KEY = "weighing.camera-event-max-age-minutes";
 const MASTER_SYNC_INTERVAL_KEY = "weighing.master-sync-interval-minutes";
+const AUTO_PRINT_KEY = "weighing.auto-print";
 const CAPTURE_REQUIRED_KEY = "weighing.capture-required";
 const TICKET_TITLE_KEY = "weighing.ticket-title";
 
@@ -173,7 +174,7 @@ function isEditableBuiltinConfig(config: SystemConfigRecord) {
     return config.valueType === "TEXT";
   }
   return (
-    [LOG_CLEAR_ENABLED_KEY, CAPTURE_REQUIRED_KEY].includes(config.configKey ?? "") &&
+    [LOG_CLEAR_ENABLED_KEY, CAPTURE_REQUIRED_KEY, AUTO_PRINT_KEY].includes(config.configKey ?? "") &&
     config.valueType === "BOOLEAN"
   );
 }
@@ -647,12 +648,15 @@ export function SystemConfigsPage() {
                 record.configKey === MASTER_SYNC_INTERVAL_KEY ||
                 record.configKey === CAMERA_EVENT_MAX_AGE_KEY ||
                 record.configKey === CAPTURE_REQUIRED_KEY ||
+                record.configKey === AUTO_PRINT_KEY ||
                 record.configKey === TICKET_TITLE_KEY ||
                 record.configKey?.startsWith("weighing.local-")
               }
               title={
                 record.configKey === CAMERA_EVENT_MAX_AGE_KEY
                   ? "车牌事件有效期始终启用，请直接编辑分钟数"
+                  : record.configKey === AUTO_PRINT_KEY
+                  ? "请通过编辑布尔值切换自动打印"
                   : record.configKey === CAPTURE_REQUIRED_KEY
                   ? "请通过编辑布尔值切换强制抓拍"
                   : record.configKey === TICKET_TITLE_KEY

@@ -164,6 +164,7 @@ type Store interface {
 
 	CorrectTask(context.Context, int64, CorrectionInput, audit.Event) (CommandResult, error)
 	TerminateTask(context.Context, int64, TaskActionInput, audit.Event) (CommandResult, error)
+	ManualReturn(context.Context, int64, ManualReturnInput, audit.Event) (CommandResult, error)
 	VoidTicket(context.Context, int64, VoidInput, audit.Event) (CommandResult, error)
 	Reweigh(context.Context, int64, ReweighInput, audit.Event) (CommandResult, error)
 	ReopenTicket(context.Context, int64, ReopenInput, audit.Event) (CommandResult, error)

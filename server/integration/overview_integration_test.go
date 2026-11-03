@@ -36,7 +36,7 @@ func checkBusinessOverview(t *testing.T, database *platformdatabase.Database, ro
 		t.Fatal(err)
 	}
 	var sample weighing.Sample
-	if err := db.First(&sample, first.SampleID).Error; err != nil {
+	if err := db.First(&sample, *first.SampleID).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -103,7 +103,8 @@ func checkBusinessOverview(t *testing.T, database *platformdatabase.Database, ro
 			t.Fatal(err)
 		}
 		copyRecord := first
-		copyRecord.ID, copyRecord.TaskID, copyRecord.SampleID = 0, cloned.ID, copySample.ID
+		copySampleID := copySample.ID
+		copyRecord.ID, copyRecord.TaskID, copyRecord.SampleID = 0, cloned.ID, &copySampleID
 		copyRecord.ReplacesRecordID, copyRecord.RetainedRecordID = nil, nil
 		copyRecord.ConfirmedAt = start.Add(time.Duration(3-i) * time.Hour)
 		if err := db.Create(&copyRecord).Error; err != nil {

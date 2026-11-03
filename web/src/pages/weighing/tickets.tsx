@@ -25,7 +25,7 @@ import { protocolLabel, reconcileLabels, syncLabels } from "./sync/labels";
 import type { DataTableColumn } from "@/types";
 import { printStatusLabels, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
 import { DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
-import { BusinessSnapshot, WeighRecords } from "./record-info";
+import { BusinessSnapshot, ManualReturnNotice, WeighRecords } from "./record-info";
 import { TicketPrintActions } from "./ticket-print-actions";
 import { TicketSheet } from "./ticket-sheet";
 import { TicketReopenDialog } from "./ticket-reopen-dialog";
@@ -133,6 +133,7 @@ export function WeighingTicketDetailPage() {
         {pending && <p className="mb-space-4 text-warning">提交结果尚未核实，请<WorkbenchLink className={linkClass} to={`/weighing/workbench?task=${encodeURIComponent(ticket.taskId)}`}>前往工作台查询结果</WorkbenchLink>。</p>}
         <div className="mb-space-4 grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4"><DetailItem label="车牌" value={ticket.plate} /><DetailItem label="业务" value={directionLabels[ticket.direction]} /><DetailItem label={ticket.direction === 'inbound' ? '供货方' : '收货方'} value={ticket.partyName} /><DetailItem label="物料" value={[ticket.materialName, ticket.materialSpec].filter(Boolean).join(' / ')} /></div>
         <TicketWeights ticket={ticket} />
+        <div className="mt-space-4"><ManualReturnNotice records={ticket.records} /></div>
         <div className="mt-space-4 grid gap-space-4 border-t border-border pt-space-4 sm:grid-cols-3"><DetailItem label="出单时间" value={beijingTime(ticket.issuedAt)} /><DetailItem label="打印状态" value={printStatusLabels[ticket.printStatus]} /><DetailItem label="补打次数" value={ticket.reprintCount} /></div>
         {canOperate && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? can("void") && <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废单据</Button> : canReopen && can("reopen") ? <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.reprintAuthorized && <StatusTag tone="warning">已登记一次补打</StatusTag>}</div>}
         {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">上次打印结果未知，重新打印可能重复出纸。</p>}

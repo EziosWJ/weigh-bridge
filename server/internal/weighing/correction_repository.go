@@ -82,6 +82,87 @@ func (r *Repository) TerminateTask(ctx context.Context, id int64, in TaskActionI
 		return out, nil
 	})
 }
+
+// ManualReturn completes an awaiting-second task from an operator-entered
+// second weight. It shares the task row lock and idempotent command envelope
+// with normal return confirmation and termination, so only one path can finish
+// the task or issue a ticket. No device sample, stability state, image or
+// capture result is fabricated; the record and ticket carry a manual source.
+func (r *Repository) ManualReturn(ctx context.Context, id int64, in ManualReturnInput, e audit.Event) (CommandResult, error) {
+	var task Task
+	payload := struct {
+		ID    int64
+		Input ManualReturnInput
+	}{id, in}
+	return r.command(ctx, in.RequestID, "task.manual-return", payload, e, func(tx *gorm.DB) error { var err error; task, err = lockRow[Task](tx, id); return err }, func(tx *gorm.DB, name string) (commandOutcome, error) {
+		out := commandOutcome{result: CommandResult{TaskID: id, TaskVersion: task.Version, Status: task.Status}}
+		if task.Status != "awaiting_second" || task.Version != in.Version || task.CurrentFirstRecordID == nil || task.CurrentSecondRecordID != nil {
+			return out, ErrConflict
+		}
+		first, err := findOne[WeighRecord](tx, *task.CurrentFirstRecordID)
+		if err != nil {
+			return out, err
+		}
+		now := time.Now().UTC()
+		returnedAt := in.ReturnedAt.UTC()
+		if returnedAt.IsZero() || returnedAt.Before(first.CapturedAt) || returnedAt.After(now) {
+			return out, ErrManualReturnTime
+		}
+		gross, tare := first.Weight, in.Weight
+		if task.Direction == "outbound" {
+			gross, tare = in.Weight, first.Weight
+		}
+		if in.Weight <= 0 || gross <= 0 || tare <= 0 || gross <= tare {
+			return out, ErrWeight
+		}
+		record := WeighRecord{
+			TaskID:      id,
+			Source:      "manual",
+			Stage:       "second",
+			Kind:        weighingKind(task.Direction, "second"),
+			Weight:      in.Weight,
+			CapturedAt:  returnedAt,
+			ConfirmedAt: now,
+			ScaleCode:   task.ScaleCode,
+			Reason:      in.Reason,
+			ActorID:     e.Metadata.ActorID,
+			ActorName:   name,
+			Evidence: snapshot(map[string]any{
+				"source": "manual", "manualEntry": true,
+				"actualReturnedAt": returnedAt, "enteredAt": now,
+				"enteredBy": name, "enteredByUserId": e.Metadata.ActorID,
+				"reason": in.Reason,
+			}),
+			PlateEvidence: snapshot(map[string]any{"source": "manual", "confirmedPlate": task.Plate, "at": now}),
+		}
+		if err := tx.Create(&record).Error; err != nil {
+			return out, err
+		}
+		ticket, err := makeTicket(task, first, record, nil, nil, "", false, false, e.Metadata.ActorID, name, nil)
+		if err != nil {
+			return out, err
+		}
+		if err := insertTicket(ctx, tx, &ticket, r.dataDir); err != nil {
+			return out, err
+		}
+		if err := enqueueTicketChange(tx, ticket, nil, "issue", name); err != nil {
+			return out, err
+		}
+		task.CurrentSecondRecordID = ptr(record.ID)
+		task.Status = "completed"
+		task.CompletedAt = &now
+		task.UpdateTime = now
+		task.Version++
+		if err := tx.Save(&task).Error; err != nil {
+			return out, err
+		}
+		out.result = CommandResult{TaskID: id, RecordID: record.ID, TicketID: ticket.ID, TaskVersion: task.Version, Status: task.Status}
+		out.event.Before = snapshot(map[string]any{"status": "awaiting_second", "first": first, "taskVersion": in.Version})
+		out.event.After = snapshot(map[string]any{"record": record, "ticket": ticketView(ticket), "taskVersion": task.Version})
+		out.event.Reason = in.Reason
+		return out, nil
+	})
+}
 func (r *Repository) VoidTicket(ctx context.Context, id int64, in VoidInput, e audit.Event) (CommandResult, error) {
 	existing, err := findOne[Ticket](r.db.WithContext(ctx), id)
 	if err != nil {

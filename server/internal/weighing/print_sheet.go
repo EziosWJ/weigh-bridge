@@ -50,6 +50,12 @@ func compactPrintSheet(ticket TicketView, title string) *PrintSheet {
 		material += " / " + ticket.Business.MaterialSpec
 	}
 	marks := []string{}
+	for _, record := range ticket.Basis {
+		if record.Source == "manual" {
+			marks = append(marks, "回磅人工补录")
+			break
+		}
+	}
 	if ticket.Mode == "test" {
 		marks = append(marks, "历史测试单")
 	}

@@ -423,7 +423,7 @@ func (r *Repository) Capture(ctx context.Context, in CaptureInput, e audit.Event
 		}
 		result = Sample{ScaleCode: in.ScaleCode, OwnerUserID: e.Metadata.ActorID, ClientID: in.ClientID, SessionGeneration: session.Generation, TaskID: in.TaskID, TargetRecordID: in.TargetRecordID, TaskVersion: version, BusinessHash: hash(business), Business: business, Stage: stage, Kind: weighingKind(business.Direction, stage), Plate: business.Plate, Source: captureSource, Weight: captured.Weight, CapturedAt: capturedAt, Stable: 1, DeviceOK: 1, Evidence: evidence, PlateEvidence: plateEvidence, DeviceRevision: device.State.Revision, MeasurementGeneration: captured.MeasurementGeneration, MeasurementVerifiedAt: verifiedAt, CameraConfigVersion: captured.CameraConfigVersion}
 		// Recapture invalidates earlier unconfirmed samples in this session.
-		if err := tx.Model(&Sample{}).Where("session_generation=? AND invalidated_at IS NULL AND id NOT IN (SELECT sample_id FROM wb_weigh_record)", session.Generation).Update("invalidated_at", now).Error; err != nil {
+		if err := tx.Model(&Sample{}).Where("session_generation=? AND invalidated_at IS NULL AND NOT EXISTS (SELECT 1 FROM wb_weigh_record r WHERE r.sample_id=wb_sample.id)", session.Generation).Update("invalidated_at", now).Error; err != nil {
 			return err
 		}
 		if err := tx.Create(&result).Error; err != nil {
@@ -487,7 +487,7 @@ func validateSample(ctx context.Context, tx *gorm.DB, in ConfirmationInput, acto
 	return sample, nil
 }
 func newRecord(sample Sample, taskID int64, actor int64, name string) WeighRecord {
-	return WeighRecord{TaskID: taskID, SampleID: sample.ID, Stage: sample.Stage, Kind: sample.Kind, Weight: sample.Weight, CapturedAt: sample.CapturedAt, ConfirmedAt: time.Now().UTC(), ScaleCode: sample.ScaleCode, ActorID: actor, ActorName: name, Evidence: sample.Evidence, PlateEvidence: sample.PlateEvidence}
+	return WeighRecord{TaskID: taskID, SampleID: ptr(sample.ID), Source: "collected", Stage: sample.Stage, Kind: sample.Kind, Weight: sample.Weight, CapturedAt: sample.CapturedAt, ConfirmedAt: time.Now().UTC(), ScaleCode: sample.ScaleCode, ActorID: actor, ActorName: name, Evidence: sample.Evidence, PlateEvidence: sample.PlateEvidence}
 }
 
 type commandOutcome struct {
@@ -517,7 +517,7 @@ func replayOperation(op Operation, requestHash string) (CommandResult, error) {
 	return result, nil
 }
 func domainError(err error) bool {
-	return errors.Is(err, ErrForbidden) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrConflict) || errors.Is(err, ErrReferenced) || errors.Is(err, ErrConditions) || errors.Is(err, ErrCapturePolicyChanged) || errors.Is(err, ErrCaptureCameraRequired) || errors.Is(err, ErrMeasurementCapability) || errors.Is(err, ErrCameraConfigChanged) || errors.Is(err, ErrSession) || errors.Is(err, ErrWeight) || errors.Is(err, ErrNotFound)
+	return errors.Is(err, ErrForbidden) || errors.Is(err, ErrInvalid) || errors.Is(err, ErrConflict) || errors.Is(err, ErrReferenced) || errors.Is(err, ErrConditions) || errors.Is(err, ErrCapturePolicyChanged) || errors.Is(err, ErrCaptureCameraRequired) || errors.Is(err, ErrMeasurementCapability) || errors.Is(err, ErrCameraConfigChanged) || errors.Is(err, ErrSession) || errors.Is(err, ErrWeight) || errors.Is(err, ErrManualReturnTime) || errors.Is(err, ErrNotFound)
 }
 func (r *Repository) command(ctx context.Context, key, action string, payload any, e audit.Event, lock func(*gorm.DB) error, perform func(*gorm.DB, string) (commandOutcome, error)) (CommandResult, error) {
 	var result CommandResult

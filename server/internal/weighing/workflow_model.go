@@ -17,6 +17,7 @@ var (
 	ErrSession              = errors.New("地磅操作会话已失效，请重新取得操作权")
 	ErrRequestKey           = errors.New("同一请求编号不能用于不同操作或内容")
 	ErrWeight               = errors.New("毛重必须大于皮重，原始与最终净重均须大于零")
+	ErrManualReturnTime     = errors.New("实际回磅时间须不早于有效首磅时间且不晚于当前时间")
 	// New formal-capture failures. They are transport-visible business errors,
 	// never a silent downgrade to the legacy Agent image pair.
 	ErrCaptureCameraRequired = errors.New("强制抓拍已开启但未指定称重抓拍摄像头")
@@ -226,7 +227,8 @@ func (Task) TableName() string { return "wb_transport_task" }
 type WeighRecord struct {
 	ID                  int64     `json:"id" gorm:"primaryKey"`
 	TaskID              int64     `json:"taskId"`
-	SampleID            int64     `json:"sampleId"`
+	SampleID            *int64    `json:"sampleId"`
+	Source              string    `json:"source" gorm:"column:source;default:collected"`
 	Stage               string    `json:"stage"`
 	Kind                string    `json:"kind"`
 	Weight              Tonnes    `json:"weight" gorm:"column:weight_milli_tonne" swaggertype:"string"`

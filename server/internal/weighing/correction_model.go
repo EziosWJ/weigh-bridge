@@ -1,5 +1,7 @@
 package weighing
 
+import "time"
+
 type TaskActionInput struct {
 	RequestID string `json:"requestId"`
 	Version   int64  `json:"version"`
@@ -8,6 +10,17 @@ type TaskActionInput struct {
 type CorrectionInput struct {
 	TaskActionInput
 	Business BusinessInput `json:"business"`
+}
+
+// ManualReturnInput records the second weighing without a device sample. The
+// weight is the operator's tonne value, ReturnedAt is the actual return time
+// and is validated against the first weighing and server time.
+type ManualReturnInput struct {
+	RequestID  string    `json:"requestId"`
+	Version    int64     `json:"version"`
+	Weight     Tonnes    `json:"weight" swaggertype:"string"`
+	ReturnedAt time.Time `json:"returnedAt"`
+	Reason     string    `json:"reason"`
 }
 type VoidInput struct {
 	RequestID string `json:"requestId"`

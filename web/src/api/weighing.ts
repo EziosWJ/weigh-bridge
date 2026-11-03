@@ -9,7 +9,7 @@ export interface SiteGrant {siteCode:string;canOperate:number}
 export interface DailyTicketSequence {businessDate:string;lastIssued:number}
 export interface WeighingCapabilities {
  localSiteCode: string; localScaleCode: string; configured: boolean; initialized: boolean;
- maintenanceEnabled?: boolean; masterSyncBound?: boolean;
+ maintenanceEnabled?: boolean; masterSyncBound?: boolean; autoPrintEnabled?: boolean;
  sites: WeighingSite[];
   userId: number;
   permissionCodes: string[];

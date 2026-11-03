@@ -5483,6 +5483,45 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/tasks/{id}/manual-returns": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "人工补录回磅并完成原任务出单",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "业务对象 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "人工补录回磅重量、实际回磅时间与原因",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.ManualReturnInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/tasks/{id}/reweighs": {
             "post": {
                 "security": [
@@ -7850,6 +7889,26 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.ManualReturnInput": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                },
+                "returnedAt": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.NetAdjustmentInput": {
             "type": "object",
             "properties": {
@@ -8672,6 +8731,12 @@ const docTemplate = `{
                 "printStatus": {
                     "type": "string"
                 },
+                "reconcileAt": {
+                    "type": "string"
+                },
+                "reconcileStatus": {
+                    "type": "string"
+                },
                 "reprintCount": {
                     "type": "integer"
                 },
@@ -8691,6 +8756,12 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "syncProtocol": {
+                    "type": "integer"
+                },
+                "syncReason": {
                     "type": "string"
                 },
                 "syncStatus": {
@@ -8779,6 +8850,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "scaleCode": {
+                    "type": "string"
+                },
+                "source": {
                     "type": "string"
                 },
                 "stage": {

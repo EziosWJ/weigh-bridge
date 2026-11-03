@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/common/field';
 import { FormDialog } from '@/components/common/form-dialog';
@@ -8,15 +8,17 @@ import { toast } from '@/components/common/toast-store';
 import { printStatusLabels } from '@/types/weighing';
 
 /** 所有入口共用现有打印命令；打开页面和刷新状态均不发起打印。 */
-export function TicketPrintActions({ ticketId }: { ticketId: string }) {
+export function TicketPrintActions({ ticketId, autoPrint = false }: { ticketId: string; autoPrint?: boolean }) {
   const { data, capabilities, busy, dispatch, loadTicket } = useWeighingStore();
   const ticket = data.tickets.find(item => item.id === ticketId);
   const canPrint = !!capabilities?.sites.some(s=>s.canOperate)&&capabilities.permissionCodes.includes('weighing:print');
   const canReprint = capabilities?.permissionCodes.includes('weighing:reprint') ?? false;
+  const autoStarted = useRef(false);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [printing, setPrinting] = useState(false);
   const pending = !!data.pending;
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
   }, [canPrint, ticket?.status, ticket?.printStatus, ticketId, loadTicket]);
 
   async function print(intent: 'initial' | 'retry' | 'reprint') {
-    setError(''); setNotice('');
+    setError(''); setNotice(''); setPrinting(true);
     try {
       await dispatch({ type: 'startPrint', ticketId, intent, reason });
       if (useWeighingStore.getState().data.pending) {
@@ -41,8 +43,15 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
       const message = failure instanceof Error ? failure.message : '打印发起失败';
       setError(message);
       toast.error({ title: '打印发起失败', description: message, duration: 5000 });
-    }
+    } finally { setPrinting(false); }
   }
+  useEffect(() => {
+    if (!autoPrint || autoStarted.current || !ticket || !canPrint || ticket.status !== 'valid' || ticket.printStatus !== 'unprinted' || pending) return;
+    autoStarted.current = true;
+    void print('initial');
+    // A one-shot action for a newly confirmed return, never a recovery trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrint, ticket?.id, canPrint]);
   async function resolvePending() {
     setError('');
     try {
@@ -60,7 +69,8 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
       toast.error({ title: '查询打印结果失败', description: message, duration: 5000 });
     }
   }
-  if (!ticket || !canPrint) return null;
+  if (!ticket) return null;
+  if (!canPrint) return <p className="text-sm text-warning">当前账号无打印权限，请由有权限的人员打印。</p>;
   const unknown = ticket.printStatus === 'unknown';
   const reprint = ticket.printStatus !== 'unprinted';
   const printPending = pending && data.pending?.operation === 'print' && data.pending.taskId === ticket.taskId;
@@ -70,7 +80,7 @@ export function TicketPrintActions({ ticketId }: { ticketId: string }) {
         if (printPending || reprint) { setOpen(true); return; }
         void print('initial');
       }}>{printPending ? '查询打印发起结果' : reprint ? '重新打印' : '打印'}</Button>}
-      <span className="text-sm text-text-secondary">{printStatusLabels[ticket.printStatus]} · 重新打印 {ticket.reprintCount} 次</span>
+      <span className="text-sm text-text-secondary">{printing ? '正在提交打印任务' : printStatusLabels[ticket.printStatus]} · 重新打印 {ticket.reprintCount} 次</span>
     </div>
     {notice && <p role="status" className="text-sm text-success">{notice}</p>}
     {error && !open && <p role="alert" className="text-sm text-error">{error}</p>}

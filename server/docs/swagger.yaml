@@ -1149,6 +1149,19 @@ definitions:
       message:
         type: string
     type: object
+  weighing.ManualReturnInput:
+    properties:
+      reason:
+        type: string
+      requestId:
+        type: string
+      returnedAt:
+        type: string
+      version:
+        type: integer
+      weight:
+        type: string
+    type: object
   weighing.NetAdjustmentInput:
     properties:
       amount:
@@ -1692,6 +1705,10 @@ definitions:
         $ref: '#/definitions/weighing.PrintSheet'
       printStatus:
         type: string
+      reconcileAt:
+        type: string
+      reconcileStatus:
+        type: string
       reprintCount:
         type: integer
       revision:
@@ -1705,6 +1722,10 @@ definitions:
       snapshotSchemaVersion:
         type: integer
       status:
+        type: string
+      syncProtocol:
+        type: integer
+      syncReason:
         type: string
       syncStatus:
         type: string
@@ -1763,6 +1784,8 @@ definitions:
       sampleId:
         type: integer
       scaleCode:
+        type: string
+      source:
         type: string
       stage:
         type: string
@@ -5074,6 +5097,30 @@ paths:
       security:
       - BearerAuth: []
       summary: 任务业务历史和异常尝试（分页）
+      tags:
+      - 称重业务
+  /api/weighing/tasks/{id}/manual-returns:
+    post:
+      parameters:
+      - description: 业务对象 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: 人工补录回磅重量、实际回磅时间与原因
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.ManualReturnInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_CommandResult'
+      security:
+      - BearerAuth: []
+      summary: 人工补录回磅并完成原任务出单
       tags:
       - 称重业务
   /api/weighing/tasks/{id}/reweighs:

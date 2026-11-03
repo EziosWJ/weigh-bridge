@@ -9,6 +9,7 @@ import (
 func registerCorrectionRoutes(router gin.IRouter, h *Handler) {
 	router.POST("/tasks/:id/corrections", rbac.RequirePermission(h.permissions, "weighing:correct"), h.correctTask)
 	router.POST("/tasks/:id/termination", rbac.RequirePermission(h.permissions, "weighing:terminate"), h.terminateTask)
+	router.POST("/tasks/:id/manual-returns", rbac.RequirePermission(h.permissions, "weighing:manual-return"), h.manualReturn)
 	router.POST("/tasks/:id/reweighs", rbac.RequirePermission(h.permissions, "weighing:reweigh"), h.reweigh)
 	router.POST("/tickets/:id/void", rbac.RequirePermission(h.permissions, "weighing:void"), h.voidTicket)
 	router.POST("/tickets/:id/reopen", rbac.RequirePermission(h.permissions, "weighing:reopen"), h.reopenTicket)
@@ -57,6 +58,29 @@ func (h *Handler) terminateTask(c *gin.Context) {
 		return
 	}
 	v, e := h.service.TerminateTask(c, id, in, requestEvent(c))
+	writeResult(c, v, e)
+}
+
+// manualReturn godoc
+// @Summary 人工补录回磅并完成原任务出单
+// @Tags 称重业务
+// @Security BearerAuth
+// @Param id path int true "业务对象 ID"
+// @Param request body ManualReturnInput true "人工补录回磅重量、实际回磅时间与原因"
+// @Success 200 {object} HTTPEnvelope[CommandResult]
+// @Router /api/weighing/tasks/{id}/manual-returns [post]
+func (h *Handler) manualReturn(c *gin.Context) {
+	id, err := pathID(c)
+	if err != nil {
+		writeResult(c, nil, err)
+		return
+	}
+	var in ManualReturnInput
+	if c.ShouldBindJSON(&in) != nil {
+		writeResult(c, nil, ErrInvalid)
+		return
+	}
+	v, e := h.service.ManualReturn(c, id, in, requestEvent(c))
 	writeResult(c, v, e)
 }
 

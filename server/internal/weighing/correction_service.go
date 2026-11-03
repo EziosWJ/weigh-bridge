@@ -21,6 +21,15 @@ func (s *Service) TerminateTask(ctx context.Context, id int64, in TaskActionInpu
 	}
 	return s.store.TerminateTask(ctx, id, in, e)
 }
+func (s *Service) ManualReturn(ctx context.Context, id int64, in ManualReturnInput, e audit.Event) (CommandResult, error) {
+	if id < 1 || !validRequestID(in.RequestID) || in.Version < 1 || in.ReturnedAt.IsZero() || !validReason(in.Reason) {
+		return CommandResult{}, ErrInvalid
+	}
+	if in.Weight <= 0 {
+		return CommandResult{}, ErrWeight
+	}
+	return s.store.ManualReturn(ctx, id, in, e)
+}
 func (s *Service) VoidTicket(ctx context.Context, id int64, in VoidInput, e audit.Event) (CommandResult, error) {
 	if !validRequestID(in.RequestID) || !validReason(in.Reason) {
 		return CommandResult{}, ErrInvalid

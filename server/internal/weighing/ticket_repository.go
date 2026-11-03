@@ -144,8 +144,19 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjus
 	if remark == "" && final != nil {
 		remark = strings.TrimSpace(final.Remark)
 	}
+	grossSource, tareSource := "collected", "collected"
+	for _, record := range []WeighRecord{first, second} {
+		if record.Source != "manual" {
+			continue
+		}
+		if record.Kind == "gross" {
+			grossSource = "manual"
+		} else {
+			tareSource = "manual"
+		}
+	}
 	now := time.Now().UTC()
-	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: "collected", TareSource: "collected", NetAdjustment: amount, NetAdjustmentMode: mode, NetAdjustmentRateBP: rateBP, IssuedAt: now, IssuedBy: actor, IssuerName: name}
+	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: grossSource, TareSource: tareSource, NetAdjustment: amount, NetAdjustmentMode: mode, NetAdjustmentRateBP: rateBP, IssuedAt: now, IssuedBy: actor, IssuerName: name}
 	if amount != 0 {
 		ticket.NetAdjustmentCategory = strings.TrimSpace(adjustment.Category)
 		ticket.NetAdjustmentCategoryName = strings.TrimSpace(categoryName)

@@ -32,7 +32,7 @@ function netAdjustmentBody(input?: NetAdjustmentInput): Record<string, unknown> 
     remark: input.remark ?? '',
   };
 }
-interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'void' | 'print' }
+interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print' }
 interface UIState { draft: TaskInput; draftRequestId: string; pending: PendingRequest | null }
 interface Store {
   data: WeighingState; device: DeviceState | null; capabilities: WeighingCapabilities | null;
@@ -288,6 +288,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
       const sameTask = !!beforeTask && !!afterTask && beforeTask.version === afterTask.version;
       const sameReview = command.type === 'firstWeigh' || command.type === 'confirm'
         ? sameWeighingReview(expected, current, command.type === 'confirm' ? command.taskId : undefined)
+        : command.type === 'manualReturn' || command.type === 'terminate'
+        ? sameTask
         : command.type === 'reopenTicket'
         ? sameTask && previousTicket?.status === currentTicket?.status
         : command.type === 'reweigh' && sameTask && !!current.capture && expected.capture?.id === current.capture.id && current.sampleReady;
@@ -347,6 +349,13 @@ export const useWeighingStore = create<Store>((set, get) => ({
           const requestId = createId();
           const body = { requestId, version: current?.version, reason: command.reason, ...(command.type === 'correctTask' ? { business: businessInput(command.input) } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/${command.type === 'correctTask' ? 'corrections' : 'termination'}`, body, requestId, taskId: command.taskId, stage: 'second', operation: command.type === 'correctTask' ? 'correct' : 'terminate' }); break;
+        }
+        case 'manualReturn': {
+          const current = data.tasks.find(t => t.id === command.taskId);
+          if (!current) throw new Error('请先刷新任务详情');
+          const requestId = createId();
+          const body = { requestId, version: current.version, weight: command.weight, returnedAt: command.returnedAt, reason: command.reason };
+          await send({ actorId, path: `/tasks/${command.taskId}/manual-returns`, body, requestId, taskId: command.taskId, stage: 'second', operation: 'manual-return' }); break;
         }
         case 'voidTicket': {
           const current = data.tickets.find(t => t.id === command.ticketId);

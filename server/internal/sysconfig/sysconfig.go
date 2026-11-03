@@ -22,6 +22,7 @@ const (
 	builtin               = 1
 	LogClearEnabledKey    = "system.log-clear-enabled"
 	CaptureRequiredKey    = "weighing.capture-required"
+	AutoPrintKey          = "weighing.auto-print"
 	CameraEventMaxAgeKey  = "weighing.camera-event-max-age-minutes"
 	MasterSyncIntervalKey = "weighing.master-sync-interval-minutes"
 	SyncReconcileTimeKey  = "weighing.sync-reconcile-time"
@@ -234,7 +235,7 @@ func (s *Service) Update(c context.Context, m audit.Metadata, id int64, in Input
 func (s *Service) updateBuiltin(c context.Context, m audit.Metadata, old Config, in Input) error {
 	var value string
 	switch old.ConfigKey {
-	case LogClearEnabledKey, CaptureRequiredKey:
+	case LogClearEnabledKey, CaptureRequiredKey, AutoPrintKey:
 		if old.ValueType != "BOOLEAN" {
 			return ErrInvalid
 		}
@@ -344,7 +345,7 @@ func (s *Service) Status(c context.Context, m audit.Metadata, id, st int64) erro
 	if e != nil {
 		return e
 	}
-	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == TicketTitleKey || old.ConfigKey == MasterSyncIntervalKey || old.ConfigKey == SyncReconcileTimeKey || old.ConfigKey == CameraEventMaxAgeKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
+	if old.ConfigKey == CaptureRequiredKey || old.ConfigKey == AutoPrintKey || old.ConfigKey == TicketTitleKey || old.ConfigKey == MasterSyncIntervalKey || old.ConfigKey == SyncReconcileTimeKey || old.ConfigKey == CameraEventMaxAgeKey || strings.HasPrefix(old.ConfigKey, "weighing.local-") {
 		return ErrBuiltin
 	}
 	return s.store.SetStatus(c, id, int(st), event(m, "config.status", "config", id, "更新配置状态"))

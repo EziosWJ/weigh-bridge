@@ -221,6 +221,28 @@ func TestCaptureRequiredBuiltinValueAndAudit(t *testing.T) {
 	}
 }
 
+func TestAutoPrintBuiltinValueAndAudit(t *testing.T) {
+	store := newMemoryStore()
+	store.configs[7] = Config{ID: 7, ConfigName: "回磅完成自动打印", ConfigKey: AutoPrintKey, ConfigValue: "false", ValueType: "BOOLEAN", Status: 1, IsBuiltin: 1}
+	service := NewService(store)
+	ctx := context.Background()
+	if err := service.Update(ctx, audit.Metadata{}, 7, Input{ConfigValue: "true"}); err != nil {
+		t.Fatal(err)
+	}
+	if row := store.configs[7]; row.ConfigValue != "true" || row.ConfigKey != AutoPrintKey {
+		t.Fatalf("updated=%+v", row)
+	}
+	if len(store.auditEvents) != 1 || !strings.Contains(store.auditEvents[0].Summary, `"before":"false"`) || !strings.Contains(store.auditEvents[0].Summary, `"after":"true"`) {
+		t.Fatalf("audit=%+v", store.auditEvents)
+	}
+	if err := service.Status(ctx, audit.Metadata{}, 7, 0); !errors.Is(err, ErrBuiltin) {
+		t.Fatalf("status=%v", err)
+	}
+	if err := service.Update(ctx, audit.Metadata{}, 7, Input{ConfigValue: "yes"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("invalid=%v", err)
+	}
+}
+
 func TestBuiltinTicketTitleIsProtectedTextKey(t *testing.T) {
 	store := newMemoryStore()
 	remark := "打印在正式过磅单上的标题"

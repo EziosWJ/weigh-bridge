@@ -74,7 +74,12 @@ func (h *Handler) capabilities(c *gin.Context) {
 		writeResult(c, nil, syncErr)
 		return
 	}
-	writeResult(c, map[string]any{"masterSyncBound": syncStatus.Bound, "userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
+	autoPrint, autoPrintErr := h.service.AutoPrintEnabled(c)
+	if autoPrintErr != nil {
+		writeResult(c, nil, autoPrintErr)
+		return
+	}
+	writeResult(c, map[string]any{"autoPrintEnabled": autoPrint, "masterSyncBound": syncStatus.Bound, "userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}
@@ -334,7 +339,7 @@ func writeResult(c *gin.Context, value any, err error) {
 		platformhttp.WriteError(c, 403, 403, err.Error(), nil)
 	case errors.Is(err, ErrNotFound):
 		platformhttp.WriteError(c, 404, 404, err.Error(), nil)
-	case errors.Is(err, ErrInvalid), errors.Is(err, ErrConflict), errors.Is(err, ErrReferenced), errors.Is(err, ErrCapturePolicyChanged), errors.Is(err, ErrCaptureCameraRequired), errors.Is(err, ErrMeasurementCapability), errors.Is(err, ErrCameraConfigChanged), errors.Is(err, ErrConditions), errors.Is(err, ErrOccupied), errors.Is(err, ErrSession), errors.Is(err, ErrRequestKey), errors.Is(err, ErrWeight), isRejection(err):
+	case errors.Is(err, ErrInvalid), errors.Is(err, ErrConflict), errors.Is(err, ErrReferenced), errors.Is(err, ErrCapturePolicyChanged), errors.Is(err, ErrCaptureCameraRequired), errors.Is(err, ErrMeasurementCapability), errors.Is(err, ErrCameraConfigChanged), errors.Is(err, ErrConditions), errors.Is(err, ErrOccupied), errors.Is(err, ErrSession), errors.Is(err, ErrRequestKey), errors.Is(err, ErrWeight), errors.Is(err, ErrManualReturnTime), isRejection(err):
 		platformhttp.WriteError(c, 200, 400, err.Error(), nil)
 	default:
 		platformhttp.WriteError(c, 500, 500, "业务处理失败", nil)

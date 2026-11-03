@@ -2,6 +2,7 @@ package weighing
 
 import (
 	"context"
+	"errors"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"gorm.io/gorm"
 )
@@ -27,4 +28,20 @@ func capturePolicyMatches(ctx context.Context, tx *gorm.DB) (sysconfig.CapturePo
 		return current, ErrCapturePolicyChanged
 	}
 	return current, nil
+}
+
+// AutoPrintEnabled defaults to false if the setting is absent or invalid.
+func (s *Service) AutoPrintEnabled(ctx context.Context) (bool, error) {
+	if repo, ok := s.store.(*Repository); ok {
+		var row sysconfig.Config
+		err := repo.db.WithContext(ctx).Where("config_key=? AND deleted=0", sysconfig.AutoPrintKey).Take(&row).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return row.Status == 1 && row.ValueType == "BOOLEAN" && row.ConfigValue == "true", nil
+	}
+	return false, nil
 }

@@ -206,10 +206,10 @@ try {
   };
   const pickIn = async (scope, label, name, waitForSelected = true) => {
     const field = scope.getByRole('combobox', { name: `搜索${label}`, exact: true });
-    await field.scrollIntoViewIfNeeded();
     await field.fill(name);
     await page.getByRole('option').filter({ hasText: name }).first().click();
-    if (waitForSelected) await scope.getByLabel(`${label}已选资料`, { exact: true }).waitFor();
+    if (waitForSelected) await field.evaluate((input, expected) => { if (input.value !== expected) throw new Error(`选择后未显示 ${expected}`); }, name);
+    await delay(300);
   };
   const pick = async (label, name) => pickIn(page, label, name);
   const locate = async plate => {
@@ -217,6 +217,7 @@ try {
     await page.getByRole('button', { name: '确认车辆', exact: true }).click();
     await page.getByRole('heading', { name: /^(首磅|回磅)（(毛重|皮重)）$/ }).waitFor();
   };
+  let expectAutomaticPrint = false;
   const reviewAndConfirm = async (stage, kind) => {
     const dialog = page.getByRole('dialog', { name: `核对${stage}（${kind}）`, exact: true });
     try {
@@ -231,6 +232,13 @@ try {
       await dialog.getByRole('button', { name: '下一步：核对最终重量', exact: true }).click();
     }
     await dialog.getByRole('button', { name: stage === '回磅' ? '确认回磅并出单' : `确认${stage}（${kind}）`, exact: true }).click();
+    const completed = page.getByRole('dialog', { name: stage === '首磅' ? '首磅称重已办理完成' : '回磅已完成', exact: true });
+    await completed.waitFor();
+    if (stage === '回磅') {
+      if (expectAutomaticPrint) await completed.getByRole('button', { name: '重新打印', exact: true }).waitFor();
+      else await completed.getByText('未发起打印', { exact: false }).waitFor();
+    }
+    await completed.getByRole('button', { name: stage === '首磅' ? '留在当前页面' : '返回当前页面', exact: true }).click();
     await page.getByRole('heading', { name: stage === '首磅' ? '首磅已完成 · 等待回磅' : /^回磅已完成/ }).waitFor();
     const business = await openBusiness();
     assert.equal(await business.locator('input, select, textarea').count(), 0, '已有运输资料保持只读查看');
@@ -240,7 +248,11 @@ try {
     for (let n = 0; n < 100; n += 1) { if (await locator.isEnabled()) return; await delay(100); }
     throw new Error('等待按钮可用超时');
   };
+  const autoConfig = (await call('/api/system/config/page?page=1&pageSize=20&configKey=weighing.auto-print')).records.find(row => row.configKey === 'weighing.auto-print');
+  assert.equal(autoConfig.configValue, 'false', '自动打印默认关闭');
   for (const [direction, plate, firstWeight, secondWeight] of [['inbound', '川A54321', 30, 10], ['outbound', '川A54322', 10, 30]]) {
+    expectAutomaticPrint = direction === 'outbound';
+    if (expectAutomaticPrint) await call(`/api/system/config/${autoConfig.id}`, 'PUT', { ...autoConfig, configValue: 'true' });
     await setWeight(firstWeight);
     await page.goto(`${web}/weighing/workbench?scale=WB01`);
     await locate(plate);
@@ -303,7 +315,9 @@ try {
       await page.getByRole('button', { name: `继续核对首磅（${firstKind}）`, exact: true }).click();
       firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
       await firstReview.waitFor();
-      await pickIn(firstReview, '物料', '服务端冒烟高粱');
+      await pickIn(firstReview, '物料', '服务端冒烟高粱', false);
+      await firstReview.getByText('服务端冒烟高粱', { exact: false }).waitFor();
+      await delay(500);
       await pickIn(firstReview, partyLabel, '服务端个人供运人', false);
       await firstReview.getByText(`还缺物料、${partyLabel}`, { exact: true }).waitFor({ state: 'detached' });
       await firstReview.getByText('工作台直接录入验证', { exact: false }).waitFor();
@@ -362,10 +376,13 @@ try {
     const savedTicket = tickets.records.find(row => row.taskId === detail.id);
     assert.ok(savedTicket && savedTicket.mode === 'normal' && savedTicket.status === 'valid');
     assert.equal(Number(savedTicket.finalGross) - Number(savedTicket.finalTare), 20);
+    assert.equal((await call(`/api/weighing/tickets/${savedTicket.id}/print-attempts`)).length, expectAutomaticPrint ? 1 : 0, '回磅后按配置最多自动打印一次');
     await page.getByRole('button', { name: '办理下一辆车', exact: true }).click();
   }
 
 
+  await call(`/api/system/config/${autoConfig.id}`, 'PUT', { ...autoConfig, configValue: 'false' });
+  expectAutomaticPrint = false;
   console.log('browser: both weighing directions passed');
   const inboundTask = (await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54321')}`)).records[0];
   const inboundTicket = (await call(`/api/weighing/tickets?taskId=${inboundTask.id}`)).records[0];
@@ -483,6 +500,7 @@ try {
   await page.getByRole('heading', { name: '提交结果待核实', exact: true }).waitFor();
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: '查询上次提交结果', exact: true }).click();
+  await page.getByRole('dialog', { name: '首磅称重已办理完成', exact: true }).getByRole('button', { name: '留在当前页面' }).click();
   await page.getByRole('heading', { name: '首磅已完成 · 等待回磅', exact: true }).waitFor();
   const recovered = (await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54323')}`)).records;
   assert.equal(recovered.length, 1);
@@ -499,6 +517,7 @@ try {
   await page.getByText(/尚未查到已提交结果，可能仍在处理/).waitFor();
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54324')}`)).total, 0);
   await page.getByRole('button', { name: '按原请求重试', exact: true }).click();
+  await page.getByRole('dialog', { name: '首磅称重已办理完成', exact: true }).getByRole('button', { name: '留在当前页面' }).click();
   await page.getByRole('heading', { name: '首磅已完成 · 等待回磅', exact: true }).waitFor();
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54324')}`)).total, 1);
   await page.getByRole('button', { name: '办理下一辆车', exact: true }).click();
@@ -545,6 +564,7 @@ try {
   await invalidDialog.getByLabel('自定义备注（选填）',{exact:true}).fill('雨水浸湿');
   await invalidDialog.getByText('0.3 吨（扣减）',{exact:true}).waitFor();
   await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).click();
+  await page.getByRole('dialog', { name: '回磅已完成', exact: true }).getByRole('button', { name: '返回当前页面' }).click();
   await page.getByRole('heading',{name:/^回磅已完成/,exact:true}).waitFor();
   const correctedTask=(await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54327')}`)).records[0];
   const correctedTicket=(await call(`/api/weighing/tickets?taskId=${correctedTask.id}`)).records[0];

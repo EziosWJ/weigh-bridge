@@ -36,17 +36,29 @@ export function BusinessSnapshot({ value }: { value: BusinessInfo }) {
   </div>;
 }
 
+export function ManualReturnNotice({ records }: { records: WeighRecord[] }) {
+  const manual = records.filter(record => record.source === 'manual');
+  if (!manual.length) return null;
+  return <div role="note" className="rounded-control border border-warning-border bg-warning-background p-space-3 text-sm text-warning">
+    <p className="font-medium">本单含人工补录回磅，不是设备采集结果。</p>
+    {manual.map(record => <p key={record.id} className="mt-space-1 break-words">
+      记录 {record.id} · {record.kind === 'gross' ? '毛重' : '皮重'} {formatWeight(record.weight)} · 实际回磅时间 {beijingTime(record.capturedAt ?? record.at)} · 系统补录时间 {beijingTime(record.at)} · 补录人 {record.actor || '历史未记录'}{record.reason ? ` · 原因：${record.reason}` : ''}。本流程不要求系统抓拍，也未保存照片依据。
+    </p>)}
+  </div>;
+}
+
 export function WeighRecords({ records, onPreviewChange }: { records: WeighRecord[]; onPreviewChange?: (open: boolean) => void }) {
   return <div className="space-y-space-3">
     {records.length === 0 && <p className="text-text-tertiary">尚未确认称重。</p>}
     {records.map((record) => <div key={record.id} className="rounded-control border border-border p-space-3 text-sm">
-      <div className="flex flex-wrap justify-between gap-space-2"><strong>{record.stage === "first" ? "首次" : "二次"} · {record.kind === "gross" ? "毛重" : "皮重"} {formatWeight(record.weight)}</strong><span>{beijingTime(record.at)}</span></div>
-      <p className="mt-space-2 break-all text-text-secondary">记录 {record.id} · 采集依据{records.some((next) => next.replaces === record.id) ? " · 已被后续记录替代" : " · 当前记录"}</p>
-      <p className="mt-1 text-text-secondary">操作人：{record.actor || '历史未记录'} · 岗位：{record.role ? roleLabels[record.role] : '历史未记录'} · 采集时间：{record.capture ? beijingTime(record.capture.at) : '历史未记录'}</p>
+      <div className="flex flex-wrap justify-between gap-space-2"><strong>{record.stage === "first" ? "首次" : "二次"} · {record.kind === "gross" ? "毛重" : "皮重"} {formatWeight(record.weight)}</strong><span>{record.source === 'manual' ? `实际回磅 ${beijingTime(record.capturedAt ?? record.at)}` : beijingTime(record.at)}</span></div>
+      <p className="mt-space-2 break-all text-text-secondary">记录 {record.id} · {record.source === 'manual' ? '人工补录（非设备采集）' : '采集依据'}{records.some((next) => next.replaces === record.id) ? " · 已被后续记录替代" : " · 当前记录"}</p>
+      {record.source === 'manual'
+        ? <><p className="mt-1 text-text-secondary">补录人：{record.actor || '历史未记录'} · 系统补录时间：{beijingTime(record.at)} · 实际回磅时间：{beijingTime(record.capturedAt ?? record.at)}</p><div className="mt-space-3"><p className="text-text-tertiary">人工补录不要求系统抓拍，也没有设备采集或抓拍图片。</p></div></>
+        : <><p className="mt-1 text-text-secondary">操作人：{record.actor || '历史未记录'} · 岗位：{record.role ? roleLabels[record.role] : '历史未记录'} · 采集时间：{record.capture ? beijingTime(record.capture.at) : '历史未记录'}</p><div className="mt-space-3 max-w-sm">{record.capture ? <CapturePhoto capture={record.capture} onPreviewChange={onPreviewChange} /> : <p className="text-text-tertiary">旧记录未保存抓拍图片，不能用当前示例反填。</p>}</div></>}
       {record.retainedRecordId && <p className="mt-1">沿用另一有效磅：{record.retainedRecordId}</p>}
       {record.replaces && <p className="mt-space-1 break-all">替代原记录：{record.replaces}</p>}
       {record.reason && <p className="mt-space-1">原因：{record.reason}</p>}
-      <div className="mt-space-3 max-w-sm">{record.capture ? <CapturePhoto capture={record.capture} onPreviewChange={onPreviewChange} /> : <p className="text-text-tertiary">旧记录未保存抓拍图片，不能用当前示例反填。</p>}</div>
     </div>)}
   </div>;
 }
