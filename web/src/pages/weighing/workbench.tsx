@@ -129,7 +129,6 @@ function WorkbenchContent() {
   const candidateNotice = candidateConflict && !located ? '存在多个候选，请核对后选择' : recognitionHint.startsWith('已选择 ') ? '' : recognitionHint;
   const scaleCode = capabilities?.localScaleCode || params.get('scale') || '';
   const canConfirm = !!capabilities?.permissionCodes.includes('weighing:confirm');
-  const expected = stage === 'second' ? expectedWeights(selected?.records ?? [], data.capture) : undefined;
   const liveVisible = !!confirmedRecord || !!frozenCapture || (!!device && data.config.online && !data.config.deviceError);
 
   const status: WorkbenchStatus = (() => {
@@ -531,7 +530,6 @@ function WorkbenchContent() {
                 <div className="workbench-inline-fact"><span>物料</span><strong title={summaryMaterial}>{summaryMaterial}</strong></div>
                 <div className="workbench-inline-fact"><span>{businessPartyLabel}</span><strong title={summaryParty}>{summaryParty}</strong></div>
               </div>
-              {firstRecord && stage === 'second' && !(successfulTask && successfulStage === 'first') && <p className="workbench-first-basis">首次依据：{firstRecord.kind === 'gross' ? '毛重' : '皮重'} <strong>{formatWeight(firstRecord.weight)}</strong> · {beijingTime(firstRecord.at)}{beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) ? ' · 隔日回磅沿用原任务' : ''}{firstRecord.replaces ? ` · 已重称替代原记录（${firstRecord.reason}）` : ''}</p>}
               <div className="workbench-inline-actions">
                 <Button size="sm" variant="secondary" onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />查看完整资料</Button>
                 {taskInfo && <Link target="weighbridge-management" className="text-sm text-primary hover:underline" to={`/weighing/tasks/${taskInfo.id}`}>任务详情与纠错</Link>}
@@ -566,7 +564,6 @@ function WorkbenchContent() {
             <p className="weighing-readout" aria-label="当前重量">{liveVisible && Number.isFinite(shownWeight) ? formatWeightValue(shownWeight) : '—'}<span>吨</span></p>
           </div>
           <p className="instrument-source text-xs text-text-tertiary">{confirmedRecord ? `采集时间：${beijingTime(confirmedRecord.at)}` : frozenCapture ? `采集时间：${beijingTime(frozenCapture.at)}` : device?.receivedAt && !device.receivedAt.startsWith('0001') ? `最近上报：${beijingTime(device.receivedAt)}` : '等待 Agent 上报重量与稳定状态'}</p>
-          {stage === 'second' && expected && <p className="workbench-expected">预计净重 <strong>{formatWeight(expected.net)}</strong><span>未出单</span><HelpHint label="预计净重说明">预计净重仅供参考，以确认后的正式单据为准。</HelpHint></p>}
         </ContentCard>
         <ContentCard className="workbench-current-action shadow-none" bodyClassName="p-4">
           <div className="space-y-3" aria-label="当前称重操作">
