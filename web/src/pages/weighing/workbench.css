@@ -304,6 +304,35 @@ body:has(.weighing-workbench) .workbench-modal {
     0 0 0 2px rgb(101 217 251 / 0.12),
     0 30px 90px rgb(0 0 0 / 0.72);
 }
+.workbench-completion-dialog {
+  display: flex;
+  flex-direction: column;
+  max-width: 520px;
+}
+.workbench-completion-details {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.workbench-completion-details > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+}
+.workbench-completion-details dt { color: #afc5d5; }
+.workbench-completion-details dd { margin: 0; color: #edf8ff; font-weight: 600; overflow-wrap: anywhere; }
+.workbench-completion-print {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #315065;
+}
+@media (max-width: 480px) {
+  .workbench-completion-actions { flex-wrap: wrap-reverse; }
+  .workbench-completion-actions > button { flex: 1 1 100%; }
+}
 .workbench-modal::after {
   content: '';
   position: absolute;

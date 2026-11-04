@@ -234,6 +234,14 @@ try {
     await dialog.getByRole('button', { name: stage === '回磅' ? '确认回磅并出单' : `确认${stage}（${kind}）`, exact: true }).click();
     const completed = page.getByRole('dialog', { name: stage === '首磅' ? '首磅称重已办理完成' : '回磅已完成', exact: true });
     await completed.waitFor();
+    for (const width of [1366, 390]) {
+      await page.setViewportSize({ width, height: 768 });
+      const box = await completed.boundingBox();
+      assert.ok(box && box.width <= 520 && box.x >= 0 && box.x + box.width <= width, `${stage}完成弹窗应在 ${width}px 视口内保持紧凑`);
+      const next = await completed.getByRole('button', { name: '开始办理下一辆', exact: true }).boundingBox();
+      assert.ok(next && next.y + next.height <= 768, `${stage}完成弹窗操作应可见`);
+    }
+    await page.setViewportSize({ width: 1366, height: 768 });
     if (stage === '回磅') {
       if (expectAutomaticPrint) await completed.getByRole('button', { name: '重新打印', exact: true }).waitFor();
       else await completed.getByText('未发起打印', { exact: false }).waitFor();

@@ -610,13 +610,16 @@ function WorkbenchContent() {
     </div>
     <Dialog open={completionOpen} onOpenChange={setCompletionOpen} closeOnEscape={false} closeOnOverlayClick={false} trapFocus restoreFocus lockScroll>
       <DialogOverlay className="workbench-modal-overlay" />
-      <DialogContent className="workbench-modal">
+      <DialogContent className="workbench-modal workbench-completion-dialog">
         <DialogHeader><div><DialogTitle>{successfulStage === 'first' ? '首磅称重已办理完成' : '回磅已完成'}</DialogTitle><DialogDescription>{successfulStage === 'first' ? '车辆等待回磅，是否开始办理下一辆车？' : '请确认打印状态后继续办理。'}</DialogDescription></div></DialogHeader>
-        <DialogBody><div className="space-y-3">
-          <p>车牌：{summaryPlate}</p>
-          {ticket && <><p>单据号：{ticket.ticketNo} · 最终净重：{formatWeight(ticket.net)}</p>{autoPrintNotice && <p role="alert" className="text-warning">{autoPrintNotice}</p>}{checkingAutoPrint ? <p role="status">正在读取自动打印配置…</p> : <TicketPrintActions ticketId={ticket.id} autoPrint={autoPrintTicket === ticket.id} />}</>}
-        </div></DialogBody>
-        <DialogFooter><Button disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => setCompletionOpen(false)}>{successfulStage === 'first' ? '留在当前页面' : '返回当前页面'}</Button><Button variant="primary" disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => void nextVehicle()}>开始办理下一辆</Button></DialogFooter>
+        <DialogBody>
+          <dl className="workbench-completion-details">
+            <div><dt>车牌</dt><dd>{summaryPlate}</dd></div>
+            {ticket && <><div><dt>单据号</dt><dd>{ticket.ticketNo || '—'}</dd></div><div><dt>最终净重</dt><dd>{formatWeight(ticket.net)}</dd></div></>}
+          </dl>
+          {ticket && <div className="workbench-completion-print">{autoPrintNotice && <p role="alert" className="text-warning">{autoPrintNotice}</p>}{checkingAutoPrint ? <p role="status">正在读取自动打印配置…</p> : <TicketPrintActions ticketId={ticket.id} autoPrint={autoPrintTicket === ticket.id} />}</div>}
+        </DialogBody>
+        <DialogFooter className="workbench-completion-actions"><Button disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => setCompletionOpen(false)}>{successfulStage === 'first' ? '留在当前页面' : '返回当前页面'}</Button><Button variant="primary" disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => void nextVehicle()}>开始办理下一辆</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
