@@ -121,15 +121,22 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 }
 
 func shouldLogRequest(method, route string, status int, duration time.Duration, failed bool) bool {
-	if method != stdhttp.MethodGet || status < 200 || status >= 300 || failed || duration >= slowRequestThreshold {
+	if status < 200 || status >= 300 || failed || duration >= slowRequestThreshold {
 		return true
 	}
-	switch route {
-	case "/api/weighing/scales/:code/device", "/api/weighing/plate-candidates":
-		return false
-	default:
-		return true
+	switch method {
+	case stdhttp.MethodGet:
+		switch route {
+		case "/api/weighing/scales/:code/device", "/api/weighing/plate-candidates",
+			"/api/weighing/cameras", "/api/weighing/cameras/:id/preview":
+			return false
+		}
+	case stdhttp.MethodPost:
+		if route == "/api/weighing/scales/:code/session/renew" {
+			return false
+		}
 	}
+	return true
 }
 
 // Recovery converts unexpected panics into the established API error envelope.

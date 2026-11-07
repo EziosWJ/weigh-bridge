@@ -48,8 +48,8 @@ func resolveNetAdjustmentCategory(tx *gorm.DB, in *NetAdjustmentInput) (string, 
 
 // resolveNetAdjustment turns the operator input into a signed absolute amount.
 // Percentage mode uses the adjusted net basis and rounds to 0.001 吨, half away
-// from zero. Negative amounts are accepted only when reopening a void ticket.
-func resolveNetAdjustment(in *NetAdjustmentInput, base Tonnes, allowUpward bool) (WeightDifference, string, *int, error) {
+// from zero. Negative amounts are rejected for every new ticket.
+func resolveNetAdjustment(in *NetAdjustmentInput, base Tonnes) (WeightDifference, string, *int, error) {
 	if in == nil {
 		return 0, "amount", nil, nil
 	}
@@ -63,7 +63,7 @@ func resolveNetAdjustment(in *NetAdjustmentInput, base Tonnes, allowUpward bool)
 			return 0, "", nil, ErrInvalid
 		}
 		amount := *in.Amount
-		if amount < 0 && !allowUpward {
+		if amount < 0 {
 			return 0, "", nil, ErrInvalid
 		}
 		if amount == 0 {
@@ -75,7 +75,7 @@ func resolveNetAdjustment(in *NetAdjustmentInput, base Tonnes, allowUpward bool)
 			return 0, "", nil, ErrInvalid
 		}
 		rate := *in.RateBP
-		if rate < -10000 || rate > 10000 || (rate < 0 && !allowUpward) {
+		if rate < 0 || rate > 10000 {
 			return 0, "", nil, ErrInvalid
 		}
 		if rate == 0 {
@@ -85,7 +85,7 @@ func resolveNetAdjustment(in *NetAdjustmentInput, base Tonnes, allowUpward bool)
 			return 0, "", nil, ErrWeight
 		}
 		amount := WeightDifference(roundRatio(int64(base)*int64(rate), 10000))
-		if amount == 0 || (amount < 0 && !allowUpward) {
+		if amount == 0 {
 			return 0, "", nil, ErrInvalid
 		}
 		return amount, "percent", &rate, nil
@@ -123,14 +123,14 @@ func adjustmentEntries(single *NetAdjustmentInput, list NetAdjustmentsInput) Net
 	return nil
 }
 
-func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjustment *NetAdjustmentInput, categoryName string, allowUpward, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
-	return makeTicketWithItems(task, first, second, final, adjustmentEntries(adjustment, nil), categoryName, allowUpward, canAdjust, actor, name, previous)
+func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjustment *NetAdjustmentInput, categoryName string, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
+	return makeTicketWithItems(task, first, second, final, adjustmentEntries(adjustment, nil), categoryName, canAdjust, actor, name, previous)
 }
 
 // makeTicketWithItems is the multi-item entry. categoryName is the legacy
 // single-item snapshot name, kept only for callers that still pass one item;
 // multi-item categories resolve through resolveItems.
-func makeTicketWithItems(task Task, first, second WeighRecord, final *FinalWeights, adjustments NetAdjustmentsInput, categoryName string, allowUpward, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
+func makeTicketWithItems(task Task, first, second WeighRecord, final *FinalWeights, adjustments NetAdjustmentsInput, categoryName string, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
 	gross, tare := first.Weight, second.Weight
 	if task.Direction == "outbound" {
 		gross, tare = second.Weight, first.Weight
@@ -150,7 +150,7 @@ func makeTicketWithItems(task Task, first, second WeighRecord, final *FinalWeigh
 			return Ticket{}, ErrWeight
 		}
 	}
-	items, amount, err := resolveNetAdjustmentItems(adjustments, values.Gross-values.Tare, allowUpward, nil)
+	items, amount, err := resolveNetAdjustmentItems(adjustments, values.Gross-values.Tare, nil)
 	if err != nil {
 		return Ticket{}, err
 	}
@@ -309,7 +309,7 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 		if len(entries) == 1 {
 			categoryName = entries[0].ResolvedCategoryName
 		}
-		ticket, err := makeTicketWithItems(task, first, second, nil, entries, categoryName, false, in.AllowAdjust, e.Metadata.ActorID, name, nil)
+		ticket, err := makeTicketWithItems(task, first, second, nil, entries, categoryName, in.AllowAdjust, e.Metadata.ActorID, name, nil)
 		if err != nil {
 			return out, err
 		}

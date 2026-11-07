@@ -1,7 +1,9 @@
+import { hasAdjustmentInput } from '@/lib/weighing/weights';
 import { useEffect, useMemo, useState } from 'react';
 import { DetailItem } from '@/components/common/detail-item';
 import { Field } from '@/components/common/field';
 import { FormDialog } from '@/components/common/form-dialog';
+import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { toast } from '@/components/common/toast-store';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -48,6 +50,8 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
   onDone: () => void;
 }) {
   const dispatch = useWeighingStore(state => state.dispatch);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [fieldError, setFieldError] = useState('');
   const [weight, setWeight] = useState('');
   const [returnedAt, setReturnedAt] = useState(() => beijingInputValue(new Date().toISOString()));
   const [reason, setReason] = useState('');
@@ -103,7 +107,7 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
     timeError = failure instanceof Error ? failure.message : '请填写有效的实际回磅时间';
   }
 
-  const ready = !!task && !!first && !!entered && !weightError && !timeError && !adjustmentError && reason.trim() !== '' && confirmed;
+  const ready = !!task && !!first && !!entered && !weightError && !timeError && !adjustmentError && !fieldError && reason.trim() !== '' && confirmed;
 
   async function submit() {
     if (!task || !ready) { setError(weightError || timeError || (reason.trim() === '' ? '请填写补录原因' : '请核对并明确确认人工补录')); return; }
@@ -121,7 +125,8 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
     } finally { setLoading(false); }
   }
 
-  return <FormDialog open={!!task} title="人工补录回磅" description="人工录入回磅重量完成原任务并出单；不要求上传照片，系统也不会保存照片依据。" onCancel={onClose} onSubmit={submit} submitDisabled={!ready || loading} submitText="确认人工补录" loading={loading}>
+  const requestClose = () => { if (hasAdjustmentInput(netAdjustments)) setConfirmClose(true); else onClose(); };
+  return <><FormDialog open={!!task} title="人工补录回磅" description="人工录入回磅重量完成原任务并出单；不要求上传照片，系统也不会保存照片依据。" onCancel={requestClose} trapFocus={!confirmClose} closeOnEscape={!confirmClose} onSubmit={submit} submitDisabled={!ready || loading} submitText="确认人工补录" loading={loading}>
     {task && <div className="space-y-space-4">
       <ActionSummary task={task} first={first} secondWeight={entered} returnedAt={returnedIso || undefined} estimatedNet={net} />
       <div className="rounded-control border border-border px-space-3 py-space-2 text-sm"><span className="text-text-tertiary">系统补录时间：</span>提交时由服务器记录，与实际回磅时间分开保存。</div>
@@ -132,7 +137,7 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
       <Field label="实际回磅时间（北京时间）" htmlFor="manual-return-time" required error={timeError} help="不早于有效首磅时间，不晚于当前时间；与系统补录时间分别保存。">
         <Input id="manual-return-time" type="datetime-local" step="1" value={returnedAt} onChange={event => setReturnedAt(event.target.value)} />
       </Field>
-      {adjustmentBasis && <NetAdjustmentFields basis={adjustmentBasis} value={netAdjustments} onChange={setNetAdjustments} showError={false} />}
+      {adjustmentBasis && <NetAdjustmentFields basis={adjustmentBasis} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} />}
       <Field label="补录原因" htmlFor="manual-return-reason" required>
         <Textarea id="manual-return-reason" rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="例如：车辆已回磅离开，现场已拍下地磅读数，经核对后补录" />
       </Field>
@@ -142,7 +147,7 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
       </label>
       {error && <p role="alert" className="text-error">{error}</p>}
     </div>}
-  </FormDialog>;
+  </FormDialog><ConfirmDialog open={confirmClose} title="放弃已填写的扣减内容？" description="关闭后已填写的扣减内容将丢失。" confirmText="放弃并关闭" cancelText="返回修改" onConfirm={() => { setConfirmClose(false); onClose(); }} onCancel={() => setConfirmClose(false)} /></>;
 }
 
 export function TerminateTaskDialog({ task, onClose, onDone }: {

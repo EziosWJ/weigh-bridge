@@ -727,3 +727,10 @@ body:has(.weighing-workbench) .workbench-business-dialog {
 .workbench-camera-tile:not(.is-main) .camera-live-status { top: 4px; left: 4px; padding: 2px 4px; font-size: 11px; }
 .camera-tile-select { position: absolute; right: 4px; bottom: 4px; padding: 3px 6px; background: var(--color-background); font-size: 12px; }
 @media (max-width: 600px) { .workbench-camera-grid { min-height: 180px; } }
+
+/* Final review keeps the vehicle legible while reserving space for deductions. */
+@media (min-width: 768px) {
+  .review-final-step .review-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .review-final-step .review-fact-value { font-size: 20px; }
+  .review-final-step .review-fact:first-child .review-fact-value { font-size: 28px; }
+}

@@ -271,7 +271,7 @@ func TestRequestLoggerPolling(t *testing.T) {
 	var logs bytes.Buffer
 	router := gin.New()
 	router.Use(RequestLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
-	router.GET("/api/weighing/scales/:code/device", func(c *gin.Context) {
+	handler := func(c *gin.Context) {
 		switch c.Query("result") {
 		case "http-error":
 			WriteError(c, stdhttp.StatusServiceUnavailable, CodeServiceUnavailable, "unavailable", nil)
@@ -283,8 +283,14 @@ func TestRequestLoggerPolling(t *testing.T) {
 		default:
 			OK(c, nil)
 		}
-	})
+	}
+	router.GET("/api/weighing/scales/:code/device", handler)
 	router.GET("/api/weighing/plate-candidates", func(c *gin.Context) { OK(c, nil) })
+	router.GET("/api/weighing/cameras", handler)
+	router.GET("/api/weighing/cameras/:id/preview", handler)
+	router.POST("/api/weighing/scales/:code/session/renew", handler)
+	router.POST("/api/weighing/scales/:code/session/acquire", handler)
+	router.POST("/api/weighing/cameras", handler)
 	router.POST("/api/weighing/plate-candidates", func(c *gin.Context) { OK(c, nil) })
 	router.GET("/other", func(c *gin.Context) { OK(c, nil) })
 	for _, tc := range []struct {
@@ -293,6 +299,15 @@ func TestRequestLoggerPolling(t *testing.T) {
 	}{
 		{"device success", "GET", "/api/weighing/scales/WB01/device", false},
 		{"candidate success", "GET", "/api/weighing/plate-candidates?scale=WB01", false},
+		{"camera list success", "GET", "/api/weighing/cameras", false},
+		{"camera preview success", "GET", "/api/weighing/cameras/2/preview", false},
+		{"session renew success", "POST", "/api/weighing/scales/001/session/renew", false},
+		{"camera list http error", "GET", "/api/weighing/cameras?result=http-error", true},
+		{"camera preview business error", "GET", "/api/weighing/cameras/2/preview?result=business-error", true},
+		{"session renew business error", "POST", "/api/weighing/scales/001/session/renew?result=business-error", true},
+		{"session renew context error", "POST", "/api/weighing/scales/001/session/renew?result=context-error", true},
+		{"session acquire", "POST", "/api/weighing/scales/001/session/acquire", true},
+		{"camera create", "POST", "/api/weighing/cameras", true},
 		{"http error", "GET", "/api/weighing/scales/WB01/device?result=http-error", true},
 		{"business error", "GET", "/api/weighing/scales/WB01/device?result=business-error", true},
 		{"context error", "GET", "/api/weighing/scales/WB01/device?result=context-error", true},
@@ -310,6 +325,15 @@ func TestRequestLoggerPolling(t *testing.T) {
 	}
 	if !shouldLogRequest("GET", "/api/weighing/plate-candidates", 200, time.Second, false) {
 		t.Fatal("slow polling request must be logged")
+	}
+	for _, route := range []struct{ method, path string }{
+		{"GET", "/api/weighing/cameras"},
+		{"GET", "/api/weighing/cameras/:id/preview"},
+		{"POST", "/api/weighing/scales/:code/session/renew"},
+	} {
+		if !shouldLogRequest(route.method, route.path, 200, time.Second, false) {
+			t.Errorf("slow request %s %s must be logged", route.method, route.path)
+		}
 	}
 }
 

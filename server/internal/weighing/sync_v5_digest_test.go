@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -41,10 +43,9 @@ func TestDigestV3Vectors(t *testing.T) {
 			items = payload.Ticket.NetAdjustments
 		}
 		if payload.Ticket != nil {
-			// Recompute FinalNet from the wire so vectors only need the
-			// stored weights; keeps hand-written vectors consistent.
-			milli := func(v string) int64 { return digestMilli(t, v) }
-			payload.Ticket.FinalNet = fmtNet(milli(payload.Ticket.FinalGross) - milli(payload.Ticket.FinalTare) - milli(payload.Ticket.NetAdjustment))
+			// The expected digest covers the literal wire payload, so the
+			// published vectors must also be legal, self-consistent tickets.
+			checkVectorWeights(t, vector.Name, payload.Ticket)
 			change.Ticket = &payload.Ticket.syncTicket
 		}
 		digest, err := computeChangeDigestV5(change, items)
@@ -107,20 +108,61 @@ func digestMilli(t *testing.T, value string) int64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	negative := canon[0] == '-'
-	if negative {
-		canon = canon[1:]
+	negative := strings.HasPrefix(canon, "-")
+	canon = strings.TrimPrefix(canon, "-")
+	whole, fraction, ok := strings.Cut(canon, ".")
+	if !ok || len(fraction) != 3 {
+		t.Fatalf("canonical weight %q is not a three-decimal tonne string", value)
 	}
-	var whole, fraction string
-	if index := 0; index < len(canon) {
-		whole, fraction = canon[:len(canon)-4], canon[len(canon)-3:]
+	wholeMilli, err := strconv.ParseInt(whole, 10, 64)
+	if err != nil {
+		t.Fatal(err)
 	}
-	milli := 0
-	_, _ = fmt.Sscanf(whole+"."+fraction, "%d", &milli)
+	fractionMilli, err := strconv.ParseInt(fraction, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	milli := wholeMilli*1000 + fractionMilli
 	if negative {
 		milli = -milli
 	}
-	return int64(milli)
+	return milli
+}
+
+// checkVectorWeights keeps the published vectors usable as legal payloads:
+// finalNet must equal finalGross-finalTare-netAdjustment, item amounts must sum
+// to netAdjustment, and percent items must match their rate on the shared
+// adjusted-net basis. Recomputing finalNet here previously hid an inconsistent
+// vector (0.7 tonne of items with a 1.5 tonne total).
+func checkVectorWeights(t *testing.T, name string, ticket *syncTicketV5) {
+	t.Helper()
+	base := digestMilli(t, ticket.FinalGross) - digestMilli(t, ticket.FinalTare)
+	if got, want := digestMilli(t, ticket.FinalNet), base-digestMilli(t, ticket.NetAdjustment); got != want {
+		t.Fatalf("%s: finalNet=%s, want %s from finalGross-finalTare-netAdjustment", name, ticket.FinalNet, fmtNet(want))
+	}
+	var total int64
+	for index, item := range ticket.NetAdjustments {
+		amount := digestMilli(t, item.Amount)
+		switch item.Mode {
+		case "percent":
+			if item.RateBP == nil {
+				t.Fatalf("%s: item %d is percent without rateBp", name, index)
+			}
+			if got := roundRatio(base*int64(*item.RateBP), 10000); got != amount {
+				t.Fatalf("%s: item %d amount=%s, want %s from rateBp=%d", name, index, item.Amount, fmtNet(got), *item.RateBP)
+			}
+		case "amount":
+			if item.RateBP != nil {
+				t.Fatalf("%s: item %d is amount with rateBp", name, index)
+			}
+		default:
+			t.Fatalf("%s: item %d mode=%q", name, index, item.Mode)
+		}
+		total += amount
+	}
+	if want := digestMilli(t, ticket.NetAdjustment); total != want {
+		t.Fatalf("%s: item sum=%s, want netAdjustment=%s", name, fmtNet(total), fmtNet(want))
+	}
 }
 
 func fmtNet(milli int64) string {

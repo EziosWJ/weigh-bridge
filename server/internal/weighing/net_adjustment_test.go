@@ -6,22 +6,21 @@ func TestResolveNetAdjustment(t *testing.T) {
 	amount := func(v WeightDifference) *WeightDifference { return &v }
 	rate := func(v int) *int { return &v }
 	for _, test := range []struct {
-		name        string
-		in          *NetAdjustmentInput
-		base        Tonnes
-		allowUpward bool
-		want        WeightDifference
-		wantMode    string
-		wantRate    *int
-		wantErr     bool
+		name     string
+		in       *NetAdjustmentInput
+		base     Tonnes
+		want     WeightDifference
+		wantMode string
+		wantRate *int
+		wantErr  bool
 	}{
 		{name: "none", base: 20000, want: 0, wantMode: "amount"},
 		{name: "amount", in: &NetAdjustmentInput{Mode: "amount", Amount: amount(1500)}, base: 20000, want: 1500, wantMode: "amount"},
 		{name: "amount upward rejected", in: &NetAdjustmentInput{Mode: "amount", Amount: amount(-500)}, base: 20000, wantErr: true},
-		{name: "amount upward on reopen", in: &NetAdjustmentInput{Mode: "amount", Amount: amount(-500)}, base: 20000, allowUpward: true, want: -500, wantMode: "amount"},
+		{name: "amount upward rejected on reopen", in: &NetAdjustmentInput{Mode: "amount", Amount: amount(-500)}, base: 20000, wantErr: true},
 		{name: "percent", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(150)}, base: 20000, want: 300, wantMode: "percent", wantRate: rate(150)},
 		{name: "percent rounds half away from zero", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(5)}, base: 1000, want: 1, wantMode: "percent", wantRate: rate(5)},
-		{name: "percent upward on reopen", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(-5)}, base: 1000, allowUpward: true, want: -1, wantMode: "percent", wantRate: rate(-5)},
+		{name: "percent upward rejected on reopen", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(-5)}, base: 1000, wantErr: true},
 		{name: "percent upward rejected", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(-5)}, base: 1000, wantErr: true},
 		{name: "percent zero is no adjustment", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(0)}, base: 1000, want: 0, wantMode: "amount"},
 		{name: "percent below precision", in: &NetAdjustmentInput{Mode: "percent", RateBP: rate(1)}, base: 1, wantErr: true},
@@ -31,7 +30,7 @@ func TestResolveNetAdjustment(t *testing.T) {
 		{name: "unknown mode", in: &NetAdjustmentInput{Mode: "ratio"}, base: 1000, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, mode, gotRate, err := resolveNetAdjustment(test.in, test.base, test.allowUpward)
+			got, mode, gotRate, err := resolveNetAdjustment(test.in, test.base)
 			if test.wantErr {
 				if err == nil {
 					t.Fatalf("accepted %+v", test.in)
@@ -57,7 +56,7 @@ func TestMakeTicketAppliesNetAdjustment(t *testing.T) {
 	second := WeighRecord{ID: 11, TaskID: 1, Stage: "second", Kind: "tare", Weight: 10000}
 	amount := func(v WeightDifference) *WeightDifference { return &v }
 	rate := func(v int) *int { return &v }
-	ticket, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(1500), Category: "WATER", Remark: "水分大"}, "水分大", false, true, 7, "操作员", nil)
+	ticket, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(1500), Category: "WATER", Remark: "水分大"}, "水分大", true, 7, "操作员", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +66,7 @@ func TestMakeTicketAppliesNetAdjustment(t *testing.T) {
 	if view := ticketView(ticket); view.FinalNet != 18500 {
 		t.Fatalf("final net = %v", view.FinalNet)
 	}
-	percent, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "percent", RateBP: rate(125), Category: "WATER"}, "水分大", false, true, 7, "操作员", nil)
+	percent, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "percent", RateBP: rate(125), Category: "WATER"}, "水分大", true, 7, "操作员", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,13 +76,13 @@ func TestMakeTicketAppliesNetAdjustment(t *testing.T) {
 	if view := ticketView(percent); view.FinalNet != 19750 {
 		t.Fatalf("percent final net = %v", view.FinalNet)
 	}
-	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(-500), Category: "WATER"}, "水分大", false, true, 7, "操作员", nil); err == nil {
+	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(-500), Category: "WATER"}, "水分大", true, 7, "操作员", nil); err == nil {
 		t.Fatal("normal issuance accepted an upward adjustment")
 	}
-	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(20000), Category: "WATER"}, "水分大", false, true, 7, "操作员", nil); err == nil {
+	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(20000), Category: "WATER"}, "水分大", true, 7, "操作员", nil); err == nil {
 		t.Fatal("accepted a deduction that zeroes the net weight")
 	}
-	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(1500)}, "", false, true, 7, "操作员", nil); err == nil {
+	if _, err := makeTicket(task, first, second, nil, &NetAdjustmentInput{Mode: "amount", Amount: amount(1500)}, "", true, 7, "操作员", nil); err == nil {
 		t.Fatal("accepted a deduction without a category")
 	}
 }

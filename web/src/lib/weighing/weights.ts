@@ -97,7 +97,7 @@ function roundRatio(numerator: number, denominator: number): number {
 }
 
 /** Resolves the signed net adjustment in tonnes from the pre-adjustment net basis. */
-export function resolveNetAdjustment(basis: WeightValues, input: NetAdjustmentInput, allowUpward = false): ResolvedNetAdjustment {
+export function resolveNetAdjustment(basis: WeightValues, input: NetAdjustmentInput): ResolvedNetAdjustment {
   if (![basis.gross, basis.tare, basis.net].every(Number.isFinite) || basis.tare <= 0 || basis.net <= 0) {
     throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，待设备提供正确重量后重新采集；首次重量有误时须重称，不能通过调整净重出单。');
   }
@@ -110,14 +110,14 @@ export function resolveNetAdjustment(basis: WeightValues, input: NetAdjustmentIn
   if (input.mode === 'percent') {
     if (!Number.isInteger(input.rateBp) || Math.abs(input.rateBp) > 10000) throw new Error('调整比例最多两位小数，且绝对值不超过 100%');
     rateBp = input.rateBp;
-    if (!allowUpward && rateBp < 0) throw new Error('正常出单只能扣减净重；提高净重请在更正重开中办理');
+    if (rateBp < 0) throw new Error('当前规则只能扣减，不允许上调净重，请删除或修改该项');
     if (rateBp !== 0) {
       amountMilli = roundRatio(netMilli * rateBp, 10000);
       if (amountMilli === 0) throw new Error('调整比例折算不足 0.001 吨，请改为按吨录入');
     }
   } else {
     amountMilli = weightInMilliTonnes(input.amount);
-    if (!allowUpward && amountMilli < 0) throw new Error('正常出单只能扣减净重；提高净重请在更正重开中办理');
+    if (amountMilli < 0) throw new Error('当前规则只能扣减，不允许上调净重，请删除或修改该项');
   }
   const finalNetMilli = netMilli - amountMilli;
   if (finalNetMilli <= 0 || finalNetMilli >= grossMilli) throw new Error('调整后净重必须大于零且小于最终毛重');
@@ -125,8 +125,8 @@ export function resolveNetAdjustment(basis: WeightValues, input: NetAdjustmentIn
   return { amount: tonnes(amountMilli), ...(rateBp === undefined ? {} : { rateBp }) };
 }
 
-export function netAdjustedWeights(basis: WeightValues, input: NetAdjustmentInput, allowUpward = false): WeightValues {
-  const resolved = resolveNetAdjustment(basis, input, allowUpward);
+export function netAdjustedWeights(basis: WeightValues, input: NetAdjustmentInput): WeightValues {
+  const resolved = resolveNetAdjustment(basis, input);
   return { gross: basis.gross, tare: basis.tare, net: tonnes(weightInMilliTonnes(basis.net) - weightInMilliTonnes(resolved.amount)) };
 }
 
@@ -136,7 +136,7 @@ export function netAdjustmentText(amount: number): string {
 }
 
 /** Resolves each item independently against the shared pre-adjustment net basis; each percent item rounds to 0.001 吨 on its own, then the signed amounts add up. */
-export function resolveNetAdjustments(basis: WeightValues, inputs: NetAdjustmentsInput, allowUpward = false): { amount: number; items: ResolvedNetAdjustment[] } {
+export function resolveNetAdjustments(basis: WeightValues, inputs: NetAdjustmentsInput): { amount: number; items: ResolvedNetAdjustment[] } {
   if (![basis.gross, basis.tare, basis.net].every(Number.isFinite) || basis.tare <= 0 || basis.net <= 0) {
     throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，待设备提供正确重量后重新采集；首次重量有误时须重称，不能通过调整净重出单。');
   }
@@ -146,7 +146,7 @@ export function resolveNetAdjustments(basis: WeightValues, inputs: NetAdjustment
   let total = 0;
   const items: ResolvedNetAdjustment[] = [];
   for (const input of inputs ?? []) {
-    const resolved = resolveNetAdjustment(basis, input, allowUpward);
+    const resolved = resolveNetAdjustment(basis, input);
     if (resolved.amount === 0) continue;
     total += weightInMilliTonnes(resolved.amount);
     items.push(resolved);
@@ -154,4 +154,9 @@ export function resolveNetAdjustments(basis: WeightValues, inputs: NetAdjustment
   if (items.length === 0) return { amount: 0, items: [] };
   if (netMilli - total <= 0) throw new Error('多项调整合计后净重必须大于零');
   return { amount: tonnes(total), items };
+}
+
+/** True when closing the editor would discard entered adjustment data. */
+export function hasAdjustmentInput(rows: NetAdjustmentsInput): boolean {
+  return rows.some(row => row.amount !== 0 || row.rateBp !== 0 || !!row.remark?.trim());
 }

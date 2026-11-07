@@ -422,7 +422,7 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 		t.Fatalf("second result: %+v %+v", completed, completedReplay)
 	}
 	ticket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(completed.TicketID), "", token)
-	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 30000 || ticket.FinalTare != 10000 || ticket.NetAdjustment != 1500 || ticket.FinalNet != 18500 || ticket.NetAdjustmentCategory != "WATER" || ticket.NetAdjustmentCategoryName != "水分大" || ticket.GrossDifference != 0 || ticket.TareDifference != 0 || ticket.AdjustmentRemark != "水分大" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !regexp.MustCompile(`^SITE01-\d{8}-\d{4,}$`).MatchString(ticket.TicketNo) {
+	if ticket.OriginalGross != 30000 || ticket.OriginalTare != 10000 || ticket.FinalGross != 30000 || ticket.FinalTare != 10000 || ticket.NetAdjustment != 1500 || ticket.FinalNet != 18500 || ticket.NetAdjustmentCategory != "WATER" || ticket.NetAdjustmentCategoryName != "水分" || ticket.GrossDifference != 0 || ticket.TareDifference != 0 || ticket.AdjustmentRemark != "水分大" || ticket.Business.PartyName != party.Name || len(ticket.Basis) != 2 || !regexp.MustCompile(`^SITE01-\d{8}-\d{4,}$`).MatchString(ticket.TicketNo) {
 		t.Fatalf("test ticket weights: %+v", ticket)
 	}
 	if ticket.SiteCode != "SITE01" {
@@ -470,6 +470,12 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	config := configs[0]
 	identity := weighing.SiteConfigurationInput{ServerURL: config.ServerURL, Code: "F001", Name: config.Name, ScaleCode: config.ScaleCode, ScaleName: config.ScaleName, AgentID: config.AgentID, Enabled: config.Enabled, Version: config.Version}
 	changedIdentity := weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
+	// A reopen must reject upward adjustments without creating a ticket.
+	upwardReopen := map[string]any{"requestId": "upward-reopen-amount", "taskVersion": voided.TaskVersion, "reason": "测试上调", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustments": []map[string]any{{"mode": "amount", "amount": "-0.5", "category": "WATER"}}}
+	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(upwardReopen), token), 200, 400, weighing.ErrInvalid.Error())
+	upwardReopen["requestId"] = "upward-reopen-percent"
+	upwardReopen["netAdjustments"] = []map[string]any{{"mode": "percent", "rateBp": -50, "category": "WATER"}}
+	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(upwardReopen), token), 200, 400, weighing.ErrInvalid.Error())
 	reopenBody := map[string]any{"requestId": "manual-reopen-0001", "taskVersion": voided.TaskVersion, "reason": "旧依据人工更正", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustment": map[string]any{"mode": "amount", "amount": "2", "category": "OTHER", "remark": "其他"}}
 	reopened := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(reopenBody), token)
 	if reopened.TicketID == ticket.ID {

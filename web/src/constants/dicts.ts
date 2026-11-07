@@ -69,9 +69,8 @@ export const LOG_STATUS_OPTIONS = [
 ] as const satisfies readonly DictSelectOption[];
 
 export const WEIGHING_DEDUCTION_CATEGORY_OPTIONS = [
-  { label: "水分大", value: "WATER" },
-  { label: "质量差", value: "QUALITY" },
-  { label: "杂质多", value: "IMPURITY" },
+  { label: "水分", value: "WATER" },
+  { label: "杂质", value: "IMPURITY" },
   { label: "其他", value: "OTHER" },
 ] as const satisfies readonly DictSelectOption[];
 

@@ -1,3 +1,4 @@
+import { hasAdjustmentInput } from '@/lib/weighing/weights';
 import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState } from 'react';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -24,6 +25,8 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [fieldError, setFieldError] = useState('');
   const [input, setInput] = useState<TaskInput>(emptyTaskInput);
   const [reason, setReason] = useState('');
   const [finalWeights, setFinalWeights] = useState<FinalWeightInput>({ gross: 0, tare: 0 });
@@ -132,6 +135,10 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
       setError(plateError(input.plate));
       return;
     }
+    if (fieldError) {
+      setError(fieldError);
+      return;
+    }
     if (!reason.trim()) {
       setError('请填写操作原因 / 核实说明。');
       return;
@@ -145,7 +152,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
       }
       if (correctedBasis) {
         try {
-          resolveNetAdjustments(correctedBasis, netAdjustments, true);
+          resolveNetAdjustments(correctedBasis, netAdjustments);
         } catch (failure) {
           setError(failure instanceof Error ? failure.message : '请核对净重调整。');
           return;
@@ -207,29 +214,30 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
       loading={submitting}
       submitDisabled={!ready || loading || !ticket || !task || !canReopen}
       submitText="确认保存"
-      onCancel={onClose}
+      onCancel={() => { if (hasAdjustmentInput(netAdjustments)) setConfirmClose(true); else onClose(); }}
       onSubmit={requestConfirmation}
-      closeOnEscape={!confirming}
-      trapFocus={!confirming}
+      closeOnEscape={!confirming && !confirmClose}
+      trapFocus={!confirming && !confirmClose}
     >
       <div className="space-y-space-4">
         {(!ready || loading) && ticketId && <p role="status" className="text-text-secondary">正在加载原单与称重依据…</p>}
         {ready && !loading && !ticket && <p role="alert" className="text-error">{error || '未找到该单据，请刷新后重试。'}</p>}
         {ticket && ready && !loading && <>
-          <p>日常净重扣减按“正数扣减、负数上调”记录；毛重／皮重更正仅用于异常纠错。原单及采集依据保留，并关联原单，同任务最多一张有效单据。</p>
+          <p>净重调整只允许扣减；毛重／皮重更正仅用于异常纠错。原单及采集依据保留，并关联原单，同任务最多一张有效单据。</p>
           {!canReopen && <p role="alert" className="text-error">该单据已有更正单，或同任务已有有效单据，请沿关联记录办理。</p>}
           <BusinessFields value={input} onChange={setInput} lockDirection />
           <p className="text-sm">上版最终毛／皮／净重：{formatWeight(ticket.gross)} / {formatWeight(ticket.tare)} / {formatWeight(ticket.net)}；净重调整：{netAdjustmentText(ticket.netAdjustment ?? 0)}</p>
           <Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(ticket.taskId)}`}>需要实际单磅重称：前往原任务采集，完成后返回本单重开</Link>
           {currentOriginal && <>
             <GrossTareCorrectionFields original={currentOriginal} value={finalWeights} onChange={setFinalWeights} />
-            {correctedBasis && <NetAdjustmentFields basis={correctedBasis} value={netAdjustments} onChange={setNetAdjustments} allowUpward />}
+            {correctedBasis && <NetAdjustmentFields basis={correctedBasis} value={netAdjustments} onChange={setNetAdjustments} onValidationChange={setFieldError} />}
           </>}
         </>}
         <Field label="操作原因 / 核实说明" htmlFor="ticket-operation-reason" required><Input id="ticket-operation-reason" required value={reason} onChange={event => setReason(event.target.value)} /></Field>
         {error && <p role="alert" className="text-error">{error}</p>}
       </div>
     </FormDialog>
+    <ConfirmDialog open={confirmClose} title="放弃已填写的扣减内容？" description="关闭后已填写的扣减内容将丢失。" confirmText="放弃并关闭" cancelText="返回修改" onConfirm={() => { setConfirmClose(false); onClose(); }} onCancel={() => setConfirmClose(false)} />
     <ConfirmDialog
       open={confirming}
       title="确认两磅依据有效"

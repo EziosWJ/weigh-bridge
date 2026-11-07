@@ -141,7 +141,7 @@ func (r *Repository) ManualReturn(ctx context.Context, id int64, in ManualReturn
 		if err := resolveItemsCategoryNames(tx, in.NetAdjustments); err != nil {
 			return out, err
 		}
-		ticket, err := makeTicketWithItems(task, first, record, nil, in.NetAdjustments, "", false, true, e.Metadata.ActorID, name, nil)
+		ticket, err := makeTicketWithItems(task, first, record, nil, in.NetAdjustments, "", true, e.Metadata.ActorID, name, nil)
 		if err != nil {
 			return out, err
 		}
@@ -369,7 +369,7 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 		if len(entries) == 1 {
 			categoryName = entries[0].ResolvedCategoryName
 		}
-		ticket, err := makeTicketWithItems(task, first, second, in.FinalWeights, entries, categoryName, true, in.AllowAdjust, e.Metadata.ActorID, name, &latest)
+		ticket, err := makeTicketWithItems(task, first, second, in.FinalWeights, entries, categoryName, in.AllowAdjust, e.Metadata.ActorID, name, &latest)
 		if err != nil {
 			return out, err
 		}

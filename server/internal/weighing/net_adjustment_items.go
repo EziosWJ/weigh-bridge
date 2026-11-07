@@ -23,14 +23,14 @@ type NetAdjustmentItem struct {
 // resolveNetAdjustmentItems validates each operator entry against the shared
 // pre-adjustment net basis, resolves percent entries independently (each
 // rounds half away from zero to 0.001 吨) and returns the detail list plus the
-// signed total. Upward entries are accepted only when reopening a void ticket.
+// signed total. Upward entries are rejected for all new tickets.
 // Item category names come from ResolvedCategoryName, filled by
 // resolveItemsCategoryNames before this runs.
-func resolveNetAdjustmentItems(in []NetAdjustmentInput, base Tonnes, allowUpward bool, resolveName func(string) (string, error)) ([]NetAdjustmentItem, WeightDifference, error) {
+func resolveNetAdjustmentItems(in []NetAdjustmentInput, base Tonnes, resolveName func(string) (string, error)) ([]NetAdjustmentItem, WeightDifference, error) {
 	items := []NetAdjustmentItem{}
 	total := int64(0)
 	for _, entry := range in {
-		amount, mode, rateBP, err := resolveNetAdjustment(&entry, base, allowUpward)
+		amount, mode, rateBP, err := resolveNetAdjustment(&entry, base)
 		if err != nil {
 			return nil, 0, err
 		}

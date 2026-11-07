@@ -47,7 +47,7 @@
           "contactPhone": ""
         }
       },
-      "expectedDigest": "8f53ce0e73a9b8b09a32102cdda82671c91f1ce76b35752ddf30d1d94dd740b1"
+      "expectedDigest": "bb2b2bae029babdf632c54f2a45c5ab42f650366689a138c9d19ccec6a74f789"
     },
     {
       "name": "issue-multi-items",
@@ -77,8 +77,8 @@
           "originalTare": "10",
           "finalGross": "30",
           "finalTare": "10",
-          "finalNet": "18.5",
-          "netAdjustment": "1.5",
+          "finalNet": "19.3",
+          "netAdjustment": "0.7",
           "netAdjustments": [
             {
               "mode": "percent",
@@ -112,7 +112,7 @@
           "contactPhone": ""
         }
       },
-      "expectedDigest": "8612ea5a5db1a1e9755fe1eb647c34174ccc35910301cbbdd121d146c3334efb"
+      "expectedDigest": "fd1b85bcf8081a638ae887d94e7d8f34674038b75cd448579fb9ac64e0fd7f65"
     }
   ]
 }

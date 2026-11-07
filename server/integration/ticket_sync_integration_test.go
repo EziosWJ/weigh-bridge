@@ -265,7 +265,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatalf("netAdjustments detail: %s", rows[0].Payload)
 	}
 	item, _ := items[0].(map[string]any)
-	if item["mode"] != "amount" || item["amount"] != "1.5" || item["category"] != "WATER" || item["categoryName"] != "水分大" {
+	if item["mode"] != "amount" || item["amount"] != "1.5" || item["category"] != "WATER" || item["categoryName"] != "水分" {
 		t.Fatalf("netAdjustments item: %s", rows[0].Payload)
 	}
 	if reopen["siteCode"] != "F001" || reopen["previousSiteCode"] != issue["siteCode"] || reopen["ticket"].(map[string]any)["previousTicketNo"] != issue["ticketNo"] {

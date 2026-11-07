@@ -1,3 +1,4 @@
+import { hasAdjustmentInput } from '@/lib/weighing/weights';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowLeft,
@@ -16,6 +17,7 @@ import type { CaptureSnapshot, NetAdjustmentsInput, WeightValues } from '@/types
 import { formatWeight, formatWeightValue, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
 import { StatusTag } from '@/components/common/status-tag';
+import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { HelpHint } from '@/components/common/help-hint';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
 import { NetAdjustmentFields } from './deduction-fields';
@@ -82,6 +84,8 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   onConfirm: (netAdjustments?: NetAdjustmentsInput) => void;
 }) {
   const [imageReady, setImageReady] = useState(false);
+  const [pendingExit, setPendingExit] = useState<'cancel' | 'mismatch' | null>(null);
+  const [fieldError, setFieldError] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [step, setStep] = useState<'review' | 'final'>('review');
   const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>([]);
@@ -102,11 +106,16 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   }
   const requiresImage = !!value.capture && value.capture.captureRequired !== false && value.capture.imageStatus !== 'disabled';
   const reviewReady = !!value.capture && (!requiresImage || imageReady) && !invalidReason && missing.length === 0;
-  const finalReady = reviewReady && !adjustmentError;
+  const finalReady = reviewReady && !adjustmentError && !fieldError;
   const imageCount = value.capture ? value.capture.images?.length || (value.capture.imageSrc ? 1 : 0) : 0;
   const capturePolicy = value.capture?.captureRequired === false ? '非强制抓拍' : '强制抓拍';
 
-  return <Dialog open onOpenChange={open => { if (!open && !submitting) onCancel(); }} trapFocus={!previewOpen} closeOnEscape={!previewOpen && !submitting} restoreFocus lockScroll closeOnOverlayClick={false}>
+  const requestExit = (action: 'cancel' | 'mismatch') => {
+    if (hasAdjustmentInput(netAdjustments)) setPendingExit(action);
+    else if (action === 'mismatch') onMismatch();
+    else onCancel();
+  };
+  return <><Dialog open onOpenChange={open => { if (!open && !submitting) requestExit('cancel'); }} trapFocus={!previewOpen && !pendingExit} closeOnEscape={!previewOpen && !submitting && !pendingExit} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay className="workbench-modal-overlay" />
     <DialogContent className="weighing-review workbench-modal flex max-h-[calc(100dvh-32px)] max-w-[1180px] flex-col">
       <DialogHeader className="weighing-review-header">
@@ -157,7 +166,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
             <ReviewFact label={value.partyLabel} value={value.party} />
           </div>
           <section className="review-section">
-            <div className="review-section-body"><NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} /></div>
+            <div className="review-section-body"><NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} /></div>
           </section>
         </section> : <section className="review-main" aria-label="本趟运输核对依据">
           <ReviewSection icon={<Package className="h-4 w-4" aria-hidden />} title="业务核对" extra={<HelpHint label="业务核对说明" align="right">请与现场车辆核对。</HelpHint>}>
@@ -202,7 +211,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
               <Check className="h-4 w-4" aria-hidden />{submitting ? '正在保存…' : '确认回磅并出单'}
             </Button>
           </> : <>
-            <Button size="lg" disabled={submitting} onClick={invalidReason ? onCancel : onMismatch}><ArrowLeft className="h-4 w-4" aria-hidden />{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
+            <Button size="lg" disabled={submitting} onClick={() => requestExit(invalidReason ? 'cancel' : 'mismatch')}><ArrowLeft className="h-4 w-4" aria-hidden />{invalidReason ? '返回重新采集' : '不一致，返回修改'}</Button>
             {second ? <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!reviewReady || submitting} onClick={() => { if (reviewReady && !submitting) setStep('final'); }}>
               <ArrowRight className="h-4 w-4" aria-hidden />下一步：核对最终重量
             </Button> : <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!reviewReady || submitting} onClick={() => { if (reviewReady && !submitting) onConfirm(); }}>
@@ -212,5 +221,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
         </div>
       </DialogFooter>
     </DialogContent>
-  </Dialog>;
+  </Dialog>
+    <ConfirmDialog open={!!pendingExit} title="放弃已填写的扣减内容？" description="退出核对后已填写的扣减内容将丢失。" confirmText="放弃并退出" cancelText="返回修改" onConfirm={() => { if (pendingExit === 'mismatch') onMismatch(); else onCancel(); }} onCancel={() => setPendingExit(null)} />
+  </>;
 }

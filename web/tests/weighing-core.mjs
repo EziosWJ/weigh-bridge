@@ -722,7 +722,6 @@ test('净重调整按吨或比例解析，正常出单禁止上调，比例四�
   assert.deepEqual(netAdjustedWeights(basis, { mode: 'percent', amount: 0, rateBp: 125, category: 'WATER' }), { gross: 30, tare: 10, net: 19.75 });
   assert.deepEqual(netAdjustedWeights({ gross: 2, tare: 1, net: 1 }, { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' }), { gross: 2, tare: 1, net: 0.999 });
   assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }), /只能扣减/);
-  assert.equal(resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }, true).amount, -0.5);
   assert.throws(() => resolveNetAdjustment({ gross: 1, tare: 0.001, net: 0.999 }, { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' }), /不足 0.001/);
   assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: 0.5, rateBp: 0, category: '' }), /备注/);
 });
@@ -748,15 +747,15 @@ test('多项净重调整：各比例项独立以调整前净重为基数、各�
     { mode: 'amount', amount: 0.5, rateBp: 0, category: 'IMPURITY' },
   ]);
   assert.equal(mixed.amount, 0.7);
-  // 正常出单拒绝任一上调项；重开允许并计入合计。
+  // 正常出单和更正重开均拒绝任一上调项。
   assert.throws(() => resolveNetAdjustments(basis, [
     { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' },
     { mode: 'amount', amount: 0.3, rateBp: 0, category: 'IMPURITY' },
   ]), /只能扣减/);
-  assert.equal(resolveNetAdjustments(basis, [
-    { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' },
+  assert.throws(() => resolveNetAdjustments(basis, [
+    { mode: 'percent', amount: 0, rateBp: -50, category: 'WATER' },
     { mode: 'amount', amount: 0.3, rateBp: 0, category: 'IMPURITY' },
-  ], true).amount, -0.2);
+  ]), /只能扣减/);
   // 合计不得清零净重；空列表与全零项均为无调整。
   assert.throws(() => resolveNetAdjustments({ gross: 1.001, tare: 0.001, net: 1 }, [
     { mode: 'amount', amount: 0.6, rateBp: 0, category: 'WATER' },

@@ -12,7 +12,6 @@ func TestResolveNetAdjustmentItems(t *testing.T) {
 		name    string
 		in      []NetAdjustmentInput
 		base    Tonnes
-		allowUp bool
 		want    WeightDifference
 		items   int
 		wantErr bool
@@ -32,10 +31,10 @@ func TestResolveNetAdjustmentItems(t *testing.T) {
 		{name: "upward rejected normally", in: []NetAdjustmentInput{
 			{Mode: "amount", Amount: amount(-500), Category: "WATER"},
 		}, base: 1000, wantErr: true},
-		{name: "upward allowed on reopen", in: []NetAdjustmentInput{
+		{name: "upward rejected on reopen", in: []NetAdjustmentInput{
 			{Mode: "amount", Amount: amount(-500), Category: "WATER"},
 			{Mode: "percent", RateBP: rate(100), Category: "IMPURITY"},
-		}, base: 1000, allowUp: true, want: -490, items: 2},
+		}, base: 1000, wantErr: true},
 		{name: "total zeroes the net", in: []NetAdjustmentInput{
 			{Mode: "amount", Amount: amount(600)},
 			{Mode: "amount", Amount: amount(400)},
@@ -46,7 +45,7 @@ func TestResolveNetAdjustmentItems(t *testing.T) {
 		}, base: 1000, wantErr: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			items, total, err := resolveNetAdjustmentItems(test.in, test.base, test.allowUp, name)
+			items, total, err := resolveNetAdjustmentItems(test.in, test.base, name)
 			if test.wantErr {
 				if err == nil {
 					t.Fatalf("accepted %+v", test.in)
@@ -81,7 +80,7 @@ func TestMakeTicketWithItems(t *testing.T) {
 		{Mode: "percent", RateBP: rate(100), Category: "WATER", Remark: "水分大", ResolvedCategoryName: "水分大"},
 		{Mode: "amount", Amount: amount(500), Category: "IMPURITY", ResolvedCategoryName: "杂质多"},
 	}
-	ticket, err := makeTicketWithItems(task, first, second, nil, entries, "", false, true, 7, "操作员", nil)
+	ticket, err := makeTicketWithItems(task, first, second, nil, entries, "", true, 7, "操作员", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +108,7 @@ func TestMakeTicketWithItems(t *testing.T) {
 		{Mode: "amount", Amount: amount(-500), Category: "WATER", ResolvedCategoryName: "水分大"},
 		{Mode: "amount", Amount: amount(300), Category: "IMPURITY", ResolvedCategoryName: "杂质多"},
 	}
-	if _, err := makeTicketWithItems(task, first, second, nil, up, "", false, true, 7, "操作员", nil); err == nil {
+	if _, err := makeTicketWithItems(task, first, second, nil, up, "", true, 7, "操作员", nil); err == nil {
 		t.Fatal("normal issuance accepted an upward item")
 	}
 }
