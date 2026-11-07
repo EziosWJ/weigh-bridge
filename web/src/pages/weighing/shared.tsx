@@ -1,5 +1,5 @@
 import { WorkbenchLink } from "@/components/common/workbench-link";
-import { useRef, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { ArrowRight, Info } from 'lucide-react';
 import { Field } from '@/components/common/field';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
@@ -41,6 +41,7 @@ export function BusinessDirectionControl({ value, update, lockDirection = false,
   variant?: 'field' | 'simple' | 'panel';
 }) {
   const inbound = value.direction === 'inbound';
+  const directionGroup = useId();
   const directionLabels = useTransportDirections();
   const first = inbound ? '毛重' : '皮重';
   const second = inbound ? '皮重' : '毛重';
@@ -50,10 +51,15 @@ export function BusinessDirectionControl({ value, update, lockDirection = false,
     : '车辆进厂后先称空车重量（皮重），装货完成后再称车辆和货物的总重量（毛重）。';
   const note = '首磅确认后建立运输任务；回磅确认后生成正式过磅单。净重 = 毛重 − 皮重。';
   const select = <Select id="business-direction" aria-label="运输方向" className={variant === 'panel' ? 'w-auto min-w-[140px]' : undefined} value={value.direction} disabled={lockDirection} onChange={e => update({ direction: e.target.value as TaskInput['direction'], partyId: '', contactName: '', contactPhone: '' })}><option value="inbound">{directionLabels.inbound}</option><option value="outbound">{directionLabels.outbound}</option></Select>;
-  if (variant === 'simple') return <div className="workbench-direction">
-    <label htmlFor="business-direction" className="block text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>
-    {select}
-  </div>;
+  if (variant === 'simple') return <fieldset className="workbench-direction">
+    <legend className="block text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></legend>
+    <div className="workbench-direction-options">
+      {(['inbound', 'outbound'] as const).map(direction => <label key={direction} className={`workbench-direction-option${value.direction === direction ? ' is-selected' : ''}`}>
+        <input type="radio" name={directionGroup} value={direction} checked={value.direction === direction} disabled={lockDirection} onChange={() => update({ direction, partyId: '', contactName: '', contactPhone: '' })} />
+        <span>{directionLabels[direction]}</span>
+      </label>)}
+    </div>
+  </fieldset>;
   if (variant === 'panel') return <div className="business-direction-row md:col-span-2">
     <div className="business-direction-control">
       <label htmlFor="business-direction" className="shrink-0 text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></label>

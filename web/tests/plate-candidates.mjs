@@ -58,10 +58,14 @@ try {
     assert.equal(lookupCount, 0);
     await page.getByRole('button', { name: '确认车辆' }).click();
     await page.getByText('暂无历史任务，请选择物料和供收方。').waitFor();
-    const direction = page.getByLabel('运输方向', { exact: true });
-    await direction.getByRole('option', { name: '入厂卸货（收粮）' }).waitFor({ state: 'attached' });
-    assert.equal(await direction.inputValue(), 'inbound', '字典只改变名称，不改变业务编码');
-    assert.equal(await direction.getByRole('option', { name: '出厂装货（拉酒糟）' }).getAttribute('value'), 'outbound');
+    const inbound = page.getByRole('radio', { name: '入厂卸货（收粮）' });
+    const outbound = page.getByRole('radio', { name: '出厂装货（拉酒糟）' });
+    assert.equal(await inbound.isChecked(), true);
+    assert.equal(await inbound.inputValue(), 'inbound', '字典只改变名称，不改变业务编码');
+    assert.equal(await outbound.inputValue(), 'outbound');
+    await outbound.check();
+    assert.equal(await outbound.isChecked(), true);
+    await inbound.check();
     assert.equal(lookupCount, 1);
     assert.equal(confirmed.confirmedPlate, '晋A12346');
     assert.equal(confirmed.evidence.candidate, '晋A12345');

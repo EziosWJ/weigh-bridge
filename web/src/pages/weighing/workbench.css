@@ -654,6 +654,14 @@ body:has(.weighing-workbench) .workbench-business-dialog {
 .workbench-business-inline-grid :is(input, select) { height: 44px; }
 .workbench-direction { display: flex; flex-direction: column; gap: 6px; }
 .workbench-direction label { font-size: 14px; line-height: 20px; }
+.workbench-direction legend { padding: 0; margin-bottom: 6px; }
+.workbench-direction-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.workbench-direction-option { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 48px; padding: 10px 12px; border: 1px solid #355269; border-radius: 6px; color: #d9eaf4; cursor: pointer; }
+.workbench-direction-option.is-selected { border-color: #39c9f3; background: rgba(57, 201, 243, .14); color: #fff; }
+.workbench-direction-option:has(input:focus-visible) { outline: 2px solid #65d9fb; outline-offset: 2px; }
+.workbench-direction-option:has(input:disabled) { cursor: not-allowed; opacity: .65; }
+.workbench-direction-option input { flex: none; accent-color: #39c9f3; }
+.workbench-direction-option span { overflow-wrap: anywhere; }
 .workbench-compact-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .workbench-compact-field > span { color: var(--color-text-secondary); font-size: 14px; font-weight: 500; line-height: 20px; }
 .workbench-compact-field input { background-color: #0b1e2c; }

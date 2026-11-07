@@ -200,9 +200,7 @@ try {
     if (await dialog.isVisible()) await dialog.getByRole('button', { name: '关闭运输资料', exact: true }).click();
   };
   const setDirection = async direction => {
-    const control = page.getByLabel('运输方向', { exact: false });
-    await control.waitFor();
-    await control.selectOption(direction);
+    await page.getByRole('radio', { name: direction === 'inbound' ? /入厂卸货/ : /出厂装货/ }).check();
   };
   const pickIn = async (scope, label, name, waitForSelected = true) => {
     const field = scope.getByRole('combobox', { name: `搜索${label}`, exact: true });
