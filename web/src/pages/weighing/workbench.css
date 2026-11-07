@@ -164,8 +164,9 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
   .weighing-scale > div > * { margin: 0; }
   .weighing-instrument { flex: 1; }
 
-  .weighing-camera-large { grid-template-columns: minmax(0, 2.8fr) minmax(420px, 1fr); }
-  .weighing-camera-large .workbench-camera-feed { min-height: 360px; }
+  .weighing-camera-large { grid-template-columns: minmax(0, 1fr); overflow-y: auto; }
+  .weighing-camera-large .weighing-camera { min-height: 700px; }
+  .weighing-camera-large .weighing-console { overflow: visible; }
 }
 @media (min-width: 1600px) { .weighing-readout { font-size: 96px; } }
 @media (max-width: 1099px) {
@@ -685,3 +686,19 @@ body:has(.weighing-workbench) .workbench-business-dialog {
   .workbench-current-action [aria-label='当前称重操作'] > button,
   .workbench-current-action [aria-label='当前称重操作'] > div > button { min-height: 44px; }
 }
+
+/* 多路预览保持播放器挂载，切换仅调整网格位置。 */
+.workbench-camera-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) minmax(0, 2fr); gap: 4px; flex: 1; min-height: 240px; background: #07141e; }
+.workbench-camera-grid[data-count='1'] { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.workbench-camera-tile { position: relative; min-width: 0; min-height: 0; }
+.workbench-camera-tile.is-main { grid-column: 1 / -1; grid-row: 2; }
+.workbench-camera-grid[data-count='1'] .workbench-camera-tile.is-main { grid-row: 1; }
+.workbench-camera-grid[data-count='2'] .workbench-camera-tile:not(.is-main) { grid-column: 1 / -1; }
+.workbench-camera-tile > .workbench-camera-feed:not(.is-expanded) { position: relative; width: 100%; height: 100%; min-height: 0; }
+.workbench-camera-tile .camera-live-feed:not(.is-expanded) > video { position: absolute; inset: 0; max-height: none; }
+.workbench-camera-tile:not(.is-main) .camera-live-enlarge { display: none; }
+.workbench-camera-tile:not(.is-main) .camera-placeholder { padding: 4px; gap: 2px; font-size: 11px; }
+.workbench-camera-tile:not(.is-main) .camera-placeholder svg, .workbench-camera-tile:not(.is-main) .camera-placeholder button { display: none; }
+.workbench-camera-tile:not(.is-main) .camera-live-status { top: 4px; left: 4px; padding: 2px 4px; font-size: 11px; }
+.camera-tile-select { position: absolute; right: 4px; bottom: 4px; padding: 3px 6px; background: var(--color-background); font-size: 12px; }
+@media (max-width: 600px) { .workbench-camera-grid { min-height: 180px; } }

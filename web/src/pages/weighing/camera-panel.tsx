@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Camera, RefreshCw, VideoOff, X } from 'lucide-react';
+import { Camera, VideoOff, X } from 'lucide-react';
 import { PlateCloseup, PlateEvidenceInfo } from './plate-evidence';
 import { Button } from '@/components/ui/button';
 import { ContentCard } from '@/components/common/content-card';
@@ -128,14 +128,39 @@ function previewMessage(camera: CameraRecord, stream: CameraStream | null, error
   return `视频映射待同步${stream.lastError ? `：${stream.lastError}` : '，同步完成后可预览；直连抓拍不受影响。'}`;
 }
 
+function CameraTile({ camera, active, onSelect }: { camera: CameraRecord; active: boolean; onSelect: () => void }) {
+  const [stream, setStream] = useState<CameraStream | null>(camera.stream);
+  const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let disposed = false;
+    let request = 0;
+    const load = async () => {
+      const current = ++request;
+      try {
+        const value = await cameraApi.preview(camera.id);
+        if (!disposed && current === request) { setStream(value); setError(''); }
+      } catch (err) {
+        if (!disposed && current === request) { setStream(null); setError(getErrorMessage(err, '无法读取视频预览')); }
+      }
+    };
+    void load();
+    const timer = setInterval(() => void load(), 20_000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [camera.id, revision]);
+  const url = !error && stream?.state === 'synced' ? stream.playbackUrl : '';
+  return <div className={`workbench-camera-tile${active ? ' is-main' : ''}`} onClick={event => { if (!active && !(event.target as HTMLElement).closest('button')) onSelect(); }}>
+    {url ? <CameraLive key={`${stream?.syncedVersion ?? ''}:${url}`} url={url} title={camera.name} /> : <div className="workbench-camera-feed relative"><span className="camera-placeholder"><VideoOff className="h-8 w-8" aria-hidden /><strong>{camera.name}</strong><span>{previewMessage(camera, stream, error)}</span><Button size="sm" variant="secondary" onClick={() => setRevision(value => value + 1)}>重新读取预览</Button></span></div>}
+    {!active && <button type="button" className="camera-tile-select" aria-label={`放大 ${camera.name}`} onClick={onSelect}>放大画面</button>}
+  </div>;
+}
+
 export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = false, size, onSizeChange }: { scaleCode: string; scenePlate?: string; capture?: CaptureSnapshot; saved?: boolean; size: CameraSize; onSizeChange: (size: CameraSize) => void }) {
   const device = useWeighingStore(state => state.device);
   const [cameras, setCameras] = useState<CameraRecord[] | null>(null);
   const [cameraError, setCameraError] = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [stream, setStream] = useState<CameraStream | null>(null);
-  const [streamError, setStreamError] = useState('');
-  const [streamLoading, setStreamLoading] = useState(false);
+  const [visibleIds, setVisibleIds] = useState<number[]>([]);
   const validScale = /^[A-Za-z0-9_.-]{1,40}$/.test(scaleCode);
 
   const loadCameras = useCallback(async () => {
@@ -143,9 +168,14 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
     try {
       const result = await cameraApi.list();
       setCameras(result.cameras);
+      setVisibleIds(current => {
+        const enabled = result.cameras.filter(camera => camera.enabled).map(camera => camera.id);
+        const kept = current.filter(id => enabled.includes(id));
+        return [...kept, ...enabled.filter(id => !kept.includes(id))].slice(0, 3);
+      });
       setCameraError('');
       setSelectedId(current => {
-        if (current && result.cameras.some(camera => camera.id === current)) return current;
+        if (current && result.cameras.some(camera => camera.id === current && camera.enabled)) return current;
         return result.cameras.find(camera => camera.enabled)?.id ?? result.cameras[0]?.id ?? null;
       });
     } catch (error) {
@@ -165,32 +195,12 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
 
   const selected = cameras?.find(camera => camera.id === selectedId) ?? null;
 
-  const loadStream = useCallback(async (id: number) => {
-    setStreamLoading(true);
-    try {
-      const value = await cameraApi.preview(id);
-      setStream(value);
-      setStreamError('');
-    } catch (error) {
-      setStream(null);
-      setStreamError(getErrorMessage(error, '无法读取视频预览'));
-    } finally {
-      setStreamLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!selected?.enabled) { setStream(null); setStreamError(''); return; }
-    setStream(selected.stream);
-    setStreamError('');
-    void loadStream(selected.id);
-    const timer = setInterval(() => void loadStream(selected.id), 20_000);
-    return () => clearInterval(timer);
-  }, [selected, loadStream]);
-
-  const activeStream = streamError ? null : stream ?? selected?.stream ?? null;
-  const playbackURL = !streamError && selected?.enabled && activeStream?.state === 'synced' ? activeStream.playbackUrl : '';
-  const message = selected ? previewMessage(selected, activeStream, streamError) : '';
+  const chooseCamera = (id: number) => {
+    setVisibleIds(current => current.includes(id) ? current : [...current.slice(0, 2), id]);
+    setSelectedId(id);
+  };
+  const visibleCameras = (cameras ?? []).filter(camera => visibleIds.includes(camera.id));
+  const mainId = visibleIds.includes(selectedId ?? -1) ? selectedId : visibleCameras[0]?.id;
   // A saved sample uses its frozen policy, never the current device policy.
   const captureRequired = capture ? capture.captureRequired : device?.captureRequired;
   const imageCount = capture ? capture.images?.length || (capture.imageSrc ? 1 : 0) : 0;
@@ -205,16 +215,16 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
         {([['standard', '标准'], ['large', '视频优先']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} className={size === value ? 'bg-neutral-background text-primary' : ''} onClick={() => onSizeChange(value)}>{label}</Button>)}
       </div>
     </div>
-    <div className="workbench-camera-views" role="group" aria-label="摄像头">
-      {(cameras ?? []).map(camera => <Button key={camera.id} size="sm" variant="ghost" aria-pressed={selectedId === camera.id} onClick={() => setSelectedId(camera.id)}>{camera.name}{camera.captureEnabled ? ' · 抓拍' : ''}{camera.enabled ? '' : ' · 停用'}</Button>)}
+    {(cameras === null || cameras.length === 0 || cameras.filter(camera => camera.enabled).length > 3) && <div className="workbench-camera-views" role="group" aria-label="摄像头">
+      {(cameras ?? []).filter(camera => camera.enabled).length > 3 && <label>选择摄像头 <select aria-label="选择摄像头" value={selectedId ?? ''} onChange={event => chooseCamera(Number(event.target.value))}>{(cameras ?? []).filter(camera => camera.enabled).map(camera => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</select></label>}
       {cameras === null && <span role="status" className="text-xs text-text-secondary">正在读取摄像头…</span>}
       {cameras?.length === 0 && !cameraError && <span className="text-xs text-text-secondary">尚未配置摄像头</span>}
-      <span className="ml-auto text-xs text-text-secondary">{cameraError ? '预览不可用' : playbackURL ? '实时监控 · 正式称重另行抓拍' : selected ? '预览待就绪 · 抓拍不受影响' : '预览与抓拍不依赖 Agent 在线'}</span>
-    </div>
-    {cameraError && <p role="alert" className="px-4 py-2 text-sm text-warning">{cameraError}；正式采集与已保存图片不受影响。</p>}
-    {selected?.enabled && playbackURL ? <CameraLive key={`${selected.id}:${activeStream?.syncedVersion ?? ''}:${playbackURL}`} url={playbackURL} title={selected.name} /> : <div className="workbench-camera-feed relative">
-      <span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>{selected ? (message || '视频映射待同步') : cameras?.length ? '请选择摄像头' : cameraError ? '无法读取摄像头预览' : '尚未配置摄像头'}</strong><span>{selected ? '实时预览不代替本次称重抓拍；可在摄像头管理中重试同步或测试抓拍。' : cameraError ? '当前账号可能没有摄像头查看权限；本次称重抓拍仍由正式采集完成。' : '在摄像头管理中添加摄像头后即可预览；正式抓拍不依赖 Agent 在线。'}</span>{selected && <Button size="sm" variant="secondary" disabled={streamLoading} onClick={() => { void loadCameras(); void loadStream(selected.id); }}><RefreshCw className="h-4 w-4" aria-hidden />重新读取预览</Button>}</span>
+      <span className="ml-auto text-xs text-text-secondary">{cameraError ? '预览不可用' : '实时监控 · 正式称重另行抓拍'}</span>
     </div>}
+    {cameraError && <p role="alert" className="px-4 py-2 text-sm text-warning">{cameraError}；正式采集与已保存图片不受影响。</p>}
+    {visibleCameras.length > 0 ? <div className="workbench-camera-grid" data-count={visibleCameras.length}>
+      {visibleCameras.map(camera => <CameraTile key={camera.id} camera={camera} active={camera.id === mainId} onSelect={() => chooseCamera(camera.id)} />)}
+    </div> : <div className="workbench-camera-feed relative"><span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>{cameraError ? '无法读取摄像头预览' : '尚无启用的摄像头'}</strong></span></div>}
     <section className="workbench-camera-evidence" aria-label={saved ? '已保存抓拍' : '本次抓拍'}>
       <header className="workbench-capture-heading">
         <h3>{saved ? '已保存抓拍' : '本次抓拍'}</h3>

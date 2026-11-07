@@ -49,7 +49,7 @@ try {
   });
   await page.route('**/api/weighing/cameras/*/preview', route => {
     if (!previewAccess) return route.fulfill({ status: 403, json: { code: 403, message: '无权读取摄像头配置' } });
-    const id = Number(new URL(route.request().url()).pathname.split('/')[5]);
+    const id = Number(new URL(route.request().url()).pathname.split('/')[4]);
     return route.fulfill({ json: { code: 200, data: streamFor(id) } });
   });
   // The WHEP fixture negotiates against a real browser peer connection and
@@ -114,14 +114,13 @@ try {
     await route.fulfill({ status: 201, contentType: 'application/sdp', headers: { Location: sessionPath }, body: answer });
   });
 
-  const live = () => page.waitForFunction(() => document.querySelector('.camera-live-feed')?.dataset.cameraState === 'live');
+  const live = () => page.waitForFunction(() => document.querySelectorAll('.camera-live-feed[data-camera-state=live]').length === 2);
   const sessions = () => page.evaluate(() => window.mediaSessions.size);
-  const cameraGroup = () => page.getByRole('group', { name: '摄像头', exact: true });
   await page.goto(`${base}/tests/weighing-camera-live.html`);
   await live();
-  assert.equal(posts, 1);
-  assert.equal(await sessions(), 1);
-  assert.ok(await cameraGroup().getByRole('button', { name: /^入口/ }).getAttribute('aria-pressed') === 'true', '默认选中第一台启用摄像头');
+  assert.equal(posts, 2);
+  assert.equal(await sessions(), 2);
+  assert.equal(await page.locator('.workbench-camera-tile.is-main video').getAttribute('aria-label'), '入口实时视频', '默认选中第一台启用摄像头');
   assert.equal(await page.getByText('尚未配置摄像头', { exact: false }).count(), 0);
 
   const beforeHidden = posts;
@@ -137,7 +136,7 @@ try {
     document.dispatchEvent(new Event('visibilitychange'));
   });
   await live();
-  assert.equal(await sessions(), 1);
+  assert.equal(await sessions(), 2);
 
   // All camera evidence is visible together and each thumbnail opens its own image.
   const captureGroup = page.getByRole('group', { name: '抓拍摄像头', exact: true });
@@ -157,7 +156,9 @@ try {
   await page.setViewportSize({ width: 1366, height: 768 });
   const standardWidth = (await page.locator('.weighing-camera').boundingBox()).width;
   await page.getByRole('button', { name: '视频优先', exact: true }).click();
-  assert.ok((await page.locator('.weighing-camera').boundingBox()).width > standardWidth + 100, '视频优先明显加宽画面');
+  const largeCamera = await page.locator('.weighing-camera').boundingBox();
+  const station = await page.locator('.weighing-station').boundingBox();
+  assert.ok(largeCamera.width > standardWidth + 100 && Math.abs(largeCamera.x + largeCamera.width - station.x - station.width) < 2, '视频优先铺满工作区宽度');
   await page.getByRole('button', { name: '标准', exact: true }).click();
   await page.getByRole('button', { name: '等待抓拍', exact: true }).click();
   await page.getByText('等待采集', { exact: true }).waitFor();
@@ -175,8 +176,8 @@ try {
   await page.getByRole('button', { name: '全屏查看实时画面', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '入口实时画面', exact: true });
   await dialog.waitFor();
-  assert.equal(await page.locator('.camera-live-feed video').count(), 1, '全屏复用原视频');
-  assert.equal(posts, beforeHidden + 1, '全屏不得新增 WHEP 连接');
+  assert.equal(await page.locator('.camera-live-feed video').count(), 2, '全屏复用原视频');
+  assert.equal(posts, beforeHidden + 2, '全屏不得新增 WHEP 连接');
   const bounds = await dialog.boundingBox();
   assert.ok(bounds.width >= 1366 && bounds.height >= 768, '全屏应占满视口');
   await dialog.getByRole('button', { name: '退出实时画面全屏' }).click();
@@ -188,53 +189,59 @@ try {
   assert.equal(await dialog.evaluate(el => el.classList.contains('is-window-expanded')), true, '原生全屏失败时铺满窗口');
   await page.keyboard.press('Escape');
   await dialog.waitFor({ state: 'hidden' });
-  await cameraGroup().getByRole('button', { name: /^装车区/ }).click();
-  await live();
-  assert.equal(posts, beforeHidden + 2);
-  assert.ok(deletes >= 2, '隐藏页面和切换摄像头须关闭并删除旧会话');
-  assert.equal(await sessions(), 1);
+  const beforeSwitch = posts;
+  await page.getByRole('button', { name: '放大 装车区' }).click();
+  assert.equal(await page.locator('.workbench-camera-tile.is-main video').getAttribute('aria-label'), '装车区实时视频');
+  assert.equal(posts, beforeSwitch, '切换画面不重建连接');
+  assert.ok(deletes >= 2, '页面隐藏须关闭全部会话');
+  assert.equal(await sessions(), 2);
 
-  // The transport stays connected, but no new source frames arrive.
-  await page.evaluate(() => { for (const session of window.mediaSessions.values()) clearInterval(session.timer); });
-  await page.waitForFunction(() => document.querySelector('.camera-live-feed')?.dataset.cameraState === 'reconnecting');
+  // Only the yard transport freezes; the entry feed keeps playing.
+  await page.evaluate(() => { for (const [path, session] of window.mediaSessions) if (path.includes('/yard/')) clearInterval(session.timer); });
+  await page.waitForFunction(() => document.querySelector('.workbench-camera-tile.is-main .camera-live-feed')?.dataset.cameraState === 'reconnecting');
+  assert.equal(await page.locator('.workbench-camera-tile:not(.is-main) .camera-live-feed').getAttribute('data-camera-state'), 'live');
   await live();
-  assert.equal(posts, beforeHidden + 3, '画面冻结须重建连接');
-  assert.equal(await sessions(), 1);
+  assert.ok(posts > beforeSwitch, '画面冻结须重建连接');
+  assert.equal(await sessions(), 2);
 
+  // Explicit retry with a failing transport clears the old frame and recovers.
   fail = true;
-  await cameraGroup().getByRole('button', { name: /^入口/ }).click();
-  await page.waitForFunction(() => document.querySelector('.camera-live-feed')?.dataset.cameraState === 'reconnecting');
-  assert.equal(await page.locator('.camera-live-feed video').evaluate(video => video.srcObject), null, '失败不能继续展示旧流');
+  await page.evaluate(() => { for (const [path, session] of window.mediaSessions) if (path.includes('/yard/')) clearInterval(session.timer); });
+  await page.waitForFunction(() => document.querySelector('.workbench-camera-tile.is-main .camera-live-feed')?.dataset.cameraState === 'reconnecting');
+  assert.equal(await page.locator('.workbench-camera-tile.is-main video').evaluate(video => video.srcObject), null, '失败不能继续展示旧流');
   fail = false;
-  await page.getByRole('button', { name: '重新连接', exact: true }).click();
+  await page.locator('.workbench-camera-tile.is-main').getByRole('button', { name: '重新连接', exact: true }).click();
   await live();
 
   // Preview read failures are displayed separately and do not affect capture evidence.
   previewAccess = false;
-  await cameraGroup().getByRole('button', { name: /^装车区/ }).click();
-  await page.getByText('预览信息读取失败', { exact: false }).waitFor();
+  await page.getByRole('button', { name: '切换挂载', exact: true }).click();
+  await page.getByRole('button', { name: '切换挂载', exact: true }).click();
+  await page.getByText('无权读取摄像头配置', { exact: false }).first().waitFor();
   await page.waitForFunction(() => window.mediaSessions.size === 0);
   assert.equal(await page.getByRole('img', { name: '入口抓拍', exact: true }).count() + await page.getByRole('img', { name: '装车区抓拍', exact: true }).count(), 2, '预览失败仍保留全部本次抓拍证据');
   previewAccess = true;
-  await page.getByRole('button', { name: '重新读取预览', exact: true }).click();
+  await page.getByRole('button', { name: '切换挂载', exact: true }).click();
+  await page.getByRole('button', { name: '切换挂载', exact: true }).click();
   await live();
 
   // Disabled cameras and pending map states are explicit, not a fake old image.
   cameraEnabled = false;
   await page.getByRole('button', { name: '切换挂载', exact: true }).click();
   await page.getByRole('button', { name: '切换挂载', exact: true }).click();
-  await page.getByText('摄像头已停用', { exact: false }).waitFor();
+  await page.getByText('尚无启用的摄像头', { exact: true }).waitFor();
   cameraEnabled = true;
   streamMode = 'pending';
   await page.getByRole('button', { name: '切换挂载', exact: true }).click();
   await page.getByRole('button', { name: '切换挂载', exact: true }).click();
   await page.getByText('视频映射待同步', { exact: false }).first().waitFor();
   streamMode = 'error';
-  await page.getByRole('button', { name: '重新读取预览', exact: true }).click();
-  await page.getByText('视频映射同步失败', { exact: false }).waitFor();
+  await page.getByRole('button', { name: '重新读取预览', exact: true }).first().click();
+  await page.getByText('视频映射同步失败', { exact: false }).first().waitFor();
   assert.match(await page.getByText('视频映射同步失败', { exact: false }).first().innerText(), /MediaMTX 不可达/);
   streamMode = 'synced';
-  await page.getByRole('button', { name: '重新读取预览', exact: true }).click();
+  await page.getByRole('button', { name: '切换挂载', exact: true }).click();
+  await page.getByRole('button', { name: '切换挂载', exact: true }).click();
   await live();
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -265,7 +272,7 @@ try {
     return route.fulfill({ json: { code: 200, data: { records: [], total: 0 } } });
   });
   await page.goto(`${base}/tests/weighing-agent-capture.html?scale=WB01&scenario=ready`);
-  await page.getByText('视频映射同步失败', { exact: false }).waitFor();
+  await page.getByText('视频映射同步失败', { exact: false }).first().waitFor();
   const captureButton = page.getByRole('button', { name: '采集重量', exact: true });
   assert.equal(await captureButton.isEnabled(), true, '视频故障不阻塞原有健康设备的采集');
   const sampleResponse = page.waitForResponse(response => response.url().endsWith('/samples') && response.status() === 409);

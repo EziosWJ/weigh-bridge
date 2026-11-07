@@ -22,6 +22,7 @@
     "test:review-final": "node tests/review-final.mjs",
     "test:weighing:agent-capture": "node tests/weighing-agent-capture.mjs",
     "test:weighing:camera-live": "node tests/weighing-camera-live.mjs",
+    "test:weighing:camera-multiview": "node tests/weighing-camera-multiview.mjs",
     "test:weighing:invalid-original": "node tests/weighing-invalid-original.mjs",
     "test:weighing:standalone": "node tests/standalone-workbench.mjs",
     "test:weighing:smoke": "node tests/weighing-smoke.mjs",
