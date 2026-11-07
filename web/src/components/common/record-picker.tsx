@@ -10,6 +10,7 @@ export type RecordInfo = {
     details: string[];
     tags: string[];
     code: string;
+    remark?: string;
 };
 type Props<T extends {
     id: number;
@@ -25,6 +26,7 @@ type Props<T extends {
     onQuery?: () => void;
     onDraftKeywordChange?: (value: string) => void;
     recentKey?: string;
+    showRemarkColumn?: boolean;
     loadPage: (keyword: string, page: number, size: number) => Promise<ApiPageResult<T>>;
     loadRecord: (id: number) => Promise<T>;
     describe: (record: T) => RecordInfo;
@@ -43,7 +45,7 @@ function Highlight({ text, keyword }: {
 }
 export function RecordPicker<T extends {
     id: number;
-}>({ label, inlineBrowse = true, placeholder = "输入名称、型号或联系方式", value, fallback, disabled, keyword: applied = "", onKeywordChange, onQuery, onDraftKeywordChange, recentKey, loadPage, loadRecord, describe, warning, onChange }: Props<T>) {
+}>({ label, inlineBrowse = true, placeholder = "输入名称、型号或联系方式", value, fallback, disabled, keyword: applied = "", onKeywordChange, onQuery, onDraftKeywordChange, recentKey, showRemarkColumn = false, loadPage, loadRecord, describe, warning, onChange }: Props<T>) {
     const id = useId(), input = useRef<HTMLInputElement>(null), panel = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false), [modal, setModal] = useState(false), [text, setText] = useState(applied), [page, setPage] = useState(1);
     const [records, setRecords] = useState<T[]>([]), [selected, setSelected] = useState<T | null>(null), [total, setTotal] = useState(0), [active, setActive] = useState(-1);
@@ -229,7 +231,7 @@ export function RecordPicker<T extends {
         close();
     } }}>
     <DialogHeader><DialogTitle>选择{label}</DialogTitle><Button variant="ghost" onClick={() => close()}>关闭</Button></DialogHeader>
-    <DialogBody className="space-y-3">{search(true)}{status}<div className="overflow-x-auto"><table id={`${id}-all`} role="grid" className="w-full text-sm"><thead><tr className="border-b border-border text-left text-text-secondary"><th className="p-2">名称与辨认资料</th><th className="p-2">身份／类型与单位</th><th className="p-2">编码</th></tr></thead><tbody>{!loading && !error && records.map((r, i) => { const d = describe(r); return <tr key={r.id} id={`${id}-option-${i}`} aria-selected={active === i} onClick={() => { if (!warning(r)) void choose(r); }} className={`cursor-pointer border-b border-border hover:bg-neutral-background ${active === i ? "bg-info-background" : ""}`}><td className="p-2"><button type="button" disabled={Boolean(warning(r))} className="w-full text-left hover:text-primary" onClick={e => { e.stopPropagation(); void choose(r); }}>{summary(r)}</button></td><td className="p-2">{d.tags.join("，")}</td><td className="p-2 text-text-tertiary"><Highlight text={d.code} keyword={text}/></td></tr>; })}</tbody></table></div></DialogBody>
+    <DialogBody className="space-y-3">{search(true)}{status}<div className="overflow-x-auto"><table id={`${id}-all`} role="grid" className="w-full text-sm"><thead><tr className="border-b border-border text-left text-text-secondary"><th className="p-2">名称与辨认资料</th><th className="p-2">身份／类型与单位</th><th className="p-2">{showRemarkColumn ? "备注" : "编码"}</th></tr></thead><tbody>{!loading && !error && records.map((r, i) => { const d = describe(r); return <tr key={r.id} id={`${id}-option-${i}`} aria-selected={active === i} onClick={() => { if (!warning(r)) void choose(r); }} className={`cursor-pointer border-b border-border hover:bg-neutral-background ${active === i ? "bg-info-background" : ""}`}><td className="p-2"><button type="button" disabled={Boolean(warning(r))} className="w-full text-left hover:text-primary" onClick={e => { e.stopPropagation(); void choose(r); }}>{summary(r)}</button></td><td className="p-2">{d.tags.join("，")}</td><td className="p-2 text-text-tertiary">{showRemarkColumn ? (d.remark || "—") : <Highlight text={d.code} keyword={text}/>}</td></tr>; })}</tbody></table></div></DialogBody>
     <DialogFooter><Pagination page={page} pageSize={10} total={total} disabled={loading || Boolean(error)} onPageChange={setPage}/></DialogFooter>
    </DialogContent>
   </Dialog>

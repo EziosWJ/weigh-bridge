@@ -32,10 +32,23 @@ try {
 
   // Simulate another management window saving after the workbench has opened.
   materials = [{ id: 12, name: '新增高粱', code: 'M12', spec: '一级', enabled: 1, version: 1, categoryId: null }];
-  parties = [{ id: 23, name: '新增供运方', code: 'P23', nature: 'individual', roles: ['supplier', 'carrier'], enabled: 1, version: 1, contacts: [{ id: 1, name: '默认联系人', phone: '13800000000', isDefault: 1 }] }];
+  parties = [
+    { id: 24, name: '其他供货方', code: 'P24', nature: 'enterprise', roles: ['supplier'], enabled: 1, remark: '供应：大麦', contacts: [] },
+    { id: 23, name: '新增供运方', code: 'P23', nature: 'individual', roles: ['supplier', 'carrier'], enabled: 1, remark: '供应：新增高粱、大麦', version: 1, contacts: [{ id: 1, name: '默认联系人', phone: '13800000000', isDefault: 1 }] },
+    { id: 25, name: '停用供货方', code: 'P25', nature: 'enterprise', roles: ['supplier'], enabled: 0, remark: '供应：新增高粱', contacts: [] },
+  ];
   await page.getByRole('combobox', { name: '搜索物料', exact: true }).focus();
   await page.getByRole('combobox', { name: '搜索物料', exact: true }).press('ArrowDown');
   await page.getByRole('option', { name: /新增高粱/ }).click();
+  await page.getByRole('combobox', { name: '搜索供货方', exact: true }).focus();
+  const supplierOptions = page.getByRole('listbox', { name: '供货方候选' }).getByRole('option');
+  await page.getByRole('option', { name: /新增供运方/ }).waitFor();
+  assert.equal(await supplierOptions.count(), 2);
+  assert.match(await supplierOptions.nth(0).innerText(), /新增供运方[\s\S]*关联物料匹配/);
+  assert.match(await supplierOptions.nth(1).innerText(), /其他供货方/);
+  await page.getByRole('combobox', { name: '搜索供货方', exact: true }).fill('其他');
+  await page.getByRole('option', { name: /其他供货方/ }).waitFor();
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '浏览选择供货方', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: /新增供运方/ }).click();
   await page.getByRole('combobox', { name: '搜索承运方', exact: true }).focus();
@@ -48,6 +61,15 @@ try {
   assert.equal(selected.party, '新增供运方');
   assert.equal(selected.carrier, '新增供运方');
   assert.equal(selected.value.contactName, '默认联系人');
+  await page.getByRole('button', { name: '浏览选择供货方', exact: true }).click();
+  const supplierRows = page.getByRole('dialog').locator('tbody tr');
+  await page.getByRole('dialog').getByRole('button', { name: /新增供运方/ }).waitFor();
+  assert.equal(await page.getByRole('dialog').getByRole('columnheader').nth(2).innerText(), '备注');
+  assert.match(await supplierRows.nth(0).innerText(), /关联物料匹配/);
+  assert.equal(await supplierRows.nth(0).locator('td').nth(2).innerText(), '供应：新增高粱、大麦');
+  assert.match(await supplierRows.nth(0).locator('td').nth(0).innerText(), /P23/);
+  assert.match(await supplierRows.nth(1).innerText(), /其他供货方/);
+  await page.keyboard.press('Escape');
   const before = requests;
   fail = true;
   await page.getByRole('combobox', { name: '搜索物料', exact: true }).focus();
@@ -58,6 +80,12 @@ try {
   materials = [{ ...materials[0], name: '更新高粱' }];
   await page.getByRole('button', { name: '重试搜索', exact: true }).click();
   await page.getByRole('option', { name: /更新高粱/ }).click();
+  await page.waitForFunction(() => JSON.parse(document.querySelector('output').textContent).value.materialId === '12' && JSON.parse(document.querySelector('output').textContent).material === '更新高粱');
+  assert.equal(JSON.parse(await page.getByLabel('当前选择').textContent()).value.partyId, '23');
+  await page.getByRole('combobox', { name: '搜索供货方', exact: true }).focus();
+  await page.getByRole('option', { name: /其他供货方/ }).waitFor();
+  assert.match(await supplierOptions.nth(0).innerText(), /其他供货方/);
+  assert.doesNotMatch(await supplierOptions.nth(1).innerText(), /关联物料匹配/);
   assert.ok(requests > before);
   assert.deepEqual(errors, []);
   console.log('称重资料选择通过：重新打开获取新增资料、弹窗、承运方、联系人、失败重试与资料状态同步');

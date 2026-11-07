@@ -86,10 +86,10 @@ export function BusinessRequiredFields({ value, update, hidePlate = true, compac
   compact?: boolean;
 }) {
   const legacyPlate = useRef(value.plate);
-  const { materialOptions, partyOptions, loadMaterials, loadPartyOptions } = useBusinessOptions(value);
+  const { materialOptions, partyOptions, loadMaterials, loadPartyOptions } = useBusinessOptions(value, compact);
   const partyLabel = value.direction === 'inbound' ? '供货方' : '收货方';
   const material = <WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials} showDetails={!compact} onChange={materialId => update({ materialId })} />;
-  const party = <WeighingLookup label={partyLabel} value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} showDetails={!compact} onChange={partyId => { const p = useWeighingStore.getState().data.parties.find(item => item.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} />;
+  const party = <WeighingLookup showRemarkColumn label={partyLabel} value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} showDetails={!compact} onChange={partyId => { const p = useWeighingStore.getState().data.parties.find(item => item.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} />;
   if (compact) return <>
     {!hidePlate && <div className="workbench-compact-field"><span>车牌<span className="text-error">*</span></span><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></div>}
     <div className="workbench-compact-field"><span>物料<span className="text-error">*</span></span>{material}</div>

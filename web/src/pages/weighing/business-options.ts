@@ -6,10 +6,18 @@ import type { Party, TaskInput } from '@/types/weighing';
 import { partyRoleLabels, partyNatureLabels } from '@/types/weighing';
 
 /** 物料与往来主体的现场选择数据；工作台和资料表单共用同一套有效性过滤。 */
-export function useBusinessOptions(value: TaskInput) {
+export function useBusinessOptions(value: TaskInput, recommendSuppliers = false) {
   const { materials, parties } = useWeighingStore(s => s.data);
   const materialOptions = useMemo(() => materials.filter(m => m.enabled || m.id === value.materialId).map(m => ({ id: m.id, name: m.name, code: m.code, details: [m.spec || '未填写规格', m.code], tags: ['吨'], disabled: !m.enabled })), [materials, value.materialId]);
-  const partyOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r])], disabled: !p.enabled })), [parties, value.partyId, value.direction]);
+  const materialName = recommendSuppliers && value.direction === 'inbound' ? materials.find(m => m.id === value.materialId)?.name.trim() : '';
+  const makePartyOptions = useCallback((items: Party[]) => items
+    .filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer'))
+    .map(p => {
+      const matched = Boolean(materialName && p.remark?.includes(materialName));
+      return { id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r]), ...(matched ? ['关联物料匹配'] : [])], disabled: !p.enabled, remark: p.remark, matched };
+    })
+    .sort((a, b) => Number(b.matched) - Number(a.matched)), [materialName, value.partyId, value.direction]);
+  const partyOptions = useMemo(() => makePartyOptions(parties), [makePartyOptions, parties]);
   const carrierOptions = useMemo(() => parties.filter(p => (p.enabled || p.id === value.carrierId) && p.roles.includes('carrier')).map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], '承运商'], disabled: !p.enabled })), [parties, value.carrierId]);
   const loadMaterials = useCallback(async () => {
     const token = useAuthStore.getState().token;
@@ -25,9 +33,7 @@ export function useBusinessOptions(value: TaskInput) {
     useWeighingStore.setState(s => ({ data: { ...s.data, parties } }));
     return parties;
   }, []);
-  const loadPartyOptions = useCallback(async () => (await loadParties())
-    .filter(p => (p.enabled || p.id === value.partyId) && p.roles.includes(value.direction === 'inbound' ? 'supplier' : 'customer'))
-    .map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], ...p.roles.map(r => partyRoleLabels[r])], disabled: !p.enabled })), [loadParties, value.partyId, value.direction]);
+  const loadPartyOptions = useCallback(async () => makePartyOptions(await loadParties()), [loadParties, makePartyOptions]);
   const loadCarrierOptions = useCallback(async () => (await loadParties())
     .filter(p => (p.enabled || p.id === value.carrierId) && p.roles.includes('carrier'))
     .map(p => ({ id: p.id, name: p.name, code: p.code, details: [p.shortName, p.phone, p.code].filter(Boolean), tags: [partyNatureLabels[p.nature], '承运商'], disabled: !p.enabled })), [loadParties, value.carrierId]);
