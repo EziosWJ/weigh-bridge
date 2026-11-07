@@ -6,7 +6,6 @@ import {
   Check,
   ClipboardCheck,
   FileCheck2,
-  Info,
   Package,
   Scale,
   Truck,
@@ -38,7 +37,7 @@ export interface WeighingReviewValue {
   supplementary: { label: string; value: string }[];
 }
 
-function ReviewFact({ label, value, wide = false, emphasis = false }: {
+export function ReviewFact({ label, value, wide = false, emphasis = false }: {
   label: string;
   value?: ReactNode;
   wide?: boolean;
@@ -138,9 +137,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
         </div>}
         {!invalidReason && missing.length > 0 && businessEditor && <section className="review-business-fill" aria-label="补齐本趟资料">{businessEditor}</section>}
 
-        {showFinal ? <section className="review-compact-summary" aria-label="本次称重摘要">
-          <strong>{value.plate || '待核对'}</strong><span>{value.direction}</span><span>回磅 · {value.kind}</span><span>本次采集 <b>{formatWeight(value.weight)}</b></span>
-        </section> : <section className="review-summary" aria-label="本次称重摘要">
+        {!showFinal && <section className="review-summary" aria-label="本次称重摘要">
           <div className="review-hero review-hero--vehicle">
             <p className="review-hero-label"><Truck className="h-4 w-4" aria-hidden />当前车辆</p>
             <h3 ref={heading} tabIndex={-1} className="review-plate">{value.plate || '待核对'}</h3>
@@ -152,18 +149,21 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
         </section>}
 
         {showFinal ? <section className="review-final-step" aria-label="净重调整">
-          <div className="review-final-step-head">
-            <span className="review-step-badge"><Info className="h-3.5 w-3.5" aria-hidden />第 2 步 / 共 2 步</span>
-            <div className="review-final-title"><h3 ref={finalHeading} tabIndex={-1}>最终重量确认</h3><HelpHint label="最终重量确认说明">毛重、皮重沿用设备原始值；请核对原始重量并录入净重扣减。确认后将生成正式单据，原始采集依据保留。</HelpHint></div>
+          <h3 ref={finalHeading} tabIndex={-1} className="sr-only">最终重量确认</h3>
+          <div className="review-facts" aria-label="本趟运输核对">
+            <ReviewFact label="当前车辆" value={value.plate || '待核对'} />
+            <ReviewFact label="运输方向" value={value.direction} />
+            <ReviewFact label="物料" value={value.material} />
+            <ReviewFact label={value.partyLabel} value={value.party} />
           </div>
-          <ReviewSection icon={<Scale className="h-4 w-4" aria-hidden />} title="净重调整" extra={<StatusTag tone="info">可扣减</StatusTag>}>
-            <NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} />
-          </ReviewSection>
+          <section className="review-section">
+            <div className="review-section-body"><NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} /></div>
+          </section>
         </section> : <section className="review-main" aria-label="本趟运输核对依据">
           <ReviewSection icon={<Package className="h-4 w-4" aria-hidden />} title="业务核对" extra={<HelpHint label="业务核对说明" align="right">请与现场车辆核对。</HelpHint>}>
             <div className="review-facts">
               <ReviewFact label="运输方向" value={value.direction} />
-              <ReviewFact label="物料及规格／编码" value={value.material} />
+              <ReviewFact label="物料" value={value.material} />
               <ReviewFact label={value.partyLabel} value={value.party} />
               {value.firstWeight && <ReviewFact label="首次称重依据" value={value.firstWeight} emphasis />}
               {value.expected && <ReviewFact label="预计净重（未出单）" value={formatWeight(value.expected.net)} emphasis />}

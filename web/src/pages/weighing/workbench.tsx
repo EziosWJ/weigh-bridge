@@ -3,7 +3,6 @@ import { ClipboardCheck, FileText, LoaderCircle, Scale, Truck, TriangleAlert, X 
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContentCard } from '@/components/common/content-card';
 import { SectionTabs } from '@/components/common/section-tabs';
-import { DetailItem } from '@/components/common/detail-item';
 import { PageHeader } from '@/components/common/page-header';
 import { StatusTag } from '@/components/common/status-tag';
 import { HelpHint } from '@/components/common/help-hint';
@@ -21,7 +20,7 @@ import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { formatWeight, formatWeightValue, weightValues } from '@/lib/weighing/weights';
 import { BusinessDirectionControl, BusinessRequiredFields, BusinessSupplementaryFields } from './shared';
-import { WeighingReviewDialog, type WeighingReviewValue } from './review-dialog';
+import { WeighingReviewDialog, ReviewFact, type WeighingReviewValue } from './review-dialog';
 import { DeviceCameraPanel, type CameraSize } from './camera-panel';
 import { TicketPrintActions } from './ticket-print-actions';
 import './workbench.css';
@@ -109,6 +108,7 @@ function WorkbenchContent() {
   const summaryPlate = taskInfo?.plate || data.draft.plate || plate;
   const summaryDirection = taskInfo?.direction ?? data.draft.direction;
   const summaryMaterial = taskInfo ? [taskInfo.materialName, taskInfo.materialSpec, taskInfo.materialCode].filter(Boolean).join(' · ') : material ? [material.name, material.spec, material.code].filter(Boolean).join(' · ') : '未选择';
+  const summaryMaterialName = taskInfo?.materialName || material?.name || '未选择';
   const summaryParty = taskInfo ? [taskInfo.partyName, taskInfo.partyCode].filter(Boolean).join(' · ') : party ? `${party.name} · ${party.code}` : '未选择';
   const businessPartyLabel = summaryDirection === 'inbound' ? '供货方' : '收货方';
   const missingFields = !selected && located && !awaitingResult ? [
@@ -166,7 +166,7 @@ function WorkbenchContent() {
   const reviewValue: WeighingReviewValue | undefined = review ? {
     plate: reviewTask?.plate || data.draft.plate || plate,
     direction: directionLabels[reviewDirection],
-    material: reviewTask ? [reviewTask.materialName, reviewTask.materialSpec, reviewTask.materialCode].filter(Boolean).join(' · ') : material ? [material.name, material.spec, material.code].filter(Boolean).join(' · ') : '未选择',
+    material: reviewTask ? reviewTask.materialName || '未选择' : material?.name || '未选择',
     partyLabel: reviewDirection === 'inbound' ? '供货方' : '收货方',
     party: reviewTask ? [reviewTask.partyName, reviewTask.partyCode].filter(Boolean).join(' · ') : party ? `${party.name} · ${party.code}` : '未选择',
     weight: reviewCapture?.weight ?? 0,
@@ -550,7 +550,6 @@ function WorkbenchContent() {
               </div>
               <div className="workbench-inline-actions">
                 <Button size="sm" variant="secondary" onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />查看完整资料</Button>
-                {taskInfo && <Link target="weighbridge-management" className="text-sm text-primary hover:underline" to={`/weighing/tasks/${taskInfo.id}`}>任务详情与纠错</Link>}
               </div>
             </> : located ? <>
               <SectionTabs label="本趟运输资料" items={[
@@ -624,18 +623,24 @@ function WorkbenchContent() {
     </Dialog>
     <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
       <DialogOverlay className="workbench-modal-overlay" />
-      <DialogContent className="workbench-business-dialog workbench-modal flex max-w-[1200px] flex-col">
+      <DialogContent className="workbench-business-dialog workbench-modal flex max-h-[calc(100dvh-32px)] max-w-[1200px] flex-col">
         <DialogHeader><div><DialogTitle>查看运输资料</DialogTitle><DialogDescription>{taskInfo ? '本趟资料快照只读；纠错请前往任务详情。' : '当前提交信息。'}</DialogDescription></div><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
         <DialogBody><div className="weighing-business min-w-0">{taskInfo ? <ContentCard title={successfulTask ? '本趟运输' : '核对本趟运输'} extra={<StatusTag>{awaitingResult ? '提交待核实' : taskStatusLabels[taskInfo.status]}</StatusTag>}>
           <SectionTabs key={taskInfo.id} label="本趟运输信息" items={[
             { value: 'basic', label: '基本信息', content: <>
-              <div className="grid gap-4 sm:grid-cols-2"><DetailItem label="车牌" value={taskInfo.plate} /><DetailItem label="运输方向" value={directionLabels[taskInfo.direction]} /><DetailItem label="物料" value={summaryMaterial} /><DetailItem label={businessPartyLabel} value={summaryParty} /></div>
-              {firstRecord && <div className="mt-4 space-y-1 rounded-control border border-border bg-neutral-background p-3 text-sm"><p className="font-medium">首次当前依据：{firstRecord.kind === 'gross' ? '毛重' : '皮重'} {formatWeight(firstRecord.weight)}</p><p className="text-text-secondary">{beijingTime(firstRecord.at)}</p>{beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) && <p className="text-warning">隔日回磅：沿用原任务和首次称重，无需额外说明。</p>}{firstRecord.replaces && <p>已重称替代原记录，原因：{firstRecord.reason}</p>}</div>}
+              <div className="review-facts"><ReviewFact label="车牌" value={taskInfo.plate} /><ReviewFact label="运输方向" value={directionLabels[taskInfo.direction]} /><ReviewFact label="物料" value={summaryMaterialName} /><ReviewFact label={businessPartyLabel} value={summaryParty} /></div>
+              {firstRecord && <div className="business-first-record">
+                <p className="business-first-record-label">首次当前依据 · {firstRecord.kind === 'gross' ? '毛重' : '皮重'}</p>
+                <p className="business-first-record-value">{formatWeightValue(firstRecord.weight)}<span>吨</span></p>
+                <p className="business-first-record-time">{beijingTime(firstRecord.at)}</p>
+                {beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) && <p className="business-first-record-note">隔日回磅：沿用原任务和首次称重，无需额外说明。</p>}
+                {firstRecord.replaces && <p className="business-first-record-note">已重称替代原记录，原因：{firstRecord.reason}</p>}
+              </div>}
             </> },
-            { value: 'supplementary', label: '补充运输信息', content: <div className="grid gap-4 sm:grid-cols-2"><DetailItem label="承运方" value={[taskInfo.carrierName, taskInfo.carrierCode].filter(Boolean).join(' · ')} /><DetailItem label="本趟联系人 / 电话" value={[taskInfo.contactName, taskInfo.contactPhone].filter(Boolean).join(' / ')} /><DetailItem label="司机 / 电话" value={[taskInfo.driver, taskInfo.driverPhone].filter(Boolean).join(' / ')} /><DetailItem label="备注" value={taskInfo.remark} /></div> },
+            { value: 'supplementary', label: '补充运输信息', content: <div className="review-facts"><ReviewFact label="承运方" value={[taskInfo.carrierName, taskInfo.carrierCode].filter(Boolean).join(' · ')} /><ReviewFact label="本趟联系人 / 电话" value={[taskInfo.contactName, taskInfo.contactPhone].filter(Boolean).join(' / ')} /><ReviewFact label="司机 / 电话" value={[taskInfo.driver, taskInfo.driverPhone].filter(Boolean).join(' / ')} /><ReviewFact label="备注" value={taskInfo.remark} wide /></div> },
           ]} />
           <Link target="weighbridge-management" className="mt-4 inline-block text-sm text-primary hover:underline" to={`/weighing/tasks/${taskInfo.id}`}>查看任务详情与异常处置</Link>
-        </ContentCard> : <ContentCard title="核对提交信息"><div className="grid gap-4 sm:grid-cols-2"><DetailItem label="车牌" value={summaryPlate} /><DetailItem label="运输方向" value={directionLabels[summaryDirection]} /><DetailItem label="物料" value={summaryMaterial} /><DetailItem label={businessPartyLabel} value={summaryParty} /></div></ContentCard>}</div></DialogBody>
+        </ContentCard> : <ContentCard title="核对提交信息"><div className="review-facts"><ReviewFact label="车牌" value={summaryPlate} /><ReviewFact label="运输方向" value={directionLabels[summaryDirection]} /><ReviewFact label="物料" value={summaryMaterialName} /><ReviewFact label={businessPartyLabel} value={summaryParty} /></div></ContentCard>}</div></DialogBody>
         <DialogFooter><Button onClick={() => setBusinessOpen(false)}>关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>

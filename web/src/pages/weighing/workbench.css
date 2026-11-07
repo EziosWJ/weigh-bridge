@@ -199,10 +199,35 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .workbench-business-entry p + p { margin-top: 4px; }
 .workbench-business-dialog .weighing-business > section { border: 0; background: transparent; box-shadow: none; }
 .workbench-business-dialog .weighing-business > section > header { padding: 0 0 12px; }
-.workbench-business-dialog .weighing-business > section > div { padding: 8px 0; }
+.workbench-business-dialog .weighing-business > section > div { padding: 12px 0 16px; }
 .workbench-business-dialog .weighing-business [role='tabpanel'] > .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .workbench-business-dialog .weighing-business [role='tabpanel'] > .grid > .md\:col-span-2 { grid-column: 1 / -1; }
 .workbench-business-dialog :is(input, select, textarea) { scroll-margin-block: 24px; }
+
+/* 查看运输资料：首次称重依据放大居中，便于一眼核对 */
+.business-first-record {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 18px 16px;
+  border: 1px solid #315065;
+  border-radius: 8px;
+  background: #0b1d29;
+  text-align: center;
+}
+.business-first-record-label { color: #91aabb; font-size: 13px; line-height: 18px; }
+.business-first-record-value {
+  color: #3ce0f5;
+  font-family: Bahnschrift, 'DIN Alternate', 'Arial Narrow', sans-serif;
+  font-size: 44px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+.business-first-record-value > span { margin-left: 6px; color: #91aabb; font-family: inherit; font-size: 18px; font-weight: 500; }
+.business-first-record-time { color: #dcecf5; font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: .02em; line-height: 1.3; }
+.business-first-record-note { color: #ffb454; font-size: 13px; line-height: 1.5; }
 @media (max-width: 639px) {
   .workbench-business-entry { align-items: stretch; flex-direction: column; }
   .workbench-business-dialog .weighing-business [role='tabpanel'] > .grid { grid-template-columns: minmax(0, 1fr); }
@@ -397,7 +422,7 @@ body:has(.weighing-workbench) .workbench-business-dialog {
   color: #ffb454;
 }
 .review-eyebrow-status.is-invalid { border-color: #73404a; background: #3d242b; color: #ff8585; }
-.weighing-review .weighing-review-body { padding: 16px 20px 20px; }
+.weighing-review .weighing-review-body { padding: 14px 20px 16px; }
 .review-alert {
   display: flex;
   align-items: flex-start;
@@ -416,14 +441,14 @@ body:has(.weighing-workbench) .workbench-business-dialog {
 .review-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   border: 1px solid #315065;
   border-radius: 6px;
   background: #0b1d29;
 }
 .review-hero {
   min-width: 0;
-  padding: 10px 14px;
+  padding: 8px 14px;
 }
 .review-hero--weight { border-left: 1px solid #29485c; }
 .review-hero-label { display: flex; align-items: center; gap: 6px; color: #91aabb; font-size: 12px; line-height: 18px; }
@@ -451,18 +476,14 @@ body:has(.weighing-workbench) .workbench-business-dialog {
   line-height: 1;
 }
 .review-weight > span { color: #91aabb; font-family: inherit; font-size: 16px; font-weight: 500; }
-.review-compact-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; margin-bottom: 12px; padding: 9px 14px; border: 1px solid #315065; border-radius: 6px; background: #0b1d29; color: #afc5d5; font-size: 13px; }
-.review-compact-summary strong { color: #edf8ff; font-size: 18px; }
-.review-compact-summary b { color: #edf8ff; font-variant-numeric: tabular-nums; }
-
-.review-main { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; min-width: 0; gap: 12px; }
+.review-main { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; min-width: 0; gap: 10px; }
 .review-section { overflow: hidden; border: 1px solid #315065; border-radius: 8px; background: #0b1d29; }
 .review-section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-bottom: 1px solid #29485c;
   background: #0f2634;
 }
@@ -470,30 +491,36 @@ body:has(.weighing-workbench) .workbench-business-dialog {
 .review-section-title > span { display: inline-flex; flex-shrink: 0; color: #65d9fb; }
 .review-section-title h3 { color: #edf8ff; font-size: 15px; font-weight: 600; }
 .review-section-extra { flex-shrink: 0; color: #91aabb; font-size: 12px; white-space: nowrap; }
-.review-section-body { padding: 16px; }
-.review-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; }
+.review-section-body { padding: 12px; }
+.review-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .review-fact {
   min-width: 0;
-  padding: 2px 0;
+  padding: 6px 12px;
+  border: 1px solid #29485c;
+  border-radius: 6px;
+  background: #0d2231;
 }
 .review-fact--wide { grid-column: 1 / -1; }
 .review-fact--emphasis .review-fact-value { color: #bceef6; }
-.review-fact-label { color: #91aabb; font-size: 12px; line-height: 1.5; }
-.review-fact-value { margin-top: 3px; color: #edf8ff; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
-.review-fact--wide .review-fact-value { font-size: 16px; }
+.review-fact-label { color: #91aabb; font-size: 12px; line-height: 18px; }
+.review-fact-value {
+  margin-top: 2px;
+  color: #fff;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+.review-fact--emphasis .review-fact-value { font-size: 24px; }
+.review-fact--wide .review-fact-value { font-size: 22px; }
 .review-final-step { display: grid; gap: 12px; }
-.review-final-step-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 8px 16px; border: 1px solid #24617b; border-radius: 8px; background: #0d2a3a; }
-.review-step-badge { display: inline-flex; align-items: center; gap: 6px; color: #65d9fb; font-size: 12px; line-height: 18px; }
-.review-final-title { display: flex; align-items: center; gap: 4px; }
-.review-final-step-head h3 { color: #edf8ff; font-size: 20px; font-weight: 600; line-height: 1.35; }
-.review-final-step-head h3:focus { outline: none; }
 .review-empty { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid #73404a; border-radius: 6px; background: #3d242b; color: #ffd6d6; }
 .review-empty > svg { flex-shrink: 0; margin-top: 2px; color: #ff8585; }
 .review-empty strong { display: block; font-size: 13px; }
 .review-empty p { margin-top: 2px; font-size: 12px; line-height: 1.5; }
 .review-hint { margin-top: 10px; color: #ffb454; font-size: 12px; line-height: 1.6; }
 .weighing-review .workbench-capture-gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); max-height: none; overflow: visible; }
-.weighing-review .workbench-capture-thumbnail img { height: 120px; }
+.weighing-review .workbench-capture-thumbnail img { height: 110px; }
 .weighing-review .workbench-capture-photo p { font-size: 13px; }
 
 .weighing-review .weighing-review-footer {
@@ -515,9 +542,6 @@ body:has(.weighing-workbench) .workbench-business-dialog {
 .review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .review-actions > button { min-width: 150px; }
 
-@media (min-width: 1100px) {
-  .review-facts { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
 @media (max-width: 900px) {
   .weighing-review .workbench-capture-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weighing-review .workbench-capture-thumbnail img { height: 150px; }
@@ -527,10 +551,11 @@ body:has(.weighing-workbench) .workbench-business-dialog {
   .review-header-icon { display: none; }
   .weighing-review .review-eyebrow-title { font-size: 20px; }
   .weighing-review .weighing-review-body { padding: 12px; }
-  .review-final-step-head { padding: 8px 12px; }
-  .review-final-step-head h3 { font-size: 18px; }
   .review-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .review-facts { grid-template-columns: minmax(0, 1fr); }
+  .review-fact { padding: 9px 12px; }
+  .review-fact-value,
+  .review-fact--emphasis .review-fact-value { font-size: 22px; }
   .weighing-review .workbench-capture-gallery { grid-template-columns: minmax(0, 1fr); }
   .weighing-review .workbench-capture-thumbnail img { height: 200px; }
   .review-weight { font-size: 34px; }

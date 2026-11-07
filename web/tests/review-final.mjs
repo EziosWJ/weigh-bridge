@@ -22,9 +22,16 @@ try {
   const dialog = page.getByRole('dialog', { name: '核对回磅（皮重）' });
   assert.equal(await dialog.getByRole('button', { name: '重新采集重量' }).count(), 0);
   await dialog.getByRole('img', { name: '出口抓拍' }).waitFor();
-  for (const text of ['晋AB6P44', '入厂卸货', '木片 · C-M-0002', '王坚 · C-P-0001', '毛重 30 吨 · 2026-10-30 09:36:04', '预计净重（未出单）', '13007028190']) {
+  for (const text of ['晋AB6P44', '入厂卸货', '木片', '王坚 · C-P-0001', '毛重 30 吨 · 2026-10-30 09:36:04', '预计净重（未出单）', '13007028190']) {
     assert.ok(await dialog.getByText(text, { exact: true }).isVisible(), `${text} 应保留`);
   }
+  assert.equal(await dialog.getByText('物料及规格／编码', { exact: true }).count(), 0, '物料栏不再显示规格与编码');
+  assert.ok(await dialog.getByText('物料', { exact: true }).isVisible());
+  const factFontSizes = await dialog.locator('.review-facts .review-fact-value').evaluateAll(nodes => nodes.map(node => parseFloat(getComputedStyle(node).fontSize)));
+  assert.ok(factFontSizes.length >= 4, '业务核对应展示全部核对项');
+  assert.ok(factFontSizes.every(size => size >= 22), `业务核对各项应与车辆重量同量级放大：${factFontSizes.join('/')}`);
+  const factBoxes = await dialog.locator('.review-facts .review-fact').evaluateAll(nodes => nodes.map(node => ({ border: getComputedStyle(node).borderTopWidth, background: getComputedStyle(node).backgroundColor })));
+  assert.ok(factBoxes.every(box => parseFloat(box.border) > 0 && box.background !== 'rgba(0, 0, 0, 0)'), '业务核对各格应有独立边框与底色');
   assert.equal(await dialog.locator('.review-summary').getByText(/重量稳定|张抓拍|入厂卸货|回磅/).count(), 0);
   assert.ok(await dialog.getByText('请确认车辆已完全上磅，现场与资料一致。', { exact: true }).isVisible());
   const businessHint = dialog.getByRole('button', { name: '业务核对说明' });
@@ -47,12 +54,17 @@ try {
   }
   await page.setViewportSize({ width: 1366, height: 768 });
   await dialog.getByRole('button', { name: '下一步：核对最终重量' }).click();
-  assert.equal(await dialog.locator('.review-compact-summary').count(), 1);
+  assert.equal(await dialog.locator('.review-compact-summary').count(), 0, '回磅第二步不再单独占一行车号');
   assert.equal(await dialog.locator('.review-hero').count(), 0);
+  assert.equal(await dialog.getByText(/第 2 步|可扣减/).count(), 0, '步骤行与净重调整标题行应简化');
+  const finalIdentity = await dialog.locator('.review-final-step .review-facts').innerText();
+  for (const text of ['当前车辆', '晋AB6P44', '入厂卸货', '物料', '木片', '供货方', '王坚 · C-P-0001']) assert.ok(finalIdentity.includes(text), `第二步应展示 ${text}`);
+  const plateSize = await dialog.locator('.review-final-step .review-facts .review-fact-value').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  assert.ok(plateSize >= 28, `第二步车号应与大格子同级：${plateSize}px`);
   await dialog.getByText('按比例', { exact: true }).click();
   assert.equal(await dialog.getByRole('radio', { name: '按比例' }).isChecked(), true);
   await dialog.getByLabel('净重调整比例（%）', { exact: true }).fill('5');
-  await dialog.getByLabel('调整备注（扣减或上调时必填）').selectOption('QUALITY');
+  await dialog.getByLabel('调整类别（扣减或上调时必填）').selectOption('QUALITY');
   await dialog.getByText('16.473 吨', { exact: true }).waitFor();
   assert.equal(await dialog.locator('.weighing-review-footer').getByText(/最终毛重|最终皮重|最终净重|净重调整：/).count(), 0);
   for (const text of ['30 吨', '12.66 吨', '17.34 吨', '0.867 吨（扣减）']) {
@@ -60,8 +72,32 @@ try {
     assert.ok(await number.isVisible());
     assert.ok(await number.evaluate(node => parseFloat(getComputedStyle(node).fontSize) >= 24), `${text} 应放大`);
   }
-  const hint = dialog.getByRole('button', { name: '净重调整比例（%）说明' });
-  const tip = page.getByRole('tooltip', { includeHidden: true }).filter({ hasText: '最多两位小数' });
+  // 多项扣减：添加扣减项占整行，删除移到类别之后，合计上方逐项列出
+  const addButton = dialog.getByRole('button', { name: '添加扣减项' });
+  assert.ok(await addButton.isVisible(), '应提供添加扣减项按钮');
+  assert.equal(await dialog.getByText('添加调整项', { exact: true }).count(), 0);
+  assert.ok(await addButton.evaluate(node => node.getBoundingClientRect().width >= node.parentElement.getBoundingClientRect().width - 1), '添加扣减项应占整行');
+  assert.equal(await dialog.getByRole('button', { name: '删除该项' }).count(), 0, '单项时不显示删除该项');
+  await addButton.click();
+  const itemDeletes = dialog.getByRole('button', { name: '删除该项' });
+  assert.equal(await itemDeletes.count(), 2);
+  const deleteBox = await itemDeletes.first().boundingBox();
+  const categoryBox = await dialog.locator('#net-adjustment-category-0').boundingBox();
+  assert.ok(deleteBox.x >= categoryBox.x + categoryBox.width - 1, '删除该项应排在类别之后');
+  assert.ok(await itemDeletes.first().evaluate(node => parseFloat(getComputedStyle(node).borderTopWidth) > 0), '删除该项应为带边框按钮');
+  await dialog.getByRole('radiogroup', { name: '第 2 项录入方式' }).waitFor();
+  await dialog.locator('#net-adjustment-amount-1').fill('0.5');
+  await dialog.locator('#net-adjustment-category-1').selectOption('OTHER');
+  const totals = dialog.locator('[aria-label="各项调整汇总"]');
+  await dialog.getByText('15.973 吨', { exact: true }).waitFor();
+  const totalsText = await totals.innerText();
+  assert.match(totalsText, /第 1 项扣减\s*0\.867\s*吨/, '合计上方应列出第 1 项扣减');
+  assert.match(totalsText, /第 2 项扣减\s*0\.5\s*吨/, '合计上方应列出第 2 项扣减');
+  await itemDeletes.nth(1).click();
+  assert.equal(await dialog.getByRole('button', { name: '删除该项' }).count(), 0);
+  assert.doesNotMatch(await totals.innerText(), /第 2 项/);
+  await dialog.getByText('16.473 吨', { exact: true }).waitFor();
+  const hint = dialog.getByRole('button', { name: '净重调整比例（%）说明' });  const tip = page.getByRole('tooltip', { includeHidden: true }).filter({ hasText: '最多两位小数' });
   assert.equal(await tip.isVisible(), false);
   await hint.hover();
   assert.equal(await tip.isVisible(), true);

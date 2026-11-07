@@ -19,14 +19,14 @@ try {
   await page.getByText('16.473 吨', { exact: true }).waitFor();
   assert.equal(await page.getByText('0.867 吨（扣减）', { exact: true }).count(), 1, '5% 扣减应显示扣减');
   assert.equal(await page.getByText(/当前为向上调整净重/).count(), 0, '扣减不应显示上调警告');
-  const note = page.getByLabel('调整备注（扣减或上调时必填）', { exact: true });
+  const note = page.getByLabel('调整类别（扣减或上调时必填）', { exact: true });
   assert.equal(await page.getByLabel('自定义备注（选填）').count(), 0);
   await note.selectOption('OTHER');
   await page.getByLabel('自定义备注（选填）').fill('雨水浸湿');
-  assert.equal(JSON.parse(await page.locator('output').innerText()).remark, '雨水浸湿');
+  assert.equal(JSON.parse(await page.locator('output').innerText())[0].remark, '雨水浸湿');
   await note.selectOption('WATER');
   assert.equal(await page.getByLabel('自定义备注（选填）').count(), 0);
-  assert.equal(JSON.parse(await page.locator('output').innerText()).remark, '');
+  assert.equal(JSON.parse(await page.locator('output').innerText())[0].remark, '');
   await page.getByRole('button', { name: '切换更正重开' }).click();
   await page.getByLabel('净重调整比例（%）', { exact: true }).fill('-5');
   await page.getByText('18.207 吨', { exact: true }).waitFor();

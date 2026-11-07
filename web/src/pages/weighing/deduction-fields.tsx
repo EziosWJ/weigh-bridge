@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { Plus } from 'lucide-react';
 import { DetailItem } from '@/components/common/detail-item';
 import { HelpHint } from '@/components/common/help-hint';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { DICT_CODES, WEIGHING_DEDUCTION_CATEGORY_OPTIONS } from '@/constants/dicts';
@@ -193,7 +195,6 @@ export function NetAdjustmentFields({ basis, value, onChange, allowUpward = fals
               <span className="flex h-full items-center justify-center rounded-control border border-border bg-surface px-3 text-sm text-text-primary peer-checked:border-primary peer-checked:bg-info-background peer-checked:text-info peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-primary">{label}</span>
             </label>)}
           </div>
-          {rows.length > 1 && <button type="button" className="text-sm text-error underline-offset-2 hover:underline" onClick={() => onChange(rows.filter((_, i) => i !== index))}>删除该项</button>}
         </div>
         {row.mode === 'amount' ? <DecimalField key={`amount-${index}`} id={`net-adjustment-amount-${index}`} label="净重调整量（吨）" value={row.amount} step="0.001" min={allowUpward ? undefined : '0'} onChange={amount => setRow(index, { ...row, amount })} hint="正数扣减；负数上调（仅更正重开）" /> : <DecimalField key={`percent-${index}`} id={`net-adjustment-rate-${index}`} label="净重调整比例（%）" value={row.rateBp / 100} step="0.01" min={allowUpward ? undefined : '0'} onChange={rate => setRow(index, { ...row, rateBp: Number.isFinite(rate) ? Math.round(rate * 100) : Number.NaN })} hint="最多两位小数；按调整前净重计算，四舍五入到 0.001 吨" />}
         <div className="space-y-1.5">
@@ -203,13 +204,21 @@ export function NetAdjustmentFields({ basis, value, onChange, allowUpward = fals
             {categoryOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </Select>
         </div>
-        {row.category === 'OTHER' && <div className="space-y-1.5">
+        {rows.length > 1 && <div className="flex items-end justify-self-end">
+          <Button size="md" variant="secondary" onClick={() => onChange(rows.filter((_, i) => i !== index))}>删除该项</Button>
+        </div>}
+        {row.category === 'OTHER' && <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
           <label htmlFor={`net-adjustment-remark-${index}`} className="block text-form-label font-medium text-text-primary">自定义备注（选填）</label>
           <Input id={`net-adjustment-remark-${index}`} placeholder="请输入其他调整原因" value={row.remark ?? ''} onChange={event => setRow(index, { ...row, remark: event.target.value })} />
         </div>}
       </div>)}
-      <button type="button" className="text-sm text-info underline-offset-2 hover:underline" onClick={() => onChange([...rows, emptyAdjustmentRow])}>+ 添加调整项</button>
+      <Button type="button" size="lg" variant="secondary" className="w-full text-base" onClick={() => onChange([...rows, emptyAdjustmentRow])}>
+        <Plus className="h-4 w-4" aria-hidden />添加扣减项
+      </Button>
     </div>
+    {resolved && resolved.items.length > 0 && <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-control border border-border bg-neutral-background px-3 py-2 text-sm text-text-secondary" aria-label="各项调整汇总">
+      {resolved.items.map((item, index) => <span key={index}>第 {index + 1} 项{item.amount < 0 ? '上调' : '扣减'} <strong className="text-base font-semibold text-text-primary tabular-nums">{formatWeight(Math.abs(item.amount))}</strong></span>)}
+    </div>}
     <div className="grid gap-4 rounded-control border border-border border-l-[3px] border-l-primary bg-neutral-background p-3 sm:grid-cols-2">
       <DetailItem label="系统计算：净重调整量合计" value={final ? <strong className="text-2xl tabular-nums">{netAdjustmentText(amount)}</strong> : '待核对调整量'} />
       <DetailItem label="调整后净重" value={final ? <strong className="text-3xl tabular-nums text-primary">{formatWeight(final.net)}</strong> : <span className="text-text-tertiary">待核对调整量</span>} />
