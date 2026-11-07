@@ -59,7 +59,7 @@ func decodeCloudTicket(data json.RawMessage, ref syncTicketRef, withHistory bool
 	}
 	latestFound := false
 	for _, change := range result.Changes {
-		if !syncDigestPattern.MatchString(change.Digest) || change.TicketNo != ref.TicketNo || !validSyncChangeType(change.ChangeType) || change.DigestVersion < 1 || change.SchemaVersion != SyncSchemaVersionV4 || change.ReceivedAt.IsZero() {
+		if !syncDigestPattern.MatchString(change.Digest) || change.TicketNo != ref.TicketNo || !validSyncChangeType(change.ChangeType) || change.DigestVersion < 1 || (change.SchemaVersion != SyncSchemaVersionV4 && change.SchemaVersion != SyncSchemaVersionV5) || change.ReceivedAt.IsZero() {
 			return syncCloudTicket{}, invalidCloudResponse()
 		}
 		if result.LatestDigest != nil && change.Digest == *result.LatestDigest {
@@ -243,7 +243,7 @@ func (c *syncV4Client) lookupChange(ctx context.Context, address, siteCode, dige
 	var required struct {
 		Found *bool `json:"found"`
 	}
-	if err := json.Unmarshal(envelope.Data, &result); err != nil || json.Unmarshal(envelope.Data, &required) != nil || required.Found == nil || result.SiteCode != siteCode || result.Digest != digest || (result.Found && (result.Confirmation == nil || result.Confirmation.Digest != digest || result.Confirmation.TicketNo == "" || !validSyncChangeType(result.Confirmation.ChangeType) || result.Confirmation.DigestVersion < 1 || result.Confirmation.SchemaVersion != SyncSchemaVersionV4 || result.Confirmation.ReceivedAt.IsZero())) {
+	if err := json.Unmarshal(envelope.Data, &result); err != nil || json.Unmarshal(envelope.Data, &required) != nil || required.Found == nil || result.SiteCode != siteCode || result.Digest != digest || (result.Found && (result.Confirmation == nil || result.Confirmation.Digest != digest || result.Confirmation.TicketNo == "" || !validSyncChangeType(result.Confirmation.ChangeType) || result.Confirmation.DigestVersion < 1 || (result.Confirmation.SchemaVersion != SyncSchemaVersionV4 && result.Confirmation.SchemaVersion != SyncSchemaVersionV5) || result.Confirmation.ReceivedAt.IsZero())) {
 		return syncCloudLookup{}, &SyncCloudError{Category: SyncCategoryTemporary, Reason: "invalid_response", Retryable: true, Message: "云端摘要确认响应无效，结果未知"}
 	}
 	return result, nil

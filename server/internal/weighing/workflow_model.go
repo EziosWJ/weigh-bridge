@@ -304,11 +304,12 @@ type ConfirmationInput struct {
 	ReviewedVersions *ReviewedVersions `json:"reviewedVersions"`
 	AllowAdjust      bool              `json:"-"`
 	CaptureInput
-	RequestID     string              `json:"requestId"`
-	SampleID      int64               `json:"sampleId"`
-	Version       int64               `json:"version"`
-	Checks        Checks              `json:"checks"`
-	NetAdjustment *NetAdjustmentInput `json:"netAdjustment"`
+	RequestID      string              `json:"requestId"`
+	SampleID       int64               `json:"sampleId"`
+	Version        int64               `json:"version"`
+	Checks         Checks              `json:"checks"`
+	NetAdjustment  *NetAdjustmentInput `json:"netAdjustment"`
+	NetAdjustments NetAdjustmentsInput `json:"netAdjustments"`
 }
 type FinalWeights struct {
 	Gross  Tonnes `json:"gross" swaggertype:"string"`
@@ -326,6 +327,23 @@ type NetAdjustmentInput struct {
 	RateBP   *int              `json:"rateBp,omitempty"`
 	Category string            `json:"category"`
 	Remark   string            `json:"remark"`
+	// ResolvedCategoryName is filled in server-side from the dictionary and
+	// never accepted from the wire; it exists so legacy single-item callers
+	// share the same resolution path as the multi-item list.
+	ResolvedCategoryName string `json:"-"`
+}
+
+// NetAdjustmentsInput accepts the multi-item list. A single legacy item is
+// treated as a one-entry list; nil or absent means no adjustment.
+type NetAdjustmentsInput []NetAdjustmentInput
+
+func (in NetAdjustmentsInput) Requested() bool {
+	for _, item := range in {
+		if item.Requested() {
+			return true
+		}
+	}
+	return false
 }
 
 func (in *NetAdjustmentInput) Requested() bool {

@@ -13,8 +13,8 @@ import {
   X,
   TriangleAlert,
 } from 'lucide-react';
-import type { CaptureSnapshot, NetAdjustmentInput, WeightValues } from '@/types/weighing';
-import { formatWeight, formatWeightValue, resolveNetAdjustment } from '@/lib/weighing/weights';
+import type { CaptureSnapshot, NetAdjustmentsInput, WeightValues } from '@/types/weighing';
+import { formatWeight, formatWeightValue, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
 import { StatusTag } from '@/components/common/status-tag';
 import { HelpHint } from '@/components/common/help-hint';
@@ -80,12 +80,12 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   onCancel: () => void;
   onRecapture?: () => void;
   onMismatch: () => void;
-  onConfirm: (netAdjustment?: NetAdjustmentInput) => void;
+  onConfirm: (netAdjustments?: NetAdjustmentsInput) => void;
 }) {
   const [imageReady, setImageReady] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [step, setStep] = useState<'review' | 'final'>('review');
-  const [netAdjustment, setNetAdjustment] = useState<NetAdjustmentInput>({ mode: 'amount', amount: 0, rateBp: 0, category: '', remark: '' });
+  const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>([]);
   const heading = useRef<HTMLHeadingElement>(null);
   const finalHeading = useRef<HTMLHeadingElement>(null);
   const second = !!value.original;
@@ -96,7 +96,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   let resolvedAdjustment = 0;
   if (value.original) {
     try {
-      resolvedAdjustment = resolveNetAdjustment(value.original, netAdjustment).amount;
+      resolvedAdjustment = resolveNetAdjustments(value.original, netAdjustments).amount;
     } catch (error) {
       adjustmentError = error instanceof Error ? error.message : '请核对净重调整';
     }
@@ -157,7 +157,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
             <div className="review-final-title"><h3 ref={finalHeading} tabIndex={-1}>最终重量确认</h3><HelpHint label="最终重量确认说明">毛重、皮重沿用设备原始值；请核对原始重量并录入净重扣减。确认后将生成正式单据，原始采集依据保留。</HelpHint></div>
           </div>
           <ReviewSection icon={<Scale className="h-4 w-4" aria-hidden />} title="净重调整" extra={<StatusTag tone="info">可扣减</StatusTag>}>
-            <NetAdjustmentFields basis={value.original!} value={netAdjustment} onChange={setNetAdjustment} showError={false} />
+            <NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} />
           </ReviewSection>
         </section> : <section className="review-main" aria-label="本趟运输核对依据">
           <ReviewSection icon={<Package className="h-4 w-4" aria-hidden />} title="业务核对" extra={<HelpHint label="业务核对说明" align="right">请与现场车辆核对。</HelpHint>}>
@@ -198,7 +198,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
         <div className="review-actions">
           {showFinal ? <>
             <Button size="lg" disabled={submitting} onClick={() => setStep('review')}><ArrowLeft className="h-4 w-4" aria-hidden />上一步</Button>
-            <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!finalReady || submitting} aria-busy={submitting} onClick={() => { if (finalReady && !submitting) onConfirm(resolvedAdjustment === 0 ? undefined : netAdjustment); }}>
+            <Button size="lg" variant="primary" className="disabled:opacity-50" disabled={!finalReady || submitting} aria-busy={submitting} onClick={() => { if (finalReady && !submitting) onConfirm(resolvedAdjustment === 0 ? undefined : netAdjustments); }}>
               <Check className="h-4 w-4" aria-hidden />{submitting ? '正在保存…' : '确认回磅并出单'}
             </Button>
           </> : <>

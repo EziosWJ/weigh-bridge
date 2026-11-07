@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -73,6 +74,14 @@ func (s *Service) Export(ctx context.Context, kind string, q PageQuery, e audit.
 		rows = append(rows, []string{"数据性质", "厂区编码", "厂区", "过磅单号", "任务ID", "版本", "关联原单ID", "状态", "出单时间（北京）", "车牌", "方向", "物料编码", "物料", "规格", "供收方编码", "供收方", "原始毛重（吨）", "原始皮重（吨）", "原始净重（吨）", "最终毛重（吨）", "最终皮重（吨）", "净重调整量（吨）", "最终净重（吨）", "调整方式", "调整比例（%）", "调整类别", "毛重调整差额（吨）", "皮重调整差额（吨）", "毛重来源", "皮重来源", "调整备注", "首次依据ID", "二次依据ID"})
 		for _, v := range values {
 			rows = append(rows, []string{"", v.SiteCode, csvText(v.SiteName), v.TicketNo, strconv.FormatInt(v.TaskID, 10), strconv.FormatInt(v.Revision, 10), idText(v.PreviousTicketID), v.Status, csvTime(v.IssuedAt), csvText(v.Business.Plate), v.Business.Direction, v.Business.MaterialCode, csvText(v.Business.MaterialName), csvText(v.Business.MaterialSpec), v.Business.PartyCode, csvText(v.Business.PartyName), v.OriginalGross.String(), v.OriginalTare.String(), (v.OriginalGross - v.OriginalTare).String(), v.FinalGross.String(), v.FinalTare.String(), v.NetAdjustment.String(), finalNet(v.FinalGross, v.FinalTare, v.NetAdjustment).String(), adjustmentModeText(v.NetAdjustmentMode), adjustmentRateText(v.NetAdjustmentRateBP), csvText(v.NetAdjustmentCategoryName), (v.OriginalGross - v.FinalGross).String(), (v.OriginalTare - v.FinalTare).String(), v.GrossSource, v.TareSource, csvText(v.AdjustmentRemark), strconv.FormatInt(v.FirstRecordID, 10), strconv.FormatInt(v.SecondRecordID, 10)})
+			// Multi-item tickets follow the summary row with one line per
+			// detail item; single-item and legacy rows already carry the full
+			// fact in their own columns and are not duplicated.
+			if len(v.NetAdjustmentItems) > 1 {
+				for index, item := range v.NetAdjustmentItems {
+					rows = append(rows, []string{fmt.Sprintf("净重调整明细 %d", index+1), "", "", v.TicketNo, "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", WeightDifference(item.AmountMilli).String(), "", adjustmentModeText(item.Mode), adjustmentRateText(item.RateBP), csvText(item.CategoryName), "", "", "", "", csvText(item.Remark), "", ""})
+				}
+			}
 		}
 		count = int64(len(values))
 	case "tasks":

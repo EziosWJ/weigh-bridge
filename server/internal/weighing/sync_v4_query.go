@@ -109,16 +109,21 @@ func (r *Repository) SyncOverview(ctx context.Context) (SyncOverview, error) {
 	result := SyncOverview{}
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
+			SELECT ticket_id FROM wb_ticket_sync_change_v5 WHERE status <> 'synced'
+			UNION
 			SELECT ticket_id FROM wb_ticket_sync_change_v4 WHERE status <> 'synced'
 			UNION
 			SELECT c.ticket_id FROM wb_ticket_sync_change c
 			WHERE c.status <> 'synced'
 			  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id = c.ticket_id)
+			  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id = c.ticket_id)
 		) x`).Scan(&result.PendingTickets).Error; err != nil {
 		return result, err
 	}
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
+			SELECT ticket_id FROM wb_ticket_sync_change_v5 WHERE status IN ('needs_admin','conflict')
+			UNION
 			SELECT ticket_id FROM wb_ticket_sync_change_v4 WHERE status IN ('needs_admin','conflict')
 			UNION
 			SELECT ticket_id FROM wb_ticket_sync_review WHERE status = 'open'
@@ -128,6 +133,8 @@ func (r *Repository) SyncOverview(ctx context.Context) (SyncOverview, error) {
 	var lastSuccess sql.NullTime
 	if err := r.db.WithContext(ctx).Raw(`
 		SELECT MAX(value) FROM (
+			SELECT MAX(synced_at) AS value FROM wb_ticket_sync_change_v5 WHERE status = 'synced'
+			UNION ALL
 			SELECT MAX(synced_at) AS value FROM wb_ticket_sync_change_v4 WHERE status = 'synced'
 			UNION ALL
 			SELECT MAX(synced_at) FROM wb_ticket_sync_change WHERE status = 'synced'
@@ -159,13 +166,16 @@ func (r *Repository) SyncTickets(ctx context.Context, q SyncTicketQuery) (Page[T
 		Joins("JOIN wb_transport_task t ON t.id=k.task_id").
 		Joins("LEFT JOIN wb_ticket_reconcile r ON r.ticket_id=k.id").
 		Select(`k.*,
-			CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4
+			CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id=k.id) THEN 5
+			     WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4
 			     WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id) THEN 3 ELSE 0 END AS sync_protocol,
 			COALESCE(
+				(SELECT v.status FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),
 				(SELECT v.status FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),
 				(SELECT c.status FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),
 				'untracked') AS sync_status,
 			COALESCE(
+				(SELECT v.reason FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),
 				(SELECT v.reason FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),
 				(SELECT c.reason FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),
 				'') AS sync_reason,
@@ -228,6 +238,13 @@ func (r *Repository) SyncTicketDetail(ctx context.Context, ticketID int64) (Sync
 	for _, row := range rows {
 		result.Changes = append(result.Changes, syncChangeView(row))
 	}
+	v5rows, err := r.syncChangesV5ForTicket(ctx, ticketID)
+	if err != nil {
+		return result, err
+	}
+	for _, row := range v5rows {
+		result.Changes = append(result.Changes, syncChangeViewV5(row))
+	}
 	legacy, err := r.syncChangesV3ForTicket(ctx, ticketID)
 	if err != nil {
 		return result, err
@@ -261,7 +278,15 @@ func (r *Repository) SyncTicketDetail(ctx context.Context, ticketID int64) (Sync
 }
 
 func syncChangeView(row ticketSyncChangeV4) SyncChangeView {
-	return SyncChangeView{ID: row.ID, Protocol: SyncSchemaVersionV4, Digest: row.Digest, DigestVersion: row.DigestVersion, SchemaVersion: row.SchemaVersion, SiteCode: row.SiteCode, TicketNo: row.TicketNo, ChangeType: row.ChangeType, Status: row.Status, Category: row.Category, ReasonCode: row.ReasonCode, Reason: row.Reason, Attempts: row.Attempts, NextAttemptAt: row.NextAttemptAt, LastAttemptAt: row.LastAttemptAt, SyncedAt: row.SyncedAt, ReceivedAt: row.ReceivedAt, CreatedAt: row.CreatedAt}
+	return syncChangeViewValues(SyncSchemaVersionV4, row.ID, row.Digest, row.DigestVersion, row.SchemaVersion, row.SiteCode, row.TicketNo, row.ChangeType, row.Status, row.Category, row.ReasonCode, row.Reason, row.Attempts, row.NextAttemptAt, row.LastAttemptAt, row.SyncedAt, row.ReceivedAt, row.CreatedAt)
+}
+
+func syncChangeViewV5(row ticketSyncChangeV5) SyncChangeView {
+	return syncChangeViewValues(SyncSchemaVersionV5, row.ID, row.Digest, row.DigestVersion, row.SchemaVersion, row.SiteCode, row.TicketNo, row.ChangeType, row.Status, row.Category, row.ReasonCode, row.Reason, row.Attempts, row.NextAttemptAt, row.LastAttemptAt, row.SyncedAt, row.ReceivedAt, row.CreatedAt)
+}
+
+func syncChangeViewValues(protocol int, id int64, digest string, digestVersion, schemaVersion int, siteCode, ticketNo, changeType, status, category, reasonCode, reason string, attempts int, nextAttemptAt, lastAttemptAt, syncedAt, receivedAt *time.Time, createdAt time.Time) SyncChangeView {
+	return SyncChangeView{ID: id, Protocol: protocol, Digest: digest, DigestVersion: digestVersion, SchemaVersion: schemaVersion, SiteCode: siteCode, TicketNo: ticketNo, ChangeType: changeType, Status: status, Category: category, ReasonCode: reasonCode, Reason: reason, Attempts: attempts, NextAttemptAt: nextAttemptAt, LastAttemptAt: lastAttemptAt, SyncedAt: syncedAt, ReceivedAt: receivedAt, CreatedAt: createdAt}
 }
 
 // ticketIDsForReconcile returns v4-tracked tickets in scope. Automatic runs
@@ -269,7 +294,11 @@ func syncChangeView(row ticketSyncChangeV4) SyncChangeView {
 // open review. Manual runs may additionally narrow the range by issue date.
 func (r *Repository) ticketIDsForReconcile(ctx context.Context, from, to *time.Time, automatic bool) ([]int64, error) {
 	scope := `SELECT DISTINCT c.ticket_id
-		FROM wb_ticket_sync_change_v4 c JOIN wb_ticket k ON k.id = c.ticket_id WHERE TRUE`
+		FROM (
+			SELECT ticket_id, created_at, status FROM wb_ticket_sync_change_v4
+			UNION ALL
+			SELECT ticket_id, created_at, status FROM wb_ticket_sync_change_v5
+		) c JOIN wb_ticket k ON k.id = c.ticket_id WHERE TRUE`
 	args := []any{}
 	if automatic {
 		scope += ` AND (c.created_at >= now() - interval '7 days' OR c.status <> 'synced'

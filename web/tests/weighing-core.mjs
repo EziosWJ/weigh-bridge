@@ -21,7 +21,7 @@ const compile = async (relative) => {
 await writeFile(path.join(temporary, 'package.json'), '{"type":"module"}');
 await Promise.all(['types/weighing.ts', 'lib/weighing/plate.ts', 'lib/weighing/camera.ts', 'lib/weighing/weights.ts', 'lib/weighing/seed.ts', 'lib/weighing/engine.ts', 'lib/weighing/migration.ts', 'lib/weighing/query.ts'].map(compile));
 const { createInitialState } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/seed.js')));
-const { formatWeightInputValue, formatWeightValue, formatWeight, needsLegacyWeightReview, weightValues, resolveNetAdjustment, netAdjustedWeights } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/weights.js')));
+const { formatWeightInputValue, formatWeightValue, formatWeight, needsLegacyWeightReview, weightValues, resolveNetAdjustment, resolveNetAdjustments, netAdjustedWeights } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/weights.js')));
 const { applyCommand } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/engine.js')));
 const { migrateWeighingState } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/migration.js')));
 const { beijingDate, filterTasks, filterTickets, exportTasksCsv, exportTicketsCsv, exportSummaryCsv, filterOriginalWeighings, exportOriginalWeighingsCsv, exportOriginalSummaryCsv } = await import(pathToFileURL(path.join(temporary, 'lib/weighing/query.js')));
@@ -725,4 +725,45 @@ test('净重调整按吨或比例解析，正常出单禁止上调，比例四�
   assert.equal(resolveNetAdjustment(basis, { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' }, true).amount, -0.5);
   assert.throws(() => resolveNetAdjustment({ gross: 1, tare: 0.001, net: 0.999 }, { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' }), /不足 0.001/);
   assert.throws(() => resolveNetAdjustment(basis, { mode: 'amount', amount: 0.5, rateBp: 0, category: '' }), /备注/);
+});
+
+test('多项净重调整：各比例项独立以调整前净重为基数、各自四舍五入到 0.001 吨后相加', () => {
+  const basis = { gross: 30, tare: 10, net: 20 };
+  // 两个 0.05% 项：各折算 0.01 吨 → 0.001 舍入后各为 0.001？ 不，20*5bp=0.01 吨整，两者合计 0.02。
+  const two = resolveNetAdjustments(basis, [
+    { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' },
+    { mode: 'percent', amount: 0, rateBp: 5, category: 'IMPURITY' },
+  ]);
+  assert.equal(two.amount, 0.02);
+  assert.equal(two.items.length, 2);
+  // 独立舍入：基数 0.999 吨、各 0.05% 折算 0.0004995 → 各自舍入为 0.000（拒绝）；基数 1 吨、各 0.05% 折算 0.0005 → 各自进位 0.001，合计 0.002。
+  const tiny = resolveNetAdjustments({ gross: 2, tare: 1, net: 1 }, [
+    { mode: 'percent', amount: 0, rateBp: 5, category: 'WATER' },
+    { mode: 'percent', amount: 0, rateBp: 5, category: 'IMPURITY' },
+  ]);
+  assert.equal(tiny.amount, 0.002);
+  // 比例 + 按吨混合，共用同一基数。
+  const mixed = resolveNetAdjustments(basis, [
+    { mode: 'percent', amount: 0, rateBp: 100, category: 'WATER' },
+    { mode: 'amount', amount: 0.5, rateBp: 0, category: 'IMPURITY' },
+  ]);
+  assert.equal(mixed.amount, 0.7);
+  // 正常出单拒绝任一上调项；重开允许并计入合计。
+  assert.throws(() => resolveNetAdjustments(basis, [
+    { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' },
+    { mode: 'amount', amount: 0.3, rateBp: 0, category: 'IMPURITY' },
+  ]), /只能扣减/);
+  assert.equal(resolveNetAdjustments(basis, [
+    { mode: 'amount', amount: -0.5, rateBp: 0, category: 'WATER' },
+    { mode: 'amount', amount: 0.3, rateBp: 0, category: 'IMPURITY' },
+  ], true).amount, -0.2);
+  // 合计不得清零净重；空列表与全零项均为无调整。
+  assert.throws(() => resolveNetAdjustments({ gross: 1.001, tare: 0.001, net: 1 }, [
+    { mode: 'amount', amount: 0.6, rateBp: 0, category: 'WATER' },
+    { mode: 'amount', amount: 0.4, rateBp: 0, category: 'IMPURITY' },
+  ]), /大于零/);
+  assert.deepEqual(resolveNetAdjustments(basis, []), { amount: 0, items: [] });
+  assert.deepEqual(resolveNetAdjustments(basis, [
+    { mode: 'percent', amount: 0, rateBp: 0, category: 'WATER' },
+  ]), { amount: 0, items: [] });
 });

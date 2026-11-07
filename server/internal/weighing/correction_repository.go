@@ -138,7 +138,10 @@ func (r *Repository) ManualReturn(ctx context.Context, id int64, in ManualReturn
 		if err := tx.Create(&record).Error; err != nil {
 			return out, err
 		}
-		ticket, err := makeTicket(task, first, record, nil, nil, "", false, false, e.Metadata.ActorID, name, nil)
+		if err := resolveItemsCategoryNames(tx, in.NetAdjustments); err != nil {
+			return out, err
+		}
+		ticket, err := makeTicketWithItems(task, first, record, nil, in.NetAdjustments, "", false, true, e.Metadata.ActorID, name, nil)
 		if err != nil {
 			return out, err
 		}
@@ -358,11 +361,15 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 		task.MaterialID = business.MaterialID
 		task.PartyID = business.PartyID
 		task.CarrierID = business.CarrierID
-		categoryName, err := resolveNetAdjustmentCategory(tx, in.NetAdjustment)
-		if err != nil {
+		entries := adjustmentEntries(in.NetAdjustment, in.NetAdjustments)
+		if err := resolveItemsCategoryNames(tx, entries); err != nil {
 			return out, err
 		}
-		ticket, err := makeTicket(task, first, second, in.FinalWeights, in.NetAdjustment, categoryName, true, in.AllowAdjust, e.Metadata.ActorID, name, &latest)
+		categoryName := ""
+		if len(entries) == 1 {
+			categoryName = entries[0].ResolvedCategoryName
+		}
+		ticket, err := makeTicketWithItems(task, first, second, in.FinalWeights, entries, categoryName, true, in.AllowAdjust, e.Metadata.ActorID, name, &latest)
 		if err != nil {
 			return out, err
 		}

@@ -21,6 +21,9 @@ type ManualReturnInput struct {
 	Weight     Tonnes    `json:"weight" swaggertype:"string"`
 	ReturnedAt time.Time `json:"returnedAt"`
 	Reason     string    `json:"reason"`
+	// NetAdjustments follows the multi-item net adjustment of the issued
+	// ticket, with the same rules as a normal second confirmation.
+	NetAdjustments NetAdjustmentsInput `json:"netAdjustments"`
 }
 type VoidInput struct {
 	RequestID string `json:"requestId"`
@@ -33,13 +36,14 @@ type ReweighInput struct {
 	Reason            string `json:"reason"`
 }
 type ReopenInput struct {
-	RequestID     string              `json:"requestId"`
-	TaskVersion   int64               `json:"taskVersion"`
-	Reason        string              `json:"reason"`
-	Business      BusinessInput       `json:"business"`
-	BasisValid    bool                `json:"basisValid"`
-	FinalWeights  *FinalWeights       `json:"finalWeights"`
-	NetAdjustment *NetAdjustmentInput `json:"netAdjustment"`
-	AllowAdjust   bool                `json:"-"`
-	AllowCorrect  bool                `json:"-"`
+	RequestID      string              `json:"requestId"`
+	TaskVersion    int64               `json:"taskVersion"`
+	Reason         string              `json:"reason"`
+	Business       BusinessInput       `json:"business"`
+	BasisValid     bool                `json:"basisValid"`
+	FinalWeights   *FinalWeights       `json:"finalWeights"`
+	NetAdjustment  *NetAdjustmentInput `json:"netAdjustment"`
+	NetAdjustments NetAdjustmentsInput `json:"netAdjustments"`
+	AllowAdjust    bool                `json:"-"`
+	AllowCorrect   bool                `json:"-"`
 }

@@ -51,8 +51,20 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 			SchemaVersion int    `json:"schemaVersion"`
 			DigestVersion int    `json:"digestVersion"`
 		}
-		if json.Unmarshal(body, &change) != nil || change.SchemaVersion != 4 || change.DigestVersion != 2 || len(change.Digest) != 64 {
+		if json.Unmarshal(body, &change) != nil || len(change.Digest) != 64 {
 			http.Error(w, "invalid change", http.StatusBadRequest)
+			return
+		}
+		if change.SchemaVersion == 5 && change.DigestVersion != 3 {
+			http.Error(w, "invalid v5 change", http.StatusBadRequest)
+			return
+		}
+		if change.SchemaVersion == 4 && change.DigestVersion != 2 {
+			http.Error(w, "invalid v4 change", http.StatusBadRequest)
+			return
+		}
+		if change.SchemaVersion != 4 && change.SchemaVersion != 5 {
+			http.Error(w, "unsupported schema", http.StatusBadRequest)
 			return
 		}
 		switch mode {
@@ -92,6 +104,8 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 					var change struct {
 						TicketNo         string          `json:"ticketNo"`
 						PreviousSiteCode string          `json:"previousSiteCode"`
+						SchemaVersion    int             `json:"schemaVersion"`
+						DigestVersion    int             `json:"digestVersion"`
 						Ticket           json.RawMessage `json:"ticket"`
 						Void             *struct {
 							Reason string `json:"reason"`
@@ -102,6 +116,8 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 					if json.Unmarshal([]byte(payloads[i]), &change) != nil || change.TicketNo != r.URL.Query().Get("ticketNo") || len(change.Ticket) == 0 {
 						continue
 					}
+					result["payloadSchemaVersion"] = change.SchemaVersion
+					result["payloadDigestVersion"] = change.DigestVersion
 					if result["status"] == "void" && change.Void == nil {
 						continue
 					}
@@ -126,7 +142,11 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 						}
 					}
 					if !found {
-						changes = append(changes, map[string]any{"digest": digest, "ticketNo": result["ticketNo"], "changeType": result["latestChangeType"], "digestVersion": result["latestDigestVersion"], "schemaVersion": 4, "receivedAt": result["latestReceivedAt"]})
+						schema := 4
+						if value, ok := result["payloadSchemaVersion"].(float64); ok && value > 0 {
+							schema = int(value)
+						}
+						changes = append(changes, map[string]any{"digest": digest, "ticketNo": result["ticketNo"], "changeType": result["latestChangeType"], "digestVersion": result["latestDigestVersion"], "schemaVersion": schema, "receivedAt": result["latestReceivedAt"]})
 						result["changes"] = changes
 					}
 				}
@@ -149,7 +169,7 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 		items := make([]string, 0, len(input.Items))
 		for _, item := range input.Items {
 			if digest != "" && item.TicketNo == ticketNo {
-				items = append(items, fmt.Sprintf(`{"siteCode":%q,"ticketNo":%q,"found":true,"status":%q,"latestDigest":%q,"latestDigestVersion":2,"latestChangeType":"void","latestReceivedAt":"%s","error":null}`, item.SiteCode, item.TicketNo, status, digest, time.Now().UTC().Format(time.RFC3339Nano)))
+				items = append(items, fmt.Sprintf(`{"siteCode":%q,"ticketNo":%q,"found":true,"status":%q,"latestDigest":%q,"latestDigestVersion":3,"latestChangeType":"void","latestReceivedAt":"%s","error":null}`, item.SiteCode, item.TicketNo, status, digest, time.Now().UTC().Format(time.RFC3339Nano)))
 				continue
 			}
 			items = append(items, fmt.Sprintf(`{"siteCode":%q,"ticketNo":%q,"found":false,"latestDigest":null,"latestDigestVersion":null,"latestChangeType":null,"latestReceivedAt":null,"previousSiteCode":null,"previousTicketNo":null,"reopenedBy":null,"error":null}`, item.SiteCode, item.TicketNo))
@@ -194,13 +214,27 @@ type syncV4Row struct {
 	ReceivedAt    *time.Time
 }
 
+// readSyncV4Rows lists every digest-protocol outbox row across v4 and v5.
+// Fresh tickets enqueue as v5; v4 rows come from pre-existing protocol state.
+// Rows keep insertion order by table then id, which matches change order
+// because one ticket never spans two digest protocols.
+
+// bumpSyncAttempt touches the outbox row in whichever protocol table holds it.
+func bumpSyncAttempt(db *gorm.DB, sql string, args ...any) {
+	db.Exec(strings.Replace(sql, "wb_ticket_sync_change_v4", "wb_ticket_sync_change_v5", 1), args...)
+	db.Exec(sql, args...)
+}
 func readSyncV4Rows(t *testing.T, db *gorm.DB) []syncV4Row {
 	t.Helper()
 	rows := []syncV4Row{}
 	if err := db.Table("wb_ticket_sync_change_v4").Order("id").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	return rows
+	v5rows := []syncV4Row{}
+	if err := db.Table("wb_ticket_sync_change_v5").Order("id").Find(&v5rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	return append(rows, v5rows...)
 }
 
 // Exercises the actual business transactions constructed by the workflow test.
@@ -210,7 +244,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if len(rows) != 3 || rows[0].ChangeType != "issue" || rows[1].ChangeType != "void" || rows[2].ChangeType != "reopen" || rows[0].TicketID != oldID || rows[2].TicketID != newID {
 		t.Fatalf("outbox sequence: %+v", rows)
 	}
-	if rows[0].DigestVersion != 2 || rows[0].SchemaVersion != 4 || len(rows[0].Digest) != 64 || rows[0].Status != "pending" {
+	if rows[0].DigestVersion != 3 || rows[0].SchemaVersion != 5 || len(rows[0].Digest) != 64 || rows[0].Status != "pending" {
 		t.Fatalf("outbox identity: %+v", rows[0])
 	}
 	var issue, reopen map[string]any
@@ -221,8 +255,18 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatal("payload digest differs from stored identity")
 	}
 	ticket := issue["ticket"].(map[string]any)
-	if issue["siteCode"] != "SITE01" || ticket["partyName"] != "首磅供收方" || ticket["originalGross"] != "30" || ticket["finalGross"] != "30" || ticket["finalTare"] != "10" || ticket["finalNet"] != "18.5" || ticket["netAdjustment"] != "1.5" || ticket["netAdjustmentCategory"] != "WATER" || ticket["netAdjustmentCategoryName"] != "水分大" {
+	if issue["siteCode"] != "SITE01" || ticket["partyName"] != "首磅供收方" || ticket["originalGross"] != "30" || ticket["finalGross"] != "30" || ticket["finalTare"] != "10" || ticket["finalNet"] != "18.5" || ticket["netAdjustment"] != "1.5" {
 		t.Fatalf("snapshot mapping: %s", rows[0].Payload)
+	}
+	// v5 carries the detail list; the legacy single-item fields are no
+	// longer the authority for the whole ticket.
+	items, _ := ticket["netAdjustments"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("netAdjustments detail: %s", rows[0].Payload)
+	}
+	item, _ := items[0].(map[string]any)
+	if item["mode"] != "amount" || item["amount"] != "1.5" || item["category"] != "WATER" || item["categoryName"] != "水分大" {
+		t.Fatalf("netAdjustments item: %s", rows[0].Payload)
 	}
 	if reopen["siteCode"] != "F001" || reopen["previousSiteCode"] != issue["siteCode"] || reopen["ticket"].(map[string]any)["previousTicketNo"] != issue["ticketNo"] {
 		t.Fatalf("reopen association: %s", rows[2].Payload)
@@ -245,6 +289,9 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if err := service.RunSyncV4(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.RunSyncV5(ctx); err != nil {
+		t.Fatal(err)
+	}
 	page, err := service.Tickets(ctx, weighing.PageQuery{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
@@ -265,8 +312,11 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	cloud.mu.Unlock()
 	// A config/data error is not retried automatically; an administrator may
 	// retry it explicitly after fixing the configuration.
-	db.Exec("UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE id=?", rows[0].ID)
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE id=?", rows[0].ID)
 	if err := service.RunSyncV4(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunSyncV5(ctx); err != nil {
 		t.Fatal(err)
 	}
 	rows = readSyncV4Rows(t, db)
@@ -284,8 +334,11 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if err := service.ConfigureMasterSync(ctx, true, offlineURL); err != nil {
 		t.Fatal(err)
 	}
-	db.Exec("UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE ticket_id IN (?,?)", oldID, newID)
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE ticket_id IN (?,?)", oldID, newID)
 	if err := service.RunSyncV4(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunSyncV5(ctx); err != nil {
 		t.Fatal(err)
 	}
 	rows = readSyncV4Rows(t, db)
@@ -307,9 +360,12 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if err := service.ConfigureMasterSync(ctx, true, remote.URL); err != nil {
 		t.Fatal(err)
 	}
-	db.Exec("UPDATE wb_ticket_sync_change_v4 SET status='pending', next_attempt_at=now(), attempts=0 WHERE status <> 'synced'")
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', next_attempt_at=now(), attempts=0 WHERE status <> 'synced'")
 	for i := 0; i < 5; i++ {
 		if err := service.RunSyncV4(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := service.RunSyncV5(ctx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -327,7 +383,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatal(err)
 	}
 	for _, ticket := range page.Records {
-		if (ticket.ID == oldID || ticket.ID == newID) && (ticket.SyncStatus != "synced" || ticket.SyncProtocol != 4) {
+		if (ticket.ID == oldID || ticket.ID == newID) && (ticket.SyncStatus != "synced" || ticket.SyncProtocol != 5) {
 			t.Fatalf("confirmed status: %+v", ticket)
 		}
 	}
@@ -338,11 +394,17 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if err := service.ConfigureMasterSync(ctx, false, remote.URL); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("UPDATE wb_ticket_sync_change_v4 SET status='pending', synced_at=NULL, received_at=NULL, next_attempt_at=now() WHERE id=?", rows[0].ID).Error; err != nil {
+	if err := (func() error {
+		bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', synced_at=NULL, received_at=NULL, next_attempt_at=now() WHERE id=?", rows[0].ID)
+		return nil
+	})(); err != nil {
 		t.Fatal(err)
 	}
 	beforeSwitch := cloud.count()
 	if err := service.RunSyncV4(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunSyncV5(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if cloud.count() != beforeSwitch {
@@ -357,6 +419,9 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if err := service.RunSyncV4(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err := service.RunSyncV5(ctx); err != nil {
+		t.Fatal(err)
+	}
 	if cloud.count() != beforeSwitch {
 		t.Fatal("upload resumed before the first master sync")
 	}
@@ -364,6 +429,9 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatal(err)
 	}
 	if err := service.RunSyncV4(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunSyncV5(ctx); err != nil {
 		t.Fatal(err)
 	}
 	rows = readSyncV4Rows(t, db)
@@ -393,7 +461,8 @@ func checkLiveSyncV4(t *testing.T, db *gorm.DB, service *weighing.Service, oldID
 	if err := db.Exec("UPDATE wb_master_sync_state SET bound=true, last_success=now() WHERE id=1").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("UPDATE wb_ticket_sync_change_v4 SET status='pending', category='', reason_code='', reason='', attempts=0, next_attempt_at=now(), synced_at=NULL, received_at=NULL").Error; err != nil {
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', category='', reason_code='', reason='', attempts=0, next_attempt_at=now(), synced_at=NULL, received_at=NULL")
+	if err := db.Exec("SELECT 1").Error; err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 5; i++ {
@@ -418,10 +487,16 @@ func checkLiveSyncV4(t *testing.T, db *gorm.DB, service *weighing.Service, oldID
 	}
 	// A repeated upload of the same saved change must return the original
 	// confirmation rather than create a second cloud change.
-	if err := db.Exec("UPDATE wb_ticket_sync_change_v4 SET status='pending', synced_at=NULL, received_at=NULL, next_attempt_at=now() WHERE id=?", rows[0].ID).Error; err != nil {
+	if err := (func() error {
+		bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', synced_at=NULL, received_at=NULL, next_attempt_at=now() WHERE id=?", rows[0].ID)
+		return nil
+	})(); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.RunSyncV4(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RunSyncV5(ctx); err != nil {
 		t.Fatal(err)
 	}
 	rows = readSyncV4Rows(t, db)
@@ -444,6 +519,9 @@ func checkReopenedVoid(t *testing.T, db *gorm.DB, address string, ticketID int64
 		if err := tx.Exec("UPDATE wb_master_sync_state SET bound=true, last_success=now() WHERE id=1").Error; err != nil {
 			return err
 		}
+		if err := tx.Exec("UPDATE wb_ticket_sync_change_v5 SET status='synced', synced_at=now(), received_at=now()").Error; err != nil {
+			return err
+		}
 		if err := tx.Exec("UPDATE wb_ticket_sync_change_v4 SET status='synced', synced_at=now(), received_at=now()").Error; err != nil {
 			return err
 		}
@@ -451,7 +529,7 @@ func checkReopenedVoid(t *testing.T, db *gorm.DB, address string, ticketID int64
 			return err
 		}
 		var row syncV4Row
-		if err := tx.Table("wb_ticket_sync_change_v4").Where("ticket_id=? AND change_type='void'", ticketID).Take(&row).Error; err != nil {
+		if err := tx.Table("wb_ticket_sync_change_v5").Where("ticket_id=? AND change_type='void'", ticketID).Take(&row).Error; err != nil {
 			return err
 		}
 		var payload struct {
@@ -470,13 +548,16 @@ func checkReopenedVoid(t *testing.T, db *gorm.DB, address string, ticketID int64
 			return fmt.Errorf("reopened void missing prior association or void info: %s", row.Payload)
 		}
 		// PostgreSQL now() is fixed at the start of this outer test transaction.
-		if err := tx.Exec("UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE id=?", row.ID).Error; err != nil {
+		if err := tx.Exec("UPDATE wb_ticket_sync_change_v5 SET next_attempt_at=now() WHERE id=?", row.ID).Error; err != nil {
 			return err
 		}
 		if err := testService.RunSyncV4(ctx); err != nil {
 			return err
 		}
-		if err := tx.Table("wb_ticket_sync_change_v4").Where("id=?", row.ID).Take(&row).Error; err != nil {
+		if err := testService.RunSyncV5(ctx); err != nil {
+			return err
+		}
+		if err := tx.Table("wb_ticket_sync_change_v5").Where("id=?", row.ID).Take(&row).Error; err != nil {
 			return err
 		}
 		if row.Status != "synced" {
@@ -510,7 +591,7 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 	}
 	latest := oldRows.Changes[len(oldRows.Changes)-1]
 	cloud.mu.Lock()
-	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":%q,"latestDigestVersion":2,"latestChangeType":"void","latestReceivedAt":"%s","changes":[{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"},{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"}]}`,
+	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":%q,"latestDigestVersion":3,"latestChangeType":"void","latestReceivedAt":"%s","changes":[{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"},{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"}]}`,
 		latest.SiteCode, latest.TicketNo, latest.Digest, time.Now().UTC().Format(time.RFC3339Nano),
 		oldRows.Changes[0].Digest, oldRows.Changes[0].TicketNo, time.Now().UTC().Format(time.RFC3339Nano),
 		latest.Digest, latest.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
@@ -551,7 +632,7 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 	// A cloud digest the factory does not know pauses the ticket and keeps a
 	// separate review record.
 	cloud.mu.Lock()
-	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":"%s","latestDigestVersion":2,"latestChangeType":"void","latestReceivedAt":"%s","changes":[]}`, latest.SiteCode, latest.TicketNo, strings.Repeat("0", 64), time.Now().UTC().Format(time.RFC3339Nano))
+	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":"%s","latestDigestVersion":3,"latestChangeType":"void","latestReceivedAt":"%s","changes":[]}`, latest.SiteCode, latest.TicketNo, strings.Repeat("0", 64), time.Now().UTC().Format(time.RFC3339Nano))
 	cloud.mu.Unlock()
 	result, err = service.ReconcileSyncTicket(ctx, oldID, "manual")
 	if err != nil {
@@ -614,7 +695,7 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 
 	// Recheck succeeds only after the cloud difference is gone.
 	cloud.mu.Lock()
-	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":%q,"latestDigestVersion":2,"latestChangeType":"void","latestReceivedAt":"%s","changes":[{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"},{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"}]}`,
+	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":%q,"latestDigestVersion":3,"latestChangeType":"void","latestReceivedAt":"%s","changes":[{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"},{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"}]}`,
 		latest.SiteCode, latest.TicketNo, latest.Digest, time.Now().UTC().Format(time.RFC3339Nano),
 		oldRows.Changes[0].Digest, oldRows.Changes[0].TicketNo, time.Now().UTC().Format(time.RFC3339Nano),
 		latest.Digest, latest.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
@@ -633,7 +714,7 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 	}
 	// A later recurrence must create a new review, preserving the old conclusion.
 	cloud.mu.Lock()
-	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":"%s","latestDigestVersion":2,"latestChangeType":"void","latestReceivedAt":"%s","changes":[]}`, latest.SiteCode, latest.TicketNo, strings.Repeat("0", 64), time.Now().UTC().Format(time.RFC3339Nano))
+	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":"%s","latestDigestVersion":3,"latestChangeType":"void","latestReceivedAt":"%s","changes":[]}`, latest.SiteCode, latest.TicketNo, strings.Repeat("0", 64), time.Now().UTC().Format(time.RFC3339Nano))
 	cloud.mu.Unlock()
 	if result, err := service.ReconcileSyncTicket(ctx, oldID, "manual"); err != nil || result.Status != "conflict" {
 		t.Fatalf("recurrent conflict: %+v %v", result, err)
@@ -658,7 +739,7 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 		t.Fatal(err)
 	}
 	cloud.mu.Lock()
-	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":%q,"latestDigestVersion":2,"latestChangeType":"void","latestReceivedAt":"%s","changes":[{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"},{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"}]}`,
+	cloud.ticketResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"ticketNo":%q,"status":"void","latestDigest":%q,"latestDigestVersion":3,"latestChangeType":"void","latestReceivedAt":"%s","changes":[{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"},{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"}]}`,
 		latest.SiteCode, latest.TicketNo, latest.Digest, time.Now().UTC().Format(time.RFC3339Nano), oldRows.Changes[0].Digest, oldRows.Changes[0].TicketNo, time.Now().UTC().Format(time.RFC3339Nano), latest.Digest, latest.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
 	cloud.mu.Unlock()
 	if _, err := service.RecheckSyncReview(ctx, recurring, audit.Event{}); err != nil {
@@ -708,7 +789,7 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 	// Read-only confirmation by the original site code and digest supports a
 	// lost acknowledgement after a site-code change.
 	cloud.mu.Lock()
-	cloud.lookupResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"digest":%q,"confirmation":{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":2,"schemaVersion":4,"receivedAt":"%s"}}`, latest.SiteCode, latest.Digest, latest.Digest, latest.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
+	cloud.lookupResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"digest":%q,"confirmation":{"digest":%q,"ticketNo":%q,"changeType":"void","digestVersion":3,"schemaVersion":5,"receivedAt":"%s"}}`, latest.SiteCode, latest.Digest, latest.Digest, latest.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
 	cloud.mu.Unlock()
 	lookup, err := service.LookupSyncConfirmation(ctx, latest.SiteCode, latest.Digest)
 	if err != nil || !lookup.Found || lookup.Confirmation == nil || lookup.Confirmation.Digest != latest.Digest {
@@ -726,13 +807,13 @@ func checkSyncV4Reconciliation(t *testing.T, db *gorm.DB, service *weighing.Serv
 func checkCloudConfirmationWithoutTicket(t *testing.T, db *gorm.DB, cloud *fakeSyncV4Cloud, address string, ticketID int64) {
 	t.Helper()
 	var issue syncV4Row
-	if err := db.Table("wb_ticket_sync_change_v4").Where("ticket_id=? AND change_type='issue'", ticketID).Take(&issue).Error; err != nil {
+	if err := db.Table("wb_ticket_sync_change_v5").Where("ticket_id=? AND change_type='issue'", ticketID).Take(&issue).Error; err != nil {
 		t.Fatal(err)
 	}
 	cloud.mu.Lock()
 	previousTicket, previousLookup := cloud.ticketResponse, cloud.lookupResponse
 	cloud.ticketResponse = fmt.Sprintf(`{"found":false,"siteCode":%q,"ticketNo":%q}`, issue.SiteCode, issue.TicketNo)
-	cloud.lookupResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"digest":%q,"confirmation":{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":2,"schemaVersion":4,"receivedAt":%q}}`, issue.SiteCode, issue.Digest, issue.Digest, issue.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
+	cloud.lookupResponse = fmt.Sprintf(`{"found":true,"siteCode":%q,"digest":%q,"confirmation":{"digest":%q,"ticketNo":%q,"changeType":"issue","digestVersion":3,"schemaVersion":5,"receivedAt":%q}}`, issue.SiteCode, issue.Digest, issue.Digest, issue.TicketNo, time.Now().UTC().Format(time.RFC3339Nano))
 	cloud.mu.Unlock()
 	defer func() {
 		cloud.mu.Lock()

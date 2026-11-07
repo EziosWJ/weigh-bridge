@@ -135,14 +135,14 @@ func checkWeighingFoundation(t *testing.T, database *platformdatabase.Database, 
 	if syncPage.Total == 0 {
 		t.Fatal("sync ticket list returned no tickets")
 	}
-	var sawV4 bool
+	var sawDigest bool
 	for _, ticket := range syncPage.Records {
-		if ticket.SyncProtocol == 4 {
-			sawV4 = true
+		if ticket.SyncProtocol == 4 || ticket.SyncProtocol == 5 {
+			sawDigest = true
 			break
 		}
 	}
-	if !sawV4 {
+	if !sawDigest {
 		t.Fatalf("sync ticket list did not expose digest-protocol tickets: %+v", syncPage.Records)
 	}
 	created := serveJSON(router, http.MethodPost, "/api/system/user", `{"username":"weighing-operator","nickname":"操作员","status":1}`, adminToken)

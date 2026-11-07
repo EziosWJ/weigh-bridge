@@ -120,8 +120,8 @@ func TestPostgresManualReturnAndTermination(t *testing.T) {
 			} `json:"ticket"`
 		}
 		var raw string
-		if err := f.database.GORM.Table("wb_ticket_sync_change_v4").Select("payload").Where("ticket_id=?", result.TicketID).Take(&raw).Error; err != nil {
-			t.Fatalf("load sync payload: %v", err)
+		if err := f.database.GORM.Raw("SELECT payload::text FROM wb_ticket_sync_change_v5 WHERE ticket_id=? UNION ALL SELECT payload::text FROM wb_ticket_sync_change_v4 WHERE ticket_id=? LIMIT 1", result.TicketID, result.TicketID).Scan(&raw).Error; err != nil || raw == "" {
+			t.Fatalf("load sync payload: %s %v", raw, err)
 		}
 		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
 			t.Fatal(err)

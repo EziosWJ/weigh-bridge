@@ -95,7 +95,12 @@ func enqueueTicketChange(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, act
 	if protocol == 3 {
 		return enqueueTicketChangeV3(tx, ticket, previous, kind, actor)
 	}
-	return enqueueTicketChangeV4(tx, ticket, previous, kind, actor)
+	// v4 tickets keep their protocol; anything first issued from now on uses
+	// v5 so the multi-item detail never degrades to a single-item payload.
+	if protocol == 4 {
+		return enqueueTicketChangeV4(tx, ticket, previous, kind, actor)
+	}
+	return enqueueTicketChangeV5(tx, ticket, previous, kind, actor)
 }
 
 func ticketSyncProtocol(tx *gorm.DB, ticket Ticket, previous *Ticket, kind string) (int, error) {
@@ -119,7 +124,7 @@ func ticketSyncProtocol(tx *gorm.DB, ticket Ticket, previous *Ticket, kind strin
 	if count > 0 {
 		return 4, nil
 	}
-	return 4, nil
+	return 5, nil
 }
 
 func enqueueTicketChangeV3(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, actor string) error {

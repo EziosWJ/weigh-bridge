@@ -6,9 +6,9 @@ import { toast } from '@/components/common/toast-store';
 import { Field } from '@/components/common/field';
 import { Input } from '@/components/ui/input';
 import { plateError } from '@/lib/weighing/plate';
-import { adjustedWeights, formatWeight, netAdjustmentText, originalWeights, resolveNetAdjustment } from '@/lib/weighing/weights';
+import { adjustedWeights, formatWeight, netAdjustmentText, originalWeights, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { useWeighingStore } from '@/store/weighing-store';
-import { emptyTaskInput, type FinalWeightInput, type NetAdjustmentInput, type TaskInput } from '@/types/weighing';
+import { emptyTaskInput, type FinalWeightInput, type NetAdjustmentsInput, type TaskInput } from '@/types/weighing';
 import { BusinessFields } from './shared';
 import { GrossTareCorrectionFields, NetAdjustmentFields } from './deduction-fields';
 
@@ -27,7 +27,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
   const [input, setInput] = useState<TaskInput>(emptyTaskInput);
   const [reason, setReason] = useState('');
   const [finalWeights, setFinalWeights] = useState<FinalWeightInput>({ gross: 0, tare: 0 });
-  const [netAdjustment, setNetAdjustment] = useState<NetAdjustmentInput>({ mode: 'amount', amount: 0, rateBp: 0, category: '', remark: '' });
+  const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>([]);
   const [error, setError] = useState('');
   const basis = useRef(data);
   const lastLoaded = useRef<string | null>(null);
@@ -79,13 +79,21 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
         tare: changed && original ? original.tare : loadedTicket.tare,
         reason: '',
       });
-      setNetAdjustment({
-        mode: loadedTicket.netAdjustmentMode ?? 'amount',
-        amount: loadedTicket.netAdjustment ?? 0,
-        rateBp: loadedTicket.netAdjustmentRateBp ?? 0,
-        category: loadedTicket.netAdjustmentCategory ?? '',
-        remark: loadedTicket.adjustment?.reason ?? '',
-      });
+      const loadedItems = loadedTicket.netAdjustmentItems?.length
+        ? loadedTicket.netAdjustmentItems
+        // Historical single-item tickets keep the fact in the legacy columns;
+        // carry it over as one row so a reopen can edit it without inventing
+        // additional detail.
+        : (loadedTicket.netAdjustment ?? 0) !== 0
+          ? [{ mode: loadedTicket.netAdjustmentMode ?? 'amount', amount: loadedTicket.netAdjustment ?? 0, rateBp: loadedTicket.netAdjustmentRateBp, category: loadedTicket.netAdjustmentCategory, categoryName: loadedTicket.netAdjustmentCategoryName, remark: loadedTicket.adjustment?.reason }]
+          : [];
+      setNetAdjustments(loadedItems.map(item => ({
+        mode: item.mode,
+        amount: item.mode === 'amount' ? (item.amount ?? 0) : 0,
+        rateBp: item.mode === 'percent' ? (item.rateBp ?? 0) : 0,
+        category: item.category ?? '',
+        remark: item.remark ?? '',
+      })));
       basis.current = current;
     })().catch(failure => {
       if (!cancelled) {
@@ -137,7 +145,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
       }
       if (correctedBasis) {
         try {
-          resolveNetAdjustment(correctedBasis, netAdjustment, true);
+          resolveNetAdjustments(correctedBasis, netAdjustments, true);
         } catch (failure) {
           setError(failure instanceof Error ? failure.message : '请核对净重调整。');
           return;
@@ -166,7 +174,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
         reason: reason.trim(),
         evidenceValid: true,
         finalWeights,
-        netAdjustment,
+        netAdjustments,
       }, basis.current);
       const latest = useWeighingStore.getState().data;
       setConfirming(false);
@@ -215,7 +223,7 @@ export function TicketReopenDialog({ ticketId, onClose }: { ticketId: string | n
           <Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(ticket.taskId)}`}>需要实际单磅重称：前往原任务采集，完成后返回本单重开</Link>
           {currentOriginal && <>
             <GrossTareCorrectionFields original={currentOriginal} value={finalWeights} onChange={setFinalWeights} />
-            {correctedBasis && <NetAdjustmentFields basis={correctedBasis} value={netAdjustment} onChange={setNetAdjustment} allowUpward />}
+            {correctedBasis && <NetAdjustmentFields basis={correctedBasis} value={netAdjustments} onChange={setNetAdjustments} allowUpward />}
           </>}
         </>}
         <Field label="操作原因 / 核实说明" htmlFor="ticket-operation-reason" required><Input id="ticket-operation-reason" required value={reason} onChange={event => setReason(event.target.value)} /></Field>

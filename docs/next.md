@@ -1,8 +1,13 @@
 # 当前实现、验证与剩余工作
 
-## 2026-11-07 多项净重调整需求
+## 2026-11-07 多项净重调整
 
-已记录同单多项调整与厂云同步方案，多个比例项的计算基数待客户确认；现有实现仍为单项调整，拟议新协议尚未实现、联调或部署。业务范围见[业务规格](requirements/weighing-business-spec.md)，跨端方案见[厂云同步契约](requirements/cloud-sync-contract.md)。
+- 客户确认多个比例项均以调整前净重为基数、各自四舍五入到 0.001 吨后相加。同一单据现可添加、删除多项净重调整，同时支持按比例扣水分和按重量扣杂质；每项保存方式、录入值、折算量、类别名称快照及备注，单据保存有符号合计。
+- 正常回磅、人工补录回磅及更正重开均支持多项；正常出单各项只能扣减，仅更正重开允许上调；合计后净重须大于零。重开带出上版明细供编辑，新单完整保存本版明细，原单不变。历史单项继续按原字段展示，不补造明细。
+- 列表、汇总和纸单显示合计；详情展示各项；CSV 单据导出保持合计列，多项目追加明细行。
+- 厂云同步新增 `schemaVersion 5`、`digestVersion 3`：`ticket.netAdjustments` 必填数组，摘要覆盖明细及顺序，保留 `netAdjustment` 合计与 `finalNet`。已入队的旧变化保留原协议、载荷和摘要；新变化一律入 v5 队列表，云端支持前不降级、不丢明细。云端实现、双端契约测试和真实联调尚未完成，不能视为已部署协议。
+- 实现：migration `00039_net_adjustment_items_v5.sql`；后端 weighing 包新增多项解析、v5 入队／上传／对账／重试；前端多项录入、重开带出上版明细、补录回磅调整和详情明细。决策见 [ADR 0036](adr/0036-multi-item-net-adjustment.md)。
+- 验证：`go test ./...`、`task backend:check`、`task db:integration:postgres`（隔离 PostgreSQL 全量集成）、`task frontend:lint`、`task frontend:build`、`npm run test:weighing`（32 项，含多项比例独立舍入）通过。新增 v5 摘要向量 `digest_v3_vectors.json`。未做现场验收，未连接真实业务库或云端，未部署。
 
 ## 2026-11-07 工作台多路画面布局调整
 

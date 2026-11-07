@@ -1,4 +1,4 @@
-import type { FinalWeightInput, NetAdjustmentInput, WeighRecord, WeightDeduction, WeightValues } from '../../types/weighing';
+import type { FinalWeightInput, NetAdjustmentInput, NetAdjustmentsInput, WeighRecord, WeightDeduction, WeightValues } from '../../types/weighing';
 
 export const weightInMilliTonnes = (value: number) => {
   if (!Number.isFinite(value)) throw new Error('重量必须是有效吨数');
@@ -133,4 +133,25 @@ export function netAdjustedWeights(basis: WeightValues, input: NetAdjustmentInpu
 export function netAdjustmentText(amount: number): string {
   if (!Number.isFinite(amount) || amount === 0) return '未调整';
   return `${formatWeight(Math.abs(amount))}（${amount > 0 ? '扣减' : '上调'}）`;
+}
+
+/** Resolves each item independently against the shared pre-adjustment net basis; each percent item rounds to 0.001 吨 on its own, then the signed amounts add up. */
+export function resolveNetAdjustments(basis: WeightValues, inputs: NetAdjustmentsInput, allowUpward = false): { amount: number; items: ResolvedNetAdjustment[] } {
+  if (![basis.gross, basis.tare, basis.net].every(Number.isFinite) || basis.tare <= 0 || basis.net <= 0) {
+    throw new Error('原始净重必须大于零。请返回核对运输方向和两次称重，待设备提供正确重量后重新采集；首次重量有误时须重称，不能通过调整净重出单。');
+  }
+  const grossMilli = weightInMilliTonnes(basis.gross);
+  const netMilli = grossMilli - weightInMilliTonnes(basis.tare);
+  if (netMilli <= 0) throw new Error('原始毛重必须大于原始皮重');
+  let total = 0;
+  const items: ResolvedNetAdjustment[] = [];
+  for (const input of inputs ?? []) {
+    const resolved = resolveNetAdjustment(basis, input, allowUpward);
+    if (resolved.amount === 0) continue;
+    total += weightInMilliTonnes(resolved.amount);
+    items.push(resolved);
+  }
+  if (items.length === 0) return { amount: 0, items: [] };
+  if (netMilli - total <= 0) throw new Error('多项调整合计后净重必须大于零');
+  return { amount: tonnes(total), items };
 }

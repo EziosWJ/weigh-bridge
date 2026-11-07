@@ -6,7 +6,7 @@ import { plateError } from '@/lib/weighing/plate';
 import { workflowApi, task as taskView, ticket as ticketView, type CommandResult, type WireSample, type WireSession, type WireTicket } from '@/api/weighing-workflow';
 import type { ApiPageResult } from '@/types/api';
 import type { WeighingCapabilities } from '@/api/weighing';
-import { emptyTaskInput, type DeviceConfig, type DeviceState, type NetAdjustmentInput, type TaskInput, type TransportTask, type WeighingCommand, type WeighingState } from '@/types/weighing';
+import { emptyTaskInput, type DeviceConfig, type DeviceState, type NetAdjustmentInput, type NetAdjustmentsInput, type TaskInput, type TransportTask, type WeighingCommand, type WeighingState } from '@/types/weighing';
 import { useAuthStore } from './auth-store';
 import { useWeighingMasterStore } from './weighing-master-store';
 
@@ -21,8 +21,7 @@ try {
 } catch { /* An in-memory client still obeys the server lease. */ }
 const defaults = (): DeviceConfig => ({ role: 'operator', weight: 0, stable: false, timedOut: true, deviceError: false, online: false, evidence: false });
 function empty(): WeighingState { return { version: 3, categories: [], materials: [], parties: [], tasks: [], tickets: [], config: defaults(), draft: emptyTaskInput(), draftRequestId: createId(), firstRequests: {}, sampleReady: false, owner: null, history: [], sequence: 0 }; }
-function netAdjustmentBody(input?: NetAdjustmentInput): Record<string, unknown> | undefined {
-  if (!input) return undefined;
+function netAdjustmentItemBody(input: NetAdjustmentInput): Record<string, unknown> | undefined {
   const value = input.mode === 'percent' ? input.rateBp : input.amount;
   if (!Number.isFinite(value) || value === 0) return undefined;
   return {
@@ -31,6 +30,12 @@ function netAdjustmentBody(input?: NetAdjustmentInput): Record<string, unknown> 
     category: input.category,
     remark: input.remark ?? '',
   };
+}
+
+/** Builds the multi-item request body; entries that request nothing are dropped so an untouched row never fabricates a detail. */
+function netAdjustmentsBody(inputs?: NetAdjustmentsInput): Record<string, unknown>[] | undefined {
+  const items = (inputs ?? []).map(netAdjustmentItemBody).filter(Boolean) as Record<string, unknown>[];
+  return items.length > 0 ? items : undefined;
 }
 interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print' }
 interface UIState { draft: TaskInput; draftRequestId: string; pending: PendingRequest | null }
@@ -339,8 +344,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
           if (!command.checked || !sample || !lease?.sessionToken) throw new Error('请重新采集并完成人工核对');
           const current = data.tasks.find(t => t.id === command.taskId);
           const requestId = createId();
-          const adjustment = netAdjustmentBody(command.netAdjustment);
-          const body = { scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(adjustment ? { netAdjustment: adjustment } : {}) };
+          const adjustments = netAdjustmentsBody(command.netAdjustments ?? (command.netAdjustment ? [command.netAdjustment] : undefined));
+          const body = { scaleCode: lease.scaleCode, ...sessionInput(), sampleId: sample.id, version: current?.version, requestId, checks, ...(adjustments ? { netAdjustments: adjustments } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/second-confirmation`, body, requestId, taskId: command.taskId, stage: 'second' }); break;
         }
         case 'correctTask':
@@ -354,7 +359,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
           const current = data.tasks.find(t => t.id === command.taskId);
           if (!current) throw new Error('请先刷新任务详情');
           const requestId = createId();
-          const body = { requestId, version: current.version, weight: command.weight, returnedAt: command.returnedAt, reason: command.reason };
+          const adjustments = netAdjustmentsBody(command.netAdjustments);
+          const body = { requestId, version: current.version, weight: command.weight, returnedAt: command.returnedAt, reason: command.reason, ...(adjustments ? { netAdjustments: adjustments } : {}) };
           await send({ actorId, path: `/tasks/${command.taskId}/manual-returns`, body, requestId, taskId: command.taskId, stage: 'second', operation: 'manual-return' }); break;
         }
         case 'voidTicket': {
@@ -368,8 +374,8 @@ export const useWeighingStore = create<Store>((set, get) => ({
           const current = data.tasks.find(t => t.id === previous?.taskId);
           if (!previous || !current) throw new Error('请先刷新原任务与单据');
           const requestId = createId();
-          const adjustment = netAdjustmentBody(command.netAdjustment);
-          const body = { requestId, taskVersion: current.version, reason: command.reason, business: businessInput(command.input), basisValid: command.evidenceValid, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}), ...(adjustment ? { netAdjustment: adjustment } : {}) };
+          const adjustments = netAdjustmentsBody(command.netAdjustments ?? (command.netAdjustment ? [command.netAdjustment] : undefined));
+          const body = { requestId, taskVersion: current.version, reason: command.reason, business: businessInput(command.input), basisValid: command.evidenceValid, ...(command.finalWeights ? { finalWeights: { gross: String(command.finalWeights.gross), tare: String(command.finalWeights.tare), remark: command.finalWeights.reason ?? '' } } : {}), ...(adjustments ? { netAdjustments: adjustments } : {}) };
           await send({ actorId, path: `/tickets/${command.ticketId}/reopen`, body, requestId, taskId: current.id, stage: 'second', operation: 'reopen' }); break;
         }
         case 'reweigh': {

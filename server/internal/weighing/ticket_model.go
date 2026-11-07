@@ -36,26 +36,30 @@ type Ticket struct {
 	NetAdjustmentRateBP       *int             `json:"netAdjustmentRateBp"`
 	NetAdjustmentCategory     string           `json:"netAdjustmentCategory"`
 	NetAdjustmentCategoryName string           `json:"netAdjustmentCategoryName"`
-	AdjustmentRemark          string           `json:"adjustmentRemark"`
-	AdjustedBy                *int64           `json:"adjustedBy"`
-	AdjustedAt                *time.Time       `json:"adjustedAt"`
-	IssuedAt                  time.Time        `json:"issuedAt"`
-	IssuedBy                  int64            `json:"issuedBy"`
-	IssuerName                string           `json:"issuerName"`
-	TicketTitle               string           `json:"ticketTitle"`
-	VoidedAt                  *time.Time       `json:"voidedAt"`
-	VoidedBy                  *int64           `json:"voidedBy"`
-	VoidReason                string           `json:"voidReason"`
+	// NetAdjustmentItems is the multi-item detail snapshot. Legacy tickets
+	// have an empty list and keep displaying their single-item fields as-is.
+	NetAdjustmentItems []NetAdjustmentItem `json:"netAdjustmentItems" gorm:"column:net_adjustment_items;serializer:json"`
+	AdjustmentRemark   string              `json:"adjustmentRemark"`
+	AdjustedBy         *int64              `json:"adjustedBy"`
+	AdjustedAt         *time.Time          `json:"adjustedAt"`
+	IssuedAt           time.Time           `json:"issuedAt"`
+	IssuedBy           int64               `json:"issuedBy"`
+	IssuerName         string              `json:"issuerName"`
+	TicketTitle        string              `json:"ticketTitle"`
+	VoidedAt           *time.Time          `json:"voidedAt"`
+	VoidedBy           *int64              `json:"voidedBy"`
+	VoidReason         string              `json:"voidReason"`
 }
 
 func (Ticket) TableName() string { return "wb_ticket" }
 
 type PriorFinalWeights struct {
-	Gross         Tonnes           `json:"gross" swaggertype:"string"`
-	Tare          Tonnes           `json:"tare" swaggertype:"string"`
-	Net           Tonnes           `json:"net" swaggertype:"string"`
-	NetAdjustment WeightDifference `json:"netAdjustment" swaggertype:"string"`
-	CategoryName  string           `json:"categoryName"`
+	Gross         Tonnes              `json:"gross" swaggertype:"string"`
+	Tare          Tonnes              `json:"tare" swaggertype:"string"`
+	Net           Tonnes              `json:"net" swaggertype:"string"`
+	NetAdjustment WeightDifference    `json:"netAdjustment" swaggertype:"string"`
+	CategoryName  string              `json:"categoryName"`
+	Items         []NetAdjustmentItem `json:"items"`
 }
 type TicketView struct {
 	PrintSheet    *PrintSheet        `json:"printSheet,omitempty"`

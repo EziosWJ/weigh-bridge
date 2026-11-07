@@ -249,6 +249,7 @@ func main() {
 			for {
 				_ = weighService.RunTicketSync(monitoringContext)
 				_ = weighService.RunSyncV4(monitoringContext)
+				_ = weighService.RunSyncV5(monitoringContext)
 				select {
 				case <-monitoringContext.Done():
 					return

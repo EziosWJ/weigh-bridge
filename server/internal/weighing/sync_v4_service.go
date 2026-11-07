@@ -195,7 +195,7 @@ func decideSyncReconcile(changes []ticketSyncChangeV4, cloud syncCloudTicket, tr
 		decision.Message = "云端存在单据但缺少变化摘要，需人工核查"
 		return decision
 	}
-	if cloud.LatestDigestVersion == nil || *cloud.LatestDigestVersion != SyncDigestVersion2 {
+	if cloud.LatestDigestVersion == nil || (*cloud.LatestDigestVersion != SyncDigestVersion2 && *cloud.LatestDigestVersion != SyncDigestVersion3) {
 		decision.Status = SyncReconcileNeedsReview
 		decision.ReasonCode = "digest_version_uncomparable"
 		decision.Message = "摘要规则版本不同或缺失，无法直接比较"
@@ -345,7 +345,7 @@ func (s *Service) reconcileSyncTicket(ctx context.Context, ticketID int64, trigg
 	if !ok {
 		return SyncReconcileResult{}, ErrForbidden
 	}
-	changes, err := repo.syncChangesV4ForTicket(ctx, ticketID)
+	changes, changesV5, err := repo.ticketSyncChanges(ctx, ticketID)
 	if err != nil {
 		return SyncReconcileResult{}, err
 	}
@@ -362,7 +362,7 @@ func (s *Service) reconcileSyncTicket(ctx context.Context, ticketID int64, trigg
 	}
 	// The business transaction can add a later void while the cloud request is
 	// in flight; judge the result against the latest local changes.
-	changes, err = repo.syncChangesV4ForTicket(ctx, ticketID)
+	changes, changesV5, err = repo.ticketSyncChanges(ctx, ticketID)
 	if err != nil || len(changes) == 0 {
 		if err == nil {
 			err = errSyncNotTracked
@@ -380,7 +380,7 @@ func (s *Service) reconcileSyncTicket(ctx context.Context, ticketID int64, trigg
 	if recheck && decision.Resend {
 		applyDecision.Resend = false
 	}
-	if err := s.applyReconcileDecision(context.WithoutCancel(ctx), repo, ticketID, changes, applyDecision, ref, cloud, detail, now, trigger); err != nil {
+	if err := s.applyReconcileDecision(context.WithoutCancel(ctx), repo, ticketID, changes, changesV5, applyDecision, ref, cloud, detail, now, trigger); err != nil {
 		return SyncReconcileResult{}, err
 	}
 	if err := repo.writeSyncLog(context.WithoutCancel(ctx), trigger, "reconcile", ref.TicketNo, localLatestDigest(changes), decisionCategory(decision), decision.Status != SyncReconcileUnknown, decision.Message); err != nil {
@@ -453,24 +453,24 @@ func decisionCategory(decision reconcileDecision) string {
 	}
 }
 
-func (s *Service) applyReconcileDecision(ctx context.Context, repo *Repository, ticketID int64, changes []ticketSyncChangeV4, decision reconcileDecision, ref syncTicketRef, cloud syncCloudTicket, detail []byte, now time.Time, trigger string) error {
+func (s *Service) applyReconcileDecision(ctx context.Context, repo *Repository, ticketID int64, changes []ticketSyncChangeV4, changesV5 bool, decision reconcileDecision, ref syncTicketRef, cloud syncCloudTicket, detail []byte, now time.Time, trigger string) error {
 	localLatest := changes[len(changes)-1]
 	if decision.Resend {
-		if err := repo.resetTicketChangesForResend(ctx, ticketID); err != nil {
+		if err := repo.resetTicketSyncChangesForResend(ctx, ticketID, changesV5); err != nil {
 			return err
 		}
 	} else {
 		for digest, receivedAt := range decision.Confirmed {
 			for _, change := range changes {
 				if change.Digest == digest && change.Status != SyncChangeSynced && change.Status != SyncChangeConflict {
-					if err := repo.markSyncChangeV4Synced(ctx, change.ID, receivedAt, now); err != nil {
+					if err := repo.markTicketSyncChangeSynced(ctx, change.ID, changesV5, receivedAt, now); err != nil {
 						return err
 					}
 				}
 			}
 		}
 		if decision.PauseChangeID > 0 {
-			if err := repo.pauseSyncChangeV4(ctx, decision.PauseChangeID, SyncCategoryConflict, decision.ReasonCode, decision.Message); err != nil {
+			if err := repo.pauseTicketSyncChange(ctx, decision.PauseChangeID, changesV5, SyncCategoryConflict, decision.ReasonCode, decision.Message); err != nil {
 				return err
 			}
 		}
@@ -627,7 +627,7 @@ func (s *Service) ReconcileSyncRange(ctx context.Context, from, to string, trigg
 func (s *Service) reconcileBatchItem(ctx context.Context, repo *Repository, ticketID int64, ref syncTicketRef, cloud syncCloudTicket, trigger string) (reconcileDecision, error) {
 	s.ticketSyncMu.Lock()
 	defer s.ticketSyncMu.Unlock()
-	changes, err := repo.syncChangesV4ForTicket(ctx, ticketID)
+	changes, changesV5, err := repo.ticketSyncChanges(ctx, ticketID)
 	if err != nil {
 		return reconcileDecision{}, err
 	}
@@ -642,7 +642,7 @@ func (s *Service) reconcileBatchItem(ctx context.Context, repo *Repository, tick
 		if cloudErr != nil {
 			cloud = syncCloudTicket{SiteCode: ref.SiteCode, TicketNo: ref.TicketNo, Error: cloudErr}
 		}
-		changes, err = repo.syncChangesV4ForTicket(ctx, ticketID)
+		changes, changesV5, err = repo.ticketSyncChanges(ctx, ticketID)
 		if err != nil {
 			return reconcileDecision{}, err
 		}
@@ -655,7 +655,7 @@ func (s *Service) reconcileBatchItem(ctx context.Context, repo *Repository, tick
 	if err != nil {
 		return reconcileDecision{}, err
 	}
-	if err := s.applyReconcileDecision(context.WithoutCancel(ctx), repo, ticketID, changes, decision, ref, cloud, detail, time.Now().UTC(), trigger); err != nil {
+	if err := s.applyReconcileDecision(context.WithoutCancel(ctx), repo, ticketID, changes, changesV5, decision, ref, cloud, detail, time.Now().UTC(), trigger); err != nil {
 		return reconcileDecision{}, err
 	}
 	return decision, nil
@@ -800,9 +800,19 @@ func (s *Service) RetrySyncChange(ctx context.Context, changeID int64, e audit.E
 	if !ok {
 		return SyncRetryResult{}, ErrForbidden
 	}
-	change, err := repo.syncChangeV4ByID(ctx, changeID)
-	if err != nil {
+	changeV4, err := repo.syncChangeV4ByID(ctx, changeID)
+	v5Change, v5Err := repo.syncChangeV5ByID(ctx, changeID)
+	if err != nil && v5Err != nil {
 		return SyncRetryResult{}, err
+	}
+	change, changesV5 := changeV4, false
+	if v5Err == nil {
+		change = ticketSyncChangeV4{
+			ID: v5Change.ID, TicketID: v5Change.TicketID, PreviousTicketID: v5Change.PreviousTicketID,
+			Digest: v5Change.Digest, SiteCode: v5Change.SiteCode, TicketNo: v5Change.TicketNo,
+			ChangeType: v5Change.ChangeType, Status: v5Change.Status,
+		}
+		changesV5 = true
 	}
 	if change.Status == SyncChangeSynced {
 		return SyncRetryResult{}, RejectionError("该变化已确认，无需重试")
@@ -817,20 +827,35 @@ func (s *Service) RetrySyncChange(ctx context.Context, changeID int64, e audit.E
 	if blocking {
 		return SyncRetryResult{}, RejectionError("该单据存在未解除的冲突，请先重新核查")
 	}
-	waiting, err := repo.changeWaitsForPredecessor(ctx, change)
+	waiting, err := repo.changeWaitsForPredecessorAny(ctx, change, changesV5)
 	if err != nil {
 		return SyncRetryResult{}, err
 	}
 	now := time.Now().UTC()
 	if err := repo.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&ticketSyncChangeV4{}).Where("id = ? AND status <> 'synced'", change.ID).Updates(map[string]any{
-			"status":          SyncChangePending,
-			"category":        "",
-			"reason_code":     "",
-			"reason":          "",
-			"next_attempt_at": now,
-		}).Error; err != nil {
-			return err
+		retryTable := &ticketSyncChangeV4{}
+		if changesV5 {
+			retryTable = nil
+			if err := tx.Model(&ticketSyncChangeV5{}).Where("id = ? AND status <> 'synced'", change.ID).Updates(map[string]any{
+				"status":          SyncChangePending,
+				"category":        "",
+				"reason_code":     "",
+				"reason":          "",
+				"next_attempt_at": now,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		if retryTable != nil {
+			if err := tx.Model(retryTable).Where("id = ? AND status <> 'synced'", change.ID).Updates(map[string]any{
+				"status":          SyncChangePending,
+				"category":        "",
+				"reason_code":     "",
+				"reason":          "",
+				"next_attempt_at": now,
+			}).Error; err != nil {
+				return err
+			}
 		}
 		e.Action = "ticket-sync.retry"
 		e.Resource = "weighing.ticket-sync"

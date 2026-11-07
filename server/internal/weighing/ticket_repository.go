@@ -101,7 +101,36 @@ func roundRatio(numerator, denominator int64) int64 {
 	return -((-numerator + denominator/2) / denominator)
 }
 
+// singleOrNull keeps the legacy single-item resolution for callers that have
+// not moved to the item list.
+func singleOrNull(list NetAdjustmentsInput) *NetAdjustmentInput {
+	if len(list) == 1 {
+		return &list[0]
+	}
+	return nil
+}
+
+// adjustmentEntries merges the legacy single item and the multi-item list.
+// When both are present the multi-item list wins; an entry that requested
+// nothing is dropped so an untouched legacy field never fabricates a detail.
+func adjustmentEntries(single *NetAdjustmentInput, list NetAdjustmentsInput) NetAdjustmentsInput {
+	if len(list) > 0 {
+		return list
+	}
+	if single != nil && single.Requested() {
+		return NetAdjustmentsInput{*single}
+	}
+	return nil
+}
+
 func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjustment *NetAdjustmentInput, categoryName string, allowUpward, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
+	return makeTicketWithItems(task, first, second, final, adjustmentEntries(adjustment, nil), categoryName, allowUpward, canAdjust, actor, name, previous)
+}
+
+// makeTicketWithItems is the multi-item entry. categoryName is the legacy
+// single-item snapshot name, kept only for callers that still pass one item;
+// multi-item categories resolve through resolveItems.
+func makeTicketWithItems(task Task, first, second WeighRecord, final *FinalWeights, adjustments NetAdjustmentsInput, categoryName string, allowUpward, canAdjust bool, actor int64, name string, previous *Ticket) (Ticket, error) {
 	gross, tare := first.Weight, second.Weight
 	if task.Direction == "outbound" {
 		gross, tare = second.Weight, first.Weight
@@ -116,18 +145,32 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjus
 	if values.Gross <= 0 || values.Tare <= 0 || values.Gross <= values.Tare || !maxLength(values.Remark, 2000) {
 		return Ticket{}, ErrWeight
 	}
-	if adjustment != nil && !maxLength(adjustment.Remark, 2000) {
-		return Ticket{}, ErrWeight
+	for _, entry := range adjustments {
+		if !maxLength(entry.Remark, 2000) {
+			return Ticket{}, ErrWeight
+		}
 	}
-	amount, mode, rateBP, err := resolveNetAdjustment(adjustment, values.Gross-values.Tare, allowUpward)
+	items, amount, err := resolveNetAdjustmentItems(adjustments, values.Gross-values.Tare, allowUpward, nil)
 	if err != nil {
 		return Ticket{}, err
 	}
-	if amount != 0 && strings.TrimSpace(categoryName) == "" {
-		return Ticket{}, ErrInvalid
+	// Single-item callers keep their pre-resolved category name; the list path
+	// must carry the dictionary snapshot in each item already.
+	if len(adjustments) == 1 && categoryName != "" {
+		items[0].CategoryName = strings.TrimSpace(categoryName)
 	}
-	if amount == 0 {
-		mode, rateBP, categoryName = "amount", nil, ""
+	if amount != 0 && categoryName == "" {
+		for _, item := range items {
+			if item.CategoryName == "" {
+				return Ticket{}, ErrInvalid
+			}
+		}
+	}
+	mode, rateBP := "amount", (*int)(nil)
+	if len(items) == 1 {
+		// The legacy single-item columns stay authoritative for one item so
+		// history, v4 snapshots and constraints keep their meaning.
+		mode, rateBP = items[0].Mode, items[0].RateBP
 	}
 	net := finalNet(values.Gross, values.Tare, amount)
 	if net <= 0 || net >= values.Gross {
@@ -138,8 +181,16 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjus
 		return Ticket{}, ErrForbidden
 	}
 	remark := ""
-	if adjustment != nil {
-		remark = strings.TrimSpace(adjustment.Remark)
+	if len(adjustments) == 1 {
+		remark = strings.TrimSpace(adjustments[0].Remark)
+	} else if len(adjustments) > 1 {
+		remarks := []string{}
+		for _, item := range adjustments {
+			if text := strings.TrimSpace(item.Remark); text != "" {
+				remarks = append(remarks, text)
+			}
+		}
+		remark = strings.Join(remarks, "；")
 	}
 	if remark == "" && final != nil {
 		remark = strings.TrimSpace(final.Remark)
@@ -156,10 +207,10 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjus
 		}
 	}
 	now := time.Now().UTC()
-	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: grossSource, TareSource: tareSource, NetAdjustment: amount, NetAdjustmentMode: mode, NetAdjustmentRateBP: rateBP, IssuedAt: now, IssuedBy: actor, IssuerName: name}
-	if amount != 0 {
-		ticket.NetAdjustmentCategory = strings.TrimSpace(adjustment.Category)
-		ticket.NetAdjustmentCategoryName = strings.TrimSpace(categoryName)
+	ticket := Ticket{SiteCode: task.SiteCode, TaskID: task.ID, Revision: 1, Mode: "normal", Status: "valid", FirstRecordID: first.ID, SecondRecordID: second.ID, Business: task.Business, Basis: []WeighRecord{first, second}, SnapshotSchemaVersion: 1, OriginalGross: gross, OriginalTare: tare, FinalGross: values.Gross, FinalTare: values.Tare, GrossSource: grossSource, TareSource: tareSource, NetAdjustment: amount, NetAdjustmentMode: mode, NetAdjustmentRateBP: rateBP, NetAdjustmentItems: items, IssuedAt: now, IssuedBy: actor, IssuerName: name}
+	if len(items) == 1 {
+		ticket.NetAdjustmentCategory = items[0].Category
+		ticket.NetAdjustmentCategoryName = items[0].CategoryName
 	}
 	if changed {
 		ticket.AdjustedBy = ptr(actor)
@@ -167,6 +218,9 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjus
 		ticket.AdjustmentRemark = remark
 		if ticket.AdjustmentRemark == "" && amount == 0 {
 			ticket.AdjustmentRemark = "磅精度调整"
+		}
+		if amount == 0 {
+			ticket.NetAdjustmentItems = nil
 		}
 	}
 	if values.Gross != gross {
@@ -178,6 +232,11 @@ func makeTicket(task Task, first, second WeighRecord, final *FinalWeights, adjus
 	if previous != nil {
 		ticket.PreviousTicketID = ptr(previous.ID)
 		ticket.Revision = previous.Revision + 1
+	}
+	// The detail snapshot column is NOT NULL: normalize an empty list to []
+	// so a ticket without adjustments persists an explicit empty array.
+	if ticket.NetAdjustmentItems == nil {
+		ticket.NetAdjustmentItems = []NetAdjustmentItem{}
 	}
 	// Validation completes before any fact or number is written.
 	return ticket, nil
@@ -242,11 +301,15 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 			return out, err
 		}
 		second := newRecord(sample, task.ID, e.Metadata.ActorID, name)
-		categoryName, err := resolveNetAdjustmentCategory(tx, in.NetAdjustment)
-		if err != nil {
+		entries := adjustmentEntries(in.NetAdjustment, in.NetAdjustments)
+		if err := resolveItemsCategoryNames(tx, entries); err != nil {
 			return out, err
 		}
-		ticket, err := makeTicket(task, first, second, nil, in.NetAdjustment, categoryName, false, in.AllowAdjust, e.Metadata.ActorID, name, nil)
+		categoryName := ""
+		if len(entries) == 1 {
+			categoryName = entries[0].ResolvedCategoryName
+		}
+		ticket, err := makeTicketWithItems(task, first, second, nil, entries, categoryName, false, in.AllowAdjust, e.Metadata.ActorID, name, nil)
 		if err != nil {
 			return out, err
 		}
@@ -316,7 +379,7 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 			if err != nil {
 				return err
 			}
-			view.PreviousFinal = &PriorFinalWeights{Gross: previous.FinalGross, Tare: previous.FinalTare, Net: finalNet(previous.FinalGross, previous.FinalTare, previous.NetAdjustment), NetAdjustment: previous.NetAdjustment, CategoryName: previous.NetAdjustmentCategoryName}
+			view.PreviousFinal = &PriorFinalWeights{Gross: previous.FinalGross, Tare: previous.FinalTare, Net: finalNet(previous.FinalGross, previous.FinalTare, previous.NetAdjustment), NetAdjustment: previous.NetAdjustment, CategoryName: previous.NetAdjustmentCategoryName, Items: previous.NetAdjustmentItems}
 		}
 		return nil
 	}, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
@@ -350,7 +413,7 @@ func (r *Repository) Tickets(ctx context.Context, q PageQuery) (Page[TicketView]
 		return Page[TicketView]{}, err
 	}
 	query = query.Joins("LEFT JOIN wb_ticket_reconcile r ON r.ticket_id=k.id")
-	query = query.Select("k.*, COALESCE((SELECT v.status FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.status FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'untracked') AS sync_status, CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4 WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id) THEN 3 ELSE 0 END AS sync_protocol, COALESCE((SELECT v.reason FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.reason FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'') AS sync_reason, COALESCE(r.status,'') AS reconcile_status, r.checked_at AS reconcile_at, COALESCE((SELECT CASE WHEN p.status='initiated' THEN 'unknown' ELSE p.status END FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1),'unprinted') AS print_status, (SELECT COUNT(*) FROM wb_print_attempt p WHERE p.ticket_id=k.id AND p.intent='reprint') AS reprint_count, (SELECT p.id FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1) AS last_print_attempt_id")
+	query = query.Select("k.*, COALESCE((SELECT f.status FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1),(SELECT v.status FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.status FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'untracked') AS sync_status, CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id) THEN 5 WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4 WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id) THEN 3 ELSE 0 END AS sync_protocol, COALESCE((SELECT f.reason FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1),(SELECT v.reason FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.reason FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'') AS sync_reason, COALESCE(r.status,'') AS reconcile_status, r.checked_at AS reconcile_at, COALESCE((SELECT CASE WHEN p.status='initiated' THEN 'unknown' ELSE p.status END FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1),'unprinted') AS print_status, (SELECT COUNT(*) FROM wb_print_attempt p WHERE p.ticket_id=k.id AND p.intent='reprint') AS reprint_count, (SELECT p.id FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1) AS last_print_attempt_id")
 	raw, err := workflowPage[Ticket](query, q, "k.issued_at DESC,k.id DESC")
 	result := Page[TicketView]{Records: []TicketView{}, Total: raw.Total, Page: raw.Page, PageSize: raw.PageSize}
 	for _, row := range raw.Records {

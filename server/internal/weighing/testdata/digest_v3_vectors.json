@@ -1,0 +1,118 @@
+{
+  "rulesVersion": 3,
+  "vectors": [
+    {
+      "name": "issue-basic",
+      "purpose": "最小 v5 出单；无调整，明细为空数组",
+      "change": {
+        "schemaVersion": 5,
+        "digestVersion": 3,
+        "siteCode": "F001",
+        "ticketNo": "F001-20261107-0001",
+        "type": "issue",
+        "ticket": {
+          "ticketNo": "F001-20261107-0001",
+          "previousTicketNo": null,
+          "title": "酒厂过磅单",
+          "plate": "晋A12345",
+          "direction": "inbound",
+          "materialCode": "C-M-0001",
+          "materialName": "高粱",
+          "materialSpec": "散装",
+          "partyCode": "C-P-0001",
+          "partyName": "供货方",
+          "firstConfirmedAt": "2026-11-07T08:00:00+08:00",
+          "secondConfirmedAt": "2026-11-07T08:10:00+08:00",
+          "issuedAt": "2026-11-07T08:11:00+08:00",
+          "issuerName": "操作员",
+          "originalGross": "30",
+          "originalTare": "10",
+          "finalGross": "30",
+          "finalTare": "10",
+          "finalNet": "20",
+          "netAdjustment": "0",
+          "netAdjustments": [],
+          "previousFinalGross": null,
+          "previousFinalTare": null,
+          "previousFinalNet": null,
+          "previousNetAdjustment": null,
+          "grossSource": "collected",
+          "tareSource": "collected",
+          "adjustmentRemark": "",
+          "adjustedBy": null,
+          "adjustedAt": null,
+          "driver": "",
+          "driverPhone": "",
+          "contactName": "",
+          "contactPhone": ""
+        }
+      },
+      "expectedDigest": "8f53ce0e73a9b8b09a32102cdda82671c91f1ce76b35752ddf30d1d94dd740b1"
+    },
+    {
+      "name": "issue-multi-items",
+      "purpose": "多项调整：按比例扣水分 + 按重量扣杂质；净重调整合计与明细均参与摘要",
+      "change": {
+        "schemaVersion": 5,
+        "digestVersion": 3,
+        "siteCode": "F001",
+        "ticketNo": "F001-20261107-0002",
+        "type": "issue",
+        "ticket": {
+          "ticketNo": "F001-20261107-0002",
+          "previousTicketNo": null,
+          "title": "酒厂过磅单",
+          "plate": "晋A12345",
+          "direction": "inbound",
+          "materialCode": "C-M-0001",
+          "materialName": "高粱",
+          "materialSpec": "散装",
+          "partyCode": "C-P-0001",
+          "partyName": "供货方",
+          "firstConfirmedAt": "2026-11-07T08:00:00+08:00",
+          "secondConfirmedAt": "2026-11-07T08:10:00+08:00",
+          "issuedAt": "2026-11-07T08:11:00+08:00",
+          "issuerName": "操作员",
+          "originalGross": "30",
+          "originalTare": "10",
+          "finalGross": "30",
+          "finalTare": "10",
+          "finalNet": "18.5",
+          "netAdjustment": "1.5",
+          "netAdjustments": [
+            {
+              "mode": "percent",
+              "amount": "0.2",
+              "rateBp": 100,
+              "category": "WATER",
+              "categoryName": "水分大",
+              "remark": "水分大"
+            },
+            {
+              "mode": "amount",
+              "amount": "0.5",
+              "rateBp": null,
+              "category": "IMPURITY",
+              "categoryName": "杂质多",
+              "remark": ""
+            }
+          ],
+          "previousFinalGross": null,
+          "previousFinalTare": null,
+          "previousFinalNet": null,
+          "previousNetAdjustment": null,
+          "grossSource": "collected",
+          "tareSource": "collected",
+          "adjustmentRemark": "水分大",
+          "adjustedBy": "操作员",
+          "adjustedAt": "2026-11-07T08:11:00+08:00",
+          "driver": "张三",
+          "driverPhone": "13800000000",
+          "contactName": "",
+          "contactPhone": ""
+        }
+      },
+      "expectedDigest": "8612ea5a5db1a1e9755fe1eb647c34174ccc35910301cbbdd121d146c3334efb"
+    }
+  ]
+}

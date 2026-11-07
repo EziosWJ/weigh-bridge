@@ -7,9 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { beijingTime } from '@/lib/weighing/query';
-import { formatWeight, weightInMilliTonnes } from '@/lib/weighing/weights';
+import { formatWeight, weightInMilliTonnes, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { useWeighingStore } from '@/store/weighing-store';
-import type { TransportTask } from '@/types/weighing';
+import type { NetAdjustmentsInput, TransportTask } from '@/types/weighing';
+import { NetAdjustmentFields } from './deduction-fields';
 
 /** Business dates are Beijing wall-clock values in inputs and storage. */
 function beijingInputValue(iso: string): string {
@@ -53,9 +54,10 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>([]);
   const first = useMemo(() => task ? currentFirst(task) : undefined, [task]);
 
-  useEffect(() => { if (task) { setWeight(''); setReturnedAt(beijingInputValue(new Date().toISOString())); setReason(''); setConfirmed(false); setError(''); } }, [task]);
+  useEffect(() => { if (task) { setWeight(''); setReturnedAt(beijingInputValue(new Date().toISOString())); setReason(''); setConfirmed(false); setError(''); setNetAdjustments([]); } }, [task]);
 
   let entered: number | undefined;
   let net: number | undefined;
@@ -76,6 +78,17 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
     net = undefined;
   }
 
+  let adjustmentBasis: { gross: number; tare: number; net: number } | undefined;
+  let adjustmentError = '';
+  // Inbound: gross is the first weighing, tare is the manual entry; outbound
+  // reverses them. net above is already gross minus tare.
+  if (net !== undefined && first && task) {
+    const gross = task.direction === 'outbound' ? entered! : first.weight;
+    const tare = task.direction === 'outbound' ? first.weight : entered!;
+    adjustmentBasis = { gross, tare, net };
+    try { resolveNetAdjustments(adjustmentBasis, netAdjustments); } catch (failure) { adjustmentError = failure instanceof Error ? failure.message : '请核对净重调整'; }
+  }
+
   let returnedIso = '';
   let timeError = '';
   try {
@@ -90,13 +103,13 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
     timeError = failure instanceof Error ? failure.message : '请填写有效的实际回磅时间';
   }
 
-  const ready = !!task && !!first && !!entered && !weightError && !timeError && reason.trim() !== '' && confirmed;
+  const ready = !!task && !!first && !!entered && !weightError && !timeError && !adjustmentError && reason.trim() !== '' && confirmed;
 
   async function submit() {
     if (!task || !ready) { setError(weightError || timeError || (reason.trim() === '' ? '请填写补录原因' : '请核对并明确确认人工补录')); return; }
     setLoading(true); setError('');
     try {
-      await dispatch({ type: 'manualReturn', taskId: task.id, weight: String(entered), returnedAt: returnedIso, reason: reason.trim() });
+      await dispatch({ type: 'manualReturn', taskId: task.id, weight: String(entered), returnedAt: returnedIso, reason: reason.trim(), netAdjustments });
       if (useWeighingStore.getState().data.pending) {
         toast.warning({ title: '提交结果待核实', description: '请先查询原请求，再继续办理。', duration: 6000 });
       } else {
@@ -119,6 +132,7 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
       <Field label="实际回磅时间（北京时间）" htmlFor="manual-return-time" required error={timeError} help="不早于有效首磅时间，不晚于当前时间；与系统补录时间分别保存。">
         <Input id="manual-return-time" type="datetime-local" step="1" value={returnedAt} onChange={event => setReturnedAt(event.target.value)} />
       </Field>
+      {adjustmentBasis && <NetAdjustmentFields basis={adjustmentBasis} value={netAdjustments} onChange={setNetAdjustments} showError={false} />}
       <Field label="补录原因" htmlFor="manual-return-reason" required>
         <Textarea id="manual-return-reason" rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="例如：车辆已回磅离开，现场已拍下地磅读数，经核对后补录" />
       </Field>
