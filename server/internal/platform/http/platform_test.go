@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -262,6 +263,53 @@ func TestRequestLoggerIncludesRequestMetadata(t *testing.T) {
 		if !strings.Contains(logs.String(), expected) {
 			t.Fatalf("log %q misses %q", logs.String(), expected)
 		}
+	}
+}
+
+func TestRequestLoggerPolling(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var logs bytes.Buffer
+	router := gin.New()
+	router.Use(RequestLogger(slog.New(slog.NewJSONHandler(&logs, nil))))
+	router.GET("/api/weighing/scales/:code/device", func(c *gin.Context) {
+		switch c.Query("result") {
+		case "http-error":
+			WriteError(c, stdhttp.StatusServiceUnavailable, CodeServiceUnavailable, "unavailable", nil)
+		case "business-error":
+			WriteError(c, stdhttp.StatusOK, CodeBadRequest, "invalid", nil)
+		case "context-error":
+			_ = c.Error(errors.New("failure"))
+			OK(c, nil)
+		default:
+			OK(c, nil)
+		}
+	})
+	router.GET("/api/weighing/plate-candidates", func(c *gin.Context) { OK(c, nil) })
+	router.POST("/api/weighing/plate-candidates", func(c *gin.Context) { OK(c, nil) })
+	router.GET("/other", func(c *gin.Context) { OK(c, nil) })
+	for _, tc := range []struct {
+		name, method, path string
+		wantLog            bool
+	}{
+		{"device success", "GET", "/api/weighing/scales/WB01/device", false},
+		{"candidate success", "GET", "/api/weighing/plate-candidates?scale=WB01", false},
+		{"http error", "GET", "/api/weighing/scales/WB01/device?result=http-error", true},
+		{"business error", "GET", "/api/weighing/scales/WB01/device?result=business-error", true},
+		{"context error", "GET", "/api/weighing/scales/WB01/device?result=context-error", true},
+		{"other method", "POST", "/api/weighing/plate-candidates", true},
+		{"other route", "GET", "/other", true},
+		{"unmatched route", "GET", "/api/weighing/scales/WB01/device/extra", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logs.Reset()
+			serve(router, tc.method, tc.path)
+			if got := strings.Contains(logs.String(), "http request completed"); got != tc.wantLog {
+				t.Fatalf("logged = %v, want %v; logs: %s", got, tc.wantLog, logs.String())
+			}
+		})
+	}
+	if !shouldLogRequest("GET", "/api/weighing/plate-candidates", 200, time.Second, false) {
+		t.Fatal("slow polling request must be logged")
 	}
 }
 

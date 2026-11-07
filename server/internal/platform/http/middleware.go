@@ -83,7 +83,10 @@ func orDefault(values, defaults []string) []string {
 	return values
 }
 
-// RequestLogger emits one structured log record after every request.
+const requestFailedKey = "platform.http.request_failed"
+const slowRequestThreshold = time.Second
+
+// RequestLogger retains errors and slow requests while omitting successful, fast polling requests.
 func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 	if logger == nil {
 		logger = slog.Default()
@@ -93,12 +96,16 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 		startedAt := time.Now()
 		c.Next()
 
+		duration := time.Since(startedAt)
+		if !shouldLogRequest(c.Request.Method, c.FullPath(), c.Writer.Status(), duration, c.GetBool(requestFailedKey) || len(c.Errors) > 0) {
+			return
+		}
 		attributes := []slog.Attr{
 			slog.String("request_id", RequestIDFromContext(c.Request.Context())),
 			slog.String("method", c.Request.Method),
 			slog.String("path", c.Request.URL.Path),
 			slog.Int("status", c.Writer.Status()),
-			slog.Duration("duration", time.Since(startedAt)),
+			slog.Duration("duration", duration),
 		}
 		if meta, ok := RequestMetaFromContext(c.Request.Context()); ok {
 			attributes = append(attributes, slog.String("client_ip", meta.ClientIP))
@@ -110,6 +117,18 @@ func RequestLogger(logger *slog.Logger) gin.HandlerFunc {
 			attributes = append(attributes, slog.String("error", c.Errors.String()))
 		}
 		logger.LogAttrs(c.Request.Context(), slog.LevelInfo, "http request completed", attributes...)
+	}
+}
+
+func shouldLogRequest(method, route string, status int, duration time.Duration, failed bool) bool {
+	if method != stdhttp.MethodGet || status < 200 || status >= 300 || failed || duration >= slowRequestThreshold {
+		return true
+	}
+	switch route {
+	case "/api/weighing/scales/:code/device", "/api/weighing/plate-candidates":
+		return false
+	default:
+		return true
 	}
 }
 

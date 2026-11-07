@@ -46,6 +46,7 @@ func OK(c *gin.Context, data any) {
 // WriteError writes an API error response. The caller selects the HTTP status
 // because legacy business failures deliberately use HTTP 200.
 func WriteError(c *gin.Context, status, code int, message string, data any) {
+	c.Set(requestFailedKey, true)
 	c.JSON(status, Failure(code, message, data))
 }
 
