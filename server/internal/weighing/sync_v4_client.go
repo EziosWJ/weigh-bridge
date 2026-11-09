@@ -150,8 +150,25 @@ func syncFailure(status int, envelope syncEnvelope) *SyncCloudError {
 	return &SyncCloudError{Category: SyncCategoryTemporary, Reason: "unknown_response", Retryable: true, Message: message}
 }
 
+const (
+	syncV4ChangesPath   = "/api/v1/weighbridge/sync/v4/changes"
+	syncV4TicketsPath   = "/api/v1/weighbridge/sync/v4/tickets"
+	syncV4ReconcilePath = "/api/v1/weighbridge/sync/v4/reconcile"
+	syncV5ChangesPath   = "/api/v1/weighbridge/sync/v5/changes"
+	syncV5TicketsPath   = "/api/v1/weighbridge/sync/v5/tickets"
+	syncV5ReconcilePath = "/api/v1/weighbridge/sync/v5/reconcile"
+)
+
 func (c *syncV4Client) uploadChange(ctx context.Context, address, payload, digest, ticketNo, changeType string) (syncChangeV4Receipt, *SyncCloudError) {
-	target, err := syncV4URL(address, "/api/v1/weighbridge/sync/v4/changes", nil)
+	return c.uploadChangeAt(ctx, address, syncV4ChangesPath, payload, digest, ticketNo, changeType)
+}
+
+func (c *syncV4Client) uploadChangeV5(ctx context.Context, address, payload, digest, ticketNo, changeType string) (syncChangeV4Receipt, *SyncCloudError) {
+	return c.uploadChangeAt(ctx, address, syncV5ChangesPath, payload, digest, ticketNo, changeType)
+}
+
+func (c *syncV4Client) uploadChangeAt(ctx context.Context, address, path, payload, digest, ticketNo, changeType string) (syncChangeV4Receipt, *SyncCloudError) {
+	target, err := syncV4URL(address, path, nil)
 	if err != nil {
 		return syncChangeV4Receipt{}, &SyncCloudError{Category: SyncCategoryConfigOrData, Reason: "invalid_address", Message: err.Error()}
 	}
@@ -171,7 +188,7 @@ func (c *syncV4Client) uploadChange(ctx context.Context, address, payload, diges
 
 func (c *syncV4Client) fetchTicket(ctx context.Context, address, siteCode, ticketNo string) (syncCloudTicket, *SyncCloudError) {
 	query := url.Values{"siteCode": {siteCode}, "ticketNo": {ticketNo}}
-	target, err := syncV4URL(address, "/api/v1/weighbridge/sync/v4/tickets", query)
+	target, err := syncV4URL(address, syncV5TicketsPath, query)
 	if err != nil {
 		return syncCloudTicket{}, &SyncCloudError{Category: SyncCategoryConfigOrData, Reason: "invalid_address", Message: err.Error()}
 	}
@@ -195,7 +212,7 @@ func (c *syncV4Client) fetchBatch(ctx context.Context, address string, items []s
 	if err != nil {
 		return nil, &SyncCloudError{Category: SyncCategoryConfigOrData, Reason: "invalid_request", Message: "批量对账请求无效"}
 	}
-	target, err := syncV4URL(address, "/api/v1/weighbridge/sync/v4/reconcile", nil)
+	target, err := syncV4URL(address, syncV5ReconcilePath, nil)
 	if err != nil {
 		return nil, &SyncCloudError{Category: SyncCategoryConfigOrData, Reason: "invalid_address", Message: err.Error()}
 	}
@@ -228,7 +245,7 @@ func (c *syncV4Client) fetchBatch(ctx context.Context, address string, items []s
 
 func (c *syncV4Client) lookupChange(ctx context.Context, address, siteCode, digest string) (syncCloudLookup, *SyncCloudError) {
 	query := url.Values{"siteCode": {siteCode}, "digest": {digest}}
-	target, err := syncV4URL(address, "/api/v1/weighbridge/sync/v4/changes", query)
+	target, err := syncV4URL(address, syncV5ChangesPath, query)
 	if err != nil {
 		return syncCloudLookup{}, &SyncCloudError{Category: SyncCategoryConfigOrData, Reason: "invalid_address", Message: err.Error()}
 	}

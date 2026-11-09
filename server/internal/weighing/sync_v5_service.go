@@ -76,7 +76,7 @@ func (s *Service) RunSyncV5(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		receipt, cloudErr := s.syncV4Client.uploadChange(ctx, s.masterSyncAddress, change.Payload, change.Digest, change.TicketNo, change.ChangeType)
+		receipt, cloudErr := s.syncV4Client.uploadChangeV5(ctx, s.masterSyncAddress, change.Payload, change.Digest, change.TicketNo, change.ChangeType)
 		now := time.Now().UTC()
 		dbCtx := context.WithoutCancel(ctx)
 		if cloudErr == nil {
