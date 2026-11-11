@@ -107,14 +107,12 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .weighing-vehicle-bar .plate-control { grid-column: 1 / -1; width: max-content; }
 /* 识别候选紧跟车牌输入：宽屏与车牌同行，较窄时在其后换行，不再占用下方整块空间。 */
 .plate-field { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-.plate-field.is-exact-match { outline: 2px solid var(--color-success); outline-offset: 3px; border-radius: 6px; }
 .plate-candidates { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0; list-style: none; }
 @media (min-width: 1600px) { .plate-candidates { flex: 1 1 160px; } }
 .plate-candidates > li { display: flex; flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .plate-candidates .plate-candidate { height: auto; max-width: 100%; min-height: 32px; flex-shrink: 1; padding-block: 2px; font-size: 12px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere; }
 .plate-candidates .plate-candidate[aria-pressed='true'] { border-color: var(--color-info); background: var(--color-info-background); color: var(--color-info); }
-.plate-candidates .plate-candidate.is-exact-match { border: 2px solid var(--color-success); background: var(--color-success-background); color: var(--color-success); font-weight: 600; box-shadow: 0 0 0 1px var(--color-success) inset; }
-.plate-exact-badge { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 3px; background: var(--color-success); color: #fff; font-size: 11px; line-height: 18px; vertical-align: 1px; }
+.plate-exact-badge { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 3px; background: var(--color-primary); color: #fff; font-size: 11px; line-height: 18px; vertical-align: 1px; }
 .workbench-inline-trip { margin: 0 0 8px; color: var(--color-text-secondary); font-size: 13px; line-height: 1.6; }
 .workbench-inline-trip strong { color: var(--color-success); }
 .plate-candidates .plate-candidate:disabled { border-color: var(--color-border); color: var(--color-text-tertiary); }

@@ -26,6 +26,10 @@ import { TicketPrintActions } from './ticket-print-actions';
 import './workbench.css';
 
 const normalizeLegacy = (value: string) => value.trim().toUpperCase();
+const emptyTripBusinessFields: Partial<TaskInput> = {
+  direction: 'inbound', materialId: '', partyId: '', carrierId: '',
+  contactName: '', contactPhone: '', driver: '', driverPhone: '', remark: '',
+};
 const sourceCameraNames = (item: PlateCandidate) => [...new Set(item.sourceEvents.map(source => source.cameraName).filter(Boolean))].join('、');
 const clockTime = (value: string) => beijingTime(value).slice(11, 19);
 
@@ -422,7 +426,7 @@ function WorkbenchContent() {
       }
       setPlate(normalized); setSuccess(null); setReview(null);
       if (data.firstRequests[data.draftRequestId] && !existing && !await run({ type: 'clearDraft' }, '车牌核对失败')) return;
-      if (!await run({ type: 'draft', patch: { plate: normalized } }, '车牌核对失败')) return;
+      if (!await run({ type: 'draft', patch: { plate: normalized, ...emptyTripBusinessFields } }, '车牌核对失败')) return;
       const chosen = selectedCandidate.current;
       const evidence: PlateEvidence = chosen ? { source: 'server', candidate: chosen.plate, confirmedPlate: normalized, at: new Date().toISOString(), corrected: chosen.plate !== normalized, sourceEventRecordIds: chosen.sourceEvents.map(source => source.eventRecordId) } : { source: recognition?.candidate ? 'agent' : 'manual', scenePlate: recognition?.scenePlate, candidate: recognition?.candidate, confirmedPlate: normalized, at: new Date().toISOString() };
       if (!await run({ type: 'verifyPlate', evidence }, chosen ? null : '车牌核对失败')) {
@@ -452,16 +456,16 @@ function WorkbenchContent() {
           } else if (linkable.length > 1) {
             setTripResult(result);
             setRecognitionHint(`发现 ${linkable.length} 张可关联流转单，请人工选择`);
-            toast.success({ title: '已确认车辆', description: '请选择本趟流转单' });
+            toast.info({ title: '已确认车辆', description: '发现多张可关联流转单，请人工选择' });
           } else {
             setTripResult(null);
             setRecognitionHint(result.available ? '未找到可关联的云端流转单，可按无流转单办理' : (result.message || '云端流转单查询失败，可按无流转单办理'));
-            toast.success({ title: '已确认车辆', description: '未找到可关联流转单' });
+            toast.warning({ title: '未找到可关联流转单', description: '请核对车牌或云端流转单状态；可按无流转单继续录入资料。' });
           }
         } catch (error) {
           setTripResult(null);
           setRecognitionHint(error instanceof Error ? `${error.message}，可按无流转单办理` : '云端流转单查询失败，可按无流转单办理');
-          toast.success({ title: '已确认车辆', description: '云端流转单查询失败' });
+          toast.warning({ title: '云端流转单查询失败', description: '可按无流转单继续录入资料。' });
         } finally {
           setTripLoading(false);
         }
@@ -639,8 +643,10 @@ function WorkbenchContent() {
     candidateOwner.current = 'manual';
     editing.current = true; setSearchedPlate('');
     setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null);
+    setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0);
     if (data.firstRequests[data.draftRequestId] && !await run({ type: 'clearDraft' })) return;
-    void run({ type: 'draft', patch: { plate: value } });
+    void run({ type: 'draft', patch: { plate: value, ...emptyTripBusinessFields } });
+    void run({ type: 'selectTrip', trip: null });
   }
 
   useEffect(() => {
@@ -671,10 +677,10 @@ function WorkbenchContent() {
           <div className="workbench-current-vehicle"><h2>当前车辆</h2></div>
           <form className="flex flex-wrap items-center gap-3" onSubmit={lookup}>
             <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span>{manualMatch && <span className="plate-exact-badge">完全匹配</span>}</label>
-            <div className={`plate-field${manualMatch ? ' is-exact-match' : ''}`}>
+            <div className="plate-field">
               <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} clearable onChange={changePlate} />
               {candidates.length > 0 && <ul className="plate-candidates" aria-label="识别候选">
-                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className={`plate-candidate${item.plate === exactMatchPlate ? ' is-exact-match' : ''}`} disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}${item.plate === exactMatchPlate ? ' · 云端流转单完全匹配' : ''}`} onClick={() => {
+                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className="plate-candidate" disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}${item.plate === exactMatchPlate ? ' · 云端流转单完全匹配' : ''}`} onClick={() => {
                   candidateOwner.current = 'manual'; selectedCandidate.current = item;
                   setRecognitionHint(`已选择 ${item.plate} · ${sourceCameraNames(item)} · 待人工核对`);
                   void changePlate(item.plate);
@@ -684,7 +690,7 @@ function WorkbenchContent() {
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在确认…' : '确认车辆'}</Button>
           </form>
           {candidateNotice && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{candidateNotice}</p>}
-          {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-success">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
+          {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
           {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
           {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
           {offerManualSource && data.draftPlateEvidence?.source === 'server' && !data.sampleReady && !awaitingResult && <Button type="button" size="sm" disabled={busy} onClick={() => {
