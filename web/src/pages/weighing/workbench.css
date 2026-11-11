@@ -107,6 +107,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .weighing-vehicle-bar .plate-control { grid-column: 1 / -1; width: max-content; }
 /* 识别候选紧跟车牌输入：宽屏与车牌同行，较窄时在其后换行，不再占用下方整块空间。 */
 .plate-field { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.plate-field.is-exact-match { outline: 2px solid var(--color-success); outline-offset: 3px; border-radius: 6px; }
 .plate-candidates { display: flex; flex: 1 1 100%; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 0; list-style: none; }
 @media (min-width: 1600px) { .plate-candidates { flex: 1 1 160px; } }
 .plate-candidates > li { display: flex; flex: 0 1 auto; min-width: 0; max-width: 100%; }

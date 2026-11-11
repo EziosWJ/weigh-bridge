@@ -90,6 +90,10 @@ function WorkbenchContent() {
   const editing = useRef(!!linkedTask || Object.entries(data.draft).some(([key, value]) => key === 'direction' ? value !== 'inbound' : !!value));
   const [candidates, setCandidates] = useState<PlateCandidate[]>([]);
   const [tripMatches, setTripMatches] = useState<Record<string, TripCandidate[]>>({});
+  const [manualMatch, setManualMatch] = useState<TripCandidate | null>(null);
+  const [manualMatchCount, setManualMatchCount] = useState(0);
+  const [manualBlocked, setManualBlocked] = useState<TripCandidate[]>([]);
+  const [manualTotal, setManualTotal] = useState(0);
   const selectedCandidate = useRef<PlateCandidate | null>(null);
   const candidateOwner = useRef<'empty' | 'suggested' | 'manual' | 'confirmed'>(editing.current ? 'manual' : 'empty');
   const candidateEpoch = useRef(0);
@@ -125,6 +129,29 @@ function WorkbenchContent() {
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [candidatePlatesKey, selectedTaskID, located, hasCapture, reviewOpen]);
+  const manualPlate = normalizeLegacy(plate);
+  const manualPlateKey = !selectedTaskID && !located && !hasCapture && !reviewOpen && manualPlate && !plateError(manualPlate) && !candidatePlates.includes(manualPlate) ? manualPlate : '';
+  useEffect(() => {
+    let cancelled = false;
+    if (!manualPlateKey) { setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0); return; }
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const result = await workflowApi.tripCandidates(manualPlateKey);
+          const linkable = result.candidates.filter(item => item.linkable);
+          if (!cancelled) {
+            setManualMatch(linkable.length === 1 ? linkable[0] : null);
+            setManualMatchCount(linkable.length);
+            setManualBlocked(result.candidates.filter(item => !item.linkable));
+            setManualTotal(result.candidates.length);
+          }
+        } catch {
+          if (!cancelled) { setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0); }
+        }
+      })();
+    }, 350);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [manualPlateKey]);
   useEffect(() => {
     let cancelled = false;
     if (selected?.status !== 'second') { setTripBasis(null); return; }
@@ -643,8 +670,8 @@ function WorkbenchContent() {
         <ContentCard className="weighing-vehicle-bar shadow-none" bodyClassName="px-4 py-3">
           <div className="workbench-current-vehicle"><h2>当前车辆</h2></div>
           <form className="flex flex-wrap items-center gap-3" onSubmit={lookup}>
-            <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span></label>
-            <div className="plate-field">
+            <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span>{manualMatch && <span className="plate-exact-badge">完全匹配</span>}</label>
+            <div className={`plate-field${manualMatch ? ' is-exact-match' : ''}`}>
               <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} clearable onChange={changePlate} />
               {candidates.length > 0 && <ul className="plate-candidates" aria-label="识别候选">
                 {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className={`plate-candidate${item.plate === exactMatchPlate ? ' is-exact-match' : ''}`} disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}${item.plate === exactMatchPlate ? ' · 云端流转单完全匹配' : ''}`} onClick={() => {
@@ -657,6 +684,9 @@ function WorkbenchContent() {
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在确认…' : '确认车辆'}</Button>
           </form>
           {candidateNotice && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{candidateNotice}</p>}
+          {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-success">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
+          {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
+          {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
           {offerManualSource && data.draftPlateEvidence?.source === 'server' && !data.sampleReady && !awaitingResult && <Button type="button" size="sm" disabled={busy} onClick={() => {
             selectedCandidate.current = null;
             setRecognition(null);
