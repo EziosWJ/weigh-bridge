@@ -48,6 +48,7 @@ type Trip struct {
 	EffectiveConclusion string      `json:"effectiveConclusion"`
 	RegisteredAt        time.Time   `json:"registeredAt"`
 	UnloadedAt          *time.Time  `json:"unloadedAt"`
+	UnloadingLocation   string      `json:"unloadingLocation"`
 	TicketNo            string      `json:"ticketNo"`
 	Linkable            bool        `json:"linkable"`
 	Blockers            []string    `json:"blockers"`

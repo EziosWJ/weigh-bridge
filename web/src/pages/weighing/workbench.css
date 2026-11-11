@@ -120,7 +120,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .weighing-workbench .plate-entry > button { height: 48px; background: #1069a8; border-color: #3aaee9; color: white; }
 .weighing-workbench .plate-number { flex: 0 1 auto; min-width: 0; max-width: 100%; height: 48px; background-color: #091b28; font-size: 24px; }
 .plate-recognition { display: flex; align-items: center; gap: 8px; line-height: 1.6; }
-.workbench-trip-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface-subtle, #f8fafc); }
+.workbench-trip-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 6px; background: #0c1c29; }
 .workbench-trip-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workbench-trip-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
 .workbench-trip-head > span { color: var(--color-text-tertiary); font-size: 12px; }
@@ -129,7 +129,7 @@ body:has(.weighing-workbench) [role='dialog'] :is(button, a, input, select, text
 .workbench-trip-note.is-warning { color: var(--color-warning, #b45309); }
 .workbench-trip-match { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 10px; border: 2px solid var(--color-success); border-radius: 6px; background: var(--color-success-background); color: var(--color-success); font-weight: 600; line-height: 1.5; }
 .workbench-trip-option { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 1px solid var(--color-border); border-radius: 6px; background: var(--color-surface); color: inherit; text-align: left; cursor: pointer; }
-.workbench-trip-option:hover { border-color: var(--color-primary); background: var(--color-primary-background, #eff6ff); }
+.workbench-trip-option:hover { border-color: var(--color-primary); background: var(--color-neutral-background); }
 .workbench-trip-option.is-selected { border-color: var(--color-success); box-shadow: 0 0 0 1px var(--color-success) inset; }
 .workbench-trip-option-main { font-size: 14px; font-weight: 600; }
 .workbench-trip-option-meta { color: var(--color-text-tertiary); font-size: 12px; line-height: 1.5; }

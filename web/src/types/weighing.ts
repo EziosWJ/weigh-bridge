@@ -37,6 +37,7 @@ export interface TripCandidate {
 export interface TripCandidateResult { enabled: boolean; available: boolean; message?: string; candidates: TripCandidate[] }
 export interface SelectedTrip { tripNo: string; version: number; candidate: TripCandidate }
 export interface TaskTripBasis { bound: boolean; status?: string; tripNo?: string; ticketId?: number; cloudTicketNo?: string; trip?: TripCandidate; inspection?: TripInspection; deductions: TripDeduction[] }
+export interface TaskTripCloudStatus { bound: boolean; tripNo?: string; available: boolean; message?: string; stage?: string; linkable: boolean; unloaded: boolean; unloadedAt?: string | null; unloadingLocation?: string; ticketNo?: string; blockers: string[] }
 export interface NetAdjustment { amount: number; mode: NetAdjustmentMode; rateBp?: number; category?: string; categoryName?: string; remark?: string }
 export interface WeightDeduction { grossDeduction: number; tareDeduction: number; reason?: string }
 export type FinalWeightInput = Pick<WeightValues, 'gross' | 'tare'> & { reason?: string };

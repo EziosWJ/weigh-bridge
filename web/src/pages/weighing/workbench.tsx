@@ -14,8 +14,8 @@ import { normalizePlate, plateError } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import { weighingApi } from '@/api/weighing';
-import { workflowApi, type PlateCandidate } from '@/api/weighing-workflow';
-import { roleLabels, taskStatusLabels, type PlateEvidence, type NetAdjustmentInput, type NetAdjustmentsInput, type TaskInput, type TransportTask, type WeightValues, type WeighingCommand, type WeighingState, type TripCandidate, type TripCandidateResult, type TaskTripBasis, type TripDeduction } from '@/types/weighing';
+import { workflowApi, task as taskView, type PlateCandidate } from '@/api/weighing-workflow';
+import { roleLabels, taskStatusLabels, type PlateEvidence, type NetAdjustmentInput, type NetAdjustmentsInput, type TaskInput, type TransportTask, type WeightValues, type WeighingCommand, type WeighingState, type TripCandidate, type TripCandidateResult, type TaskTripBasis, type TaskTripCloudStatus, type TripDeduction } from '@/types/weighing';
 import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { formatWeight, formatWeightValue, weightValues } from '@/lib/weighing/weights';
@@ -80,6 +80,8 @@ function WorkbenchContent() {
   const [tripResult, setTripResult] = useState<TripCandidateResult | null>(null);
   const [tripLoading, setTripLoading] = useState(false);
   const [tripBasis, setTripBasis] = useState<TaskTripBasis | null>(null);
+  const [tripCloudStatus, setTripCloudStatus] = useState<TaskTripCloudStatus | null>(null);
+  const [tripCloudLoading, setTripCloudLoading] = useState(false);
   const [completionOpen, setCompletionOpen] = useState(false);
   const [autoPrintTicket, setAutoPrintTicket] = useState('');
   const [autoPrintNotice, setAutoPrintNotice] = useState('');
@@ -95,6 +97,7 @@ function WorkbenchContent() {
   const [candidates, setCandidates] = useState<PlateCandidate[]>([]);
   const [tripMatches, setTripMatches] = useState<Record<string, TripCandidate[]>>({});
   const [manualMatch, setManualMatch] = useState<TripCandidate | null>(null);
+  const [manualActiveTask, setManualActiveTask] = useState<TransportTask | null>(null);
   const [manualMatchCount, setManualMatchCount] = useState(0);
   const [manualBlocked, setManualBlocked] = useState<TripCandidate[]>([]);
   const [manualTotal, setManualTotal] = useState(0);
@@ -137,9 +140,33 @@ function WorkbenchContent() {
   const manualPlateKey = !selectedTaskID && !located && !hasCapture && !reviewOpen && manualPlate && !plateError(manualPlate) && !candidatePlates.includes(manualPlate) ? manualPlate : '';
   useEffect(() => {
     let cancelled = false;
-    if (!manualPlateKey) { setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0); return; }
+    if (!manualPlateKey) {
+      setManualActiveTask(null);
+      setManualMatch(null);
+      setManualMatchCount(0);
+      setManualBlocked([]);
+      setManualTotal(0);
+      return;
+    }
+    setManualActiveTask(null);
+    setManualMatch(null);
+    setManualMatchCount(0);
+    setManualBlocked([]);
+    setManualTotal(0);
     const timer = setTimeout(() => {
       void (async () => {
+        let active: TransportTask | undefined;
+        try {
+          const wire = await workflowApi.active(manualPlateKey);
+          if (wire) active = taskView(wire);
+        } catch {
+          active = undefined;
+        }
+        if (cancelled) return;
+        if (active) {
+          setManualActiveTask(active);
+          return;
+        }
         try {
           const result = await workflowApi.tripCandidates(manualPlateKey);
           const linkable = result.candidates.filter(item => item.linkable);
@@ -158,10 +185,20 @@ function WorkbenchContent() {
   }, [manualPlateKey]);
   useEffect(() => {
     let cancelled = false;
-    if (selected?.status !== 'second') { setTripBasis(null); return; }
+    if (selected?.status !== 'second') {
+      setTripBasis(null);
+      setTripCloudStatus(null);
+      setTripCloudLoading(false);
+      return;
+    }
     workflowApi.taskTripBasis(selected.id)
       .then(value => { if (!cancelled) setTripBasis(value); })
       .catch(() => { if (!cancelled) setTripBasis(null); });
+    setTripCloudLoading(true);
+    workflowApi.taskTripCloudStatus(selected.id)
+      .then(value => { if (!cancelled) setTripCloudStatus(value); })
+      .catch(() => { if (!cancelled) setTripCloudStatus(null); })
+      .finally(() => { if (!cancelled) setTripCloudLoading(false); });
     return () => { cancelled = true; };
   }, [selected?.id, selected?.status]);
   const awaitingResult = !!data.pending;
@@ -394,6 +431,17 @@ function WorkbenchContent() {
     toast.success({ title: '已选择流转单', description: `${candidate.tripNo} · ${candidate.materialName} · ${candidate.partyName}` });
   }
 
+  async function refreshTripCloudStatus(taskId: string | number) {
+    setTripCloudLoading(true);
+    try {
+      setTripCloudStatus(await workflowApi.taskTripCloudStatus(taskId));
+    } catch {
+      setTripCloudStatus(null);
+    } finally {
+      setTripCloudLoading(false);
+    }
+  }
+
   async function lookup(event: FormEvent) {
     event.preventDefault();
     if (lookingUp) return;
@@ -440,7 +488,7 @@ function WorkbenchContent() {
         setTripResult(null); setTripBasis(null);
         void run({ type: 'selectTrip', trip: null });
         setParams({ task: existing.id });
-        toast.success({ title: '已确认车辆', description: `${existing.taskNo ?? existing.id} · ${existing.plate}` });
+        toast.success({ title: '已定位未完成任务', description: `${existing.taskNo ?? existing.id} · ${taskStatusLabels[existing.status]}，继续本趟办理。` });
       } else {
         setParams({});
         setTripResult(null); setTripBasis(null);
@@ -693,9 +741,13 @@ function WorkbenchContent() {
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在确认…' : '确认车辆'}</Button>
           </form>
           {candidateNotice && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{candidateNotice}</p>}
-          {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
-          {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
-          {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
+          {manualActiveTask
+            ? <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />该车牌有未完成运输任务 {manualActiveTask.taskNo ?? manualActiveTask.id} · {taskStatusLabels[manualActiveTask.status]}，确认车辆后继续本趟办理，不会重新选择流转单。如需重新选择，请先<Link className="text-primary hover:underline" to={`/weighing/tasks/${manualActiveTask.id}`}>终止原任务</Link>。</p>
+            : <>
+              {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
+              {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
+              {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
+            </>}
           {offerManualSource && data.draftPlateEvidence?.source === 'server' && !data.sampleReady && !awaitingResult && <Button type="button" size="sm" disabled={busy} onClick={() => {
             selectedCandidate.current = null;
             setRecognition(null);
@@ -734,11 +786,7 @@ function WorkbenchContent() {
                 <Button size="sm" variant="secondary" onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />查看完整资料</Button>
               </div>
             </> : located ? <>
-              {data.trip
-                ? <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong> · {data.trip.candidate.materialName} · {data.trip.candidate.partyName}</p>
-                : tripResult
-                  ? <p className="workbench-inline-trip">请选择本趟流转单后再录入业务资料</p>
-                  : <p className="workbench-inline-trip">未关联云端流转单，按本厂资料办理</p>}
+              {data.trip && <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong> · {data.trip.candidate.materialName} · {data.trip.candidate.partyName}</p>}
               <SectionTabs label="本趟运输资料" items={[
                 { value: 'basic', label: '基本信息', content: <div className="workbench-business-inline-grid">
                   <BusinessDirectionControl value={data.draft} update={patchDraft} variant="simple" />
@@ -771,6 +819,23 @@ function WorkbenchContent() {
         </ContentCard>
         <ContentCard className="workbench-current-action shadow-none" bodyClassName="p-4">
           <div className="space-y-3" aria-label="当前称重操作">
+            {stage === 'second' && selected && tripCloudStatus?.bound && (
+              <div role="status" className={`rounded-control border p-3 text-sm ${tripCloudStatus.available && tripCloudStatus.unloaded ? 'border-success-border bg-success-background text-success' : 'border-warning-border bg-warning-background text-warning'}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <strong className="block">云端卸货确认</strong>
+                    <span>
+                      {!tripCloudStatus.available
+                        ? `云端状态查询失败：${tripCloudStatus.message || '请稍后重试'}。请核对卸货确认后再回磅；未确认不会阻止本地称重。`
+                        : tripCloudStatus.unloaded
+                          ? `已确认卸货${tripCloudStatus.unloadingLocation ? `：${tripCloudStatus.unloadingLocation}` : ''}${tripCloudStatus.unloadedAt ? ` · ${beijingTime(tripCloudStatus.unloadedAt)}` : ''}。`
+                          : '云端尚未确认卸货。请通知云端库管确认卸货后再回磅；未确认卸货，称重磅单将无法自动关联。'}
+                    </span>
+                  </div>
+                  <Button size="sm" variant="secondary" disabled={tripCloudLoading} onClick={() => void refreshTripCloudStatus(selected.id)}>{tripCloudLoading ? '查询中…' : '刷新'}</Button>
+                </div>
+              </div>
+            )}
             {awaitingResult ? <><h2 className="font-semibold text-warning">提交结果待核实</h2><p className="text-sm text-text-secondary">先查询原结果，避免重复称重或出单。</p><><Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={resolve}>查询上次提交结果</Button><Button size="lg" className="w-full" disabled={busy} onClick={retry}>按原请求重试</Button></></>
             : successfulTask ? <>
               <h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成 · 等待回磅' : ticket ? '回磅已完成 · 已出单' : '回磅已完成'}</h2>

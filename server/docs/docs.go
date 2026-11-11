@@ -5669,6 +5669,37 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/tasks/{id}/trip-cloud-status": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "仅用于回磅前提醒，不阻断本地称重；云端不可用时在 message 返回原因。",
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "查询待回磅任务的云端卸货确认状态",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "运输任务 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TaskTripCloudStatus"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/tickets": {
             "get": {
                 "security": [
@@ -7511,6 +7542,9 @@ const docTemplate = `{
                 "unloadedAt": {
                     "type": "string"
                 },
+                "unloadingLocation": {
+                    "type": "string"
+                },
                 "version": {
                     "type": "integer"
                 }
@@ -8098,6 +8132,20 @@ const docTemplate = `{
                 },
                 "data": {
                     "$ref": "#/definitions/weighing.TaskTripBasis"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_TaskTripCloudStatus": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.TaskTripCloudStatus"
                 },
                 "message": {
                     "type": "string"
@@ -8965,6 +9013,47 @@ const docTemplate = `{
                     "$ref": "#/definitions/tripsync.Trip"
                 },
                 "tripNo": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.TaskTripCloudStatus": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "blockers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "bound": {
+                    "type": "boolean"
+                },
+                "linkable": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "ticketNo": {
+                    "type": "string"
+                },
+                "tripNo": {
+                    "type": "string"
+                },
+                "unloaded": {
+                    "type": "boolean"
+                },
+                "unloadedAt": {
+                    "type": "string"
+                },
+                "unloadingLocation": {
                     "type": "string"
                 }
             }

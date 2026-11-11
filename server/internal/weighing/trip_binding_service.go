@@ -102,3 +102,45 @@ func (s *Service) TaskTripBasis(ctx context.Context, taskID int64) (TaskTripBasi
 	}
 	return repo.TaskTripBasis(ctx, taskID)
 }
+
+// TaskTripCloudStatus reads the current cloud trip state for the second-weigh
+// reminder. A lookup failure is returned in Message and never blocks weighing.
+func (s *Service) TaskTripCloudStatus(ctx context.Context, taskID int64) (TaskTripCloudStatus, error) {
+	repo, ok := s.store.(*Repository)
+	if !ok {
+		return TaskTripCloudStatus{Blockers: []string{}}, ErrForbidden
+	}
+	binding, err := repo.TripBinding(ctx, taskID)
+	if err != nil {
+		return TaskTripCloudStatus{Blockers: []string{}}, err
+	}
+	if binding == nil {
+		return TaskTripCloudStatus{Blockers: []string{}}, nil
+	}
+	result := TaskTripCloudStatus{Bound: true, TripNo: binding.TripNo, Blockers: []string{}}
+	if !s.masterSyncEnabled || strings.TrimSpace(s.masterSyncAddress) == "" {
+		result.Message = "未开启厂云同步，无法查询卸货确认"
+		return result, nil
+	}
+	siteCode, err := s.LocalSiteCode(ctx)
+	if err != nil {
+		result.Message = "读取本厂厂区编码失败"
+		return result, nil
+	}
+	trip, err := tripsync.FetchTrip(ctx, s.masterSyncAddress, siteCode, binding.TripNo)
+	if err != nil {
+		result.Message = tripCloudMessage(err)
+		return result, nil
+	}
+	result.Available = true
+	result.Stage = trip.Stage
+	result.Linkable = trip.Linkable
+	result.Unloaded = trip.UnloadedAt != nil
+	result.UnloadedAt = trip.UnloadedAt
+	result.UnloadingLocation = trip.UnloadingLocation
+	result.TicketNo = trip.TicketNo
+	if trip.Blockers != nil {
+		result.Blockers = trip.Blockers
+	}
+	return result, nil
+}

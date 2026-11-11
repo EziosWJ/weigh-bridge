@@ -144,8 +144,8 @@ export function GrossTareCorrectionFields({ original, value, onChange, showError
   </fieldset>;
 }
 
-const adjustmentRow = (category = 'WATER'): NetAdjustmentInput => ({
-  mode: category === 'WATER' ? 'percent' : 'amount', amount: 0, rateBp: 0, category, remark: '',
+const adjustmentRow = (category = ''): NetAdjustmentInput => ({
+  mode: 'amount', amount: 0, rateBp: 0, category, remark: '',
 });
 
 export function NetAdjustmentFields({ basis, value, onChange, showError = true, onValidationChange }: {
@@ -173,9 +173,7 @@ export function NetAdjustmentFields({ basis, value, onChange, showError = true, 
   const setRow = (index: number, row: NetAdjustmentInput) => onChange(rows.map((item, i) => i === index ? row : item));
   const setMode = (index: number, mode: NetAdjustmentMode) => setRow(index, { ...rows[index], mode });
   const addRow = () => {
-    const used = new Set(rows.map(row => row.category));
-    const category = ['WATER', 'IMPURITY', 'OTHER'].find(code => !used.has(code) && categoryOptions.some(option => option.value === code)) ?? '';
-    onChange([...rows, adjustmentRow(category)]);
+    onChange([...rows, adjustmentRow()]);
   };
   const removeRow = (index: number) => {
     setRemoved({ index, row: rows[index] });

@@ -18,6 +18,7 @@ func registerWorkflowRoutes(router gin.IRouter, h *Handler) {
 	router.POST("/plate-confirmations", confirm, h.confirmPlateRecognition)
 	router.GET("/trip-candidates", read, h.tripCandidates)
 	router.GET("/tasks/:id/trip-basis", read, h.taskTripBasis)
+	router.GET("/tasks/:id/trip-cloud-status", read, h.taskTripCloudStatus)
 	if h.service.devices != nil {
 		router.GET("/agent-images/:imageId", read, h.service.devices.ServeImage)
 	}

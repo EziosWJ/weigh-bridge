@@ -1,5 +1,5 @@
 import { http } from '@/lib/http';
-import type { NetAdjustmentItemView, BusinessInfo, HistoryEntry, PlateEvidence, CaptureSnapshot, WeighingTicket, TransportTask, WeighRecord, PrintSheet, TaskTripBasis, TripCandidateResult } from '@/types/weighing';
+import type { NetAdjustmentItemView, BusinessInfo, HistoryEntry, PlateEvidence, CaptureSnapshot, WeighingTicket, TransportTask, WeighRecord, PrintSheet, TaskTripBasis, TaskTripCloudStatus, TripCandidateResult } from '@/types/weighing';
 
 type WireBusiness = Omit<BusinessInfo, 'materialId' | 'partyId' | 'carrierId'> & { materialId: number; partyId: number; carrierId: number | null };
 export interface WireEvent { action: string; reason: string; actorName: string; occurredAt: string }
@@ -56,6 +56,7 @@ export const workflowApi = {
   active: (plate: string, scale?: string) => http.get<WireTask | null>(`${base}/tasks/active`, { query: { plate,scale } }),
   tripCandidates: (plate: string) => http.get<TripCandidateResult>(`${base}/trip-candidates`, { query: { plate } }),
   taskTripBasis: (id: string | number) => http.get<TaskTripBasis>(`${base}/tasks/${id}/trip-basis`),
+  taskTripCloudStatus: (id: string | number) => http.get<TaskTripCloudStatus>(`${base}/tasks/${id}/trip-cloud-status`),
   plateCandidates: (scale: string, after?: string, signal?: AbortSignal) => http.get<PlateCandidatePage>(`${base}/plate-candidates`, { query: { scale, after }, signal }),
   task: (id: string | number) => http.get<WireTask>(`${base}/tasks/${id}`),
   ticket: (id: string | number) => http.get<WireTicket>(`${base}/tickets/${id}`),

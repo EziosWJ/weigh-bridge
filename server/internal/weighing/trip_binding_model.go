@@ -59,6 +59,23 @@ type TaskTripBasis struct {
 	Deductions    []tripsync.Deduction `json:"deductions"`
 }
 
+// TaskTripCloudStatus is the live cloud state for a bound task. It is a
+// reminder only; the workbench must still allow a local second weigh when the
+// cloud is unavailable.
+type TaskTripCloudStatus struct {
+	Bound             bool       `json:"bound"`
+	TripNo            string     `json:"tripNo,omitempty"`
+	Available         bool       `json:"available"`
+	Message           string     `json:"message,omitempty"`
+	Stage             string     `json:"stage,omitempty"`
+	Linkable          bool       `json:"linkable"`
+	Unloaded          bool       `json:"unloaded"`
+	UnloadedAt        *time.Time `json:"unloadedAt,omitempty"`
+	UnloadingLocation string     `json:"unloadingLocation,omitempty"`
+	TicketNo          string     `json:"ticketNo,omitempty"`
+	Blockers          []string   `json:"blockers"`
+}
+
 func encodeSnapshot(value any) string {
 	encoded, err := json.Marshal(value)
 	if err != nil {
