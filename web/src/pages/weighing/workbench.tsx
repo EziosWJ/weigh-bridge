@@ -15,7 +15,7 @@ import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import { weighingApi } from '@/api/weighing';
 import { workflowApi, type PlateCandidate } from '@/api/weighing-workflow';
-import { roleLabels, taskStatusLabels, type PlateEvidence, type NetAdjustmentsInput, type TaskInput, type TransportTask, type WeightValues, type WeighingCommand, type WeighingState } from '@/types/weighing';
+import { roleLabels, taskStatusLabels, type PlateEvidence, type NetAdjustmentInput, type NetAdjustmentsInput, type TaskInput, type TransportTask, type WeightValues, type WeighingCommand, type WeighingState, type TripCandidate, type TripCandidateResult, type TaskTripBasis, type TripDeduction } from '@/types/weighing';
 import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { formatWeight, formatWeightValue, weightValues } from '@/lib/weighing/weights';
@@ -72,7 +72,10 @@ function WorkbenchContent() {
   const [submitting, setSubmitting] = useState(false);
   const [reviewError, setReviewError] = useState('');
   const [cameraSize, setCameraSize] = useState<CameraSize>('standard');
-  const [review, setReview] = useState<{ data: WeighingState; title: string } | null>(null);
+  const [review, setReview] = useState<{ data: WeighingState; title: string; initialAdjustments?: NetAdjustmentsInput; tripBasis?: TaskTripBasis | null } | null>(null);
+  const [tripResult, setTripResult] = useState<TripCandidateResult | null>(null);
+  const [tripLoading, setTripLoading] = useState(false);
+  const [tripBasis, setTripBasis] = useState<TaskTripBasis | null>(null);
   const [completionOpen, setCompletionOpen] = useState(false);
   const [autoPrintTicket, setAutoPrintTicket] = useState('');
   const [autoPrintNotice, setAutoPrintNotice] = useState('');
@@ -86,12 +89,50 @@ function WorkbenchContent() {
   const [offerManualSource, setOfferManualSource] = useState(false);
   const editing = useRef(!!linkedTask || Object.entries(data.draft).some(([key, value]) => key === 'direction' ? value !== 'inbound' : !!value));
   const [candidates, setCandidates] = useState<PlateCandidate[]>([]);
+  const [tripMatches, setTripMatches] = useState<Record<string, TripCandidate[]>>({});
   const selectedCandidate = useRef<PlateCandidate | null>(null);
   const candidateOwner = useRef<'empty' | 'suggested' | 'manual' | 'confirmed'>(editing.current ? 'manual' : 'empty');
   const candidateEpoch = useRef(0);
   const [candidateCycle, setCandidateCycle] = useState(0);
   const located = !!searchedPlate && searchedPlate === normalizeLegacy(plate) && (!linkedTask || linkedTask.plate === searchedPlate);
   const selected = linkedTask ?? (located ? data.tasks.find((task) => task.plate === searchedPlate && (task.status === 'first' || task.status === 'second')) : undefined);
+  const candidatePlates = [...new Set(candidates.map(item => item.plate))].slice(0, 5);
+  const candidatePlatesKey = candidatePlates.join('|');
+  const selectedTaskID = selected?.id;
+  const hasCapture = !!data.capture;
+  const reviewOpen = !!review;
+  useEffect(() => {
+    let cancelled = false;
+    if (!candidatePlatesKey || selectedTaskID || located || hasCapture || reviewOpen) {
+      setTripMatches({});
+      return;
+    }
+    const timer = setTimeout(() => {
+      void (async () => {
+        const next: Record<string, TripCandidate[]> = {};
+        let enabled = true;
+        for (const plate of candidatePlatesKey.split('|')) {
+          try {
+            const result = await workflowApi.tripCandidates(plate);
+            if (!result.enabled) { enabled = false; break; }
+            next[plate] = result.candidates.filter(item => item.linkable);
+          } catch {
+            next[plate] = [];
+          }
+        }
+        if (!cancelled) setTripMatches(enabled ? next : {});
+      })();
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [candidatePlatesKey, selectedTaskID, located, hasCapture, reviewOpen]);
+  useEffect(() => {
+    let cancelled = false;
+    if (selected?.status !== 'second') { setTripBasis(null); return; }
+    workflowApi.taskTripBasis(selected.id)
+      .then(value => { if (!cancelled) setTripBasis(value); })
+      .catch(() => { if (!cancelled) setTripBasis(null); });
+    return () => { cancelled = true; };
+  }, [selected?.id, selected?.status]);
   const awaitingResult = !!data.pending;
   const firstRecord = selected?.records.filter((record) => record.stage === 'first').slice(-1)[0];
   const successfulTask = (success && data.tasks.find((task) => task.id === success.taskId)) || (selected?.status === 'completed' ? selected : undefined);
@@ -130,6 +171,7 @@ function WorkbenchContent() {
   const candidateBlocked = useRef(false);
   candidateBlocked.current = !!selected || located || !!data.capture || !!review || !!success || awaitingResult || lookingUp || submitting || businessOpen || data.owner === 'other';
   const candidateConflict = new Set(candidates.map(item => item.plate)).size > 1;
+  const exactMatchPlate = candidatePlates.find(item => tripMatches[item]?.length === 1) ?? '';
   // 候选标签已在车牌输入后列出，冲突时提示选择即可，不再重复选中的候选文字。
   const candidateNotice = candidateConflict && !located ? '存在多个候选，请核对后选择' : recognitionHint.startsWith('已选择 ') ? '' : recognitionHint;
   const scaleCode = capabilities?.localScaleCode || params.get('scale') || '';
@@ -175,7 +217,9 @@ function WorkbenchContent() {
     firstWeight: reviewFirstRecord ? `${reviewFirstRecord.kind === 'gross' ? '毛重' : '皮重'} ${formatWeight(reviewFirstRecord.weight)} · ${beijingTime(reviewFirstRecord.at)}` : undefined,
     original: reviewSecond ? reviewExpected : undefined,
     expected: reviewExpected,
+    tripBasis: review.tripBasis ?? undefined,
     supplementary: [
+      { label: '流转单', value: reviewTask ? '' : review.data.trip?.tripNo ?? '' },
       { label: '承运方', value: reviewTask ? reviewTask.carrierName ?? '' : data.parties.find(item => item.id === data.draft.carrierId)?.name ?? '' },
       { label: '本趟联系人', value: [reviewTask ? reviewTask.contactName : data.draft.contactName, reviewTask ? reviewTask.contactPhone : data.draft.contactPhone].filter(Boolean).join(' / ') },
       { label: '司机', value: [reviewTask ? reviewTask.driver : data.draft.driver, reviewTask ? reviewTask.driverPhone : data.draft.driverPhone].filter(Boolean).join(' / ') },
@@ -280,6 +324,45 @@ function WorkbenchContent() {
     setReview(current => current ? { ...current, data: useWeighingStore.getState().data } : current);
   }
 
+  function adjustmentsFromBasis(basis: TaskTripBasis | null): NetAdjustmentsInput {
+    const items = (basis?.deductions ?? []).map((item: TripDeduction) => {
+      const rateBp = item.rateBp ?? 0;
+      const amount = item.amountMilliTonne / 1000;
+      if (item.mode === 'amount' && amount <= 0) return null;
+      if (item.mode === 'percent' && rateBp <= 0) return null;
+      return {
+        mode: item.mode,
+        amount: item.mode === 'amount' ? amount : 0,
+        rateBp: item.mode === 'percent' ? rateBp : 0,
+        category: item.categoryCode,
+        remark: item.explanation || `云端${item.categoryName}`,
+      } satisfies NetAdjustmentInput;
+    }).filter(Boolean) as NetAdjustmentInput[];
+    return items;
+  }
+
+  async function chooseTrip(candidate: TripCandidate) {
+    const material = data.materials.find(item => item.enabled && item.code === candidate.materialCode);
+    const party = data.parties.find(item => item.enabled && item.code === candidate.partyCode && item.roles.includes('supplier'));
+    if (!material) {
+      warn('物料资料未同步', `云端流转单物料 ${candidate.materialCode} 尚未同步到本厂，请联系管理员先同步资料。`);
+      return;
+    }
+    if (!party) {
+      warn('供货方资料未同步', `云端流转单供货方 ${candidate.partyCode} 尚未同步到本厂，请联系管理员先同步资料。`);
+      return;
+    }
+    if (!await run({ type: 'draft', patch: {
+      direction: 'inbound', materialId: material.id, partyId: party.id,
+      driver: candidate.driver ?? '', driverPhone: candidate.driverPhone ?? '',
+      contactName: '', contactPhone: '',
+    } })) return;
+    if (!await run({ type: 'selectTrip', trip: { tripNo: candidate.tripNo, version: candidate.version, candidate } })) return;
+    setTripResult(null);
+    setTripMatches(current => ({ ...current, [candidate.plate]: [candidate] }));
+    toast.success({ title: '已选择流转单', description: `${candidate.tripNo} · ${candidate.materialName} · ${candidate.partyName}` });
+  }
+
   async function lookup(event: FormEvent) {
     event.preventDefault();
     if (lookingUp) return;
@@ -322,22 +405,64 @@ function WorkbenchContent() {
       }
       setSearchedPlate(normalized); editing.current = true; candidateOwner.current = 'confirmed';
       if (existing) {
+        setTripResult(null); setTripBasis(null);
+        void run({ type: 'selectTrip', trip: null });
         setParams({ task: existing.id });
         toast.success({ title: '已确认车辆', description: `${existing.taskNo ?? existing.id} · ${existing.plate}` });
       } else {
         setParams({});
-        toast.success({ title: '已确认车辆', description: '暂无历史任务，请选择物料和供收方。' });
+        setTripResult(null); setTripBasis(null);
+        void run({ type: 'selectTrip', trip: null });
+        setTripLoading(true);
+        try {
+          const result = await workflowApi.tripCandidates(normalized);
+          const linkable = result.candidates.filter(item => item.linkable);
+          setTripMatches(current => ({ ...current, [normalized]: linkable }));
+          if (linkable.length === 1) {
+            await chooseTrip(linkable[0]);
+            setTripResult(null);
+            toast.success({ title: '已确认车辆', description: `已匹配云端流转单 ${linkable[0].tripNo}` });
+          } else if (linkable.length > 1) {
+            setTripResult(result);
+            setRecognitionHint(`发现 ${linkable.length} 张可关联流转单，请人工选择`);
+            toast.success({ title: '已确认车辆', description: '请选择本趟流转单' });
+          } else {
+            setTripResult(null);
+            setRecognitionHint(result.available ? '未找到可关联的云端流转单，可按无流转单办理' : (result.message || '云端流转单查询失败，可按无流转单办理'));
+            toast.success({ title: '已确认车辆', description: '未找到可关联流转单' });
+          }
+        } catch (error) {
+          setTripResult(null);
+          setRecognitionHint(error instanceof Error ? `${error.message}，可按无流转单办理` : '云端流转单查询失败，可按无流转单办理');
+          toast.success({ title: '已确认车辆', description: '云端流转单查询失败' });
+        } finally {
+          setTripLoading(false);
+        }
       }
     } finally {
       setLookingUp(false);
     }
   }
 
-  function openReview() {
+  async function openReview() {
     const latest = useWeighingStore.getState().data;
     if (!latest.capture) return;
+    let basis = tripBasis;
+    if (selected?.status === 'second' && !basis) {
+      try {
+        basis = await workflowApi.taskTripBasis(selected.id);
+        setTripBasis(basis);
+      } catch {
+        basis = null;
+      }
+    }
     setBusinessOpen(false);
-    setReview({ data: latest, title: reviewTitle(latest, selected?.id) });
+    setReview({
+      data: latest,
+      title: reviewTitle(latest, selected?.id),
+      initialAdjustments: selected?.status === 'second' ? adjustmentsFromBasis(basis) : [],
+      tripBasis: selected?.status === 'second' ? basis : null,
+    });
   }
 
   async function capture(repeat = false) {
@@ -353,7 +478,7 @@ function WorkbenchContent() {
         title: repeat ? '已重新采集' : '重量已采集',
         description: '已冻结重量与现场图片，直接进入集中核对。',
       });
-      openReview();
+      await openReview();
     }
   }
 
@@ -486,7 +611,7 @@ function WorkbenchContent() {
   async function changePlate(value: string) {
     candidateOwner.current = 'manual';
     editing.current = true; setSearchedPlate('');
-    setPlate(value); setParams({}); setSuccess(null); setReview(null);
+    setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null);
     if (data.firstRequests[data.draftRequestId] && !await run({ type: 'clearDraft' })) return;
     void run({ type: 'draft', patch: { plate: value } });
   }
@@ -522,11 +647,11 @@ function WorkbenchContent() {
             <div className="plate-field">
               <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} clearable onChange={changePlate} />
               {candidates.length > 0 && <ul className="plate-candidates" aria-label="识别候选">
-                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className="plate-candidate" disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}`} onClick={() => {
+                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className={`plate-candidate${item.plate === exactMatchPlate ? ' is-exact-match' : ''}`} disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}${item.plate === exactMatchPlate ? ' · 云端流转单完全匹配' : ''}`} onClick={() => {
                   candidateOwner.current = 'manual'; selectedCandidate.current = item;
                   setRecognitionHint(`已选择 ${item.plate} · ${sourceCameraNames(item)} · 待人工核对`);
                   void changePlate(item.plate);
-                }}>{item.plate} · {sourceCameraNames(item)} · {clockTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button></li>)}
+                }}>{item.plate === exactMatchPlate && <span className="plate-exact-badge">完全匹配</span>}{item.plate} · {sourceCameraNames(item)} · {clockTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button></li>)}
               </ul>}
             </div>
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在确认…' : '确认车辆'}</Button>
@@ -537,6 +662,23 @@ function WorkbenchContent() {
             setRecognition(null);
             void run({ type: 'verifyPlate', evidence: { source: 'manual', confirmedPlate: searchedPlate, at: new Date().toISOString() } }).then(ok => { if (ok) { setOfferManualSource(false); setRecognitionHint('已改为人工录入来源，请核对现场车辆。'); } });
           }}>改为人工录入来源</Button>}
+          {tripLoading && <p role="status" className="plate-recognition mt-2 text-sm text-info">正在查询云端流转单与化验依据…</p>}
+          {!taskInfo && !awaitingResult && tripResult && (() => {
+            const linkable = tripResult.candidates.filter(item => item.linkable);
+            if (linkable.length <= 1) return null;
+            return <div className="workbench-trip-panel" aria-label="云端流转单人工选择">
+              <div className="workbench-trip-head"><h3>云端流转单</h3><span>发现 {linkable.length} 张可关联流转单</span></div>
+              <p className="workbench-trip-note is-warning">请人工选择本趟流转单，系统不会自动认定。</p>
+              {linkable.map(item => <button key={item.tripNo} type="button" className={`workbench-trip-option${data.trip?.tripNo === item.tripNo ? ' is-selected' : ''}`} onClick={() => void chooseTrip(item)}>
+                <span className="workbench-trip-option-main">{item.tripNo} · {item.materialName} · {item.partyName}</span>
+                <span className="workbench-trip-option-meta">
+                  {item.inspection
+                    ? `化验 水分 ${item.inspection.moisture}% · 杂质 ${item.inspection.impurity}%`
+                    : item.effectiveConclusion === 'accept' ? '目测接收' : '化验待确认'}
+                </span>
+              </button>)}
+            </div>;
+          })()}
           {(taskInfo || awaitingResult || located) && <div className="workbench-business-inline" aria-label="本趟运输资料">
             {(taskInfo || awaitingResult) && <div className="workbench-business-inline-head">
               <h3>本趟运输资料</h3>
@@ -547,11 +689,13 @@ function WorkbenchContent() {
                 <div className="workbench-inline-fact"><span>运输方向</span><strong>{directionLabels[summaryDirection]}</strong></div>
                 <div className="workbench-inline-fact"><span>物料</span><strong title={summaryMaterial}>{summaryMaterial}</strong></div>
                 <div className="workbench-inline-fact"><span>{businessPartyLabel}</span><strong title={summaryParty}>{summaryParty}</strong></div>
+                {data.trip && <div className="workbench-inline-fact"><span>云端流转单</span><strong>{data.trip.tripNo}</strong></div>}
               </div>
               <div className="workbench-inline-actions">
                 <Button size="sm" variant="secondary" onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />查看完整资料</Button>
               </div>
             </> : located ? <>
+              {data.trip && <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong> · {data.trip.candidate.materialName} · {data.trip.candidate.partyName}</p>}
               <SectionTabs label="本趟运输资料" items={[
                 { value: 'basic', label: '基本信息', content: <div className="workbench-business-inline-grid">
                   <BusinessDirectionControl value={data.draft} update={patchDraft} variant="simple" />
@@ -596,7 +740,7 @@ function WorkbenchContent() {
               <div className="flex items-center gap-1"><h2 className="font-semibold text-info">重量与图片已冻结</h2>{missingFields.length === 0 && <HelpHint label="核对提示">请核对车辆、重量和现场图片后确认。设备后续变化不撤销本次采集。</HelpHint>}</div>
               {missingFields.length > 0 && <p role="alert" className="text-sm text-warning">请选择{missingFields.join('、')}后再确认。</p>}
               <div className="flex flex-wrap gap-2">
-                <Button size="lg" variant="primary" className="flex-1" onClick={openReview}><ClipboardCheck className="h-4 w-4" aria-hidden />继续核对{stage === 'first' ? '首磅' : '回磅'}（{kind}）</Button>
+                <Button size="lg" variant="primary" className="flex-1" onClick={() => void openReview()}><ClipboardCheck className="h-4 w-4" aria-hidden />继续核对{stage === 'first' ? '首磅' : '回磅'}（{kind}）</Button>
               </div>
             </>
             : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : status.next}</span><Button size="lg" className="w-full" disabled>采集重量</Button></>
@@ -649,6 +793,7 @@ function WorkbenchContent() {
       invalidReason={reviewInvalidReason}
       value={reviewValue}
       missing={missingFields}
+      initialAdjustments={review.initialAdjustments}
       businessEditor={!selected && missingFields.length ? <div className="review-business-editor">
         <p>重量与抓拍已冻结；补选以下资料后，无需重新采集即可确认。</p>
         <div className="review-business-editor-grid"><BusinessRequiredFields value={data.draft} update={patchReview} compact /></div>

@@ -76,6 +76,11 @@ func (r *Repository) TerminateTask(ctx context.Context, id int64, in TaskActionI
 		if err := tx.Save(&task).Error; err != nil {
 			return out, err
 		}
+		if err := tx.Model(&TripBinding{}).Where("task_id=? AND status='bound'", id).Updates(map[string]any{
+			"status": "superseded", "updated_at": now,
+		}).Error; err != nil {
+			return out, err
+		}
 		out.event.After = snapshot(task.Business)
 		out.result.TaskVersion = task.Version
 		out.result.Status = task.Status
@@ -374,6 +379,9 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 			return out, err
 		}
 		if err := insertTicket(ctx, tx, &ticket, r.dataDir); err != nil {
+			return out, err
+		}
+		if err := r.bindTripTicket(tx, task.ID, ticket.ID); err != nil {
 			return out, err
 		}
 		if err := enqueueTicketChange(tx, ticket, &latest, "reopen", name); err != nil {

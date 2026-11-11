@@ -1,6 +1,7 @@
 import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { useWeighingPage, useWeighingSummary, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireTicket } from '@/api/weighing-workflow';
+import { workflowApi } from '@/api/weighing-workflow';
 import { WorkbenchLink } from "@/components/common/workbench-link";
 import { useDeferredValue, useEffect, useState } from "react";
 import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
@@ -23,7 +24,7 @@ import { beijingTime } from "@/lib/weighing/query";
 import { formatDateTime } from "@/lib/datetime";
 import { protocolLabel, reconcileLabels, syncLabels } from "./sync/labels";
 import type { DataTableColumn } from "@/types";
-import { printStatusLabels, type WeighingTicket, type WeighingFilter } from "@/types/weighing";
+import { printStatusLabels, type WeighingTicket, type WeighingFilter, type TaskTripBasis } from "@/types/weighing";
 import { DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
 import { BusinessSnapshot, ManualReturnNotice, WeighRecords } from "./record-info";
 import { TicketPrintActions } from "./ticket-print-actions";
@@ -94,6 +95,7 @@ export function WeighingTicketDetailPage() {
   const [reason, setReason] = useState("");
   const [error, setError] = useState("");
   const ticket = data.tickets.find((item) => item.id === id);
+  const [tripBasis, setTripBasis] = useState<TaskTripBasis | null>(null);
   const canOperate = !!capabilities?.permissionCodes.some(code => ["weighing:void","weighing:reopen","weighing:print","weighing:reprint"].includes(code));
   const canPrint = capabilities?.permissionCodes.includes("weighing:print") ?? false;
 
@@ -101,6 +103,14 @@ export function WeighingTicketDetailPage() {
     if (!id) return;
     void (async () => { await loadTicket(id); const found=useWeighingStore.getState().data.tickets.find(t=>t.id===id);if(found) await loadTask(found.taskId); })().catch(failure=>setError(failure instanceof Error?failure.message:'详情加载失败'));
   }, [id, loadTicket, loadTask]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!ticket?.taskId) { setTripBasis(null); return; }
+    workflowApi.taskTripBasis(ticket.taskId)
+      .then(value => { if (!cancelled) setTripBasis(value); })
+      .catch(() => { if (!cancelled) setTripBasis(null); });
+    return () => { cancelled = true; };
+  }, [ticket?.taskId]);
   const can = (code: string) => (code==='print'||!!capabilities?.sites.some(s=>s.canOperate))&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
 
   function startOperation(next: TicketOperation) {
@@ -138,6 +148,20 @@ export function WeighingTicketDetailPage() {
         {canOperate && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? can("void") && <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废单据</Button> : canReopen && can("reopen") ? <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.reprintAuthorized && <StatusTag tone="warning">已登记一次补打</StatusTag>}</div>}
         {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">上次打印结果未知，重新打印可能重复出纸。</p>}
       </ContentCard>
+      {tripBasis?.bound && <ContentCard title="云端流转单与化验依据" description="首磅绑定快照；云端磅单关联状态单独显示。">
+        <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="流转单" value={tripBasis.tripNo || '—'} />
+          <DetailItem label="化验单" value={tripBasis.inspection ? `HY-${String(tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
+          <DetailItem label="绑定状态" value={{ bound: '首磅已绑定', ticketed: '已出单，待云端确认卸粮后关联', linked: '云端已关联', conflict: '关联需核查', superseded: '已被新单替代' }[tripBasis.status ?? ''] ?? tripBasis.status ?? '—'} />
+          <DetailItem label="云端磅单号" value={tripBasis.cloudTicketNo || '待云端确认'} />
+        </div>
+        {tripBasis.inspection && <div className="mt-space-4 grid gap-space-4 sm:grid-cols-2">
+          <DetailItem label="水分" value={`${tripBasis.inspection.moisture}%`} />
+          <DetailItem label="杂质" value={`${tripBasis.inspection.impurity}%`} />
+        </div>}
+        {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸粮；确认后系统自动关联磅单，未确认前无法开证。</p>}
+        <p className="mt-space-4 text-sm text-text-secondary">云端扣减依据 {tripBasis.deductions.length} 项；实际扣减以本单净重调整明细为准。</p>
+      </ContentCard>}
       <details className="rounded-admin border border-border bg-surface p-card"><summary className="cursor-pointer font-medium">展开原始依据、调整与历史记录</summary><div className="mt-space-4 space-y-space-6">
       <ContentCard title="人工调整与操作记录"><WeightAdjustmentDetails ticket={ticket} /></ContentCard>
       <ContentCard title="本趟业务信息" description="保留出单时的业务快照；旧记录未保存的字段显示“-”。"><BusinessSnapshot value={ticket} /></ContentCard>

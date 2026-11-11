@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/EziosWJ/weighbridge/server/internal/agentproto"
+	"github.com/EziosWJ/weighbridge/server/internal/tripsync"
 	"strings"
 	"time"
 )
@@ -310,6 +311,11 @@ type ConfirmationInput struct {
 	Checks         Checks              `json:"checks"`
 	NetAdjustment  *NetAdjustmentInput `json:"netAdjustment"`
 	NetAdjustments NetAdjustmentsInput `json:"netAdjustments"`
+	// Trip selects the cloud trip bound at the first weigh. The server
+	// re-reads the cloud detail and stores its own snapshot; the client cannot
+	// submit an arbitrary snapshot.
+	Trip         *TripSelection `json:"trip,omitempty"`
+	tripSnapshot *tripsync.Trip `json:"-"`
 }
 type FinalWeights struct {
 	Gross  Tonnes `json:"gross" swaggertype:"string"`

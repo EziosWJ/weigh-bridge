@@ -6,7 +6,7 @@ import { plateError } from '@/lib/weighing/plate';
 import { workflowApi, task as taskView, ticket as ticketView, type CommandResult, type WireSample, type WireSession, type WireTicket } from '@/api/weighing-workflow';
 import type { ApiPageResult } from '@/types/api';
 import type { WeighingCapabilities } from '@/api/weighing';
-import { emptyTaskInput, type DeviceConfig, type DeviceState, type NetAdjustmentInput, type NetAdjustmentsInput, type TaskInput, type TransportTask, type WeighingCommand, type WeighingState } from '@/types/weighing';
+import { emptyTaskInput, type DeviceConfig, type DeviceState, type NetAdjustmentInput, type NetAdjustmentsInput, type SelectedTrip, type TaskInput, type TransportTask, type WeighingCommand, type WeighingState } from '@/types/weighing';
 import { useAuthStore } from './auth-store';
 import { useWeighingMasterStore } from './weighing-master-store';
 
@@ -38,7 +38,7 @@ function netAdjustmentsBody(inputs?: NetAdjustmentsInput): Record<string, unknow
   return items.length > 0 ? items : undefined;
 }
 interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print' }
-interface UIState { draft: TaskInput; draftRequestId: string; pending: PendingRequest | null }
+interface UIState { draft: TaskInput; draftRequestId: string; trip?: SelectedTrip | null; pending: PendingRequest | null }
 interface Store {
   data: WeighingState; device: DeviceState | null; capabilities: WeighingCapabilities | null;
   ready: boolean; loading: boolean; busy: boolean; storageError: string; syncNotice: string;
@@ -67,7 +67,7 @@ function businessInput(value: TaskInput) { return { ...value, materialId: Number
 function sessionInput() { return { clientId, sessionToken: lease?.sessionToken ?? '' }; }
 function persist() {
   const { data } = useWeighingStore.getState();
-  try { sessionStorage.setItem(uiKey(), JSON.stringify({ draft: data.draft, draftRequestId: data.draftRequestId, pending: pendingRequest } satisfies UIState)); }
+  try { sessionStorage.setItem(uiKey(), JSON.stringify({ draft: data.draft, draftRequestId: data.draftRequestId, trip: data.trip ?? null, pending: pendingRequest } satisfies UIState)); }
   catch { useWeighingStore.setState({ storageError: '本地草稿或待决请求保存失败；业务记录仍由服务端保存。' }); }
 }
 function clearSample() { sample = null; useWeighingStore.setState(s => ({ data: { ...s.data, capture: undefined, sampleReady: false } })); }
@@ -82,7 +82,7 @@ function restoreUI() {
     const raw = sessionStorage.getItem(uiKey());
     if (raw) {
       const ui = JSON.parse(raw) as UIState;
-      if (typeof ui.draft?.plate === 'string' && typeof ui.draftRequestId === 'string') updateData({ draft: ui.draft, draftRequestId: ui.draftRequestId });
+      if (typeof ui.draft?.plate === 'string' && typeof ui.draftRequestId === 'string') updateData({ draft: ui.draft, draftRequestId: ui.draftRequestId, trip: ui.trip ?? undefined });
       if (ui.pending?.actorId === actorId) { pendingRequest = ui.pending; updateData({ pending: pendingView(ui.pending) }); }
     }
   } catch { useWeighingStore.setState({ storageError: '本地工作草稿读取失败，未导入任何旧演示业务记录。' }); }
@@ -310,7 +310,10 @@ export const useWeighingStore = create<Store>((set, get) => ({
         case 'draft': {
           const changedPlate = command.patch.plate !== undefined && command.patch.plate !== data.draft.plate;
           if (changedPlate || (command.patch.direction && command.patch.direction !== data.draft.direction)) await invalidate();
-          updateData({ draft: { ...get().data.draft, ...command.patch }, ...(changedPlate ? { draftPlateEvidence: undefined } : {}) }); persist(); break;
+          updateData({ draft: { ...get().data.draft, ...command.patch }, ...(changedPlate ? { draftPlateEvidence: undefined, trip: undefined } : {}) }); persist(); break;
+        }
+        case 'selectTrip': {
+          updateData({ trip: command.trip ?? undefined }); persist(); break;
         }
         case 'verifyPlate': {
           let evidence = command.evidence;
@@ -321,7 +324,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
           }
           updateData({ draftPlateEvidence: evidence }); break;
         }
-        case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: createId(), draftPlateEvidence: undefined }); persist(); break;
+        case 'clearDraft': await invalidate(); updateData({ draft: emptyTaskInput(), draftRequestId: createId(), draftPlateEvidence: undefined, trip: undefined }); persist(); break;
         case 'occupy': if (command.owner === 'other') throw new Error('请用另一个真实工作台取得操作权，不能伪造其他会话。'); if (command.owner === null) await releaseCurrentSession(); else await acquire(); break;
         case 'takeover': await acquire('takeover', command.reason); clearSample(); break;
         case 'capture': {
@@ -336,7 +339,7 @@ export const useWeighingStore = create<Store>((set, get) => ({
         case 'firstWeigh': {
           await synchronizeLocalIdentity();
           if (!command.checked || !sample || !lease?.sessionToken) throw new Error('请重新采集并完成人工核对');
-          const body = { scaleCode: lease.scaleCode, ...sessionInput(), business: businessInput(command.input), sampleId: sample.id, requestId: command.requestId, checks, reviewedVersions: { material: data.materials.find(m => m.id === command.input.materialId)?.version ?? 0, party: data.parties.find(p => p.id === command.input.partyId)?.version ?? 0, carrier: data.parties.find(p => p.id === command.input.carrierId)?.version ?? 0 } };
+          const body = { scaleCode: lease.scaleCode, ...sessionInput(), business: businessInput(command.input), sampleId: sample.id, requestId: command.requestId, checks, reviewedVersions: { material: data.materials.find(m => m.id === command.input.materialId)?.version ?? 0, party: data.parties.find(p => p.id === command.input.partyId)?.version ?? 0, carrier: data.parties.find(p => p.id === command.input.carrierId)?.version ?? 0 }, ...(data.trip ? { trip: { tripNo: data.trip.tripNo, tripVersion: data.trip.version } } : {}) };
           await send({ actorId, path: '/tasks/first-confirmation', body, requestId: command.requestId, stage: 'first' }); break;
         }
         case 'confirm': {

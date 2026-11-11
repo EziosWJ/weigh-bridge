@@ -25,6 +25,18 @@ export type NetAdjustmentMode = 'amount' | 'percent';
 export interface NetAdjustmentInput { mode: NetAdjustmentMode; amount: number; rateBp: number; category: string; remark?: string }
 export interface NetAdjustmentItemView { mode: NetAdjustmentMode; amount: number; rateBp?: number; category?: string; categoryName?: string; remark?: string }
 export type NetAdjustmentsInput = NetAdjustmentInput[];
+export interface TripInspection { id: number; version: number; status: string; conclusion: string; moisture: string; impurity: string; reason?: string; confirmedAt?: string }
+export interface TripDeduction { ruleId: number; ruleCode: string; ruleVersion: number; categoryCode: string; categoryName: string; mode: NetAdjustmentMode; basisField?: string; basisValue?: string; amountMilliTonne: number; rateBp?: number | null; explanation?: string }
+export interface TripCandidate {
+  tripNo: string; tripId: number; version: number; stage: string; plate: string;
+  materialCode: string; materialName: string; partyCode: string; partyName: string;
+  driver?: string; driverPhone?: string; contractNo?: string; inspectionMethod: string;
+  inspection?: TripInspection; effectiveConclusion?: string; registeredAt: string; unloadedAt?: string | null;
+  ticketNo?: string; linkable: boolean; blockers: string[]; deductions: TripDeduction[];
+}
+export interface TripCandidateResult { enabled: boolean; available: boolean; message?: string; candidates: TripCandidate[] }
+export interface SelectedTrip { tripNo: string; version: number; candidate: TripCandidate }
+export interface TaskTripBasis { bound: boolean; status?: string; tripNo?: string; ticketId?: number; cloudTicketNo?: string; trip?: TripCandidate; inspection?: TripInspection; deductions: TripDeduction[] }
 export interface NetAdjustment { amount: number; mode: NetAdjustmentMode; rateBp?: number; category?: string; categoryName?: string; remark?: string }
 export interface WeightDeduction { grossDeduction: number; tareDeduction: number; reason?: string }
 export type FinalWeightInput = Pick<WeightValues, 'gross' | 'tare'> & { reason?: string };
@@ -52,10 +64,11 @@ export interface DeviceState { captureRequired?: boolean; capturePolicyRevision?
 export interface DeviceConfig { role: OperatorRole; weight: number; stable: boolean; timedOut: boolean; deviceError: boolean; online: boolean; evidence: boolean }
 
 export interface PendingSubmission { operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print'; taskId: string; stage: 'first' | 'second'; committed: boolean; requestId?: string; plate?: string }
-export interface WeighingState { resetAt?: string; draftPlateEvidence?: PlateEvidence; version: 3; categories: MaterialCategory[]; draft: TaskInput; draftRequestId: string; firstRequests: Record<string, string>; materials: Material[]; parties: Party[]; tasks: TransportTask[]; tickets: WeighingTicket[]; config: DeviceConfig; capture?: CaptureSnapshot; sampleReady: boolean; owner: 'self' | 'other' | null; pending?: PendingSubmission; history: HistoryEntry[]; sequence: number }
+export interface WeighingState { resetAt?: string; trip?: SelectedTrip; draftPlateEvidence?: PlateEvidence; version: 3; categories: MaterialCategory[]; draft: TaskInput; draftRequestId: string; firstRequests: Record<string, string>; materials: Material[]; parties: Party[]; tasks: TransportTask[]; tickets: WeighingTicket[]; config: DeviceConfig; capture?: CaptureSnapshot; sampleReady: boolean; owner: 'self' | 'other' | null; pending?: PendingSubmission; history: HistoryEntry[]; sequence: number }
 export type WeighingCommand = (
  | { type: 'capture'; stage?: 'first' | 'second'; taskId?: string; plate?: string; plateEvidence?: PlateEvidence }
  | { type: 'draft'; patch: Partial<TaskInput> }
+ | { type: 'selectTrip'; trip: SelectedTrip | null }
  | { type: 'verifyPlate'; evidence: PlateEvidence }
  | { type: 'clearDraft' }
  | { type: 'firstWeigh'; input: TaskInput; checked: boolean; requestId: string }

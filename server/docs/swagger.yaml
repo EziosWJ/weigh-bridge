@@ -775,6 +775,99 @@ definitions:
       status:
         type: integer
     type: object
+  tripsync.Deduction:
+    properties:
+      amountMilliTonne:
+        type: integer
+      basisField:
+        type: string
+      basisValue:
+        type: string
+      categoryCode:
+        type: string
+      categoryName:
+        type: string
+      explanation:
+        type: string
+      mode:
+        type: string
+      rateBp:
+        type: integer
+      ruleCode:
+        type: string
+      ruleId:
+        type: integer
+      ruleVersion:
+        type: integer
+    type: object
+  tripsync.Inspection:
+    properties:
+      conclusion:
+        type: string
+      confirmedAt:
+        type: string
+      id:
+        type: integer
+      impurity:
+        type: string
+      moisture:
+        type: string
+      reason:
+        type: string
+      status:
+        type: string
+      version:
+        type: integer
+    type: object
+  tripsync.Trip:
+    properties:
+      blockers:
+        items:
+          type: string
+        type: array
+      contractNo:
+        type: string
+      deductions:
+        items:
+          $ref: '#/definitions/tripsync.Deduction'
+        type: array
+      driver:
+        type: string
+      driverPhone:
+        type: string
+      effectiveConclusion:
+        type: string
+      inspection:
+        $ref: '#/definitions/tripsync.Inspection'
+      inspectionMethod:
+        type: string
+      linkable:
+        type: boolean
+      materialCode:
+        type: string
+      materialName:
+        type: string
+      partyCode:
+        type: string
+      partyName:
+        type: string
+      plate:
+        type: string
+      registeredAt:
+        type: string
+      stage:
+        type: string
+      ticketNo:
+        type: string
+      tripId:
+        type: integer
+      tripNo:
+        type: string
+      unloadedAt:
+        type: string
+      version:
+        type: integer
+    type: object
   usermgmt.ApiEnvelope:
     properties:
       code:
@@ -1018,6 +1111,10 @@ definitions:
         type: string
       netAdjustment:
         $ref: '#/definitions/weighing.NetAdjustmentInput'
+      netAdjustments:
+        items:
+          $ref: '#/definitions/weighing.NetAdjustmentInput'
+        type: array
       plateEvidence:
         $ref: '#/definitions/weighing.RecognitionInput'
       reason:
@@ -1036,6 +1133,13 @@ definitions:
         type: integer
       taskId:
         type: integer
+      trip:
+        allOf:
+        - $ref: '#/definitions/weighing.TripSelection'
+        description: |-
+          Trip selects the cloud trip bound at the first weigh. The server
+          re-reads the cloud detail and stores its own snapshot; the client cannot
+          submit an arbitrary snapshot.
       version:
         type: integer
     type: object
@@ -1140,6 +1244,15 @@ definitions:
       message:
         type: string
     type: object
+  weighing.HTTPEnvelope-weighing_TaskTripBasis:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.TaskTripBasis'
+      message:
+        type: string
+    type: object
   weighing.HTTPEnvelope-weighing_TicketView:
     properties:
       code:
@@ -1149,8 +1262,24 @@ definitions:
       message:
         type: string
     type: object
+  weighing.HTTPEnvelope-weighing_TripCandidateResult:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.TripCandidateResult'
+      message:
+        type: string
+    type: object
   weighing.ManualReturnInput:
     properties:
+      netAdjustments:
+        description: |-
+          NetAdjustments follows the multi-item net adjustment of the issued
+          ticket, with the same rules as a normal second confirmation.
+        items:
+          $ref: '#/definitions/weighing.NetAdjustmentInput'
+        type: array
       reason:
         type: string
       requestId:
@@ -1167,6 +1296,21 @@ definitions:
       amount:
         type: string
       category:
+        type: string
+      mode:
+        type: string
+      rateBp:
+        type: integer
+      remark:
+        type: string
+    type: object
+  weighing.NetAdjustmentItem:
+    properties:
+      amountMilli:
+        type: integer
+      category:
+        type: string
+      categoryName:
         type: string
       mode:
         type: string
@@ -1348,6 +1492,10 @@ definitions:
         type: string
       gross:
         type: string
+      items:
+        items:
+          $ref: '#/definitions/weighing.NetAdjustmentItem'
+        type: array
       net:
         type: string
       netAdjustment:
@@ -1384,6 +1532,10 @@ definitions:
         $ref: '#/definitions/weighing.FinalWeights'
       netAdjustment:
         $ref: '#/definitions/weighing.NetAdjustmentInput'
+      netAdjustments:
+        items:
+          $ref: '#/definitions/weighing.NetAdjustmentInput'
+        type: array
       reason:
         type: string
       requestId:
@@ -1410,6 +1562,10 @@ definitions:
         type: string
       netAdjustment:
         $ref: '#/definitions/weighing.NetAdjustmentInput'
+      netAdjustments:
+        items:
+          $ref: '#/definitions/weighing.NetAdjustmentInput'
+        type: array
       otherBasisValid:
         type: boolean
       plateEvidence:
@@ -1432,6 +1588,13 @@ definitions:
         type: integer
       taskId:
         type: integer
+      trip:
+        allOf:
+        - $ref: '#/definitions/weighing.TripSelection'
+        description: |-
+          Trip selects the cloud trip bound at the first weigh. The server
+          re-reads the cloud detail and stores its own snapshot; the client cannot
+          submit an arbitrary snapshot.
       version:
         type: integer
     type: object
@@ -1643,6 +1806,27 @@ definitions:
       version:
         type: integer
     type: object
+  weighing.TaskTripBasis:
+    properties:
+      bound:
+        type: boolean
+      cloudTicketNo:
+        type: string
+      deductions:
+        items:
+          $ref: '#/definitions/tripsync.Deduction'
+        type: array
+      inspection:
+        $ref: '#/definitions/tripsync.Inspection'
+      status:
+        type: string
+      ticketId:
+        type: integer
+      trip:
+        $ref: '#/definitions/tripsync.Trip'
+      tripNo:
+        type: string
+    type: object
   weighing.TicketView:
     properties:
       adjustedAt:
@@ -1687,6 +1871,13 @@ definitions:
         type: string
       netAdjustmentCategoryName:
         type: string
+      netAdjustmentItems:
+        description: |-
+          NetAdjustmentItems is the multi-item detail snapshot. Legacy tickets
+          have an empty list and keep displaying their single-item fields as-is.
+        items:
+          $ref: '#/definitions/weighing.NetAdjustmentItem'
+        type: array
       netAdjustmentMode:
         type: string
       netAdjustmentRateBp:
@@ -1744,6 +1935,26 @@ definitions:
       voidedAt:
         type: string
       voidedBy:
+        type: integer
+    type: object
+  weighing.TripCandidateResult:
+    properties:
+      available:
+        type: boolean
+      candidates:
+        items:
+          $ref: '#/definitions/tripsync.Trip'
+        type: array
+      enabled:
+        type: boolean
+      message:
+        type: string
+    type: object
+  weighing.TripSelection:
+    properties:
+      tripNo:
+        type: string
+      tripVersion:
         type: integer
     type: object
   weighing.VoidInput:
@@ -5195,6 +5406,24 @@ paths:
       summary: 终止任务且不可恢复
       tags:
       - 称重业务
+  /api/weighing/tasks/{id}/trip-basis:
+    get:
+      parameters:
+      - description: 运输任务 ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_TaskTripBasis'
+      security:
+      - BearerAuth: []
+      summary: 查询待回磅任务的首磅流转单快照
+      tags:
+      - 称重业务
   /api/weighing/tasks/active:
     get:
       parameters:
@@ -5576,6 +5805,24 @@ paths:
       security:
       - BearerAuth: []
       summary: 导出全部筛选结果的测试 CSV
+      tags:
+      - 称重业务
+  /api/weighing/trip-candidates:
+    get:
+      parameters:
+      - description: 车牌
+        in: query
+        name: plate
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_TripCandidateResult'
+      security:
+      - BearerAuth: []
+      summary: 按车牌查询云端流转单候选
       tags:
       - 称重业务
 securityDefinitions:

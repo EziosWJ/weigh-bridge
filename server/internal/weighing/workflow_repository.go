@@ -673,6 +673,28 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 			return out, err
 		}
 		task.CurrentFirstRecordID = ptr(record.ID)
+		if trip := in.tripSnapshot; trip != nil {
+			if business.MaterialCode != trip.MaterialCode || business.PartyCode != trip.PartyCode {
+				return out, RejectionError("物料或供货方与流转单不一致，请重新选择")
+			}
+			binding := TripBinding{
+				SiteCode: scale.SiteCode, TripNo: trip.TripNo, CloudTripID: trip.TripID,
+				TripVersion: trip.Version, Plate: business.Plate,
+				MaterialCode: trip.MaterialCode, MaterialName: trip.MaterialName,
+				PartyCode: trip.PartyCode, PartyName: trip.PartyName,
+				TaskID: task.ID, InspectionSnapshot: encodeSnapshot(trip.Inspection),
+				DeductionSnapshot: encodeSnapshot(trip.Deductions), TripSnapshot: encodeSnapshot(trip),
+				Status: "bound", OperationID: in.RequestID, CreatedBy: e.Metadata.ActorID,
+				CreatedAt: now, UpdatedAt: now,
+			}
+			if trip.Inspection != nil {
+				binding.InspectionID = trip.Inspection.ID
+				binding.InspectionVersion = trip.Inspection.Version
+			}
+			if err := tx.Create(&binding).Error; err != nil {
+				return out, RejectionError("流转单已被其他任务绑定，请重新查询")
+			}
+		}
 		out.result = CommandResult{TaskID: task.ID, RecordID: record.ID, TaskVersion: 1, Status: task.Status}
 		out.event.After = snapshot(task.Business)
 		out.event.SampleID = ptr(sample.ID)

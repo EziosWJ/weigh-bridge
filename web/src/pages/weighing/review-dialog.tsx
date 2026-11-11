@@ -13,7 +13,7 @@ import {
   X,
   TriangleAlert,
 } from 'lucide-react';
-import type { CaptureSnapshot, NetAdjustmentsInput, WeightValues } from '@/types/weighing';
+import type { CaptureSnapshot, NetAdjustmentsInput, TaskTripBasis, WeightValues } from '@/types/weighing';
 import { formatWeight, formatWeightValue, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
 import { StatusTag } from '@/components/common/status-tag';
@@ -36,6 +36,7 @@ export interface WeighingReviewValue {
   original?: WeightValues;
   expected?: WeightValues;
   capture?: CaptureSnapshot;
+  tripBasis?: TaskTripBasis;
   supplementary: { label: string; value: string }[];
 }
 
@@ -70,7 +71,7 @@ function ReviewSection({ icon, title, extra, children }: {
 }
 
 /** 集中核对保留本次快照；失效后保留内容供查看，同时禁止提交。 */
-export function WeighingReviewDialog({ value, title, missing = [], businessEditor, invalidReason = '', submitting = false, submitError = '', onCancel, onMismatch, onConfirm }: {
+export function WeighingReviewDialog({ value, title, missing = [], businessEditor, invalidReason = '', submitting = false, submitError = '', initialAdjustments = [], onCancel, onMismatch, onConfirm }: {
   value: WeighingReviewValue;
   title: string;
   missing?: string[];
@@ -78,6 +79,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   invalidReason?: string;
   submitting?: boolean;
   submitError?: string;
+  initialAdjustments?: NetAdjustmentsInput;
   onCancel: () => void;
   onRecapture?: () => void;
   onMismatch: () => void;
@@ -88,7 +90,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   const [fieldError, setFieldError] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
   const [step, setStep] = useState<'review' | 'final'>('review');
-  const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>([]);
+  const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>(initialAdjustments);
   const heading = useRef<HTMLHeadingElement>(null);
   const finalHeading = useRef<HTMLHeadingElement>(null);
   const second = !!value.original;
@@ -165,6 +167,20 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
             <ReviewFact label="物料" value={value.material} />
             <ReviewFact label={value.partyLabel} value={value.party} />
           </div>
+          {value.tripBasis?.bound && <section className="review-section" aria-label="云端流转单与化验依据">
+            <div className="review-section-body">
+              <div className="review-facts">
+                <ReviewFact label="流转单" value={value.tripBasis.tripNo} />
+                <ReviewFact label="化验单" value={value.tripBasis.inspection ? `HY-${String(value.tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
+                {value.tripBasis.inspection && <>
+                  <ReviewFact label="水分" value={`${value.tripBasis.inspection.moisture}%`} />
+                  <ReviewFact label="杂质" value={`${value.tripBasis.inspection.impurity}%`} />
+                </>}
+                <ReviewFact label="扣减依据" value={`${value.tripBasis.deductions.length} 项（云端规则）`} />
+              </div>
+              <p className="review-hint">已按首磅绑定的云端流转单、化验单和扣减规则自动填入；比例项按本次最终净重折算。请核对后再确认出单。</p>
+            </div>
+          </section>}
           <section className="review-section">
             <div className="review-section-body"><NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} /></div>
           </section>

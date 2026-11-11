@@ -2,6 +2,7 @@ import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { CapturePhoto } from './camera-panel';
 import { useWeighingPage, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireTask } from '@/api/weighing-workflow';
+import { workflowApi } from '@/api/weighing-workflow';
 import { plateError } from '@/lib/weighing/plate';
 import { WorkbenchLink } from "@/components/common/workbench-link";
 import { WeightAdjustmentDetails } from "./deduction-fields";
@@ -25,7 +26,7 @@ import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
 import { formatWeight } from "@/lib/weighing/weights";
 import type { DataTableColumn } from "@/types";
-import { emptyTaskInput, taskStatusLabels, type TaskInput, type TransportTask, type WeighingFilter } from "@/types/weighing";
+import { emptyTaskInput, taskStatusLabels, type TaskInput, type TaskTripBasis, type TransportTask, type WeighingFilter } from "@/types/weighing";
 import { BusinessFields, DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
 import { BusinessSnapshot, ManualReturnNotice, WeighRecords } from "./record-info";
 import { ManualReturnDialog, TerminateTaskDialog } from "./task-action-dialogs";
@@ -93,6 +94,7 @@ export function WeighingTaskDetailPage() {
   const [manualOpen, setManualOpen] = useState(false);
   const [terminateOpen, setTerminateOpen] = useState(false);
   const task = data.tasks.find((item) => item.id === id);
+  const [tripBasis, setTripBasis] = useState<TaskTripBasis | null>(null);
   const targetRecord = task && [...task.records].reverse().find(record => record.stage === reweighStage);
   const retainedRecord = task && [...task.records].reverse().find(record => record.stage !== reweighStage);
   const pending = !!task && data.pending?.taskId === task.id;
@@ -103,6 +105,14 @@ export function WeighingTaskDetailPage() {
   const reweighImageReady = !!reweighCapture && (reweighCapture.captureRequired === false || readyCaptureId === reweighCapture.id);
 
   useEffect(() => { if (id) void loadTask(id).catch(failure => setError(failure instanceof Error ? failure.message : '详情加载失败')); }, [id, loadTask]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!id) { setTripBasis(null); return; }
+    workflowApi.taskTripBasis(id)
+      .then(value => { if (!cancelled) setTripBasis(value); })
+      .catch(() => { if (!cancelled) setTripBasis(null); });
+    return () => { cancelled = true; };
+  }, [id]);
   const can = (code: string) => siteCanOperate&&(capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false);
   const operationBasis = useRef(data);
 
@@ -143,6 +153,20 @@ export function WeighingTaskDetailPage() {
         <div className="grid gap-space-4 sm:grid-cols-3"><DetailItem label="创建时间" value={beijingTime(task.createdAt)} /><DetailItem label="首次确认时间" value={task.records.filter(record=>record.stage==='first').slice(-1)[0]?.at ? beijingTime(task.records.filter(record=>record.stage==='first').slice(-1)[0].at) : '尚未确认'} /><DetailItem label="二次确认时间" value={task.records.filter(record=>record.stage==='second').slice(-1)[0]?.at ? beijingTime(task.records.filter(record=>record.stage==='second').slice(-1)[0].at) : '尚未确认'} /></div>
         {!pending && task.status !== "completed" && task.status !== "terminated" && <div className="mt-space-4 flex flex-wrap gap-space-2">{canOperate && <>{can("correct") && <Button size="sm" onClick={() => startOperation("correct")}>业务纠错</Button>}{can("reweigh") && task.records.length > 0 && <Button size="sm" onClick={() => startOperation("reweigh")}>重称</Button>}{can("manual-return") && <Button size="sm" onClick={() => setManualOpen(true)}>人工补录回磅</Button>}{can("terminate") && <Button size="sm" variant="danger" onClick={() => setTerminateOpen(true)}>终止任务</Button>}</>}</div>}
       </ContentCard>
+      {tripBasis?.bound && <ContentCard title="云端流转单与化验依据" description="首磅绑定快照；回磅扣减以此为依据。">
+        <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="流转单" value={tripBasis.tripNo || '—'} />
+          <DetailItem label="化验单" value={tripBasis.inspection ? `HY-${String(tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
+          <DetailItem label="绑定状态" value={{ bound: '首磅已绑定', ticketed: '已出单，待云端确认卸粮后关联', linked: '云端已关联', conflict: '关联需核查', superseded: '已被新单替代' }[tripBasis.status ?? ''] ?? tripBasis.status ?? '—'} />
+          <DetailItem label="云端磅单号" value={tripBasis.cloudTicketNo || '待云端确认'} />
+        </div>
+        {tripBasis.inspection && <div className="mt-space-4 grid gap-space-4 sm:grid-cols-2">
+          <DetailItem label="水分" value={`${tripBasis.inspection.moisture}%`} />
+          <DetailItem label="杂质" value={`${tripBasis.inspection.impurity}%`} />
+        </div>}
+        {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸粮；确认后系统自动关联磅单，未确认前无法开证。</p>}
+        <p className="mt-space-4 text-sm text-text-secondary">云端建议扣减 {tripBasis.deductions.length} 项；回磅时自动带入核对。</p>
+      </ContentCard>}
       {!pending && can("reweigh") && task.status === 'completed' && !tickets.some(ticket => ticket.status === 'valid') && <ContentCard title="作废后的单磅重称"><p className="mb-3">只采集有问题的一磅，核对目标装载状态并沿用另一有效磅，然后在关联作废单办理重开。</p><Button onClick={() => startOperation('reweigh')}>单磅重称</Button></ContentCard>}
       <ContentCard title="本趟业务信息" description="保留当时的资料与联系信息快照；旧记录未保存的字段显示“-”。"><BusinessSnapshot value={task} /></ContentCard>
       <ContentCard title="原始称重记录与替代关系"><WeighRecords records={task.records} /></ContentCard>

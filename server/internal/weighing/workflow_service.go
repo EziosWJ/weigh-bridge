@@ -228,6 +228,13 @@ func (s *Service) ConfirmFirst(ctx context.Context, in ConfirmationInput, e audi
 	if !validRequestID(in.RequestID) || in.SampleID < 1 || in.ScaleCode == "" || in.TaskID != nil {
 		return CommandResult{}, ErrInvalid
 	}
+	if in.Trip != nil {
+		trip, err := s.fetchTripForBinding(ctx, in)
+		if err != nil {
+			return CommandResult{}, err
+		}
+		in.tripSnapshot = trip
+	}
 	return s.store.ConfirmFirst(ctx, in, e)
 }
 func (s *Service) Operation(ctx context.Context, actor int64, key string) (Operation, error) {

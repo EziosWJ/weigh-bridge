@@ -321,6 +321,9 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 		if err := insertTicket(ctx, tx, &ticket, r.dataDir); err != nil {
 			return out, err
 		}
+		if err := r.bindTripTicket(tx, task.ID, ticket.ID); err != nil {
+			return out, err
+		}
 		if err := enqueueTicketChange(tx, ticket, nil, "issue", name); err != nil {
 			return out, err
 		}

@@ -5639,6 +5639,36 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/tasks/{id}/trip-basis": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "查询待回磅任务的首磅流转单快照",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "运输任务 ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TaskTripBasis"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/tickets": {
             "get": {
                 "security": [
@@ -6119,6 +6149,36 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_CommandResult"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/trip-candidates": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "按车牌查询云端流转单候选",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "车牌",
+                        "name": "plate",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_TripCandidateResult"
                         }
                     }
                 }
@@ -7315,6 +7375,147 @@ const docTemplate = `{
                 }
             }
         },
+        "tripsync.Deduction": {
+            "type": "object",
+            "properties": {
+                "amountMilliTonne": {
+                    "type": "integer"
+                },
+                "basisField": {
+                    "type": "string"
+                },
+                "basisValue": {
+                    "type": "string"
+                },
+                "categoryCode": {
+                    "type": "string"
+                },
+                "categoryName": {
+                    "type": "string"
+                },
+                "explanation": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "rateBp": {
+                    "type": "integer"
+                },
+                "ruleCode": {
+                    "type": "string"
+                },
+                "ruleId": {
+                    "type": "integer"
+                },
+                "ruleVersion": {
+                    "type": "integer"
+                }
+            }
+        },
+        "tripsync.Inspection": {
+            "type": "object",
+            "properties": {
+                "conclusion": {
+                    "type": "string"
+                },
+                "confirmedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "impurity": {
+                    "type": "string"
+                },
+                "moisture": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
+        "tripsync.Trip": {
+            "type": "object",
+            "properties": {
+                "blockers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "contractNo": {
+                    "type": "string"
+                },
+                "deductions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/tripsync.Deduction"
+                    }
+                },
+                "driver": {
+                    "type": "string"
+                },
+                "driverPhone": {
+                    "type": "string"
+                },
+                "effectiveConclusion": {
+                    "type": "string"
+                },
+                "inspection": {
+                    "$ref": "#/definitions/tripsync.Inspection"
+                },
+                "inspectionMethod": {
+                    "type": "string"
+                },
+                "linkable": {
+                    "type": "boolean"
+                },
+                "materialCode": {
+                    "type": "string"
+                },
+                "materialName": {
+                    "type": "string"
+                },
+                "partyCode": {
+                    "type": "string"
+                },
+                "partyName": {
+                    "type": "string"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "registeredAt": {
+                    "type": "string"
+                },
+                "stage": {
+                    "type": "string"
+                },
+                "ticketNo": {
+                    "type": "string"
+                },
+                "tripId": {
+                    "type": "integer"
+                },
+                "tripNo": {
+                    "type": "string"
+                },
+                "unloadedAt": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "usermgmt.ApiEnvelope": {
             "type": "object",
             "properties": {
@@ -7686,6 +7887,12 @@ const docTemplate = `{
                 "netAdjustment": {
                     "$ref": "#/definitions/weighing.NetAdjustmentInput"
                 },
+                "netAdjustments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.NetAdjustmentInput"
+                    }
+                },
                 "plateEvidence": {
                     "$ref": "#/definitions/weighing.RecognitionInput"
                 },
@@ -7712,6 +7919,14 @@ const docTemplate = `{
                 },
                 "taskId": {
                     "type": "integer"
+                },
+                "trip": {
+                    "description": "Trip selects the cloud trip bound at the first weigh. The server\nre-reads the cloud detail and stores its own snapshot; the client cannot\nsubmit an arbitrary snapshot.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/weighing.TripSelection"
+                        }
+                    ]
                 },
                 "version": {
                     "type": "integer"
@@ -7875,6 +8090,20 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-weighing_TaskTripBasis": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.TaskTripBasis"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.HTTPEnvelope-weighing_TicketView": {
             "type": "object",
             "properties": {
@@ -7889,9 +8118,30 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-weighing_TripCandidateResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.TripCandidateResult"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.ManualReturnInput": {
             "type": "object",
             "properties": {
+                "netAdjustments": {
+                    "description": "NetAdjustments follows the multi-item net adjustment of the issued\nticket, with the same rules as a normal second confirmation.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.NetAdjustmentInput"
+                    }
+                },
                 "reason": {
                     "type": "string"
                 },
@@ -7916,6 +8166,29 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "category": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "rateBp": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.NetAdjustmentItem": {
+            "type": "object",
+            "properties": {
+                "amountMilli": {
+                    "type": "integer"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "categoryName": {
                     "type": "string"
                 },
                 "mode": {
@@ -8193,6 +8466,12 @@ const docTemplate = `{
                 "gross": {
                     "type": "string"
                 },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.NetAdjustmentItem"
+                    }
+                },
                 "net": {
                     "type": "string"
                 },
@@ -8248,6 +8527,12 @@ const docTemplate = `{
                 "netAdjustment": {
                     "$ref": "#/definitions/weighing.NetAdjustmentInput"
                 },
+                "netAdjustments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.NetAdjustmentInput"
+                    }
+                },
                 "reason": {
                     "type": "string"
                 },
@@ -8288,6 +8573,12 @@ const docTemplate = `{
                 "netAdjustment": {
                     "$ref": "#/definitions/weighing.NetAdjustmentInput"
                 },
+                "netAdjustments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.NetAdjustmentInput"
+                    }
+                },
                 "otherBasisValid": {
                     "type": "boolean"
                 },
@@ -8320,6 +8611,14 @@ const docTemplate = `{
                 },
                 "taskId": {
                     "type": "integer"
+                },
+                "trip": {
+                    "description": "Trip selects the cloud trip bound at the first weigh. The server\nre-reads the cloud detail and stores its own snapshot; the client cannot\nsubmit an arbitrary snapshot.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/weighing.TripSelection"
+                        }
+                    ]
                 },
                 "version": {
                     "type": "integer"
@@ -8638,6 +8937,38 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.TaskTripBasis": {
+            "type": "object",
+            "properties": {
+                "bound": {
+                    "type": "boolean"
+                },
+                "cloudTicketNo": {
+                    "type": "string"
+                },
+                "deductions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/tripsync.Deduction"
+                    }
+                },
+                "inspection": {
+                    "$ref": "#/definitions/tripsync.Inspection"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "ticketId": {
+                    "type": "integer"
+                },
+                "trip": {
+                    "$ref": "#/definitions/tripsync.Trip"
+                },
+                "tripNo": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.TicketView": {
             "type": "object",
             "properties": {
@@ -8703,6 +9034,13 @@ const docTemplate = `{
                 },
                 "netAdjustmentCategoryName": {
                     "type": "string"
+                },
+                "netAdjustmentItems": {
+                    "description": "NetAdjustmentItems is the multi-item detail snapshot. Legacy tickets\nhave an empty list and keep displaying their single-item fields as-is.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.NetAdjustmentItem"
+                    }
                 },
                 "netAdjustmentMode": {
                     "type": "string"
@@ -8789,6 +9127,37 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "voidedBy": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.TripCandidateResult": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "candidates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/tripsync.Trip"
+                    }
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.TripSelection": {
+            "type": "object",
+            "properties": {
+                "tripNo": {
+                    "type": "string"
+                },
+                "tripVersion": {
                     "type": "integer"
                 }
             }

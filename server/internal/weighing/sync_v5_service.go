@@ -89,6 +89,9 @@ func (s *Service) RunSyncV5(ctx context.Context) error {
 			if err := repo.writeSyncLog(dbCtx, "automatic", change.ChangeType, change.TicketNo, change.Digest, "", true, ""); err != nil {
 				return err
 			}
+			if change.ChangeType == "issue" || change.ChangeType == "reopen" {
+				s.linkTripBinding(dbCtx, change.TicketID, change.TicketNo)
+			}
 			continue
 		}
 		status, next := syncFailureState(cloudErr, change.Attempts+1)
@@ -105,6 +108,7 @@ func (s *Service) RunSyncV5(ctx context.Context) error {
 			}
 		}
 	}
+	s.retryPendingTripLinks(context.WithoutCancel(ctx))
 	return nil
 }
 
