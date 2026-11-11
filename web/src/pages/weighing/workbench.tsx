@@ -27,7 +27,7 @@ import './workbench.css';
 
 const normalizeLegacy = (value: string) => value.trim().toUpperCase();
 const emptyTripBusinessFields: Partial<TaskInput> = {
-  direction: 'inbound', materialId: '', partyId: '', carrierId: '',
+  materialId: '', partyId: '', carrierId: '',
   contactName: '', contactPhone: '', driver: '', driverPhone: '', remark: '',
 };
 const sourceCameraNames = (item: PlateCandidate) => [...new Set(item.sourceEvents.map(source => source.cameraName).filter(Boolean))].join('、');
