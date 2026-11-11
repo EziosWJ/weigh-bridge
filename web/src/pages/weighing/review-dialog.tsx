@@ -176,9 +176,8 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
                   <ReviewFact label="水分" value={`${value.tripBasis.inspection.moisture}%`} />
                   <ReviewFact label="杂质" value={`${value.tripBasis.inspection.impurity}%`} />
                 </>}
-                <ReviewFact label="扣减依据" value={`${value.tripBasis.deductions.length} 项（云端规则）`} />
               </div>
-              <p className="review-hint">已按首磅绑定的云端流转单、化验单和扣减规则自动填入；比例项按本次最终净重折算。请核对后再确认出单。</p>
+              <p className="review-hint">已按流转单化验结果带入本次扣减；以下为最终扣减，请核对后再确认出单。</p>
             </div>
           </section>}
           <section className="review-section">

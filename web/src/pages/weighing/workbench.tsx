@@ -414,6 +414,7 @@ function WorkbenchContent() {
       return;
     }
     candidateBlocked.current = true;
+    setRecognitionHint('');
     setLookingUp(true);
     try {
       let existing;
@@ -452,6 +453,7 @@ function WorkbenchContent() {
           if (linkable.length === 1) {
             await chooseTrip(linkable[0]);
             setTripResult(null);
+            setRecognitionHint('');
             toast.success({ title: '已确认车辆', description: `已匹配云端流转单 ${linkable[0].tripNo}` });
           } else if (linkable.length > 1) {
             setTripResult(result);
@@ -644,6 +646,7 @@ function WorkbenchContent() {
     editing.current = true; setSearchedPlate('');
     setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null);
     setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0);
+    setRecognitionHint('');
     if (data.firstRequests[data.draftRequestId] && !await run({ type: 'clearDraft' })) return;
     void run({ type: 'draft', patch: { plate: value, ...emptyTripBusinessFields } });
     void run({ type: 'selectTrip', trip: null });
@@ -731,7 +734,11 @@ function WorkbenchContent() {
                 <Button size="sm" variant="secondary" onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />查看完整资料</Button>
               </div>
             </> : located ? <>
-              {data.trip && <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong> · {data.trip.candidate.materialName} · {data.trip.candidate.partyName}</p>}
+              {data.trip
+                ? <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong> · {data.trip.candidate.materialName} · {data.trip.candidate.partyName}</p>
+                : tripResult
+                  ? <p className="workbench-inline-trip">请选择本趟流转单后再录入业务资料</p>
+                  : <p className="workbench-inline-trip">未关联云端流转单，按本厂资料办理</p>}
               <SectionTabs label="本趟运输资料" items={[
                 { value: 'basic', label: '基本信息', content: <div className="workbench-business-inline-grid">
                   <BusinessDirectionControl value={data.draft} update={patchDraft} variant="simple" />

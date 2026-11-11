@@ -152,15 +152,14 @@ export function WeighingTicketDetailPage() {
         <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
           <DetailItem label="流转单" value={tripBasis.tripNo || '—'} />
           <DetailItem label="化验单" value={tripBasis.inspection ? `HY-${String(tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
-          <DetailItem label="绑定状态" value={{ bound: '首磅已绑定', ticketed: '已出单，待云端确认卸粮后关联', linked: '云端已关联', conflict: '关联需核查', superseded: '已被新单替代' }[tripBasis.status ?? ''] ?? tripBasis.status ?? '—'} />
+          <DetailItem label="绑定状态" value={{ bound: '首磅已绑定', ticketed: '已出单，待云端确认卸货后关联', linked: '云端已关联', conflict: '关联需核查', superseded: '已被新单替代' }[tripBasis.status ?? ''] ?? tripBasis.status ?? '—'} />
           <DetailItem label="云端磅单号" value={tripBasis.cloudTicketNo || '待云端确认'} />
         </div>
         {tripBasis.inspection && <div className="mt-space-4 grid gap-space-4 sm:grid-cols-2">
           <DetailItem label="水分" value={`${tripBasis.inspection.moisture}%`} />
           <DetailItem label="杂质" value={`${tripBasis.inspection.impurity}%`} />
         </div>}
-        {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸粮；确认后系统自动关联磅单，未确认前无法开证。</p>}
-        <p className="mt-space-4 text-sm text-text-secondary">云端扣减依据 {tripBasis.deductions.length} 项；实际扣减以本单净重调整明细为准。</p>
+        {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸货；确认后系统自动关联磅单，未确认前无法开证。</p>}
       </ContentCard>}
       <details className="rounded-admin border border-border bg-surface p-card"><summary className="cursor-pointer font-medium">展开原始依据、调整与历史记录</summary><div className="mt-space-4 space-y-space-6">
       <ContentCard title="人工调整与操作记录"><WeightAdjustmentDetails ticket={ticket} /></ContentCard>

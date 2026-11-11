@@ -157,15 +157,14 @@ export function WeighingTaskDetailPage() {
         <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
           <DetailItem label="流转单" value={tripBasis.tripNo || '—'} />
           <DetailItem label="化验单" value={tripBasis.inspection ? `HY-${String(tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
-          <DetailItem label="绑定状态" value={{ bound: '首磅已绑定', ticketed: '已出单，待云端确认卸粮后关联', linked: '云端已关联', conflict: '关联需核查', superseded: '已被新单替代' }[tripBasis.status ?? ''] ?? tripBasis.status ?? '—'} />
+          <DetailItem label="绑定状态" value={{ bound: '首磅已绑定', ticketed: '已出单，待云端确认卸货后关联', linked: '云端已关联', conflict: '关联需核查', superseded: '已被新单替代' }[tripBasis.status ?? ''] ?? tripBasis.status ?? '—'} />
           <DetailItem label="云端磅单号" value={tripBasis.cloudTicketNo || '待云端确认'} />
         </div>
         {tripBasis.inspection && <div className="mt-space-4 grid gap-space-4 sm:grid-cols-2">
           <DetailItem label="水分" value={`${tripBasis.inspection.moisture}%`} />
           <DetailItem label="杂质" value={`${tripBasis.inspection.impurity}%`} />
         </div>}
-        {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸粮；确认后系统自动关联磅单，未确认前无法开证。</p>}
-        <p className="mt-space-4 text-sm text-text-secondary">云端建议扣减 {tripBasis.deductions.length} 项；回磅时自动带入核对。</p>
+        {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸货；确认后系统自动关联磅单，未确认前无法开证。</p>}
       </ContentCard>}
       {!pending && can("reweigh") && task.status === 'completed' && !tickets.some(ticket => ticket.status === 'valid') && <ContentCard title="作废后的单磅重称"><p className="mb-3">只采集有问题的一磅，核对目标装载状态并沿用另一有效磅，然后在关联作废单办理重开。</p><Button onClick={() => startOperation('reweigh')}>单磅重称</Button></ContentCard>}
       <ContentCard title="本趟业务信息" description="保留当时的资料与联系信息快照；旧记录未保存的字段显示“-”。"><BusinessSnapshot value={task} /></ContentCard>
