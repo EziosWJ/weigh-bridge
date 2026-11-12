@@ -25,7 +25,7 @@ export type NetAdjustmentMode = 'amount' | 'percent';
 export interface NetAdjustmentInput { mode: NetAdjustmentMode; amount: number; rateBp: number; category: string; remark?: string }
 export interface NetAdjustmentItemView { mode: NetAdjustmentMode; amount: number; rateBp?: number; category?: string; categoryName?: string; remark?: string }
 export type NetAdjustmentsInput = NetAdjustmentInput[];
-export interface TripInspection { id: number; version: number; status: string; conclusion: string; moisture: string; impurity: string; reason?: string; confirmedAt?: string }
+export interface TripInspection { id: number; version: number; status: string; conclusion: string; moisture: string; impurity: string; bulkDensity?: string; reason?: string; confirmedAt?: string }
 export interface TripDeduction { ruleId: number; ruleCode: string; ruleVersion: number; categoryCode: string; categoryName: string; mode: NetAdjustmentMode; basisField?: string; basisValue?: string; amountMilliTonne: number; rateBp?: number | null; explanation?: string }
 export interface TripCandidate {
   tripNo: string; tripId: number; version: number; stage: string; plate: string;

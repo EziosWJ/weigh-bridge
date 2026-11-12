@@ -764,7 +764,7 @@ function WorkbenchContent() {
                 <span className="workbench-trip-option-main">{item.tripNo} · {item.materialName} · {item.partyName}</span>
                 <span className="workbench-trip-option-meta">
                   {item.inspection
-                    ? `化验 水分 ${item.inspection.moisture}% · 杂质 ${item.inspection.impurity}%`
+                    ? `化验 水分 ${item.inspection.moisture}% · 容量 ${item.inspection.bulkDensity ? `${item.inspection.bulkDensity} g/L` : '—'}`
                     : item.effectiveConclusion === 'accept' ? '目测接收' : '化验待确认'}
                 </span>
               </button>)}

@@ -802,6 +802,8 @@ definitions:
     type: object
   tripsync.Inspection:
     properties:
+      bulkDensity:
+        type: string
       conclusion:
         type: string
       confirmedAt:

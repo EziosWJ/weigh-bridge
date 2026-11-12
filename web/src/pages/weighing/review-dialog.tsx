@@ -174,7 +174,7 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
                 <ReviewFact label="化验单" value={value.tripBasis.inspection ? `HY-${String(value.tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
                 {value.tripBasis.inspection && <>
                   <ReviewFact label="水分" value={`${value.tripBasis.inspection.moisture}%`} />
-                  <ReviewFact label="杂质" value={`${value.tripBasis.inspection.impurity}%`} />
+                  <ReviewFact label="容量" value={value.tripBasis.inspection.bulkDensity ? `${value.tripBasis.inspection.bulkDensity} g/L` : '—'} />
                 </>}
               </div>
               <p className="review-hint">已按流转单化验结果带入本次扣减；以下为最终扣减，请核对后再确认出单。</p>

@@ -162,7 +162,7 @@ export function WeighingTaskDetailPage() {
         </div>
         {tripBasis.inspection && <div className="mt-space-4 grid gap-space-4 sm:grid-cols-2">
           <DetailItem label="水分" value={`${tripBasis.inspection.moisture}%`} />
-          <DetailItem label="杂质" value={`${tripBasis.inspection.impurity}%`} />
+          <DetailItem label="容量" value={tripBasis.inspection.bulkDensity ? `${tripBasis.inspection.bulkDensity} g/L` : '—'} />
         </div>}
         {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸货；确认后系统自动关联磅单，未确认前无法开证。</p>}
       </ContentCard>}

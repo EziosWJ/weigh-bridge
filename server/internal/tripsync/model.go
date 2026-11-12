@@ -10,6 +10,7 @@ type Inspection struct {
 	Conclusion  string     `json:"conclusion"`
 	Moisture    string     `json:"moisture"`
 	Impurity    string     `json:"impurity"`
+	BulkDensity string     `json:"bulkDensity"`
 	Reason      string     `json:"reason"`
 	ConfirmedAt *time.Time `json:"confirmedAt"`
 }

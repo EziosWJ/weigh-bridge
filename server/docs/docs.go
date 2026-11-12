@@ -7447,6 +7447,9 @@ const docTemplate = `{
         "tripsync.Inspection": {
             "type": "object",
             "properties": {
+                "bulkDensity": {
+                    "type": "string"
+                },
                 "conclusion": {
                     "type": "string"
                 },
