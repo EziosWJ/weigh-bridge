@@ -2,9 +2,11 @@ package weighing
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 
+	"github.com/EziosWJ/weighbridge/server/internal/localsite"
 	"github.com/EziosWJ/weighbridge/server/internal/tripsync"
 )
 
@@ -39,8 +41,12 @@ func (s *Service) TripCandidates(ctx context.Context, plate string) (TripCandida
 	if !IsBusinessPlate(plate) {
 		return result, ErrInvalid
 	}
-	siteCode, err := s.LocalSiteCode(ctx)
+	siteCode, err := s.requiredLocalSiteCode(ctx)
 	if err != nil {
+		if errors.Is(err, localsite.ErrNotConfigured) {
+			result.Message = err.Error()
+			return result, nil
+		}
 		return result, err
 	}
 	values, err := tripsync.FetchCandidates(ctx, s.masterSyncAddress, siteCode, normalizePlate(plate))
@@ -63,8 +69,11 @@ func (s *Service) fetchTripForBinding(ctx context.Context, in ConfirmationInput)
 	if !s.masterSyncEnabled || strings.TrimSpace(s.masterSyncAddress) == "" {
 		return nil, RejectionError("未开启厂云同步，不能绑定流转单")
 	}
-	siteCode, err := s.LocalSiteCode(ctx)
+	siteCode, err := s.requiredLocalSiteCode(ctx)
 	if err != nil {
+		if errors.Is(err, localsite.ErrNotConfigured) {
+			return nil, RejectionError(err.Error())
+		}
 		return nil, err
 	}
 	trip, err := tripsync.FetchTrip(ctx, s.masterSyncAddress, siteCode, in.Trip.TripNo)
@@ -122,8 +131,12 @@ func (s *Service) TaskTripCloudStatus(ctx context.Context, taskID int64) (TaskTr
 		result.Message = "未开启厂云同步，无法查询卸货确认"
 		return result, nil
 	}
-	siteCode, err := s.LocalSiteCode(ctx)
+	siteCode, err := s.requiredLocalSiteCode(ctx)
 	if err != nil {
+		if errors.Is(err, localsite.ErrNotConfigured) {
+			result.Message = err.Error()
+			return result, nil
+		}
 		result.Message = "读取本厂厂区编码失败"
 		return result, nil
 	}

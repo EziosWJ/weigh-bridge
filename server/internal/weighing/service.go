@@ -176,3 +176,17 @@ func (s *Service) LocalSiteCode(ctx context.Context) (string, error) {
 	}
 	return "", nil
 }
+
+// requiredLocalSiteCode returns the configured local site code or a clear
+// configuration error. Cloud trip lookups must never run without a site code.
+func (s *Service) requiredLocalSiteCode(ctx context.Context) (string, error) {
+	code, err := s.LocalSiteCode(ctx)
+	if err != nil {
+		return "", err
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return "", localsite.ErrNotConfigured
+	}
+	return code, nil
+}
