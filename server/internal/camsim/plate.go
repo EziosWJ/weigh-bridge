@@ -1,8 +1,10 @@
 package camsim
 
 import (
+	"errors"
 	"math/rand/v2"
 	"strings"
+	"unicode"
 
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
@@ -46,4 +48,20 @@ func writeRandom(b *strings.Builder, source string, count int) {
 	for i := 0; i < count; i++ {
 		b.WriteByte(source[rand.IntN(len(source))])
 	}
+}
+
+// normalizePlate trims separators, uppercases the input and applies the same
+// business plate rule as the Server. The simulator must not report a plate
+// that the Server would reject.
+func normalizePlate(raw string) (string, error) {
+	value := strings.ToUpper(strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || r == '·' || r == '•' {
+			return -1
+		}
+		return r
+	}, raw))
+	if !weighing.IsBusinessPlate(value) {
+		return "", errors.New("车牌格式不正确，请输入普通或新能源车牌")
+	}
+	return value, nil
 }

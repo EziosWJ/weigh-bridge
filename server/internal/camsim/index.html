@@ -29,6 +29,9 @@
     button.primary:hover { background: #155eef; }
     button:disabled { opacity: .45; cursor: not-allowed; }
     button:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+    input { flex: 1 1 220px; max-width: 280px; min-height: 38px; border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 12px; background: #fff; color: #1f2937; font: inherit; }
+    input:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
     dl { margin: 0; }
     .detail { display: grid; grid-template-columns: 112px 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f1f3; }
     .detail:last-child { border-bottom: 0; }
@@ -68,7 +71,7 @@
     <section aria-labelledby="plate-title">
       <h2 id="plate-title">当前模拟车牌</h2>
       <div id="plate" class="plate">—</div>
-      <p class="muted">车牌由模拟器随机生成，符合本系统的车牌校验规则，不是图像识别结果。</p>
+      <p class="muted">车牌可随机生成，也可手动输入；都会按本系统的车牌校验规则校验，不是图像识别结果。</p>
       <dl>
         <div class="detail"><dt>事件号</dt><dd id="event-id">—</dd></div>
         <div class="detail"><dt>识别时间</dt><dd id="recognized-at">—</dd></div>
@@ -78,6 +81,12 @@
         <button type="button" data-action="report_current">再次上报当前车牌</button>
       </div>
       <p class="muted">“再次上报”会以新的识别事件上报同一车牌，用于测试同车候选合并。</p>
+      <label for="manual-plate">手动上报车牌</label>
+      <div class="row">
+        <input id="manual-plate" maxlength="10" placeholder="例如 晋A12345" autocomplete="off">
+        <button id="manual-report" type="button">上报指定车牌</button>
+      </div>
+      <p class="muted">输入普通或新能源车牌，点击后以新的识别事件上报；格式不正确会被拒绝。</p>
     </section>
 
     <section aria-labelledby="connection-title">
@@ -205,6 +214,8 @@
         document.querySelectorAll('button[data-action]').forEach(button => {
           button.disabled = value;
         });
+        $('manual-report').disabled = value;
+        $('manual-plate').disabled = value;
         if (value) {
           $('retry').disabled = true;
         } else if (latest) {
@@ -224,7 +235,7 @@
         }
       }
 
-      async function act(action) {
+      async function act(action, extra = {}) {
         if (busy) return;
         setBusy(true);
         $('notice').textContent = '';
@@ -232,7 +243,7 @@
           const response = await fetch('/api/control', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: action })
+            body: JSON.stringify({ action: action, ...extra })
           });
           const text = await response.text();
           if (!response.ok) {
@@ -252,6 +263,21 @@
         button.addEventListener('click', () => act(button.dataset.action));
       });
       $('retry').addEventListener('click', () => act('retry'));
+      $('manual-report').addEventListener('click', () => {
+        const plate = $('manual-plate').value.trim();
+        if (!plate) {
+          $('notice').textContent = '请输入车牌';
+          $('manual-plate').focus();
+          return;
+        }
+        void act('report_plate', { plate });
+      });
+      $('manual-plate').addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          $('manual-report').click();
+        }
+      });
       refresh();
       setInterval(refresh, 2000);
     })();

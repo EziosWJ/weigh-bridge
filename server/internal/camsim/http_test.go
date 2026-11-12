@@ -89,7 +89,7 @@ func TestControlPageAndState(t *testing.T) {
 
 	page := httptest.NewRecorder()
 	handler.ServeHTTP(page, httptest.NewRequest(http.MethodGet, "/", nil))
-	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "摄像头车牌识别模拟器") || !strings.Contains(page.Body.String(), "模拟器 · 非真实摄像头") || !strings.Contains(page.Body.String(), "刷新车牌并上报") {
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "摄像头车牌识别模拟器") || !strings.Contains(page.Body.String(), "模拟器 · 非真实摄像头") || !strings.Contains(page.Body.String(), "刷新车牌并上报") || !strings.Contains(page.Body.String(), "上报指定车牌") {
 		t.Fatalf("unexpected page: %d %s", page.Code, page.Body.String())
 	}
 	if page.Header().Get("Cache-Control") != "no-store" {
@@ -139,6 +139,19 @@ func TestControlPageAndState(t *testing.T) {
 	}
 	if reported.LastReport == nil || !reported.LastReport.Success || reported.LastReport.Plate != state.Plate {
 		t.Fatalf("report state: %+v", reported)
+	}
+	response = control("application/json", `{"action":"report_plate","plate":" 晋a12345 "}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("report_plate: %d %s", response.Code, response.Body.String())
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &reported); err != nil {
+		t.Fatal(err)
+	}
+	if reported.LastReport == nil || !reported.LastReport.Success || reported.LastReport.Plate != "晋A12345" {
+		t.Fatalf("manual plate state: %+v", reported)
+	}
+	if response := control("application/json", `{"action":"report_plate","plate":"ABC"}`); response.Code != http.StatusBadRequest {
+		t.Fatalf("invalid manual plate: %d", response.Code)
 	}
 	response = control("application/json", `{"action":"recognize"}`)
 	if response.Code != http.StatusOK {

@@ -73,6 +73,32 @@ func TestRecognizeAndReportCurrent(t *testing.T) {
 	}
 }
 
+func TestReportPlate(t *testing.T) {
+	fixed := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	server, requests := fakeServer(t, snapshotACK)
+	sim, err := New(Config{ServerURL: server.URL, SerialNumber: "camera-sim-1", Now: fixedClock(fixed)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := sim.ReportPlate(context.Background(), " 晋a·12345 ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Plate != "晋A12345" || state.LastReport == nil || !state.LastReport.Success || state.LastReport.Plate != "晋A12345" {
+		t.Fatalf("manual report state: %+v", state)
+	}
+	got := requests()
+	if len(got) != 1 || got[0].Plate != "晋A12345" {
+		t.Fatalf("manual report request: %+v", got)
+	}
+	if _, err := sim.ReportPlate(context.Background(), "ABC"); err == nil {
+		t.Fatal("invalid manual plate accepted")
+	}
+	if len(requests()) != 1 {
+		t.Fatal("invalid manual plate was sent")
+	}
+}
+
 func TestRetryResendsSameEventBody(t *testing.T) {
 	fail := true
 	server, requests := fakeServer(t, func(request capturedRequest) (int, string) {

@@ -137,7 +137,9 @@ function WorkbenchContent() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [candidatePlatesKey, selectedTaskID, located, hasCapture, reviewOpen]);
   const manualPlate = normalizeLegacy(plate);
-  const manualPlateKey = !selectedTaskID && !located && !hasCapture && !reviewOpen && manualPlate && !plateError(manualPlate) && !candidatePlates.includes(manualPlate) ? manualPlate : '';
+  const manualPlateKey = !selectedTaskID && !located && !hasCapture && !reviewOpen && manualPlate && !plateError(manualPlate) ? manualPlate : '';
+  // 无论手工输入还是摄像头候选，只要车牌已选定，就提前查询云端流转单，
+  // 让操作员在确认车辆前看到可关联、需人工选择或不可关联的原因。
   useEffect(() => {
     let cancelled = false;
     if (!manualPlateKey) {
@@ -508,9 +510,16 @@ function WorkbenchContent() {
             setRecognitionHint(`发现 ${linkable.length} 张可关联流转单，请人工选择`);
             toast.info({ title: '已确认车辆', description: '发现多张可关联流转单，请人工选择' });
           } else {
-            setTripResult(null);
-            setRecognitionHint(result.available ? '未找到可关联的云端流转单，可按无流转单办理' : (result.message || '云端流转单查询失败，可按无流转单办理'));
-            toast.warning({ title: '未找到可关联流转单', description: '请核对车牌或云端流转单状态；可按无流转单继续录入资料。' });
+            if (result.candidates.length > 0) {
+              setTripResult(result);
+              const blocked = result.candidates.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；');
+              setRecognitionHint(`找到 ${result.candidates.length} 张流转单，但均不可关联：${blocked}`);
+              toast.warning({ title: '找到流转单，但暂不可关联', description: blocked, duration: 6000 });
+            } else {
+              setTripResult(null);
+              setRecognitionHint(result.available ? '未找到可关联的云端流转单，可按无流转单办理' : (result.message || '云端流转单查询失败，可按无流转单办理'));
+              toast.warning({ title: '未找到可关联流转单', description: '请核对车牌或云端流转单状态；可按无流转单继续录入资料。' });
+            }
           }
         } catch (error) {
           setTripResult(null);
@@ -756,7 +765,18 @@ function WorkbenchContent() {
           {tripLoading && <p role="status" className="plate-recognition mt-2 text-sm text-info">正在查询云端流转单与化验依据…</p>}
           {!taskInfo && !awaitingResult && tripResult && (() => {
             const linkable = tripResult.candidates.filter(item => item.linkable);
-            if (linkable.length <= 1) return null;
+            if (linkable.length === 0) {
+              if (tripResult.candidates.length === 0) return null;
+              return <div className="workbench-trip-panel" aria-label="云端流转单不可关联">
+                <div className="workbench-trip-head"><h3>云端流转单</h3><span>找到 {tripResult.candidates.length} 张流转单</span></div>
+                <p className="workbench-trip-note is-warning">均不可关联，请先处理以下阻断后重新查询。</p>
+                {tripResult.candidates.map(item => <div key={item.tripNo} className="workbench-trip-blocked">
+                  <p><strong>{item.tripNo} · {item.materialName}</strong></p>
+                  <p>{item.blockers.join('；') || '不可关联'}</p>
+                </div>)}
+              </div>;
+            }
+            if (linkable.length === 1) return null;
             return <div className="workbench-trip-panel" aria-label="云端流转单人工选择">
               <div className="workbench-trip-head"><h3>云端流转单</h3><span>发现 {linkable.length} 张可关联流转单</span></div>
               <p className="workbench-trip-note is-warning">请人工选择本趟流转单，系统不会自动认定。</p>

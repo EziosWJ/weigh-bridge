@@ -190,6 +190,22 @@ func (s *Simulator) Recognize(ctx context.Context) State {
 	return s.State()
 }
 
+// ReportPlate replaces the current plate with a manually supplied valid plate
+// and reports it as a new recognition event.
+func (s *Simulator) ReportPlate(ctx context.Context, raw string) (State, error) {
+	plate, err := normalizePlate(raw)
+	if err != nil {
+		return s.State(), err
+	}
+	s.actionMu.Lock()
+	defer s.actionMu.Unlock()
+	s.mu.Lock()
+	s.plate, s.recognizedAt = plate, s.now()
+	s.mu.Unlock()
+	s.sendSnapshot(ctx)
+	return s.State(), nil
+}
+
 // ReportCurrent reports the current plate again as a new recognition event.
 // The plate stays the same, which exercises same-vehicle candidate merging.
 func (s *Simulator) ReportCurrent(ctx context.Context) (State, error) {

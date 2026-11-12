@@ -31,6 +31,7 @@ func (s *Simulator) Handler() http.Handler {
 		decoder.DisallowUnknownFields()
 		var command struct {
 			Action string `json:"action"`
+			Plate  string `json:"plate"`
 		}
 		if err := decoder.Decode(&command); err != nil {
 			http.Error(w, "无效的控制请求："+err.Error(), http.StatusBadRequest)
@@ -43,6 +44,13 @@ func (s *Simulator) Handler() http.Handler {
 		switch command.Action {
 		case "recognize":
 			writeJSON(w, s.Recognize(r.Context()))
+		case "report_plate":
+			state, err := s.ReportPlate(r.Context(), command.Plate)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, state)
 		case "report_current":
 			state, err := s.ReportCurrent(r.Context())
 			if err != nil {
