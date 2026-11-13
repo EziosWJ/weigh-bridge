@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ClipboardCheck, FileText, LoaderCircle, Scale, Truck, TriangleAlert, X } from 'lucide-react';
+import { CircleCheck, ClipboardCheck, FileText, LoaderCircle, Scale, Truck, TriangleAlert, X } from 'lucide-react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContentCard } from '@/components/common/content-card';
 import { SectionTabs } from '@/components/common/section-tabs';
@@ -8,6 +8,7 @@ import { StatusTag } from '@/components/common/status-tag';
 import { HelpHint } from '@/components/common/help-hint';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast-store';
+import { isApiError } from '@/lib/api-error';
 import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogBody, DialogFooter } from '@/components/ui/dialog';
 import { PlateInput } from './plate-input';
 import { normalizePlate, plateError } from '@/lib/weighing/plate';
@@ -98,6 +99,8 @@ function WorkbenchContent() {
   const [tripMatches, setTripMatches] = useState<Record<string, TripCandidate[]>>({});
   const [manualMatch, setManualMatch] = useState<TripCandidate | null>(null);
   const [manualActiveTask, setManualActiveTask] = useState<TransportTask | null>(null);
+  const [manualTaskTrip, setManualTaskTrip] = useState<TaskTripBasis | null>(null);
+  const [manualActiveConflict, setManualActiveConflict] = useState(false);
   const [manualMatchCount, setManualMatchCount] = useState(0);
   const [manualBlocked, setManualBlocked] = useState<TripCandidate[]>([]);
   const [manualTotal, setManualTotal] = useState(0);
@@ -138,12 +141,14 @@ function WorkbenchContent() {
   }, [candidatePlatesKey, selectedTaskID, located, hasCapture, reviewOpen]);
   const manualPlate = normalizeLegacy(plate);
   const manualPlateKey = !selectedTaskID && !located && !hasCapture && !reviewOpen && manualPlate && !plateError(manualPlate) ? manualPlate : '';
-  // 无论手工输入还是摄像头候选，只要车牌已选定，就提前查询云端流转单，
-  // 让操作员在确认车辆前看到可关联、需人工选择或不可关联的原因。
+  // 车牌选定后先判断是否存在未完成任务：有任务时只补充其已关联的流转单，
+  // 不重新选择流转单；无任务时才查询云端候选，供确认车辆前判断。
   useEffect(() => {
     let cancelled = false;
     if (!manualPlateKey) {
       setManualActiveTask(null);
+      setManualTaskTrip(null);
+      setManualActiveConflict(false);
       setManualMatch(null);
       setManualMatchCount(0);
       setManualBlocked([]);
@@ -151,6 +156,8 @@ function WorkbenchContent() {
       return;
     }
     setManualActiveTask(null);
+    setManualTaskTrip(null);
+    setManualActiveConflict(false);
     setManualMatch(null);
     setManualMatchCount(0);
     setManualBlocked([]);
@@ -158,15 +165,26 @@ function WorkbenchContent() {
     const timer = setTimeout(() => {
       void (async () => {
         let active: TransportTask | undefined;
+        let activeConflict = false;
         try {
           const wire = await workflowApi.active(manualPlateKey);
           if (wire) active = taskView(wire);
-        } catch {
-          active = undefined;
+        } catch (error) {
+          activeConflict = isApiError(error) && error.code === 400;
         }
         if (cancelled) return;
         if (active) {
           setManualActiveTask(active);
+          try {
+            const basis = await workflowApi.taskTripBasis(active.id);
+            if (!cancelled) setManualTaskTrip(basis);
+          } catch {
+            if (!cancelled) setManualTaskTrip(null);
+          }
+          return;
+        }
+        if (activeConflict) {
+          setManualActiveConflict(true);
           return;
         }
         try {
@@ -703,6 +721,7 @@ function WorkbenchContent() {
     editing.current = true; setSearchedPlate('');
     setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null);
     setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0);
+    setManualActiveTask(null); setManualTaskTrip(null); setManualActiveConflict(false);
     setRecognitionHint('');
     if (data.firstRequests[data.draftRequestId] && !await run({ type: 'clearDraft' })) return;
     void run({ type: 'draft', patch: { plate: value, ...emptyTripBusinessFields } });
@@ -750,13 +769,15 @@ function WorkbenchContent() {
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在确认…' : '确认车辆'}</Button>
           </form>
           {candidateNotice && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{candidateNotice}</p>}
-          {manualActiveTask
-            ? <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />该车牌有未完成运输任务 {manualActiveTask.taskNo ?? manualActiveTask.id} · {taskStatusLabels[manualActiveTask.status]}，确认车辆后继续本趟办理，不会重新选择流转单。如需重新选择，请先<Link className="text-primary hover:underline" to={`/weighing/tasks/${manualActiveTask.id}`}>终止原任务</Link>。</p>
-            : <>
-              {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
-              {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
-              {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
-            </>}
+          {manualActiveConflict
+            ? <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现多张未完成任务，无法判断本趟任务。请先到<Link className="text-primary hover:underline" to="/weighing/tasks">运输任务</Link>核实处理。</p>
+            : manualActiveTask
+              ? <p role="status" className="plate-recognition mt-2 text-sm text-info"><CircleCheck className="h-4 w-4 shrink-0" aria-hidden />本趟回磅任务 {manualActiveTask.taskNo ?? manualActiveTask.id} · {taskStatusLabels[manualActiveTask.status]}{manualTaskTrip?.bound && manualTaskTrip.tripNo ? <>，已关联云端流转单 <strong>{manualTaskTrip.tripNo}</strong></> : ''}</p>
+              : <>
+                {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
+                {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
+                {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
+              </>}
           {offerManualSource && data.draftPlateEvidence?.source === 'server' && !data.sampleReady && !awaitingResult && <Button type="button" size="sm" disabled={busy} onClick={() => {
             selectedCandidate.current = null;
             setRecognition(null);
