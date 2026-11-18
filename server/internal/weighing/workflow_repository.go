@@ -183,33 +183,13 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 	if err := tx.First(&cloudState, 1).Error; err != nil {
 		return BusinessInfo{}, err
 	}
-	if cloudState.Bound {
-		checks := []struct {
-			table     string
-			id        int64
-			unchanged bool
-		}{
-			{"wb_master_material_map", in.MaterialID, old != nil && old.MaterialID == in.MaterialID},
-			{"wb_master_party_map", in.PartyID, old != nil && old.PartyID == in.PartyID},
+	if cloudState.Bound && (old == nil || old.MaterialID != in.MaterialID) {
+		var count int64
+		if err := tx.Table("wb_master_material_map").Where("local_id = ?", in.MaterialID).Count(&count).Error; err != nil {
+			return BusinessInfo{}, err
 		}
-		if in.CarrierID != nil {
-			checks = append(checks, struct {
-				table     string
-				id        int64
-				unchanged bool
-			}{"wb_master_party_map", *in.CarrierID, old != nil && old.CarrierID != nil && *old.CarrierID == *in.CarrierID})
-		}
-		for _, check := range checks {
-			if check.unchanged {
-				continue
-			}
-			var n int64
-			if err := tx.Table(check.table).Where("local_id = ?", check.id).Count(&n).Error; err != nil {
-				return BusinessInfo{}, err
-			}
-			if n != 1 {
-				return BusinessInfo{}, RejectionError("云端模式下新业务只能选择总部资料")
-			}
+		if count != 1 {
+			return BusinessInfo{}, RejectionError("云端模式下新业务只能选择总部资料")
 		}
 	}
 	material, err := lockRow[Material](tx, in.MaterialID)
@@ -241,8 +221,10 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 		parties[id] = p
 	}
 	party := parties[in.PartyID]
-	if party.Enabled != 1 && (old == nil || old.PartyID != party.ID) {
-		return BusinessInfo{}, ErrInvalid
+	if old == nil || old.PartyID != party.ID {
+		if err := requireSelectableParty(tx, party.ID); err != nil {
+			return BusinessInfo{}, err
+		}
 	}
 	if (in.Direction == "inbound" && party.IsSupplier != 1) || (in.Direction == "outbound" && party.IsCustomer != 1) {
 		return BusinessInfo{}, ErrInvalid
@@ -257,7 +239,12 @@ func resolveBusiness(tx *gorm.DB, in BusinessInput, old *BusinessInfo) (Business
 	}
 	if in.CarrierID != nil {
 		carrier := parties[*in.CarrierID]
-		if carrier.IsCarrier != 1 || (carrier.Enabled != 1 && (old == nil || old.CarrierID == nil || *old.CarrierID != carrier.ID)) {
+		if old == nil || old.CarrierID == nil || *old.CarrierID != carrier.ID {
+			if err := requireSelectableParty(tx, carrier.ID); err != nil {
+				return info, err
+			}
+		}
+		if carrier.IsCarrier != 1 {
 			return info, ErrInvalid
 		}
 		info.CarrierVersion = carrier.Version
@@ -634,6 +621,14 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 		if err != nil {
 			return out, err
 		}
+		if trip := in.tripSnapshot; trip != nil {
+			if business.MaterialCode != trip.MaterialCode || business.PartyCode != trip.PartyCode {
+				return out, RejectionError("物料或供货方与流转单不一致，请重新选择")
+			}
+			if err := requireTripSupplier(tx, business.PartyID); err != nil {
+				return out, err
+			}
+		}
 		// A first capture binds the vehicle and loading direction. Ordinary
 		// business details may be completed or corrected before final review.
 		if business.Plate != sample.Plate || business.Direction != sample.Business.Direction {
@@ -674,9 +669,6 @@ func (r *Repository) ConfirmFirst(ctx context.Context, in ConfirmationInput, e a
 		}
 		task.CurrentFirstRecordID = ptr(record.ID)
 		if trip := in.tripSnapshot; trip != nil {
-			if business.MaterialCode != trip.MaterialCode || business.PartyCode != trip.PartyCode {
-				return out, RejectionError("物料或供货方与流转单不一致，请重新选择")
-			}
 			binding := TripBinding{
 				SiteCode: scale.SiteCode, TripNo: trip.TripNo, CloudTripID: trip.TripID,
 				TripVersion: trip.Version, Plate: business.Plate,

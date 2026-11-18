@@ -34,6 +34,9 @@ func (r *Repository) CorrectTask(ctx context.Context, id int64, in CorrectionInp
 		if err != nil {
 			return out, err
 		}
+		if err := validateChangedTripSupplier(tx, task, business); err != nil {
+			return out, err
+		}
 		if err := activePlateConflict(tx, business.Plate, id, task.SiteCode); err != nil {
 			return out, err
 		}
@@ -346,6 +349,9 @@ func (r *Repository) ReopenTicket(ctx context.Context, id int64, in ReopenInput,
 			if err != nil {
 				return out, err
 			}
+		}
+		if err := validateChangedTripSupplier(tx, task, business); err != nil {
+			return out, err
 		}
 		if business.Plate != task.Plate {
 			if err := activePlateConflict(tx, business.Plate, task.ID, task.SiteCode); err != nil {

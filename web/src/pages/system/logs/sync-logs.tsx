@@ -26,6 +26,7 @@ const typeLabels: Record<string, string> = {
   void: "作废上传",
   reopen: "重开上传",
   reconcile: "单据对账",
+  temp_party: "临时主体登记上传",
 };
 const kindOf = (log: SyncLog) => log.syncType === "master" ? `master-${log.triggerType}` : log.syncType;
 
@@ -65,14 +66,14 @@ export function SystemSyncLogsPage() {
   const columns: DataTableColumn<SyncLog>[] = [
     { title: "同步时间", dataIndex: "attemptedAt", width: 180, render: (_, row) => formatDateTime(row.attemptedAt) },
     { title: "同步类型", dataIndex: "syncType", width: 130, render: (_, row) => typeLabels[kindOf(row)] ?? row.syncType },
-    { title: "范围 / 单号", dataIndex: "ticketNo", width: 190, render: (_, row) => row.ticketNo || (row.syncType === "reconcile" ? "对账批次" : "全部资料") },
+    { title: "范围 / 编码", dataIndex: "ticketNo", width: 190, render: (_, row) => row.temporaryCode ? <span className="break-all">{row.temporaryCode}</span> : row.ticketNo || (row.syncType === "reconcile" ? "对账批次" : "全部资料") },
     { title: "类别", dataIndex: "category", width: 130, render: (_, row) => row.category ? (categoryLabels[row.category] ?? row.category) : "—" },
     { title: "摘要", dataIndex: "digest", width: 150, render: (_, row) => row.digest ? <span className="font-mono text-xs" title={row.digest}>{row.digest.slice(0, 10)}…</span> : "—" },
     { title: "结果", dataIndex: "success", width: 90, render: (_, row) => <StatusTag tone={row.success ? "success" : "error"}>{row.success ? "成功" : "失败"}</StatusTag> },
     { title: "失败原因", dataIndex: "reason", render: (_, row) => row.reason || "—" },
   ];
   return <>
-    <PageHeader title="同步日志" description="记录总部资料同步、单据上传尝试和对账结果；冲突、核查结论及处理记录单独保留。" actions={<Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>} />
+    <PageHeader title="同步日志" description="记录总部资料同步、临时主体登记上传、单据上传和对账结果。单据核查记录独立保留。" actions={<Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>} />
     <SearchFilterBar actions={<Button variant="secondary" onClick={reset}><RotateCcw className="h-4 w-4" aria-hidden />重置</Button>}>
       <Input type="date" aria-label="同步日期" value={date} onChange={event => { setDate(event.target.value); setPage(1); }} />
       <Select aria-label="同步类型" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }}>

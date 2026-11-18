@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { WeighingReviewDialog } from '@/pages/weighing/review-dialog';
 import { createRoot } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
+import { ToastProvider } from '@/components/common/toast';
 import { WeighingWorkbenchPage } from '@/pages/weighing/workbench';
 import { useWeighingStore } from '@/store/weighing-store';
 import '@/styles/globals.css';
@@ -9,18 +10,36 @@ import '@/styles/globals.css';
 const scenario = new URLSearchParams(location.search).get('scenario');
 const initial = useWeighingStore.getState().data;
 const plate = '晋A12345';
+const temporary = scenario?.startsWith('temporary');
+const grain = scenario?.startsWith('temporary-grain');
+const hasMaterial = grain || scenario === 'temporary-captured';
+const boundTrip = grain ? {
+  tripNo: 'LT-001',
+  version: 1,
+  candidate: {
+    tripId: 1, tripNo: 'LT-001', version: 1, stage: 'pending', plate,
+    partyCode: 'C-P-0001', partyName: '测试供货方', materialCode: 'C-M-0001', materialName: '高粱',
+    inspectionMethod: 'visual', registeredAt: new Date().toISOString(), linkable: true, blockers: [], deductions: [],
+  },
+} : undefined;
 useWeighingStore.setState({
   ready: true,
   capabilities: {
     localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true,
     userId: 1,
-    permissionCodes: scenario === 'forbidden' ? ['weighing:read'] : ['weighing:read', 'weighing:confirm'],
-    sites: [{ id: 1, code: 'site', name: '测试厂区', enabled: 1, canOperate: true }],
+    masterSyncBound: temporary && scenario !== 'temporary-unbound',
+    permissionCodes: scenario === 'forbidden'
+      ? ['weighing:read']
+      : ['weighing:read', 'weighing:confirm', ...(temporary && scenario !== 'temporary-denied' ? ['weighing:temporary-party:write'] : [])],
+    sites: [{ code: 'F001', name: '测试厂区', enabled: 1, canOperate: true }],
     scales: [{ code: 'WB01', siteCode: 'F001', name: '测试地磅', enabled: 1, siteName: '测试厂区', canOperate: true }],
   },
   data: {
     ...initial,
-    draft: { ...initial.draft, plate },
+    draft: { ...initial.draft, plate, materialId: hasMaterial ? '11' : '', partyId: grain ? '21' : '' },
+    materials: hasMaterial ? [{ id: '11', code: 'C-M-0001', name: '高粱', spec: '', enabled: true, version: 1 }] : [],
+    parties: grain ? [{ id: '21', code: 'C-P-0001', name: '测试供货方', nature: 'enterprise', roles: ['supplier'], enabled: scenario !== 'temporary-grain-disabled', version: 1, contacts: [] }] : [],
+    trip: boundTrip,
     draftPlateEvidence: { source: 'manual', confirmedPlate: plate, at: new Date().toISOString() },
     owner: scenario === 'occupied' ? 'other' : null,
     config: {
@@ -50,4 +69,4 @@ export function Fixture() {
   </MemoryRouter>;
 }
 
-createRoot(document.getElementById('root')!).render(scenario?.endsWith('-review') ? <ReviewFixture /> : <Fixture />);
+createRoot(document.getElementById('root')!).render(<ToastProvider>{scenario?.endsWith('-review') ? <ReviewFixture /> : <Fixture />}</ToastProvider>);

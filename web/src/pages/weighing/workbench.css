@@ -761,3 +761,48 @@ body:has(.weighing-workbench) .workbench-business-dialog {
   .review-final-step .review-fact-value { font-size: 20px; }
   .review-final-step .review-fact:first-child .review-fact-value { font-size: 28px; }
 }
+
+.workbench-party-field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 32px;
+  color: var(--color-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+.workbench-party-field-heading .workbench-register-party {
+  color: #b9eeff;
+  background: #122e40;
+  border-color: #42778e;
+  white-space: nowrap;
+}
+.workbench-party-field-heading .workbench-register-party:hover { background: #1a3c51; }
+.workbench-business-inline-grid > .workbench-compact-field > span,
+.review-business-editor-grid > .workbench-compact-field > span {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+.workbench-trip-supplier {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: #0b1e2c;
+}
+.workbench-party-nature {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.workbench-party-nature.is-selected { border-color: #48d5ef; background: #163747; }
+.workbench-temporary-party-dialog button:disabled { opacity: .5; }

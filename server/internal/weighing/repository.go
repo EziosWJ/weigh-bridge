@@ -91,7 +91,7 @@ func (r *Repository) Materials(ctx context.Context, q PageQuery) (Page[Material]
 }
 func (r *Repository) Parties(ctx context.Context, q PageQuery) (Page[Party], error) {
 	db := masterFilter(r.db.WithContext(ctx).Model(&Party{}), q)
-	db = db.Where("NOT (SELECT bound FROM wb_master_sync_state WHERE id = 1) OR id IN (SELECT local_id FROM wb_master_party_map)")
+	db = selectableParties(db)
 	if q.Keyword != "" {
 		v := "%" + q.Keyword + "%"
 		db = db.Where("LOWER(name) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?) OR LOWER(short_name) LIKE LOWER(?) OR phone LIKE ?", v, v, v, v)
@@ -382,6 +382,9 @@ func (r *Repository) SaveParty(ctx context.Context, id int64, in PartyInput, e a
 			if err != nil {
 				return err
 			}
+			if v.TemporaryState != "" {
+				return RejectionError("临时往来主体须通过临时主体登记功能维护")
+			}
 		}
 		before := v
 		v.MasterMeta, err = meta(v.MasterMeta, id, in.Version, e.Metadata.ActorID)
@@ -460,7 +463,11 @@ func (r *Repository) DeleteMaster(ctx context.Context, kind string, id, version 
 			return err
 		}
 		var row struct{ ID, Version int64 }
-		if err := tx.Model(model).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id).Take(&row).Error; err != nil {
+		query := tx.Model(model).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=?", id)
+		if kind == "party" {
+			query = query.Where("temporary_state = ''")
+		}
+		if err := query.Take(&row).Error; err != nil {
 			return err
 		}
 		if row.Version != version {
@@ -509,7 +516,11 @@ func (r *Repository) SetMasterStatus(ctx context.Context, kind string, id, versi
 		if err := rejectCloudMasterWrite(tx); err != nil {
 			return err
 		}
-		result := tx.Model(model).Where("id=? AND version=?", id, version).Updates(map[string]any{"enabled": value, "version": version + 1, "update_by": e.Metadata.ActorID, "update_time": time.Now().UTC()})
+		query := tx.Model(model).Where("id=? AND version=?", id, version)
+		if kind == "party" {
+			query = query.Where("temporary_state = ''")
+		}
+		result := query.Updates(map[string]any{"enabled": value, "version": version + 1, "update_by": e.Metadata.ActorID, "update_time": time.Now().UTC()})
 		if result.Error != nil {
 			return result.Error
 		}

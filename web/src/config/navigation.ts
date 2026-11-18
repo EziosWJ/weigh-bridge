@@ -196,6 +196,7 @@ type BuildAppNavigationOptions = {
 function filterWeighingNavItems(
   items: NavItem[],
   capabilities: NavigationCapabilities | null | undefined,
+  isAdmin: boolean,
 ): NavItem[] {
   const permissionCodes = capabilities?.permissionCodes ?? [];
   const has = (code: string) => permissionCodes.includes(`weighing:${code}`);
@@ -205,10 +206,11 @@ function filterWeighingNavItems(
     if (["/weighing/temporary-parties", "/weighing/node-sync", "/weighing/node-status", "/weighing/site-config"].includes(item.path)) return [];
     if (!item.path.startsWith("/weighing")) return [item];
     if (item.children?.length) {
-      const children = filterWeighingNavItems(item.children, capabilities);
+      const children = filterWeighingNavItems(item.children, capabilities, isAdmin);
       return children.length ? [{ ...item, children }] : [];
     }
     const path = item.path;
+    if (path === "/weighing/sync/connection") return isAdmin && has("sync:connection") ? [item] : [];
     const allowed = path === "/weighing/workbench" ? has("confirm")
       : path === "/weighing/settings" ? false
       : ["/weighing/materials", "/weighing/parties", "/weighing/categories"].includes(path) ? has("master:read")
@@ -304,8 +306,8 @@ export function buildAppNavigation({
   const userItemsWithMaintenance = userItems;
 
   const merged = mergeNavItems(
-    filterWeighingNavItems(localItems, capabilities),
-    filterWeighingNavItems(userItemsWithMaintenance, capabilities),
+    filterWeighingNavItems(localItems, capabilities, isAdmin),
+    filterWeighingNavItems(userItemsWithMaintenance, capabilities, isAdmin),
   );
   if (isOperator && !isAdmin) {
     const allowedPaths = new Set([
@@ -375,6 +377,7 @@ export const staticRouteTitleMap: Record<string, string> = {
   "/weighing/sync/tickets": "单据同步",
   "/weighing/sync/master": "基础资料同步",
   "/weighing/sync/logs": "同步日志",
+  "/weighing/sync/connection": "云端连接",
   "/dashboard": "系统概览",
   "/notifications": "我的通知",
   "/announcements": "公告",

@@ -27,6 +27,7 @@ type Props<T extends {
     onDraftKeywordChange?: (value: string) => void;
     recentKey?: string;
     showRemarkColumn?: boolean;
+    emptyAction?: { label: string; onClick: (keyword: string) => void };
     loadPage: (keyword: string, page: number, size: number) => Promise<ApiPageResult<T>>;
     loadRecord: (id: number) => Promise<T>;
     describe: (record: T) => RecordInfo;
@@ -45,11 +46,12 @@ function Highlight({ text, keyword }: {
 }
 export function RecordPicker<T extends {
     id: number;
-}>({ label, inlineBrowse = true, placeholder = "输入名称、型号或联系方式", value, fallback, disabled, keyword: applied = "", onKeywordChange, onQuery, onDraftKeywordChange, recentKey, showRemarkColumn = false, loadPage, loadRecord, describe, warning, onChange }: Props<T>) {
+}>({ label, inlineBrowse = true, placeholder = "输入名称、型号或联系方式", value, fallback, disabled, keyword: applied = "", onKeywordChange, onQuery, onDraftKeywordChange, recentKey, showRemarkColumn = false, emptyAction, loadPage, loadRecord, describe, warning, onChange }: Props<T>) {
     const id = useId(), input = useRef<HTMLInputElement>(null), panel = useRef<HTMLDivElement>(null);
     const [open, setOpen] = useState(false), [modal, setModal] = useState(false), [text, setText] = useState(applied), [page, setPage] = useState(1);
     const [records, setRecords] = useState<T[]>([]), [selected, setSelected] = useState<T | null>(null), [total, setTotal] = useState(0), [active, setActive] = useState(-1);
     const [loading, setLoading] = useState(false), [error, setError] = useState(""), [selectedError, setSelectedError] = useState(""), [retry, setRetry] = useState(0), [recent, setRecent] = useState(false);
+    const [searched, setSearched] = useState(false);
     const change = useRef(onChange);
     change.current = onChange;
     const owner = useRef("");
@@ -66,6 +68,7 @@ export function RecordPicker<T extends {
         let live = true;
         if (!open && !modal)
             return;
+        setSearched(false);
         setLoading(true);
         setError("");
         setActive(-1);
@@ -91,7 +94,7 @@ export function RecordPicker<T extends {
                 const result = await loadPage(text.trim(), modal ? page : 1, modal ? 10 : 6);
                 return { ...result, isRecent: false };
             })().then(r => { if (!live || current !== generation.current)
-                return; setRecords(r.records); setTotal(r.total); setRecent(r.isRecent); }).catch(e => { if (live && current === generation.current)
+                return; setRecords(r.records); setTotal(r.total); setRecent(r.isRecent); setSearched(true); }).catch(e => { if (live && current === generation.current)
                 setError(e instanceof Error ? e.message : "搜索失败"); }).finally(() => { if (live && current === generation.current)
                 setLoading(false); });
         }, 250);
@@ -202,9 +205,13 @@ export function RecordPicker<T extends {
     }
     const current = selected?.id === value ? selected : null, info = current ? describe(current) : null;
     const search = (inModal = false) => <Input ref={inModal ? undefined : input} className={inlineBrowse && !inModal ? "min-w-0 w-full pr-20" : "min-w-0 grow basis-[12rem]"} autoFocus={inModal} role="combobox" aria-label={`搜索${label}`} aria-expanded={inModal || open} aria-haspopup={inModal ? "grid" : "listbox"} aria-controls={`${id}-${inModal ? "all" : "quick"}`} aria-activedescendant={active >= 0 ? `${id}-option-${active}` : undefined} disabled={disabled} value={inlineBrowse && !inModal && value > 0 && !text ? (info?.name ?? fallback ?? `#${value}`) : text} placeholder={placeholder} onFocus={() => { if (!inModal && !suppressFocus.current)
-        setOpen(true); }} onChange={e => { setText(e.target.value); onDraftKeywordChange?.(e.target.value); setPage(1); setActive(-1); if (!inModal)
+        setOpen(true); }} onChange={e => { setSearched(false); setText(e.target.value); onDraftKeywordChange?.(e.target.value); setPage(1); setActive(-1); if (!inModal)
         setOpen(true); }} onKeyDown={keys}/>;
-    const status = <>{loading && <p role="status" className="p-3 text-sm text-text-secondary">搜索中…</p>}{error && <div role="alert" className="p-3 text-sm text-error">{error} <Button onClick={() => setRetry(n => n + 1)}>重试搜索</Button></div>}{!loading && !error && !records.length && <p role="status" className="p-3 text-sm text-text-secondary">没有匹配档案{onKeywordChange ? "，仍可按关键词查询历史业务。" : "，请调整关键词。"}</p>}</>;
+    const empty = searched && !loading && !error && total === 0;
+    const status = <>{loading && <p role="status" className="p-3 text-sm text-text-secondary">搜索中…</p>}{error && <div role="alert" className="p-3 text-sm text-error">{error} <Button onClick={() => setRetry(n => n + 1)}>重试搜索</Button></div>}{empty && <div className="space-y-2 p-3">
+      <p role="status" className="text-sm text-text-secondary">{emptyAction ? `未找到${label}` : <>没有匹配档案{onKeywordChange ? "，仍可按关键词查询历史业务。" : "，请调整关键词。"}</>}</p>
+      {emptyAction && <Button size="sm" variant="secondary" onClick={() => { const keyword = text.trim(); close(false); emptyAction.onClick(keyword); }}>{emptyAction.label}</Button>}
+    </div>}</>;
     function summary(r: T) { const d = describe(r); return <><strong className="block font-medium"><Highlight text={d.name} keyword={text}/></strong><span className="mt-1 flex flex-wrap gap-x-3 text-sm text-text-secondary">{d.details.map((s, i) => <span key={i}><Highlight text={s} keyword={text}/></span>)}</span></>; }
     return <div role="group" aria-label={label} className="min-w-0 space-y-2">
   <div className={inlineBrowse ? "relative min-w-0" : "flex min-w-0 flex-wrap gap-2"}>{search()}
@@ -221,7 +228,7 @@ export function RecordPicker<T extends {
    {!text.trim() && <p className="px-3 py-2 text-xs text-text-tertiary">{recent ? "最近使用" : "暂无最近使用，以下为档案候选"}</p>}{status}
    <div id={`${id}-quick`} role="listbox" aria-label={`${label}候选`}>{!loading && !error && records.map((r, i) => { const d = describe(r); return <button key={r.id} type="button" id={`${id}-option-${i}`} role="option" aria-selected={active === i} disabled={Boolean(warning(r))} className={`block w-full border-b border-border px-3 py-2 text-left hover:bg-neutral-background ${active === i ? "bg-info-background" : ""}`} onClick={() => void choose(r)}>{summary(r)}<span className="mt-1 flex justify-between gap-2 text-xs text-text-tertiary"><span>{d.tags.join("，")}</span><span>{d.code}</span></span></button>; })}</div>
    {onKeywordChange && <Button className="m-2" onClick={applyKeyword}>按关键词查询</Button>}
-   <Button variant="ghost" className="w-full" onClick={() => { setOpen(false); setModal(true); setPage(1); }}>{recent ? "浏览全部档案" : `查看全部结果${!loading && !error ? `（${total}）` : ""}`}</Button>
+   {!(empty && emptyAction) && <Button variant="ghost" className="w-full" onClick={() => { setOpen(false); setModal(true); setPage(1); }}>{recent ? "浏览全部档案" : `查看全部结果${!loading && !error ? `（${total}）` : ""}`}</Button>}
   </div>}
   <Dialog open={modal} onOpenChange={next => { if (!next)
         close(); }} trapFocus lockScroll>

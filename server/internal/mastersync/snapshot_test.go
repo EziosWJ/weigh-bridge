@@ -32,3 +32,33 @@ func TestDecode(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeTemporaryPartyResults(t *testing.T) {
+	merged := `{"temporaryCode":"T-P-one","version":1,"status":"merged","formalPartyCode":"C-P-0001"}`
+	disabled := `{"temporaryCode":"T-P-two","version":2,"status":"disabled","formalPartyCode":null}`
+	withResults := func(results string) []byte {
+		return []byte(strings.TrimSuffix(validResponse, "}}") + `,"temporaryPartyResults":` + results + "}}")
+	}
+	snapshot, err := Decode(withResults("["+merged+","+disabled+"]"), "F001")
+	if err != nil || len(snapshot.TemporaryPartyResults) != 2 || snapshot.TemporaryPartyResults[1].FormalPartyCode != nil {
+		t.Fatalf("valid results: %+v %v", snapshot.TemporaryPartyResults, err)
+	}
+	for _, tt := range []struct {
+		name, results string
+	}{
+		{"null array", "null"},
+		{"missing target field", `[{"temporaryCode":"T-P-one","version":1,"status":"disabled"}]`},
+		{"duplicate code", "[" + merged + "," + merged + "]"},
+		{"wrong namespace", "[" + strings.Replace(merged, "T-P-one", "C-P-one", 1) + "]"},
+		{"overflow version", "[" + strings.Replace(merged, `"version":1`, `"version":2147483648`, 1) + "]"},
+		{"nonfinal status", "[" + strings.Replace(merged, "merged", "pending", 1) + "]"},
+		{"unknown target", "[" + strings.Replace(merged, "C-P-0001", "C-P-9999", 1) + "]"},
+		{"disabled with target", "[" + strings.Replace(merged, "merged", "disabled", 1) + "]"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := Decode(withResults(tt.results), "F001"); err == nil {
+				t.Fatal("invalid results accepted")
+			}
+		})
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/EziosWJ/weighbridge/server/internal/app"
@@ -26,8 +27,23 @@ func TestPostgresMasterSyncPermissionsAndLogAudit(t *testing.T) {
 	if _, err := service.InitializeLocalSite(ctx, 1, weighing.LocalSiteInput{SiteCode: "F001", ScaleCode: "WB01"}, audit.Event{}); err != nil {
 		t.Fatal(err)
 	}
+	var readyChecks atomic.Int32
+	var readinessStatus atomic.Int32
+	readinessStatus.Store(http.StatusOK)
 	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, `{"code":200,"message":"ok","data":{"schemaVersion":2,"siteCode":"F001","categories":[],"materials":[],"parties":[]}}`)
+		switch r.URL.Path {
+		case "/ready":
+			readyChecks.Add(1)
+			if r.Method != http.MethodGet || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "" {
+				t.Error("readiness request must be an unauthenticated, parameter-free GET")
+			}
+			w.WriteHeader(int(readinessStatus.Load()))
+			fmt.Fprint(w, `{"code":200,"message":"ok","data":{"status":"ok"}}`)
+		case "/api/v1/weighbridge/sync/master":
+			fmt.Fprint(w, `{"code":200,"message":"ok","data":{"schemaVersion":2,"siteCode":"F001","categories":[],"materials":[],"parties":[]}}`)
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer remote.Close()
 	if err := service.ConfigureMasterSync(ctx, true, remote.URL); err != nil {
@@ -63,6 +79,49 @@ func TestPostgresMasterSyncPermissionsAndLogAudit(t *testing.T) {
 	if success.Code != http.StatusOK || envelopeCode(t, success) != 200 {
 		t.Fatalf("operator sync: %d %s", success.Code, success.Body.String())
 	}
+	const connectionPath = "/api/weighing/sync/connection"
+	denied = serveJSON(router, http.MethodGet, connectionPath, "", operator)
+	assertEnvelopeCode(t, denied, http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
+	if readyChecks.Load() != 0 {
+		t.Fatal("operator's request reached the cloud")
+	}
+	if err := db.GORM.Exec(`INSERT INTO wb_master_sync_log (sync_type, trigger_type, success, reason, attempted_at)
+		VALUES ('master', 'automatic', false, '模拟资料同步失败', now() + interval '1 minute'),
+		('issue', 'automatic', true, '', now() + interval '2 minutes')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	connection := weighingData[weighing.CloudConnection](t, router, http.MethodGet, connectionPath, "", admin)
+	if readyChecks.Load() != 1 || connection.Address != remote.URL || !connection.Enabled || !connection.Bound ||
+		connection.SiteCode != "F001" || connection.Readiness.Status != "ready" || connection.Readiness.CheckedAt == nil ||
+		connection.LastAttempt == nil || connection.LastAttempt.Success || connection.LastAttempt.Reason != "模拟资料同步失败" ||
+		connection.LastSuccess == nil {
+		t.Fatalf("unexpected connection details: %+v", connection)
+	}
+	readinessStatus.Store(http.StatusServiceUnavailable)
+	connection = weighingData[weighing.CloudConnection](t, router, http.MethodGet, connectionPath, "", admin)
+	if readyChecks.Load() != 2 || connection.Readiness.Status != "not_ready" || connection.LastAttempt == nil || connection.LastAttempt.Success {
+		t.Fatalf("recheck did not preserve the last sync result: %+v", connection)
+	}
+	var beforeClear int64
+	if err := db.GORM.Table("wb_master_sync_log").Count(&beforeClear).Error; err != nil || beforeClear != 4 {
+		t.Fatalf("probe changed sync logs: count=%d err=%v", beforeClear, err)
+	}
+	if err := service.ConfigureMasterSync(ctx, false, remote.URL); err != nil {
+		t.Fatal(err)
+	}
+	connection = weighingData[weighing.CloudConnection](t, router, http.MethodGet, connectionPath, "", admin)
+	if readyChecks.Load() != 2 || connection.Readiness.Status != "disabled" || connection.Readiness.CheckedAt != nil ||
+		connection.Address != remote.URL || connection.Enabled {
+		t.Fatalf("disabled sync should preserve the address and skip the probe: %+v", connection)
+	}
+	if err := service.ConfigureMasterSync(ctx, true, "https://user:test-only@cloud.example"); err != nil {
+		t.Fatal(err)
+	}
+	connection = weighingData[weighing.CloudConnection](t, router, http.MethodGet, connectionPath, "", admin)
+	if readyChecks.Load() != 2 || connection.Readiness.Status != "invalid_address" || connection.Address != "" {
+		t.Fatalf("invalid address should skip the probe and be omitted: %+v", connection)
+	}
+
 	denied = serveJSON(router, http.MethodDelete, "/api/weighing/master-sync/logs", "", operator)
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("operator cleared logs: %d %s", denied.Code, denied.Body.String())

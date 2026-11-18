@@ -1,7 +1,8 @@
 import { WorkbenchLink } from "@/components/common/workbench-link";
-import { useId, useRef, type ReactNode } from 'react';
-import { ArrowRight, Info } from 'lucide-react';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import { ArrowRight, Info, Plus } from 'lucide-react';
 import { Field } from '@/components/common/field';
+import { StatusTag } from '@/components/common/status-tag';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
 import { SectionTabs } from '@/components/common/section-tabs';
 import { Button } from '@/components/ui/button';
@@ -11,11 +12,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { useWeighingStore } from '@/store/weighing-store';
 import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { beijingTime } from '@/lib/weighing/query';
-import type { HistoryEntry, TaskInput, WeighingFilter } from '@/types/weighing';
+import type { HistoryEntry, Party, PartyKind, TaskInput, TripCandidate, WeighingFilter } from '@/types/weighing';
 import { roleLabels } from '@/types/weighing';
 import { PlateInput } from './plate-input';
-import { WeighingLookup } from './lookup-field';
-import { supplementarySummary, useBusinessOptions } from './business-options';
+import { WeighingLookup, type LookupOption } from './lookup-field';
+import { isAvailableParty, supplementarySummary, tripSupplierProblem, useBusinessOptions } from './business-options';
+import { TemporaryPartyDialog } from './temporary-party-dialog';
 import './list.css';
 
 export function ListDate({ value }: { value: string }) {
@@ -84,41 +86,108 @@ export function BusinessDirectionControl({ value, update, lockDirection = false,
   return <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定；回磅沿用原方向，净重 = 毛重 − 皮重。' : `${directionLabels.inbound}先称毛重、卸货后称皮重；${directionLabels.outbound}先称皮重、装货后称毛重。首磅建立任务，回磅确认后出单；净重 = 毛重 − 皮重。`}>{select}</Field>;
 }
 
+function PartyRoleLookup({ label, role, value, options, loadOptions, loadParties, onChange, showDetails = true, allowTemporary = false }: {
+  label: string;
+  role: PartyKind;
+  value: string;
+  options: LookupOption[];
+  loadOptions: () => Promise<LookupOption[]>;
+  loadParties: () => Promise<Party[]>;
+  onChange: (id: string) => void;
+  showDetails?: boolean;
+  allowTemporary?: boolean;
+}) {
+  const selected = useWeighingStore(s => s.data.parties.find(item => item.id === value));
+  const [editor, setEditor] = useState<{ current: Party | null; initialName: string } | null>(null);
+  const heading = useRef<HTMLDivElement>(null);
+  const temporary = !!selected?.temporaryState;
+  const editable = temporary && isAvailableParty(selected);
+  return <div className={showDetails ? 'min-w-0 space-y-1' : 'workbench-compact-field'}>
+    <div className="workbench-party-field-heading" ref={heading}>
+      <span>{label}{role === 'carrier' ? '（选填）' : <span className="text-error">*</span>}</span>
+      {allowTemporary && <Button className="workbench-register-party" size="sm" variant="secondary"
+        onClick={() => setEditor({ current: null, initialName: '' })}>
+        <Plus className="h-4 w-4 shrink-0" aria-hidden />登记临时{label}
+      </Button>}
+    </div>
+    <WeighingLookup label={label} value={value} options={options} loadOptions={loadOptions}
+      placeholder="名称、简称或编码"
+      emptyAction={allowTemporary ? { label: `登记为临时${label}`, onClick: initialName => setEditor({ current: null, initialName }) } : undefined}
+      showRemarkColumn={role !== 'carrier'} showDetails={showDetails} onChange={onChange} />
+    {temporary && (!showDetails || (allowTemporary && editable)) && <div className="flex flex-wrap items-center gap-2">
+      {!showDetails && <StatusTag>临时</StatusTag>}
+      {allowTemporary && editable && <Button size="sm" variant="ghost" aria-label={`更正临时${label}`}
+        onClick={() => setEditor({ current: selected, initialName: '' })}>更正资料</Button>}
+    </div>}
+    {allowTemporary && editor && <TemporaryPartyDialog current={editor.current} initialName={editor.initialName}
+      label={label} role={role} loadParties={loadParties} onSelect={saved => {
+        if (saved.id !== value && saved.roles.includes(role)) onChange(saved.id);
+        if (saved.id === value && !saved.roles.includes(role)) onChange('');
+      }} onCancel={() => {
+        setEditor(null);
+        requestAnimationFrame(() => heading.current?.querySelector('button')?.focus({ preventScroll: true }));
+      }} />}
+  </div>;
+}
+
 /** 首磅现场必填项：物料和按方向限定的供收方。 */
-export function BusinessRequiredFields({ value, update, hidePlate = true, compact = false }: {
+export function BusinessRequiredFields({ value, update, hidePlate = true, compact = false, allowTemporary = false, trip }: {
   value: TaskInput;
   update: (patch: Partial<TaskInput>) => void;
   hidePlate?: boolean;
   compact?: boolean;
+  allowTemporary?: boolean;
+  trip?: TripCandidate;
 }) {
   const legacyPlate = useRef(value.plate);
-  const { materialOptions, partyOptions, loadMaterials, loadPartyOptions } = useBusinessOptions(value, compact);
+  const { parties, materialOptions, partyOptions, loadMaterials, loadPartyOptions, loadParties } = useBusinessOptions(value, compact);
   const partyLabel = value.direction === 'inbound' ? '供货方' : '收货方';
-  const material = <WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials} showDetails={!compact} onChange={materialId => update({ materialId })} />;
-  const party = <WeighingLookup showRemarkColumn label={partyLabel} value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} showDetails={!compact} onChange={partyId => { const p = useWeighingStore.getState().data.parties.find(item => item.id === partyId); const contact = p?.contacts.find(c => c.isDefault); update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : p?.phone ?? '' }); }} />;
+  const material = <WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials}
+    placeholder="名称、规格或编码" showDetails={!compact} onChange={materialId => update({ materialId })} />;
+  const tripSupplier = trip ? parties.find(item => item.code === trip.partyCode) : undefined;
+  const tripProblem = trip ? tripSupplierProblem(tripSupplier) : '';
+  const party = trip ? <div className="workbench-compact-field" role="group" aria-label="粮食流转单供货方">
+    <span>供货方</span>
+    <div className="workbench-trip-supplier">
+      <strong className="min-w-0 break-words">{tripSupplier?.name || trip.partyName}</strong>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
+        <span className="break-all">{trip.partyCode}</span><StatusTag tone="info">来自粮食流转单</StatusTag>
+      </div>
+    </div>
+    {tripProblem && <p role="alert" className="text-sm text-warning">{tripProblem}</p>}
+  </div> : <PartyRoleLookup key={partyLabel} label={partyLabel} role={value.direction === 'inbound' ? 'supplier' : 'customer'}
+    value={value.partyId} options={partyOptions} loadOptions={loadPartyOptions} loadParties={loadParties} showDetails={!compact}
+    allowTemporary={allowTemporary} onChange={partyId => {
+      const selected = useWeighingStore.getState().data.parties.find(item => item.id === partyId);
+      const contact = selected?.contacts.find(c => c.isDefault);
+      update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : selected?.phone ?? '' });
+    }} />;
   if (compact) return <>
     {!hidePlate && <div className="workbench-compact-field"><span>车牌<span className="text-error">*</span></span><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></div>}
     <div className="workbench-compact-field"><span>物料<span className="text-error">*</span></span>{material}</div>
-    <div className="workbench-compact-field"><span>{partyLabel}<span className="text-error">*</span></span>{party}</div>
+    {party}
   </>;
   return <>
     {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></Field>}
     <Field label="物料" required>{material}</Field>
-    <div className="min-w-0">
-      <Field label={partyLabel} required>{party}</Field>
-    </div>
+    {party}
   </>;
 }
 
 /** 选填补充资料；工作台折叠展示，资料表单直接展开。 */
-export function BusinessSupplementaryFields({ value, update }: {
+export function BusinessSupplementaryFields({ value, update, allowTemporary = false }: {
   value: TaskInput;
   update: (patch: Partial<TaskInput>) => void;
+  allowTemporary?: boolean;
 }) {
-  const { parties, carrierOptions, loadCarrierOptions } = useBusinessOptions(value);
+  const { parties, carrierOptions, loadCarrierOptions, loadParties } = useBusinessOptions(value);
   const party = parties.find(p => p.id === value.partyId);
   return <>
-    <Field label="承运方（选填）" help="可与供收方相同，须具有承运商身份"><WeighingLookup label="承运方" value={value.carrierId ?? ''} options={carrierOptions} loadOptions={loadCarrierOptions} onChange={carrierId => update({ carrierId })} /></Field>
+    <div className="space-y-1.5">
+      <PartyRoleLookup label="承运方" role="carrier" value={value.carrierId ?? ''} options={carrierOptions}
+        loadOptions={loadCarrierOptions} loadParties={loadParties} allowTemporary={allowTemporary} onChange={carrierId => update({ carrierId })} />
+      <p className="text-helper text-text-tertiary">可与供收方相同，须具有承运商身份</p>
+    </div>
     {!!party?.contacts.length && <Field label="选择主体联系人" htmlFor="business-contact"><Select id="business-contact" value={party.contacts.find(c => c.name === value.contactName && c.phone === value.contactPhone)?.id ?? ''} onChange={e => { const contact = party.contacts.find(c => c.id === e.target.value); if (contact) update({ contactName: contact.name, contactPhone: contact.phone }); }}><option value="">手工填写本趟联系信息</option>{party.contacts.map(c => <option key={c.id} value={c.id}>{c.name} · {c.phone || '无电话'}{c.isDefault ? '（默认）' : ''}</option>)}</Select></Field>}
     <Field label="本趟联系人（选填）" htmlFor="business-contact-name"><Input id="business-contact-name" value={value.contactName ?? ''} onChange={e => update({ contactName: e.target.value })} /></Field>
     <Field label="联系手机／电话（选填）" htmlFor="business-contact-phone"><Input id="business-contact-phone" type="tel" value={value.contactPhone ?? ''} onChange={e => update({ contactPhone: e.target.value })} /></Field>

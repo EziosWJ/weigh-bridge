@@ -21,6 +21,7 @@ import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { sameWeighingReview } from '@/lib/weighing/review';
 import { formatWeight, formatWeightValue, weightValues } from '@/lib/weighing/weights';
 import { BusinessDirectionControl, BusinessRequiredFields, BusinessSupplementaryFields } from './shared';
+import { isAvailableParty, tripSupplierProblem } from './business-options';
 import { WeighingReviewDialog, ReviewFact, type WeighingReviewValue } from './review-dialog';
 import { DeviceCameraPanel, type CameraSize } from './camera-panel';
 import { TicketPrintActions } from './ticket-print-actions';
@@ -80,6 +81,7 @@ function WorkbenchContent() {
   const [review, setReview] = useState<{ data: WeighingState; title: string; initialAdjustments?: NetAdjustmentsInput; tripBasis?: TaskTripBasis | null } | null>(null);
   const [tripResult, setTripResult] = useState<TripCandidateResult | null>(null);
   const [tripLoading, setTripLoading] = useState(false);
+  const [tripSelectionError, setTripSelectionError] = useState('');
   const [tripBasis, setTripBasis] = useState<TaskTripBasis | null>(null);
   const [tripCloudStatus, setTripCloudStatus] = useState<TaskTripCloudStatus | null>(null);
   const [tripCloudLoading, setTripCloudLoading] = useState(false);
@@ -240,9 +242,13 @@ function WorkbenchContent() {
   const summaryMaterialName = taskInfo?.materialName || material?.name || '未选择';
   const summaryParty = taskInfo ? [taskInfo.partyName, taskInfo.partyCode].filter(Boolean).join(' · ') : party ? `${party.name} · ${party.code}` : '未选择';
   const businessPartyLabel = summaryDirection === 'inbound' ? '供货方' : '收货方';
+  const selectedTrip = data.trip?.candidate;
+  const canUseParty = !!party && isAvailableParty(party)
+    && party.roles.includes(direction === 'inbound' ? 'supplier' : 'customer')
+    && (!selectedTrip || (!tripSupplierProblem(party) && party.code === selectedTrip.partyCode));
   const missingFields = !selected && located && !awaitingResult ? [
     !material?.enabled ? '物料' : '',
-    !party?.enabled || !party.roles.includes(direction === 'inbound' ? 'supplier' : 'customer') ? businessPartyLabel : '',
+    !canUseParty ? businessPartyLabel : '',
   ].filter(Boolean) as string[] : [];
   const needsDayVerification = !!selected?.crossDayDoubt;
   const conditionIssue = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : !data.config.online ? 'Agent 离线或重量数据已过期' : data.config.deviceError ? '设备异常，请恢复后重新采集' : !data.config.stable ? '重量未稳定，请等待设备稳定' : !Number.isFinite(data.config.weight) || data.config.weight <= 0 ? '等待有效上磅重量' : '';
@@ -264,6 +270,9 @@ function WorkbenchContent() {
   const candidateNotice = candidateConflict && !located ? '存在多个候选，请核对后选择' : recognitionHint.startsWith('已选择 ') ? '' : recognitionHint;
   const scaleCode = capabilities?.localScaleCode || params.get('scale') || '';
   const canConfirm = !!capabilities?.permissionCodes.includes('weighing:confirm');
+  const canRegisterTemporaryParty = !!capabilities?.masterSyncBound && !tripLoading
+    && capabilities.permissionCodes.includes('weighing:temporary-party:write')
+    && capabilities.sites.some(site => site.code === capabilities.localSiteCode && site.enabled === 1 && site.canOperate);
   const liveVisible = !!confirmedRecord || !!frozenCapture || (!!device && data.config.online && !data.config.deviceError);
 
   const status: WorkbenchStatus = (() => {
@@ -430,14 +439,17 @@ function WorkbenchContent() {
   }
 
   async function chooseTrip(candidate: TripCandidate) {
-    const material = data.materials.find(item => item.enabled && item.code === candidate.materialCode);
-    const party = data.parties.find(item => item.enabled && item.code === candidate.partyCode && item.roles.includes('supplier'));
-    if (!material) {
-      warn('物料资料未同步', `云端流转单物料 ${candidate.materialCode} 尚未同步到本厂，请联系管理员先同步资料。`);
+    setTripSelectionError('');
+    const current = useWeighingStore.getState().data;
+    const party = current.parties.find(item => item.code === candidate.partyCode);
+    const problem = tripSupplierProblem(party);
+    const material = current.materials.find(item => item.enabled && item.code === candidate.materialCode);
+    if (problem || !party) {
+      setTripSelectionError(`${candidate.tripNo} 暂无法关联。 ${problem}`);
       return;
     }
-    if (!party) {
-      warn('供货方资料未同步', `云端流转单供货方 ${candidate.partyCode} 尚未同步到本厂，请联系管理员先同步资料。`);
+    if (!material) {
+      setTripSelectionError(`${candidate.tripNo} 暂无法关联。物料 ${candidate.materialName || candidate.materialCode} 未同步或已停用，请核对基础资料。`);
       return;
     }
     if (!await run({ type: 'draft', patch: {
@@ -446,8 +458,6 @@ function WorkbenchContent() {
       contactName: '', contactPhone: '',
     } })) return;
     if (!await run({ type: 'selectTrip', trip: { tripNo: candidate.tripNo, version: candidate.version, candidate } })) return;
-    setTripResult(null);
-    setTripMatches(current => ({ ...current, [candidate.plate]: [candidate] }));
     toast.success({ title: '已选择流转单', description: `${candidate.tripNo} · ${candidate.materialName} · ${candidate.partyName}` });
   }
 
@@ -483,6 +493,7 @@ function WorkbenchContent() {
     }
     candidateBlocked.current = true;
     setRecognitionHint('');
+    setTripSelectionError('');
     setLookingUp(true);
     try {
       let existing;
@@ -522,7 +533,6 @@ function WorkbenchContent() {
             await chooseTrip(linkable[0]);
             setTripResult(null);
             setRecognitionHint('');
-            toast.success({ title: '已确认车辆', description: `已匹配云端流转单 ${linkable[0].tripNo}` });
           } else if (linkable.length > 1) {
             setTripResult(result);
             setRecognitionHint(`发现 ${linkable.length} 张可关联流转单，请人工选择`);
@@ -719,7 +729,7 @@ function WorkbenchContent() {
   async function changePlate(value: string) {
     candidateOwner.current = 'manual';
     editing.current = true; setSearchedPlate('');
-    setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null);
+    setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null); setTripSelectionError('');
     setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0);
     setManualActiveTask(null); setManualTaskTrip(null); setManualActiveConflict(false);
     setRecognitionHint('');
@@ -784,6 +794,7 @@ function WorkbenchContent() {
             void run({ type: 'verifyPlate', evidence: { source: 'manual', confirmedPlate: searchedPlate, at: new Date().toISOString() } }).then(ok => { if (ok) { setOfferManualSource(false); setRecognitionHint('已改为人工录入来源，请核对现场车辆。'); } });
           }}>改为人工录入来源</Button>}
           {tripLoading && <p role="status" className="plate-recognition mt-2 text-sm text-info">正在查询云端流转单与化验依据…</p>}
+          {!taskInfo && !awaitingResult && tripSelectionError && <p role="alert" className="mt-2 text-sm text-warning">{tripSelectionError}</p>}
           {!taskInfo && !awaitingResult && tripResult && (() => {
             const linkable = tripResult.candidates.filter(item => item.linkable);
             if (linkable.length === 0) {
@@ -800,7 +811,7 @@ function WorkbenchContent() {
             if (linkable.length === 1) return null;
             return <div className="workbench-trip-panel" aria-label="云端流转单人工选择">
               <div className="workbench-trip-head"><h3>云端流转单</h3><span>发现 {linkable.length} 张可关联流转单</span></div>
-              <p className="workbench-trip-note is-warning">请人工选择本趟流转单，系统不会自动认定。</p>
+              <p className={`workbench-trip-note${data.trip ? '' : ' is-warning'}`}>{data.trip ? `已选 ${data.trip.tripNo}，可在此更换。` : '请选择本趟流转单。'}</p>
               {linkable.map(item => <button key={item.tripNo} type="button" className={`workbench-trip-option${data.trip?.tripNo === item.tripNo ? ' is-selected' : ''}`} onClick={() => void chooseTrip(item)}>
                 <span className="workbench-trip-option-main">{item.tripNo} · {item.materialName} · {item.partyName}</span>
                 <span className="workbench-trip-option-meta">
@@ -827,14 +838,14 @@ function WorkbenchContent() {
                 <Button size="sm" variant="secondary" onClick={() => setBusinessOpen(true)}><FileText className="h-4 w-4" aria-hidden />查看完整资料</Button>
               </div>
             </> : located ? <>
-              {data.trip && <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong> · {data.trip.candidate.materialName} · {data.trip.candidate.partyName}</p>}
+              {data.trip && <p className="workbench-inline-trip">云端流转单 <strong>{data.trip.tripNo}</strong></p>}
               <SectionTabs label="本趟运输资料" items={[
                 { value: 'basic', label: '基本信息', content: <div className="workbench-business-inline-grid">
-                  <BusinessDirectionControl value={data.draft} update={patchDraft} variant="simple" />
-                  <BusinessRequiredFields value={data.draft} update={patchDraft} compact />
+                  <BusinessDirectionControl value={data.draft} update={patchDraft} variant="simple" lockDirection={!!data.trip} />
+                  <BusinessRequiredFields value={data.draft} update={patchDraft} compact trip={selectedTrip} allowTemporary={canRegisterTemporaryParty} />
                 </div> },
                 { value: 'supplementary', label: '补充信息（选填）', content: <>
-                  <div className="workbench-extra-grid"><BusinessSupplementaryFields value={data.draft} update={patchDraft} /></div>
+                  <div className="workbench-extra-grid"><BusinessSupplementaryFields value={data.draft} update={patchDraft} allowTemporary={canRegisterTemporaryParty} /></div>
                   <p className="workbench-inline-links"><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/materials?returnTo=${encodeURIComponent(returnTo)}`}>维护物料</Link><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/parties?returnTo=${encodeURIComponent(returnTo)}`}>维护往来主体</Link></p>
                 </> },
               ]} />
@@ -945,7 +956,7 @@ function WorkbenchContent() {
       initialAdjustments={review.initialAdjustments}
       businessEditor={!selected && missingFields.length ? <div className="review-business-editor">
         <p>重量与抓拍已冻结；补选以下资料后，无需重新采集即可确认。</p>
-        <div className="review-business-editor-grid"><BusinessRequiredFields value={data.draft} update={patchReview} compact /></div>
+        <div className="review-business-editor-grid"><BusinessRequiredFields value={data.draft} update={patchReview} compact trip={selectedTrip} allowTemporary={canRegisterTemporaryParty} /></div>
       </div> : undefined}
       submitting={submitting}
       submitError={reviewError}

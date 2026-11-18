@@ -212,6 +212,9 @@ func (r *Repository) applyMasterSnapshot(ctx context.Context, snapshot mastersyn
 				return err
 			}
 		}
+		if err := applyTemporaryPartyResults(tx, snapshot.SiteCode, snapshot.TemporaryPartyResults); err != nil {
+			return err
+		}
 		return tx.Model(&state).Updates(map[string]any{"bound": true, "last_success": time.Now().UTC()}).Error
 	})
 }

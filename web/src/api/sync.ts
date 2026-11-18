@@ -26,6 +26,19 @@ export interface SyncReconcileSummary {
   reason: string;
 }
 
+export interface CloudConnection {
+  enabled: boolean;
+  address: string;
+  siteCode: string;
+  bound: boolean;
+  lastSuccess: string | null;
+  lastAttempt: { attemptedAt: string; success: boolean; reason: string } | null;
+  readiness: {
+    status: 'disabled' | 'unconfigured' | 'invalid_address' | 'ready' | 'not_ready' | 'unreachable' | 'unexpected_response';
+    checkedAt: string | null;
+  };
+}
+
 export interface SyncOverview {
   enabled: boolean;
   bound: boolean;
@@ -113,8 +126,9 @@ export interface SyncLog {
   id: number;
   attemptedAt: string;
   triggerType: 'manual' | 'automatic';
-  syncType: 'master' | 'issue' | 'void' | 'reopen' | 'reconcile';
+  syncType: 'master' | 'issue' | 'void' | 'reopen' | 'reconcile' | 'temp_party';
   ticketNo: string;
+  temporaryCode?: string;
   digest: string;
   category: string;
   success: boolean;
@@ -147,6 +161,7 @@ export interface SyncConfirmation {
 }
 
 export const syncApi = {
+  connection: (signal?: AbortSignal) => http.get<CloudConnection>(`${base}/connection`, { signal }),
   overview: () => http.get<SyncOverview>(`${base}/overview`),
   tickets: (query: SyncTicketQuery) => http.get<ApiPageResult<SyncTicket>>(`${base}/tickets`, { query: { ...query } }),
   detail: (id: number | string) => http.get<SyncTicketDetail>(`${base}/tickets/${id}`),

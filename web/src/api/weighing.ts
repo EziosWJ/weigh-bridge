@@ -1,6 +1,6 @@
 import { http } from '@/lib/http';
 import type { ApiPageResult } from '@/types/api';
-import type { Material, MaterialCategory, Party, PartyContact } from '@/types/weighing';
+import type { Material, MaterialCategory, Party, PartyContact, TemporaryPartyInput } from '@/types/weighing';
 
 const base = '/api/weighing';
 export interface WeighingSite {code:string;name:string;enabled:number;canOperate:boolean;version:number;serverUrl?:string}
@@ -20,6 +20,15 @@ type WireCategory = Omit<MaterialCategory, 'id' | 'enabled'> & WireMeta;
 type WireMaterial = Omit<Material, 'id' | 'enabled' | 'categoryId'> & WireMeta & { categoryId: number | null };
 type WireContact = Omit<PartyContact, 'id' | 'isDefault'> & { id: number; isDefault: number };
 type WireParty = Omit<Party, 'id' | 'enabled' | 'contacts'> & WireMeta & { contacts: WireContact[] };
+function party(row: WireParty): Party {
+  return {
+    ...row,
+    id: String(row.id),
+    enabled: row.enabled === 1,
+    contacts: (row.contacts ?? []).map(c => ({ ...c, id: String(c.id), isDefault: c.isDefault === 1 })),
+  };
+}
+
 async function allPages<T>(path: string): Promise<T[]> {
   const rows: T[] = [];
   let page = 1;
@@ -46,7 +55,10 @@ export const weighingApi = {
  setTicketWatermark: (input: { businessDate: string; lastIssued: number }) => http.put<DailyTicketSequence>(`${base}/ticket-sequences`, input),
   categories: async (): Promise<MaterialCategory[]> => (await allPages<WireCategory>('material-categories')).map(row => ({ ...row, id: String(row.id), enabled: row.enabled === 1 })),
   materials: async (): Promise<Material[]> => (await allPages<WireMaterial>('materials')).map(row => ({ ...row, id: String(row.id), categoryId: row.categoryId == null ? '' : String(row.categoryId), enabled: row.enabled === 1, unit: '吨' })),
-  parties: async (): Promise<Party[]> => (await allPages<WireParty>('parties')).map(row => ({ ...row, id: String(row.id), enabled: row.enabled === 1, contacts: row.contacts.map(c => ({ ...c, id: String(c.id), isDefault: c.isDefault === 1 })) })),
+  parties: async (): Promise<Party[]> => (await allPages<WireParty>('parties')).map(party),
+  saveTemporaryParty: async (input: TemporaryPartyInput, id?: string): Promise<Party> => party(id
+    ? await http.put<WireParty>(`${base}/temporary-parties/${id}`, input)
+    : await http.post<WireParty>(`${base}/temporary-parties`, input)),
   save: (path: string, id: string | undefined, body: unknown) => id ? http.put(`${base}/${path}/${id}`, body) : http.post(`${base}/${path}`, body),
   remove: (path: string, id: string, version: number | undefined) => http.delete(`${base}/${path}/${id}`, { version }),
 };

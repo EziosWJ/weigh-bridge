@@ -142,15 +142,16 @@ func (s *Service) masterSyncAdmin(ctx context.Context, userID int64) (bool, erro
 }
 
 type MasterSyncLog struct {
-	ID          int64     `json:"id"`
-	AttemptedAt time.Time `json:"attemptedAt"`
-	TriggerType string    `json:"triggerType"`
-	SyncType    string    `json:"syncType"`
-	TicketNo    string    `json:"ticketNo"`
-	Digest      string    `json:"digest"`
-	Category    string    `json:"category"`
-	Success     bool      `json:"success"`
-	Reason      string    `json:"reason"`
+	ID            int64     `json:"id"`
+	AttemptedAt   time.Time `json:"attemptedAt"`
+	TriggerType   string    `json:"triggerType"`
+	SyncType      string    `json:"syncType"`
+	TicketNo      string    `json:"ticketNo"`
+	TemporaryCode string    `json:"temporaryCode,omitempty"`
+	Digest        string    `json:"digest"`
+	Category      string    `json:"category"`
+	Success       bool      `json:"success"`
+	Reason        string    `json:"reason"`
 }
 
 func (s *Service) masterSyncLogs(ctx context.Context) ([]MasterSyncLog, error) {

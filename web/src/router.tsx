@@ -60,6 +60,7 @@ export const router = createBrowserRouter([
       { path: "weighing/sync/tickets", lazy: () => import("@/pages/weighing/sync/tickets").then((module) => ({ Component: module.SyncTicketsPage })) },
       { path: "weighing/sync/tickets/:id", lazy: () => import("@/pages/weighing/sync/detail").then((module) => ({ Component: module.SyncTicketDetailPage })) },
       { path: "weighing/sync/master", lazy: () => import("@/pages/weighing/sync/master").then((module) => ({ Component: module.SyncMasterPage })) },
+      { path: "weighing/sync/connection", lazy: () => import("@/pages/weighing/sync/connection").then((module) => ({ Component: module.CloudConnectionPage })) },
       { path: "weighing/sync/logs", lazy: () => import("@/pages/system/logs/sync-logs").then((module) => ({ Component: module.SystemSyncLogsPage })) },
       {
         index: true,

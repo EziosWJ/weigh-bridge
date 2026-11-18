@@ -15,25 +15,27 @@ import (
 )
 
 type Service struct {
-	imageDir           string
-	maintenanceEnabled bool
-	printMu            sync.Mutex
-	masterSyncMu       sync.Mutex
-	ticketSyncMu       sync.Mutex
-	syncReconcileMu    sync.Mutex
-	syncV4Client       *syncV4Client
-	masterSyncEnabled  bool
-	masterSyncAddress  string
-	store              Store
-	devices            *agentbridge.Hub
-	maintenance        maintenanceGate
-	cameraAvailable    func(string) bool
-	cameraConfig       func() (agentprinter.Config, error)
-	camera             *camera.Service
+	imageDir               string
+	maintenanceEnabled     bool
+	printMu                sync.Mutex
+	masterSyncMu           sync.Mutex
+	ticketSyncMu           sync.Mutex
+	temporaryPartySyncMu   sync.Mutex
+	temporaryPartySyncWake chan struct{}
+	syncReconcileMu        sync.Mutex
+	syncV4Client           *syncV4Client
+	masterSyncEnabled      bool
+	masterSyncAddress      string
+	store                  Store
+	devices                *agentbridge.Hub
+	maintenance            maintenanceGate
+	cameraAvailable        func(string) bool
+	cameraConfig           func() (agentprinter.Config, error)
+	camera                 *camera.Service
 }
 
 func NewService(store Store, devices *agentbridge.Hub) *Service {
-	s := &Service{store: store, devices: devices, syncV4Client: newSyncV4Client()}
+	s := &Service{store: store, devices: devices, syncV4Client: newSyncV4Client(), temporaryPartySyncWake: make(chan struct{}, 1)}
 	if devices != nil {
 		if repo, ok := store.(*Repository); ok {
 			devices.SetPrintHandler(repo.AgentPrintResult)

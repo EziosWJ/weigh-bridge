@@ -3,10 +3,12 @@ export type Direction = 'inbound' | 'outbound';
 export type TaskStatus = 'first' | 'second' | 'completed' | 'terminated';
 export type PartyKind = 'supplier' | 'customer' | 'carrier';
 export type PartyNature = 'enterprise' | 'individual';
+export type TemporaryPartyState = 'pending' | 'needs_info' | 'merged' | 'disabled';
+export interface TemporaryPartyInput { name: string; nature: PartyNature; roles: PartyKind[]; version?: number }
 export interface MaterialCategory { version?: number; id: string; name: string; enabled: boolean }
 export interface Material { version?: number; id: string; code: string; name: string; categoryId: string; spec: string; unit: '吨'; enabled: boolean; remark: string }
 export interface PartyContact { id: string; name: string; phone: string; purpose: string; remark: string; isDefault: boolean }
-export interface Party { version?: number; id: string; code: string; name: string; shortName: string; nature: PartyNature; roles: PartyKind[]; phone: string; address: string; creditCode: string; enabled: boolean; remark: string; contacts: PartyContact[] }
+export interface Party { version?: number; temporaryState?: TemporaryPartyState; id: string; code: string; name: string; shortName: string; nature: PartyNature; roles: PartyKind[]; phone: string; address: string; creditCode: string; enabled: boolean; remark: string; contacts: PartyContact[] }
 export const partyRoleLabels: Record<PartyKind, string> = { supplier: '供货商', customer: '客户', carrier: '承运商' };
 export const partyNatureLabels: Record<PartyNature, string> = { enterprise: '企业', individual: '个人' };
 export const emptyTaskInput = (): TaskInput => ({ plate: '', direction: 'inbound', materialId: '', partyId: '', carrierId: '', contactName: '', contactPhone: '', driver: '', driverPhone: '', remark: '' });

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -45,12 +47,38 @@ type Party struct {
 	Enabled    bool      `json:"enabled"`
 	Contacts   []Contact `json:"contacts"`
 }
+type TemporaryPartyResult struct {
+	TemporaryCode   string  `json:"temporaryCode"`
+	Version         int64   `json:"version"`
+	Status          string  `json:"status"`
+	FormalPartyCode *string `json:"formalPartyCode"`
+}
+
 type Snapshot struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	SiteCode      string     `json:"siteCode"`
-	Categories    []Category `json:"categories"`
-	Materials     []Material `json:"materials"`
-	Parties       []Party    `json:"parties"`
+	SchemaVersion         int                    `json:"schemaVersion"`
+	SiteCode              string                 `json:"siteCode"`
+	Categories            []Category             `json:"categories"`
+	Materials             []Material             `json:"materials"`
+	Parties               []Party                `json:"parties"`
+	TemporaryPartyResults []TemporaryPartyResult `json:"temporaryPartyResults"`
+}
+
+var temporaryPartyCode = regexp.MustCompile(`^T-P-[A-Za-z0-9-]{1,36}$`)
+
+func checkTemporaryPartyResultFields(raw json.RawMessage) error {
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &rows); err != nil || rows == nil {
+		return errors.New("temporaryPartyResults 必须为数组")
+	}
+	for _, row := range rows {
+		if err := fields(row, "temporaryCode", "version", "status"); err != nil {
+			return err
+		}
+		if _, ok := row["formalPartyCode"]; !ok {
+			return errors.New("缺少字段 formalPartyCode")
+		}
+	}
+	return nil
 }
 
 // Decode rejects missing and null fields as well as invalid relationships. This
@@ -105,6 +133,13 @@ func Decode(body []byte, site string) (Snapshot, error) {
 			}
 		}
 	}
+	// A version 2 server deployed before temporary-party support may omit
+	// the extension. Once supplied, the complete array must be valid.
+	if raw, ok := obj["temporaryPartyResults"]; ok {
+		if err := checkTemporaryPartyResultFields(raw); err != nil {
+			return empty, err
+		}
+	}
 	var out Snapshot
 	if err := json.Unmarshal(envelope["data"], &out); err != nil {
 		return empty, errors.New("资料字段类型错误")
@@ -137,7 +172,7 @@ func Decode(body []byte, site string) (Snapshot, error) {
 		}
 	}
 	for _, p := range out.Parties {
-		if !valid(p.Code, p.Name, parties) || (p.Nature != "enterprise" && p.Nature != "individual") || !(p.IsSupplier || p.IsCustomer || p.IsCarrier) || utf8.RuneCountInString(p.ShortName) > 100 || utf8.RuneCountInString(p.Phone) > 50 || utf8.RuneCountInString(p.Address) > 500 || utf8.RuneCountInString(p.CreditCode) > 50 || utf8.RuneCountInString(p.Remark) > 2000 || len(p.Contacts) > 100 {
+		if strings.HasPrefix(p.Code, "T-P-") || !valid(p.Code, p.Name, parties) || (p.Nature != "enterprise" && p.Nature != "individual") || !(p.IsSupplier || p.IsCustomer || p.IsCarrier) || utf8.RuneCountInString(p.ShortName) > 100 || utf8.RuneCountInString(p.Phone) > 50 || utf8.RuneCountInString(p.Address) > 500 || utf8.RuneCountInString(p.CreditCode) > 50 || utf8.RuneCountInString(p.Remark) > 2000 || len(p.Contacts) > 100 {
 			return empty, errors.New("主体资料无效")
 		}
 		defaults := 0
@@ -152,6 +187,25 @@ func Decode(body []byte, site string) (Snapshot, error) {
 		}
 		if len(p.Contacts) > 0 && defaults != 1 {
 			return empty, errors.New("默认联系人无效")
+		}
+	}
+	seenTemporary := map[string]bool{}
+	for _, result := range out.TemporaryPartyResults {
+		if !temporaryPartyCode.MatchString(result.TemporaryCode) || result.Version < 1 || result.Version > math.MaxInt32 || seenTemporary[result.TemporaryCode] {
+			return empty, errors.New("临时主体结果编码或版本无效")
+		}
+		seenTemporary[result.TemporaryCode] = true
+		switch result.Status {
+		case "merged":
+			if result.FormalPartyCode == nil || !parties[*result.FormalPartyCode] {
+				return empty, errors.New("临时主体归并目标无效")
+			}
+		case "disabled":
+			if result.FormalPartyCode != nil {
+				return empty, errors.New("临时主体停用结果包含归并目标")
+			}
+		default:
+			return empty, errors.New("临时主体结果状态无效")
 		}
 	}
 	return out, nil

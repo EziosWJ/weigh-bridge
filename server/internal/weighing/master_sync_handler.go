@@ -59,6 +59,14 @@ func registerMasterSyncRoutes(router gin.IRouter, h *Handler) {
 		}
 		return true
 	}
+	router.GET("/sync/connection", rbac.RequirePermission(h.permissions, "weighing:sync:connection"), func(c *gin.Context) {
+		if !admin(c) {
+			return
+		}
+		c.Header("Cache-Control", "no-store")
+		value, err := h.service.CloudConnection(c.Request.Context())
+		writeResult(c, value, err)
+	})
 	router.GET("/master-sync/logs", func(c *gin.Context) {
 		if !admin(c) {
 			return

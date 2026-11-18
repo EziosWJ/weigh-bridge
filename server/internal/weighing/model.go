@@ -46,19 +46,22 @@ func (Material) TableName() string { return "wb_material" }
 
 type Party struct {
 	MasterMeta
-	Code       string    `json:"code"`
-	Name       string    `json:"name"`
-	ShortName  string    `json:"shortName"`
-	Nature     string    `json:"nature"`
-	IsSupplier int       `json:"-"`
-	IsCustomer int       `json:"-"`
-	IsCarrier  int       `json:"-"`
-	Phone      string    `json:"phone"`
-	Address    string    `json:"address"`
-	CreditCode string    `json:"creditCode"`
-	Remark     string    `json:"remark"`
-	Roles      []string  `json:"roles" gorm:"-"`
-	Contacts   []Contact `json:"contacts" gorm:"-"`
+	Code              string    `json:"code"`
+	Name              string    `json:"name"`
+	ShortName         string    `json:"shortName"`
+	Nature            string    `json:"nature"`
+	IsSupplier        int       `json:"-"`
+	IsCustomer        int       `json:"-"`
+	IsCarrier         int       `json:"-"`
+	Phone             string    `json:"phone"`
+	Address           string    `json:"address"`
+	CreditCode        string    `json:"creditCode"`
+	Remark            string    `json:"remark"`
+	Roles             []string  `json:"roles" gorm:"-"`
+	Contacts          []Contact `json:"contacts" gorm:"-"`
+	TemporaryState    string    `json:"temporaryState,omitempty"`
+	TemporarySiteCode string    `json:"-"`
+	MergedPartyCode   string    `json:"mergedPartyCode,omitempty"`
 }
 
 func (Party) TableName() string { return "wb_party" }

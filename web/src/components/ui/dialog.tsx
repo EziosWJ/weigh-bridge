@@ -107,6 +107,10 @@ export function Dialog({
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Nested dialogs render in portal order. Only the front dialog handles keys.
+      const layers = document.querySelectorAll("[data-dialog-layer]");
+      if (contentRef.current?.parentElement !== layers[layers.length - 1]) return;
+
       if (event.key === "Escape") {
         optionsRef.current.onEscapeKeyDown?.(event);
         if (!event.defaultPrevented && optionsRef.current.closeOnEscape) {
@@ -164,7 +168,7 @@ export function Dialog({
         onOpenChange,
       }}
     >
-      <div className="fixed inset-0 z-50" role="presentation">
+      <div className="fixed inset-0 z-50" role="presentation" data-dialog-layer>
         {children}
       </div>
     </DialogContext.Provider>,
