@@ -4,6 +4,7 @@
 | --- | --- |
 | [总规格](standalone-site-spec.md) | 产品目标、运行形态、职责和范围 |
 | [业务规则](weighing-business-spec.md) | 资料、称重、异常处置、单据、查询和打印 |
+| [厂云同步契约](cloud-sync-contract.md) | 总部资料、临时主体登记与归并、正式磅单上传和对账 |
 | [设备维护](local-device-maintenance-spec.md) | 接入、仪表、相机、维护、配置和恢复 |
 | [厂云摘要同步实施准备](cloud-sync-readiness.md) | 新协议就绪判定、现状差距、待确认协议项及实施顺序 |
 | [厂云摘要同步 v4 交付](cloud-sync-v4-delivery.md) | v4 摘要、上传、对账、同步模块的实现与软件验证范围 |
