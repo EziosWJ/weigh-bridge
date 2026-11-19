@@ -16,7 +16,7 @@ export function DataTableCard({
   return (
     <section
       className={cn(
-        "rounded-admin border border-border bg-surface shadow-admin",
+        "min-w-0 rounded-admin border border-border bg-surface shadow-admin",
         className,
       )}
     >

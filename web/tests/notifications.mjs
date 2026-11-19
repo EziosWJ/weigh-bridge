@@ -34,17 +34,26 @@ try {
   let role = "ADMIN";
   let unread = 1;
   let listRequests = 0;
+  let failList = false;
   await context.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (!path.startsWith("/api/")) { await route.continue(); return; }
     let data = [];
     if (path === "/api/auth/login") data = { tokenValue: "Bearer test" };
     else if (path === "/api/auth/me") data = { id: 1, username: "admin", nickname: "测试用户", roles: [{ roleCode: role }] };
+    else if (path === "/api/weighing/capabilities") data = { sites: [], scales: [], permissionCodes: [] };
     else if (path === "/api/public/announcement/page") data = { records: active ? announcements : [], total: active ? announcements.length : 0 };
     else if (path === "/api/system/announcement/page") data = { records: [internalAnnouncement], total: 1 };
     else if (path === "/api/public/announcement/1") { await route.fulfill({ json: { code: active ? 200 : 404, message: active ? "success" : "公告已失效", data: active ? publicAnnouncement : null } }); return; }
     else if (path.endsWith("/unread-count")) data = unread;
-    else if (path === "/api/system/notification/page") { listRequests += 1; data = { records: [{ ...notification, isRead: unread ? 0 : 1 }], total: 1 }; }
+    else if (path === "/api/system/notification/page") {
+      listRequests += 1;
+      if (failList) {
+        await route.fulfill({ status: 503, json: { code: 503, message: "暂时无法加载通知" } });
+        return;
+      }
+      data = { records: [{ ...notification, isRead: unread ? 0 : 1 }], total: 1 };
+    }
     else if (path === "/api/system/notification/1") { unread = 0; data = { ...notification, isRead: 1 }; }
     else if (path.endsWith("/read-all")) unread = 0;
     else if (path === "/api/system/announcement-admin/page") data = { records: [], total: 0 };
@@ -65,7 +74,7 @@ try {
   await page.getByRole("button", { name: "新公开公告", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "公开维护公告", exact: true }).count(), 0, "dismissal remains local to the old announcement");
   await page.getByRole("button", { name: "查看公告", exact: true }).click();
-  await page.getByRole("button", { name: "公开维护公告", exact: true }).click();
+  await page.getByRole("dialog", { name: "公开公告" }).getByRole("button", { name: /^公开维护公告/ }).click();
   await page.getByText("今晚维护", { exact: true }).waitFor();
   active = false;
   await page.evaluate(() => window.emitMessage("/api/public/announcement/events", { type: "announcement" }));
@@ -73,15 +82,23 @@ try {
   assert.equal(await page.getByText("今晚维护", { exact: true }).count(), 0);
   active = true;
   announcements = [publicAnnouncement];
-  await page.getByRole("button", { name: "关闭", exact: true }).click();
+  await page.getByRole("dialog", { name: "公告已失效" }).getByRole("button", { name: "关闭", exact: true }).last().click();
   await page.getByPlaceholder("请输入用户名", { exact: true }).fill("admin");
   await page.getByPlaceholder("请输入密码", { exact: true }).fill("test-password");
   await page.getByRole("button", { name: "登录", exact: true }).click();
   await page.waitForURL("**/dashboard");
   await page.getByRole("button", { name: "站内公告", exact: true }).waitFor();
   assert.equal(await page.getByRole("button", { name: "公开维护公告", exact: true }).count(), 0, "dismissal must survive login within the same tab visit");
-  await page.getByRole("link", { name: "我的通知", exact: true }).click();
+  await page.getByRole("button", { name: "站内通知", exact: true }).click();
+  await page.getByRole("button", { name: "查看全部", exact: true }).click();
   await page.getByText("业务通知", { exact: true }).first().waitFor();
+  failList = true;
+  await page.getByRole("button", { name: "刷新", exact: true }).click();
+  await page.getByRole("heading", { name: "通知加载失败" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "全部标为已读", exact: true }).isDisabled(), true);
+  failList = false;
+  await page.getByRole("button", { name: "重试", exact: true }).click();
+  await page.getByRole("cell", { name: "业务通知", exact: true }).first().waitFor();
   await page.screenshot({ path: "/tmp/notification-ui-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.documentElement.scrollWidth <= window.innerWidth, undefined, { timeout: 3000 });

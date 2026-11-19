@@ -39,6 +39,8 @@ task dev
 
 `task init` 生成随机 JWT 及本机上传目录配置，保留已有文件，不创建数据库；`task dev` 显式迁移后启动 API（8900）与 Web（5173）。配置缺失、端口及初始化细则见[开发初始化](docs/development-initialization.md)。真实凭据仅放忽略的本地配置。
 
+在 Linux／WSL 上联调地磅和车牌识别时，另开终端运行 `task device:lab`。它会自动启动 D12 虚拟串口、车牌识别模拟和开发 Agent，同一个页面即可操作重量和车牌。首次绑定及使用步骤见[本地设备联调台](docs/device/device-lab.md)。
+
 安装时在“本厂身份”填写总部预分配的厂区编码（地磅编码默认 `WB01`）；编码和名称可维护，历史单据保留原编号。在“过磅单标题”页面确认打印标题。Agent／mock 的启动及连接配置见 [Agent 使用说明](agent/README.md)。真实 Agent 与同磅 mock 互斥，软件模拟不替代现场验收。
 
 ## 检查与发布

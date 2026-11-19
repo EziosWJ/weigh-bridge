@@ -1,6 +1,5 @@
-import { KeyRound, Pencil, ShieldCheck, Trash2 } from "lucide-react";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDateOnly, formatDateTime } from "@/lib/datetime";
@@ -71,7 +70,7 @@ export function createUserColumns({
     {
       title: "用户",
       key: "user",
-      width: 220,
+      width: 168,
       render: (_, user) => (
         <div>
           <div className="font-medium text-text-primary">
@@ -86,7 +85,7 @@ export function createUserColumns({
     {
       title: "联系方式",
       key: "contact",
-      width: 220,
+      width: 180,
       render: (_, user) => (
         <div className="space-y-0.5 text-sm">
           <div>{user.phone || "-"}</div>
@@ -97,21 +96,21 @@ export function createUserColumns({
     {
       title: "部门",
       dataIndex: "deptName",
-       width: 220,
+      width: 112,
       render: (value) => String(value || "-"),
     },
     {
       title: "角色",
       key: "roles",
-      width: 220,
+      width: 140,
       render: (_, user) => (
-        <span className="line-clamp-2 text-sm">{getRoleNames(user)}</span>
+        <span className="line-clamp-2 text-sm" title={getRoleNames(user)}>{getRoleNames(user)}</span>
       ),
     },
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 72,
       render: (value) => {
         const status = value as ApiStatus;
         const meta = statusMeta[status];
@@ -121,7 +120,7 @@ export function createUserColumns({
     {
       title: "最近登录",
       dataIndex: "lastLoginTime",
-      width: 180,
+      width: 168,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateTime(
@@ -133,7 +132,7 @@ export function createUserColumns({
     {
       title: "创建时间",
       dataIndex: "createTime",
-      width: 180,
+      width: 118,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateOnly(
@@ -147,42 +146,33 @@ export function createUserColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 410,
+      width: 242,
       render: (_, user) => (
         <TableActions>
-          <Button size="sm" variant="ghost" onClick={() => onEdit(user)}>
-            <Pencil className="h-4 w-4" aria-hidden />
+          <Button size="sm" variant="secondary" onClick={() => onEdit(user)}>
             编辑
           </Button>
-          <Button size="sm" variant="ghost" onClick={()=>onAssignSites(user)}>本厂授权</Button>
-          <Button size="sm" variant="ghost" onClick={() => onAssignRoles(user)}>
-            <ShieldCheck className="h-4 w-4" aria-hidden />
-            角色
+          <Button size="sm" variant="ghost" onClick={() => onAssignSites(user)}>
+            本厂授权
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onChangeStatus(user, user.status === 1 ? 0 : 1)}
-          >
-            {user.status === 1 ? "禁用" : "启用"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onResetPassword(user)}
-          >
-            <KeyRound className="h-4 w-4" aria-hidden />
-            重置
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-error hover:text-error"
-            onClick={() => onDelete(user)}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden />
-            删除
-          </Button>
+          <TableActionMenu
+            items={[
+              { label: "分配角色", onSelect: () => onAssignRoles(user) },
+              { label: "重置密码", onSelect: () => onResetPassword(user) },
+              {
+                label: user.status === 1 ? "禁用" : "启用",
+                onSelect: () => onChangeStatus(user, user.status === 1 ? 0 : 1),
+                danger: user.status === 1,
+              },
+              {
+                label: "删除",
+                onSelect: () => onDelete(user),
+                danger: true,
+                disabled: user.isBuiltin === 1,
+                title: user.isBuiltin === 1 ? "内置用户不允许删除" : undefined,
+              },
+            ]}
+          />
         </TableActions>
       ),
     },

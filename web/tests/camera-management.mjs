@@ -103,6 +103,7 @@ try {
       writes.push(body);
       cameras = cameras.filter(item => item.id !== id);
       if (recognitionCameraId === id) recognitionCameraId = null;
+      if (recognitionCameraId === id) recognitionCameraId = null;
       configVersion += 1;
       return data(null);
     }
@@ -173,24 +174,28 @@ try {
 
   // Recognition source: only capture cameras are offered; clearing asks the server to clear the choice.
   const recognitionSelect = page.getByLabel('识别源摄像头', { exact: true });
+  const saveCaptureSettings = async () => {
+    const saved = page.waitForResponse(response => response.url().endsWith('/api/weighing/cameras/settings') && response.request().method() === 'PUT');
+    await page.getByRole('button', { name: '保存抓拍设置', exact: true }).click();
+    await saved;
+    await page.getByText('抓拍设置已保存', { exact: true }).last().waitFor();
+  };
   assert.equal(await recognitionSelect.getByRole('option', { name: '地磅北侧', exact: true }).count(), 0, '仅预览摄像头不能作为识别源');
   await recognitionSelect.selectOption({ label: '入口' });
-  await page.getByRole('button', { name: '保存抓拍设置', exact: true }).click();
-  await page.getByText('抓拍设置已保存', { exact: false }).waitFor();
+  await saveCaptureSettings();
   let settingsWrite = writes.filter(body => body.configVersion && body.captureTimeoutMs).at(-1);
   assert.equal(settingsWrite.recognitionCameraId, 1);
   assert.equal(settingsWrite.clearRecognitionCamera, false);
   await recognitionSelect.selectOption({ label: '不指定（识别停用）' });
-  await page.getByRole('button', { name: '保存抓拍设置', exact: true }).click();
-  await page.getByText('抓拍设置已保存', { exact: false }).waitFor();
+  await saveCaptureSettings();
   settingsWrite = writes.filter(body => body.configVersion && body.captureTimeoutMs).at(-1);
   assert.equal(settingsWrite.clearRecognitionCamera, true, '清空识别源必须显式清除');
 
   // Delete sends the current version and announces that a deleted recognition source is disabled.
   await recognitionSelect.selectOption({ label: '入口' });
-  await page.getByRole('button', { name: '保存抓拍设置', exact: true }).click();
-  await page.getByText('抓拍设置已保存', { exact: false }).waitFor();
-  await page.getByRole('row').filter({ hasText: '入口' }).getByRole('button', { name: '删除', exact: true }).click();
+  await saveCaptureSettings();
+  await page.getByRole('row').filter({ hasText: '入口' }).getByRole('button', { name: '更多操作', exact: true }).click();
+  await page.getByRole('group', { name: '更多操作', exact: true }).getByRole('button', { name: '删除', exact: true }).click();
   const deleteDialog = page.getByRole('dialog', { name: '删除摄像头', exact: true });
   assert.ok((await deleteDialog.innerText()).includes('当前配置版本'));
   await deleteDialog.getByRole('button', { name: '确认删除', exact: true }).click();

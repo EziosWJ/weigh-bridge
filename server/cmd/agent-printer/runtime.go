@@ -56,7 +56,6 @@ func (r *deviceRuntime) start(cfg agentprinter.Config) error {
 		defer close(statusDone)
 		writeScaleStatus(worker, filepath.Join(r.dir, "scale-status.json"), scale)
 	}()
-	writeAgentStatus(filepath.Join(r.dir, "maintenance-status.json"), true, agentprinter.ConfigDigest(cfg))
 	return nil
 }
 func (r *deviceRuntime) stop() error {

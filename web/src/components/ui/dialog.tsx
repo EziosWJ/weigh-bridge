@@ -101,9 +101,13 @@ export function Dialog({
     const previousOverflow = document.body.style.overflow;
     const shouldRestoreFocus = restoreFocus;
     const shouldLockScroll = optionsRef.current.lockScroll;
+    const content = contentRef.current;
 
     if (shouldLockScroll) {
       document.body.style.overflow = "hidden";
+    }
+    if (optionsRef.current.trapFocus && content && !content.contains(previousFocus)) {
+      content.focus({ preventScroll: true });
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -122,17 +126,16 @@ export function Dialog({
 
       if (event.key !== "Tab" || !optionsRef.current.trapFocus) return;
 
-      const content = contentRef.current;
       if (!content) return;
 
       const focusable = Array.from(
         content.querySelectorAll<HTMLElement>(focusableSelector),
-      );
+      ).filter((element) => element.getClientRects().length > 0);
       if (focusable.length === 0) return;
 
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === content)) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -147,8 +150,8 @@ export function Dialog({
       if (shouldLockScroll) {
         document.body.style.overflow = previousOverflow;
       }
-      if (shouldRestoreFocus && previousFocus instanceof HTMLElement) {
-        previousFocus.focus();
+      if (shouldRestoreFocus && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+        previousFocus.focus({ preventScroll: true });
       }
     };
   }, [open, restoreFocus]);
@@ -227,6 +230,7 @@ export function DialogContent({
       {...props}
       ref={contentRef}
       role="dialog"
+      tabIndex={-1}
       aria-modal="true"
       aria-labelledby={labelledBy ?? titleId}
       aria-describedby={

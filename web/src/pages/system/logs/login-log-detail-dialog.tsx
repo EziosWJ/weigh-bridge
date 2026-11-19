@@ -27,9 +27,8 @@ export function LoginLogDetailDialog({
       description={loading ? "详情加载中" : `记录 ID：${detail?.id ?? "-"}`}
       loading={loading}
       contentClassName="max-w-[720px]"
-      bodyClassName="max-h-none grid gap-4 overflow-visible px-card py-space-5 md:grid-cols-2"
-      closeOnEscape={false}
-      closeOnOverlayClick={false}
+      bodyClassName="grid gap-4 md:grid-cols-2"
+      trapFocus
       onCancel={onCancel}
     >
           <DetailItem label="用户名" value={detail?.username} />

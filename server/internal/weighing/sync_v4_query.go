@@ -126,6 +126,8 @@ func (r *Repository) SyncOverview(ctx context.Context) (SyncOverview, error) {
 			UNION
 			SELECT ticket_id FROM wb_ticket_sync_change_v4 WHERE status IN ('needs_admin','conflict')
 			UNION
+			SELECT ticket_id FROM wb_ticket_sync_change WHERE status = 'needs_admin'
+			UNION
 			SELECT ticket_id FROM wb_ticket_sync_review WHERE status = 'open'
 		) x`).Scan(&result.NeedsActionTickets).Error; err != nil {
 		return result, err

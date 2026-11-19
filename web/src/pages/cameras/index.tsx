@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Video } from "lucide-react";
+import { Plus, RefreshCw, Video } from "lucide-react";
 import { cameraApi } from "@/api/camera";
 import { weighingApi } from "@/api/weighing";
 import { ContentCard } from "@/components/common/content-card";
@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/common/empty-state";
 import { Field } from "@/components/common/field";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
 import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
@@ -142,18 +142,20 @@ export function CamerasPage() {
   const captureCameras = list?.cameras.filter(camera => camera.captureEnabled && camera.enabled) ?? [];
   const recognitionCamera = list?.cameras.find(camera => camera.id === list.recognitionCameraId);
   const columns: DataTableColumn<CameraRecord>[] = [
-    { title: "名称 / 标识", key: "name", width: 180, render: (_, row) => <div><strong className="font-medium">{row.name}</strong><div className="mt-1 break-all text-xs text-text-tertiary">{row.publicId}</div></div> },
-    { title: "用途与状态", key: "purpose", width: 150, render: (_, row) => <div className="flex flex-wrap gap-1"><StatusTag tone={row.enabled ? "success" : "neutral"}>{row.enabled ? "已启用" : "已停用"}</StatusTag><StatusTag tone={row.captureEnabled ? "info" : "neutral"}>{row.captureEnabled ? "称重抓拍" : "仅预览"}</StatusTag></div> },
-    { title: "源地址 / 凭据", key: "source", width: 280, render: (_, row) => <div className="space-y-1 text-xs"><span className="break-all text-text-secondary">{row.sourceUrl || "未填写源地址"}</span><span className="block text-text-tertiary">{row.username ? `用户名 ${row.username} · ` : "无用户名 · "}{row.hasPassword ? "已保存密码" : "未保存密码"}</span></div> },
-    { title: "视频映射", key: "stream", width: 200, render: (_, row) => <div className="space-y-1"><StatusTag tone={row.stream.state === "synced" ? "success" : row.stream.state === "error" ? "error" : "warning"}>{streamStateLabels[row.stream.state]}</StatusTag>{row.stream.playbackUrl && <span className="block break-all text-xs text-text-tertiary">预览地址已生成</span>}{row.stream.lastError && <span className="block break-all text-xs text-error">{row.stream.lastError}</span>}</div> },
-    { title: "最近测试", key: "test", width: 190, render: (_, row) => <TestSummary record={tests[row.id]} /> },
+    { title: "名称 / 标识", key: "name", width: 160, render: (_, row) => <div><strong className="font-medium">{row.name}</strong><div className="mt-1 truncate text-xs text-text-tertiary" title={row.publicId}>{row.publicId}</div></div> },
+    { title: "用途与状态", key: "purpose", width: 138, render: (_, row) => <div className="flex flex-wrap gap-1"><StatusTag tone={row.enabled ? "success" : "neutral"}>{row.enabled ? "已启用" : "已停用"}</StatusTag><StatusTag tone={row.captureEnabled ? "info" : "neutral"}>{row.captureEnabled ? "称重抓拍" : "仅预览"}</StatusTag></div> },
+    { title: "源地址 / 凭据", key: "source", render: (_, row) => <div className="space-y-1"><span className="block truncate text-text-secondary" title={row.sourceUrl}>{row.sourceUrl || "未填写源地址"}</span><span className="block truncate text-xs text-text-tertiary" title={row.username || undefined}>{row.username ? `用户名 ${row.username} · ` : "无用户名 · "}{row.hasPassword ? "已保存密码" : "未保存密码"}</span></div> },
+    { title: "视频映射", key: "stream", width: 154, render: (_, row) => <div className="space-y-1"><StatusTag tone={row.stream.state === "synced" ? "success" : row.stream.state === "error" ? "error" : "warning"}>{streamStateLabels[row.stream.state]}</StatusTag>{row.stream.playbackUrl && <span className="block text-xs text-text-tertiary">预览地址已生成</span>}{row.stream.lastError && <span className="block truncate text-xs text-error" title={row.stream.lastError}>{row.stream.lastError}</span>}</div> },
+    { title: "最近测试", key: "test", width: 164, render: (_, row) => <TestSummary record={tests[row.id]} /> },
     { title: "配置版本", key: "version", width: 90, align: "center", render: (_, row) => <span className="tabular-nums">{row.version}</span> },
-    { title: "操作", key: "actions", width: canManage ? 240 : 90, nowrap: true, render: (_, row) => <TableActions>
-      {canManage && <Button size="sm" variant="ghost" onClick={() => setEventCamera(row)}>上报</Button>}
-      <Button size="sm" variant="ghost" onClick={() => setPreviewing(row)}><Video className="h-4 w-4" aria-hidden />预览</Button>
-      {canManage && <Button size="sm" variant="ghost" onClick={() => setTesting(row)}><Search className="h-4 w-4" aria-hidden />测试</Button>}
+    { title: "操作", key: "actions", width: canManage ? 260 : 104, nowrap: true, render: (_, row) => <TableActions>
+      <Button size="sm" onClick={() => setPreviewing(row)}><Video className="h-4 w-4" aria-hidden />预览</Button>
+      {canManage && <Button size="sm" variant="ghost" onClick={() => setTesting(row)}>测试</Button>}
       {canManage && <Button size="sm" variant="ghost" onClick={() => { setEditing(row); setFormError(""); setFormOpen(true); }}>编辑</Button>}
-      {canManage && <Button size="sm" variant="ghost" className="text-error" onClick={() => { setDeleteError(""); setDeleting(row); }}><Trash2 className="h-4 w-4" aria-hidden />删除</Button>}
+      {canManage && <TableActionMenu items={[
+        { label: "设备上报", onSelect: () => setEventCamera(row) },
+        { label: "删除", danger: true, onSelect: () => { setDeleteError(""); setDeleting(row); } },
+      ]} />}
     </TableActions> },
   ];
 
@@ -176,7 +178,7 @@ export function CamerasPage() {
     </div>
 
     <DataTableCard toolbar={<TableToolbar title="摄像头列表" description="测试抓拍与实时预览分别反馈；最近测试结果仅用于本浏览器诊断记录。" />}>
-      <DataTable ariaLabel="摄像头列表" columns={columns} dataSource={list?.cameras ?? []} rowKey="id" loading={loading && !list} error={error && !list ? error : undefined} minWidth={1080}
+      <DataTable ariaLabel="摄像头列表" columns={columns} dataSource={list?.cameras ?? []} rowKey="id" loading={loading && !list} error={error && !list ? error : undefined} minWidth={canManage ? 1140 : 984} compact stickyHeader fixedEdges
         empty={<EmptyState title="尚未配置摄像头" description={canManage ? "新增摄像头后即可预览和测试；正式称重抓拍使用标记为称重抓拍的摄像头。" : "当前没有摄像头配置；请联系管理员在摄像头管理中新增。"} actionText={canManage ? "新增摄像头" : undefined} onAction={canManage ? () => { setEditing(null); setFormError(""); setFormOpen(true); } : undefined} />} />
     </DataTableCard>
 

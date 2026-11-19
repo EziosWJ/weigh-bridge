@@ -10,6 +10,7 @@ import { TableActions } from '@/components/common/table-actions';
 import { TableToolbar } from '@/components/common/table-toolbar';
 import { toast } from '@/components/common/toast-store';
 import { Button } from '@/components/ui/button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { useWeighingStore } from '@/store/weighing-store';
 import { useWeighingPage, useWeighingSummary, downloadWeighingCsv } from '@/hooks/use-weighing-page';
 import type { WireOriginal } from '@/api/weighing-workflow';
@@ -34,10 +35,10 @@ export function WeighingOriginalsPage() {
     {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteCode||"—"},
     { title: '方向 / 物料规格', key: 'business', width: 180, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
-    { title: '原始毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <span className="tabular-nums">{row.originalGross} / {row.originalTare} / <strong>{row.originalNet}</strong></span> },
+    { title: '原始毛 / 皮 / 净重（吨）', key: 'weight', width: 220, align: 'right', render: (_, row) => <span className="tabular-nums">{row.originalGross} / {row.originalTare} / <strong>{row.originalNet}</strong></span> },
     { title: '二次确认时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.secondConfirmedAt} /> },
     { title: '关联单据', key: 'ticket', width: 144, render: (_, row) => row.currentTicketId ? <Link className={linkClass} to={`/weighing/tickets/${row.currentTicketId}`}>查看当前有效单</Link> : <StatusTag tone="neutral">无有效单据</StatusTag> },
-    { title: '操作', key: 'actions', width: 148, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>原始依据与历史</Link></TableActions> },
+    { title: '操作', key: 'actions', width: 148, nowrap: true, render: (_, row) => <TableActions><Link className={buttonStyles({ size: "sm", variant: "ghost" })} to={`/weighing/tasks/${row.id}`}>原始依据与历史</Link></TableActions> },
   ];
   return <div className="weighing-list-page"><PageHeader title="原始称重" description="" /><DeviceBanner compact />
     <WeighingFilters value={filter} onChange={value => { setFilter(value); setPage(1); }} dateLabel="二次称重确认" hideStatus />

@@ -16,6 +16,13 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	syncReasonOldSiteCode = "old_site_code"
+	syncOldSiteMessage    = "出单时的厂区编码已更换，已暂停上传，请联系管理员处理"
+)
+
+var errSyncSiteRejected = errors.New("云端未找到启用的厂区编码，已暂停自动上传，请联系管理员处理")
+
 type syncTicket struct {
 	EntryType                 string                    `json:"entryType,omitempty"`
 	FirstWeighedAt            *time.Time                `json:"firstWeighedAt,omitempty"`
@@ -207,8 +214,8 @@ func postTicketChange(ctx context.Context, address string, change ticketSyncChan
 		return errors.New("连接云端失败或结果未知")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == 401 {
-		return errors.New("云端拒绝厂区编码：编码不存在或已停用")
+	if resp.StatusCode == http.StatusUnauthorized {
+		return errSyncSiteRejected
 	}
 	if resp.StatusCode == 409 {
 		return errors.New("云端拒绝变化：单号或变化冲突，或前序状态不满足")
@@ -244,13 +251,28 @@ func (s *Service) RunTicketSync(ctx context.Context) error {
 	}
 	s.ticketSyncMu.Lock()
 	defer s.ticketSyncMu.Unlock()
+	siteCode, err := s.LocalSiteCode(ctx)
+	if err != nil || siteCode == "" {
+		return err
+	}
+	if err := repo.pauseOldLegacyTicketChanges(ctx); err != nil {
+		return err
+	}
 	var changes []ticketSyncChange
-	if err := repo.db.WithContext(ctx).Raw(`SELECT c.* FROM wb_ticket_sync_change c WHERE c.status <> 'synced' AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change p WHERE p.ticket_id = c.ticket_id AND p.id < c.id AND p.status <> 'synced') AND (c.previous_ticket_id IS NULL OR (EXISTS (SELECT 1 FROM wb_ticket_sync_change v WHERE v.ticket_id=c.previous_ticket_id AND v.change_type='void' AND v.status='synced') AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change p WHERE p.ticket_id=c.previous_ticket_id AND p.status <> 'synced'))) ORDER BY c.last_attempt_at ASC NULLS FIRST, c.id LIMIT 100`).Scan(&changes).Error; err != nil {
+	if err := repo.db.WithContext(ctx).Raw(`
+		SELECT c.* FROM wb_ticket_sync_change c JOIN wb_ticket k ON k.id = c.ticket_id
+		WHERE k.site_code = ? AND c.status IN ('pending','failed')
+		  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change p WHERE p.ticket_id = c.ticket_id AND p.id < c.id AND p.status <> 'synced')
+		  AND (c.previous_ticket_id IS NULL OR (
+			EXISTS (SELECT 1 FROM wb_ticket_sync_change v WHERE v.ticket_id = c.previous_ticket_id AND v.change_type = 'void' AND v.status = 'synced')
+			AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change p WHERE p.ticket_id = c.previous_ticket_id AND p.status <> 'synced')
+		  ))
+		ORDER BY c.last_attempt_at ASC NULLS FIRST, c.id LIMIT 100`, siteCode).Scan(&changes).Error; err != nil {
 		return err
 	}
 	for _, change := range changes {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if current, err := s.LocalSiteCode(ctx); err != nil || current != siteCode {
+			return err
 		}
 		err := postTicketChange(ctx, s.masterSyncAddress, change)
 		reason := ""
@@ -258,6 +280,9 @@ func (s *Service) RunTicketSync(ctx context.Context) error {
 		if err != nil {
 			reason = err.Error()
 			status = "failed"
+			if errors.Is(err, errSyncSiteRejected) {
+				status = SyncChangeNeedsAdmin
+			}
 		}
 		dbErr := repo.db.WithContext(context.WithoutCancel(ctx)).Transaction(func(tx *gorm.DB) error {
 			values := map[string]any{"status": status, "reason": reason, "last_attempt_at": time.Now().UTC()}
@@ -274,4 +299,14 @@ func (s *Service) RunTicketSync(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (r *Repository) pauseOldLegacyTicketChanges(ctx context.Context) error {
+	return r.db.WithContext(ctx).Exec(`
+		UPDATE wb_ticket_sync_change c SET status = ?, reason = ?
+		FROM wb_ticket k
+		WHERE k.id = c.ticket_id
+		  AND k.site_code <> (SELECT site_code FROM wb_local_identity WHERE id=1 AND site_code <> '')
+		  AND (c.status IN ('pending','failed') OR (c.status = ? AND c.reason = ?))`,
+		SyncChangeNeedsAdmin, syncOldSiteMessage, SyncChangeNeedsAdmin, errSyncSiteRejected.Error()).Error
 }

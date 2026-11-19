@@ -511,7 +511,10 @@ export function SystemMenusPage() {
           rowKey="id"
           loading={loading}
           error={error}
-          minWidth={1660}
+          minWidth={1290}
+          compact
+          fixedActions
+          ariaLabel="菜单列表"
           empty={
             <EmptyState
               title="暂无菜单数据"

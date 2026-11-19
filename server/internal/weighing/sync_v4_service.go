@@ -21,26 +21,30 @@ func (s *Service) RunSyncV4(ctx context.Context) error {
 	if !s.masterSyncEnabled {
 		return nil
 	}
-	ready, err := s.syncV4Ready(ctx)
-	if err != nil {
-		return err
-	}
-	if !ready {
-		return nil
-	}
 	repo, ok := s.store.(*Repository)
 	if !ok {
 		return ErrForbidden
 	}
 	s.ticketSyncMu.Lock()
 	defer s.ticketSyncMu.Unlock()
-	changes, err := repo.dueSyncChangesV4(ctx, 100)
+	siteCode, err := s.LocalSiteCode(ctx)
+	if err != nil || siteCode == "" {
+		return err
+	}
+	if err := repo.pauseOldDigestTicketChanges(ctx, (ticketSyncChangeV4{}).TableName()); err != nil {
+		return err
+	}
+	ready, err := s.syncV4Ready(ctx)
+	if err != nil || !ready {
+		return err
+	}
+	changes, err := repo.dueSyncChangesV4(ctx, siteCode, 100)
 	if err != nil {
 		return err
 	}
 	for _, change := range changes {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if current, err := s.LocalSiteCode(ctx); err != nil || current != siteCode {
+			return err
 		}
 		receipt, cloudErr := s.syncV4Client.uploadChange(ctx, s.masterSyncAddress, change.Payload, change.Digest, change.TicketNo, change.ChangeType)
 		now := time.Now().UTC()
@@ -430,7 +434,31 @@ func (s *Service) reviewDecision(ctx context.Context, repo *Repository, ticketID
 			}
 		}
 	}
-	return decideSyncReconcile(decisionChanges, *cloud, trigger), nil
+	decision := decideSyncReconcile(decisionChanges, *cloud, trigger)
+	if decision.Resend {
+		current, err := s.LocalSiteCode(ctx)
+		if err != nil {
+			return reconcileDecision{}, err
+		}
+		reasonCode, message := "", ""
+		if ref.SiteCode != current {
+			reasonCode, message = syncReasonOldSiteCode, syncOldSiteMessage
+		} else {
+			for _, change := range changes {
+				if change.Status == SyncChangeNeedsAdmin && (change.ReasonCode == syncReasonOldSiteCode || change.ReasonCode == "site_not_found_or_disabled") {
+					reasonCode, message = change.ReasonCode, change.Reason
+					break
+				}
+			}
+		}
+		if reasonCode != "" {
+			decision.Status = SyncReconcileNeedsReview
+			decision.ReasonCode = reasonCode
+			decision.Message = message
+			decision.Resend = false
+		}
+	}
+	return decision, nil
 }
 
 func localLatestDigest(changes []ticketSyncChangeV4) string {
@@ -838,6 +866,13 @@ func (s *Service) retrySyncChangeProtocol(ctx context.Context, changeID int64, p
 	}
 	if change.Status == SyncChangeConflict {
 		return SyncRetryResult{}, RejectionError("该变化因冲突暂停，请先重新核查")
+	}
+	current, err := s.LocalSiteCode(ctx)
+	if err != nil {
+		return SyncRetryResult{}, err
+	}
+	if change.SiteCode != current {
+		return SyncRetryResult{}, RejectionError(syncOldSiteMessage)
 	}
 	blocking, err := repo.ticketHasBlockingReview(ctx, change.TicketID)
 	if err != nil {

@@ -403,7 +403,10 @@ export function SystemFilesPage() {
           rowKey="id"
           loading={loading}
           error={error}
-          minWidth={1600}
+          minWidth={1260}
+          compact
+          fixedActions
+          ariaLabel="文件列表"
           empty={
             <EmptyState
               title="暂无文件数据"

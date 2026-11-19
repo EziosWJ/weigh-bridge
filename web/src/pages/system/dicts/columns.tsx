@@ -1,6 +1,5 @@
-import { Pencil, Trash2 } from "lucide-react";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDateOnly } from "@/lib/datetime";
@@ -20,6 +19,7 @@ const statusMeta: Record<
 };
 
 type DictTypeColumnActions = {
+  activeTypeId: number | null;
   onSelect: (record: SystemDictTypeRecord) => void;
   onEdit: (record: SystemDictTypeRecord) => void | Promise<void>;
   onChangeStatus: (record: SystemDictTypeRecord, status: ApiStatus) => void;
@@ -42,6 +42,7 @@ type DictDataColumnActions = {
 };
 
 export function createDictTypeColumns({
+  activeTypeId,
   onSelect,
   onEdit,
   onChangeStatus,
@@ -81,10 +82,17 @@ export function createDictTypeColumns({
     {
       title: "字典类型",
       key: "dictType",
-      width: 240,
+      width: 174,
       render: (_, record) => (
         <div>
-          <div className="font-medium text-text-primary">{record.dictName}</div>
+          <button
+            type="button"
+            className="rounded-tight text-left font-medium text-primary underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+            aria-pressed={activeTypeId === record.id}
+            onClick={() => onSelect(record)}
+          >
+            {record.dictName}
+          </button>
           <div className="text-xs text-text-tertiary">
             {record.dictCode} · ID {record.id}
           </div>
@@ -94,7 +102,7 @@ export function createDictTypeColumns({
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 73,
       render: (value) => {
         const status = value as ApiStatus;
         const meta = statusMeta[status];
@@ -104,7 +112,7 @@ export function createDictTypeColumns({
     {
       title: "属性",
       dataIndex: "isBuiltin",
-      width: 96,
+      width: 75,
       render: (value) =>
         value === 1 ? (
           <StatusTag tone="info">内置</StatusTag>
@@ -116,7 +124,7 @@ export function createDictTypeColumns({
       title: "排序",
       dataIndex: "sortOrder",
       align: "center",
-      width: 90,
+      width: 64,
       render: (value) => (
         <span className="tabular-nums">{String(value ?? 0)}</span>
       ),
@@ -124,7 +132,7 @@ export function createDictTypeColumns({
     {
       title: "创建时间",
       dataIndex: "createTime",
-      width: 180,
+      width: 112,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateOnly(
@@ -138,40 +146,28 @@ export function createDictTypeColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 300,
+      width: 156,
       render: (_, record) => (
         <TableActions>
-          <Button size="sm" variant="ghost" onClick={() => onSelect(record)}>
-            查看项
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => void onEdit(record)}
-          >
-            <Pencil className="h-4 w-4" aria-hidden />
+          <Button size="sm" variant="secondary" onClick={() => void onEdit(record)}>
             编辑
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              onChangeStatus(record, record.status === 1 ? 0 : 1)
-            }
-          >
-            {record.status === 1 ? "禁用" : "启用"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-error hover:text-error"
-            disabled={record.isBuiltin === 1}
-            title={record.isBuiltin === 1 ? "内置字典不允许删除" : undefined}
-            onClick={() => onDelete(record)}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden />
-            删除
-          </Button>
+          <TableActionMenu
+            items={[
+              {
+                label: record.status === 1 ? "禁用" : "启用",
+                onSelect: () => onChangeStatus(record, record.status === 1 ? 0 : 1),
+                danger: record.status === 1,
+              },
+              {
+                label: "删除",
+                onSelect: () => onDelete(record),
+                danger: true,
+                disabled: record.isBuiltin === 1,
+                title: record.isBuiltin === 1 ? "内置字典不允许删除" : undefined,
+              },
+            ]}
+          />
         </TableActions>
       ),
     },
@@ -211,7 +207,7 @@ export function createDictDataColumns({
     {
       title: "字典项",
       key: "dictData",
-      width: 220,
+      width: 150,
       render: (_, record) => (
         <div>
           <div className="font-medium text-text-primary">{record.dictLabel}</div>
@@ -225,7 +221,7 @@ export function createDictDataColumns({
       title: "排序",
       dataIndex: "sortOrder",
       align: "center",
-      width: 90,
+      width: 64,
       render: (value) => (
         <span className="tabular-nums">{String(value ?? 0)}</span>
       ),
@@ -233,9 +229,9 @@ export function createDictDataColumns({
     {
       title: "备注",
       dataIndex: "remark",
-      width: 180,
+      width: 130,
       render: (value) => (
-        <span className="block max-w-[180px] truncate text-text-secondary">
+        <span className="block max-w-[180px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -254,23 +250,16 @@ export function createDictDataColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 170,
+      width: 156,
       render: (_, record) => (
-        <div className="inline-flex items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => onEdit(record)}>
-            <Pencil className="h-4 w-4" aria-hidden />
+        <TableActions>
+          <Button size="sm" variant="secondary" onClick={() => onEdit(record)}>
             编辑
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-error hover:text-error"
-            onClick={() => onDelete(record)}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden />
-            删除
-          </Button>
-        </div>
+          <TableActionMenu items={[
+            { label: "删除", onSelect: () => onDelete(record), danger: true },
+          ]} />
+        </TableActions>
       ),
     },
   ];

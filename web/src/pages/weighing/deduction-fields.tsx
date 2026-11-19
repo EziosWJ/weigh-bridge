@@ -78,20 +78,22 @@ export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) 
     </div>
     {items && items.length > 0 && <div className="space-y-1.5">
       <p className="text-sm font-semibold">净重调整明细</p>
-      <table className="w-full text-sm">
+      <div className="min-w-0 overflow-x-auto focus-visible:-outline-offset-2" role="region" aria-label="净重调整明细" tabIndex={0}>
+      <table className="w-full min-w-[420px] text-sm">
         <thead className="text-text-tertiary"><tr className="border-b border-border text-left">
-          <th className="py-1.5 pr-3 font-medium">序号</th><th className="py-1.5 pr-3 font-medium">方式</th><th className="py-1.5 pr-3 font-medium">折算量（吨）</th><th className="py-1.5 pr-3 font-medium">类别</th><th className="py-1.5 font-medium">备注</th>
+          <th scope="col" className="whitespace-nowrap py-1.5 pr-3 font-medium">序号</th><th scope="col" className="whitespace-nowrap py-1.5 pr-3 font-medium">方式</th><th scope="col" className="whitespace-nowrap py-1.5 pr-3 text-right font-medium">折算量（吨）</th><th scope="col" className="whitespace-nowrap py-1.5 pr-3 font-medium">类别</th><th scope="col" className="whitespace-nowrap py-1.5 font-medium">备注</th>
         </tr></thead>
         <tbody className="tabular-nums">
-          {items.map((item, index) => <tr key={index} className="border-b border-border last:border-b-0">
+          {items.map((item, index) => <tr key={index} className="border-b border-border align-top last:border-b-0">
             <td className="py-1.5 pr-3">{index + 1}</td>
             <td className="py-1.5 pr-3">{item.mode === 'percent' ? `按比例 ${item.rateBp !== undefined ? formatRate(item.rateBp) : ''}` : '按吨'}</td>
-            <td className="py-1.5 pr-3">{netAdjustmentText(item.amount)}</td>
-            <td className="py-1.5 pr-3">{item.categoryName || item.category || '—'}</td>
-            <td className="py-1.5">{item.remark || '—'}</td>
+            <td className="whitespace-nowrap py-1.5 pr-3 text-right">{netAdjustmentText(item.amount)}</td>
+            <td className="py-1.5 pr-3 [overflow-wrap:anywhere]">{item.categoryName || item.category || '—'}</td>
+            <td className="py-1.5 [overflow-wrap:anywhere]">{item.remark || '—'}</td>
           </tr>)}
         </tbody>
       </table>
+      </div>
     </div>}
     <DetailItem label="重量来源" value={manualReturn && !adjusted ? '含人工补录回磅（非设备采集）' : adjusted || snapshot?.source === 'manual' ? '人工调整（原始采集依据保留）' : '沿用采集依据'} />
     {snapshot ? <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">

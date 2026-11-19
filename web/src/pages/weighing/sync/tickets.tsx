@@ -1,6 +1,6 @@
 import { RefreshCw, RotateCcw, ScanSearch } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { syncApi, type SyncOverview, type SyncTicket, type SyncTicketQuery } from "@/api/sync";
 import { weighingApi } from "@/api/weighing";
 import { DataTable } from "@/components/common/data-table";
@@ -20,17 +20,20 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/datetime";
+import { useTransportDirections } from "@/hooks/use-transport-directions";
 import type { DataTableColumn } from "@/types";
 import { protocolLabel, reconcileLabels, syncLabels } from "./labels";
 
 export function SyncTicketsPage() {
-  const navigate = useNavigate();
+  const directionLabels = useTransportDirections();
+  const loadVersion = useRef(0);
   const [overview, setOverview] = useState<SyncOverview | null>(null);
   const [data, setData] = useState<{ records: SyncTicket[]; total: number }>({ records: [], total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [canManage, setCanManage] = useState(false);
   const [filter, setFilter] = useState<SyncTicketQuery>({});
+  const [revision, setRevision] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [batchOpen, setBatchOpen] = useState(false);
@@ -39,6 +42,7 @@ export function SyncTicketsPage() {
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError("");
     try {
@@ -46,15 +50,17 @@ export function SyncTicketsPage() {
         syncApi.overview(),
         syncApi.tickets({ ...filter, page, pageSize }),
       ]);
-      setOverview(summary);
-      setData({ records: pageData.records, total: pageData.total });
+      if (version === loadVersion.current) {
+        setOverview(summary);
+        setData({ records: pageData.records, total: pageData.total });
+      }
     } catch (failure) {
-      setError(getErrorMessage(failure, "无法读取同步状态"));
+      if (version === loadVersion.current) setError(getErrorMessage(failure, "无法读取同步状态"));
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
   }, [filter, page, pageSize]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load(); }, [load, revision]);
   useEffect(() => {
     void weighingApi.capabilities().then(value => setCanManage(value.permissionCodes.includes("weighing:sync:manage"))).catch(() => setCanManage(false));
   }, []);
@@ -64,7 +70,7 @@ export function SyncTicketsPage() {
     try {
       const result = await syncApi.reconcileTicket(row.id);
       toast.success({ title: "核对完成", description: result.message });
-      await load();
+      setRevision(value => value + 1);
     } catch (failure) {
       toast.error({ title: "核对失败", description: getErrorMessage(failure, "请稍后重试") });
     } finally {
@@ -77,7 +83,7 @@ export function SyncTicketsPage() {
       const result = await syncApi.reconcileRange(from, to);
       toast.success({ title: "批量对账完成", description: `检查 ${result.checked} 张：一致 ${result.consistent}，待同步 ${result.pending}，待核查 ${result.needsReview}，冲突 ${result.conflict}，未知 ${result.unknown}` });
       setBatchOpen(false);
-      await load();
+      setRevision(value => value + 1);
     } catch (failure) {
       toast.error({ title: "批量对账失败", description: getErrorMessage(failure, "请稍后重试") });
     } finally {
@@ -87,17 +93,21 @@ export function SyncTicketsPage() {
 
   const columns: DataTableColumn<SyncTicket>[] = [
     { title: "单号 / 车牌", key: "ticket", width: 220, render: (_, row) => <div><Link className="text-primary hover:underline" to={`/weighing/sync/tickets/${row.id}`}>{row.ticketNo}</Link><div className="mt-1 font-medium">{row.business?.plate ?? "—"}</div></div> },
-    { title: "方向 / 物料", key: "business", width: 170, render: (_, row) => <div>{row.business?.materialName ?? "—"}{row.business?.materialSpec ? <div className="text-text-tertiary">{row.business.materialSpec}</div> : null}</div> },
+    { title: "方向 / 物料", key: "business", width: 170, render: (_, row) => <div>
+      <div>{row.business?.direction ? directionLabels[row.business.direction] : "—"}</div>
+      <div className="text-text-secondary">{[row.business?.materialName, row.business?.materialSpec].filter(Boolean).join(" / ") || "—"}</div>
+    </div> },
     { title: "单据状态", key: "status", width: 90, render: (_, row) => <StatusTag tone={row.status === "valid" ? "success" : "neutral"}>{row.status === "valid" ? "有效" : "作废"}</StatusTag> },
     { title: "同步状态", key: "sync", width: 160, render: (_, row) => { const item = syncLabels[row.syncStatus ?? "untracked"] ?? syncLabels.untracked; return <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 text-text-tertiary">{protocolLabel(row.syncProtocol)}</div></div>; } },
-    { title: "同步说明", key: "syncReason", width: 220, render: (_, row) => <span className="text-text-secondary">{row.syncReason || "—"}</span> },
-    { title: "最近对账", key: "reconcile", width: 170, render: (_, row) => { const item = row.reconcileStatus ? reconcileLabels[row.reconcileStatus] : null; return item ? <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 text-text-tertiary">{formatDateTime(row.reconcileAt)}</div></div> : <span className="text-text-tertiary">未对账</span>; } },
-    { title: "出单时间", key: "issuedAt", width: 165, render: (_, row) => formatDateTime(row.issuedAt) },
-    { title: "操作", key: "actions", width: 160, nowrap: true, render: (_, row) => <TableActions>
-      <button type="button" className="text-primary hover:underline" onClick={() => navigate(`/weighing/sync/tickets/${row.id}`)}>详情</button>
-      {canManage && (row.syncProtocol === 4 || row.syncProtocol === 5 || row.syncProtocol === 6) && <button type="button" className="text-primary hover:underline" disabled={busy} onClick={() => void reconcileOne(row)}>核对</button>}
-    </TableActions> },
+    { title: "同步说明", key: "syncReason", render: (_, row) => <span className="block truncate text-text-secondary" title={row.syncReason || undefined}>{row.syncReason || "—"}</span> },
+    { title: "最近对账", key: "reconcile", width: 176, render: (_, row) => { const item = row.reconcileStatus ? reconcileLabels[row.reconcileStatus] : null; return item ? <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 whitespace-nowrap tabular-nums text-text-tertiary">{formatDateTime(row.reconcileAt)}</div></div> : <span className="text-text-tertiary">未对账</span>; } },
+    { title: "出单时间", key: "issuedAt", width: 176, nowrap: true, render: (_, row) => <span className="tabular-nums">{formatDateTime(row.issuedAt)}</span> },
   ];
+  if (canManage) columns.push({ title: "操作", key: "actions", width: 92, nowrap: true, render: (_, row) =>
+    row.syncProtocol === 4 || row.syncProtocol === 5 || row.syncProtocol === 6
+      ? <TableActions><Button size="sm" disabled={busy} onClick={() => void reconcileOne(row)}>核对</Button></TableActions>
+      : <span className="text-text-tertiary">—</span>,
+  });
 
   return <div className="weighing-list-page">
     <PageHeader title="单据同步" description="按摘要核对云端已接收变化；同步确认状态与对账结果分开显示。" actions={<Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>} />
@@ -109,8 +119,7 @@ export function SyncTicketsPage() {
       <SummaryCard label="最近成功" value={overview?.lastSuccess ? formatDateTime(overview.lastSuccess) : "—"} detail="最近一次变化获云端确认" />
       <SummaryCard label="最近对账" value={overview?.lastReconcile ? formatDateTime(overview.lastReconcile.checkedAt) : "—"} detail={overview?.lastReconcile ? `${reconcileLabels[overview.lastReconcile.status]?.label ?? overview.lastReconcile.status}：一致 ${overview.lastReconcile.consistent}，待同步 ${overview.lastReconcile.pending}，待核查 ${overview.lastReconcile.needsReview}，冲突 ${overview.lastReconcile.conflict}，未知 ${overview.lastReconcile.unknown}` : "尚未执行自动或手动对账"} />
     </div>
-    <SearchFilterBar actions={<>
-      {canManage && <Button variant="secondary" onClick={() => setBatchOpen(true)}><ScanSearch className="h-4 w-4" aria-hidden />按日期批量对账</Button>}
+    <SearchFilterBar compact actions={<>
       <Button variant="secondary" onClick={() => { setFilter({}); setPage(1); }}><RotateCcw className="h-4 w-4" aria-hidden />重置</Button>
     </>}>
       <Input aria-label="单号或车牌" placeholder="单号或车牌" value={filter.keyword ?? ""} onChange={event => { setFilter({ ...filter, keyword: event.target.value }); setPage(1); }} />
@@ -122,12 +131,12 @@ export function SyncTicketsPage() {
         <option value="">全部对账状态</option>
         {Object.entries(reconcileLabels).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}
       </Select>
-      <Input type="date" aria-label="出单开始日期" value={filter.from ?? ""} onChange={event => { setFilter({ ...filter, from: event.target.value }); setPage(1); }} />
-      <Input type="date" aria-label="出单结束日期" value={filter.to ?? ""} onChange={event => { setFilter({ ...filter, to: event.target.value }); setPage(1); }} />
+      <label className="flex items-center gap-2 text-sm text-text-secondary"><span className="shrink-0">从</span><Input type="date" aria-label="出单开始日期" className="min-w-0" value={filter.from ?? ""} onChange={event => { setFilter({ ...filter, from: event.target.value }); setPage(1); }} /></label>
+      <label className="flex items-center gap-2 text-sm text-text-secondary"><span className="shrink-0">至</span><Input type="date" aria-label="出单结束日期" className="min-w-0" value={filter.to ?? ""} onChange={event => { setFilter({ ...filter, to: event.target.value }); setPage(1); }} /></label>
     </SearchFilterBar>
     <DataTableCard>
-      <TableToolbar title="单据同步列表" description={`共 ${data.total} 张；同步确认状态与最近对账结果分别显示。`} />
-      <DataTable columns={columns} dataSource={data.records} rowKey="id" loading={loading} error={error} minWidth={1320} empty={<EmptyState title="暂无同步单据" description="当前筛选条件下没有单据。" />} />
+      <TableToolbar title="单据同步列表" description={`共 ${data.total} 张`} actions={canManage && <Button disabled={busy} onClick={() => setBatchOpen(true)}><ScanSearch className="h-4 w-4" aria-hidden />按日期批量对账</Button>} />
+      <DataTable columns={columns} dataSource={data.records} rowKey="id" loading={loading} error={error} minWidth={canManage ? 1190 : 1100} compact stickyHeader fixedEdges={canManage} ariaLabel="单据同步列表" empty={<EmptyState title="暂无同步单据" description="当前筛选条件下没有单据。" />} />
       <Pagination page={page} pageSize={pageSize} total={data.total} disabled={loading} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
     <FormDialog open={batchOpen} title="按日期批量对账" description="检查所选出单日期范围内由摘要协议管理的单据。云端查询失败不会显示为一致。" submitText="开始对账" loadingText="对账中…" loading={busy} onCancel={() => setBatchOpen(false)} onSubmit={() => void reconcileRange()}>

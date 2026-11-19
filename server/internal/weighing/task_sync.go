@@ -3,6 +3,7 @@ package weighing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -48,6 +49,18 @@ type taskSyncOutbox struct {
 }
 
 func (taskSyncOutbox) TableName() string { return "wb_task_sync_outbox" }
+
+type taskSyncRejection struct {
+	status int
+	code   int
+}
+
+func (e *taskSyncRejection) Error() string {
+	return fmt.Sprintf("task sync rejected: HTTP %d, code %d", e.status, e.code)
+}
+
+// The factory identity can be changed without rewriting outbox snapshots.
+const oldTaskSyncSite = "site_code <> (SELECT site_code FROM wb_local_identity WHERE id = 1 AND site_code <> '')"
 
 // enqueueTaskSync captures the business snapshot in the same transaction as the
 // task change. Replays always use these bytes, including the original version.
@@ -113,37 +126,86 @@ func (s *Service) RunTaskSync(ctx context.Context) error {
 	if !ok {
 		return ErrForbidden
 	}
+	s.taskSyncMu.Lock()
+	defer s.taskSyncMu.Unlock()
+
 	if err = repo.bootstrapTaskSync(ctx); err != nil {
 		return err
 	}
 	db := repo.db.WithContext(ctx)
+	// Earlier workers persisted only the error text. Retire that known
+	// rejection even when the row is still waiting for its next retry.
+	if err = db.Model(&taskSyncOutbox{}).
+		Where("confirmed_at IS NULL AND blocked_at IS NULL").
+		Where(oldTaskSyncSite).
+		Where("last_error ~ ?", `^task sync rejected: HTTP 401, code [0-9]+$`).
+		Update("blocked_at", time.Now().UTC()).Error; err != nil {
+		return err
+	}
+
 	var rows []taskSyncOutbox
-	if err = db.Where("confirmed_at IS NULL").Order("id").Limit(200).Find(&rows).Error; err != nil {
+	if err = db.Raw(`
+		SELECT c.* FROM wb_task_sync_outbox c
+		WHERE c.confirmed_at IS NULL AND c.blocked_at IS NULL AND c.next_attempt_at <= CURRENT_TIMESTAMP
+		  AND NOT EXISTS (
+			SELECT 1 FROM wb_task_sync_outbox p
+			WHERE p.task_id = c.task_id AND p.version < c.version AND p.confirmed_at IS NULL
+		  )
+		ORDER BY c.id LIMIT 200`).Scan(&rows).Error; err != nil {
 		return err
 	}
 	for _, row := range rows {
-		if row.NextAttemptAt.After(time.Now().UTC()) {
-			return nil
-		}
 		var item taskSyncItem
 		if err = json.Unmarshal([]byte(row.Payload), &item); err != nil {
 			return err
 		}
+		pending := db.Model(&taskSyncOutbox{}).Where("id = ? AND confirmed_at IS NULL AND blocked_at IS NULL", row.ID)
 		err = s.sendTaskSync(ctx, row.SiteCode, []taskSyncItem{item})
 		if err != nil {
-			if updateErr := db.Model(&taskSyncOutbox{}).Where("id = ? AND confirmed_at IS NULL", row.ID).Updates(map[string]any{"attempts": gorm.Expr("attempts + 1"), "next_attempt_at": time.Now().UTC().Add(syncRetryBackoff(row.Attempts + 1)), "last_error": err.Error()}).Error; updateErr != nil {
+			canContinue, updateErr := recordTaskSyncFailure(pending, row, err)
+			if updateErr != nil || !canContinue {
 				return updateErr
 			}
-			// A disconnected cloud must not incur one HTTP timeout per queued row.
-			// The unchanged snapshot remains due after backoff.
-			return nil
+			continue
 		}
-		if err = db.Model(&taskSyncOutbox{}).Where("id = ? AND confirmed_at IS NULL", row.ID).Updates(map[string]any{"confirmed_at": time.Now().UTC(), "last_error": ""}).Error; err != nil {
+		if err = pending.Updates(map[string]any{"confirmed_at": time.Now().UTC(), "last_error": ""}).Error; err != nil {
 			return err
 		}
 	}
+	return s.sendTaskSyncHeartbeat(ctx, db)
+}
+
+func recordTaskSyncFailure(pending *gorm.DB, row taskSyncOutbox, failure error) (bool, error) {
+	now := time.Now().UTC()
+	updates := map[string]any{"attempts": gorm.Expr("attempts + 1"), "last_error": failure.Error()}
+	var rejection *taskSyncRejection
+	if errors.As(failure, &rejection) && rejection.status == http.StatusUnauthorized {
+		// Check the current code when persisting the rejection, since it could
+		// have changed while the HTTP request was in flight.
+		blocked := pending.Session(&gorm.Session{}).Where(oldTaskSyncSite).
+			Updates(map[string]any{"attempts": updates["attempts"], "last_error": updates["last_error"], "blocked_at": now})
+		if blocked.Error != nil || blocked.RowsAffected != 0 {
+			return true, blocked.Error
+		}
+	}
+	updates["next_attempt_at"] = now.Add(syncRetryBackoff(row.Attempts + 1))
+	err := pending.Updates(updates).Error
+	// Validation and conflicts apply to the submitted task. Connection errors,
+	// unknown results and server failures end the pass to avoid repeated timeouts.
+	canContinue := rejection != nil && (rejection.status == http.StatusBadRequest || rejection.status == http.StatusConflict)
+	return canContinue, err
+}
+
+func (s *Service) sendTaskSyncHeartbeat(ctx context.Context, db *gorm.DB) error {
+	site, err := s.LocalSiteCode(ctx)
+	if err != nil {
+		return err
+	}
+	if site == "" {
+		return ErrInvalid
+	}
 	var remaining int64
-	if err = db.Model(&taskSyncOutbox{}).Where("confirmed_at IS NULL").Count(&remaining).Error; err != nil || remaining != 0 {
+	if err = db.Model(&taskSyncOutbox{}).Where("site_code = ? AND confirmed_at IS NULL", site).Count(&remaining).Error; err != nil || remaining != 0 {
 		return err
 	}
 	var heartbeat struct{ LastHeartbeatAt *time.Time }
@@ -152,13 +214,6 @@ func (s *Service) RunTaskSync(ctx context.Context) error {
 	}
 	if heartbeat.LastHeartbeatAt != nil && time.Since(*heartbeat.LastHeartbeatAt) < time.Minute {
 		return nil
-	}
-	var site string
-	if err = db.Raw("SELECT site_code FROM wb_local_identity WHERE id=1").Scan(&site).Error; err != nil {
-		return err
-	}
-	if site == "" {
-		return ErrInvalid
 	}
 	if err = s.sendTaskSync(ctx, site, []taskSyncItem{}); err != nil {
 		return err
@@ -184,7 +239,7 @@ func (s *Service) sendTaskSync(ctx context.Context, site string, items []taskSyn
 		return err
 	}
 	if status != http.StatusOK || envelope.Code != http.StatusOK {
-		return fmt.Errorf("task sync rejected: HTTP %d, code %d", status, envelope.Code)
+		return &taskSyncRejection{status: status, code: envelope.Code}
 	}
 	var receipt struct {
 		SchemaVersion int       `json:"schemaVersion"`

@@ -11,7 +11,7 @@ export type ButtonStyleProps = {
 
 const variants: Record<ButtonVariant, string> = {
   primary:
-    "border-primary bg-primary text-white hover:bg-primary-hover active:bg-primary-hover disabled:border-primary/50 disabled:bg-primary/50",
+    "border-primary-hover bg-primary-hover text-white hover:brightness-95 active:brightness-90 disabled:border-primary-hover/50 disabled:bg-primary-hover/50",
   secondary:
     "border-border bg-surface text-text-primary hover:bg-neutral-background active:bg-neutral-background disabled:text-text-tertiary",
   ghost:

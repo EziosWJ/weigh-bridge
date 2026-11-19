@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/common/page-header';
 import { ContentCard } from '@/components/common/content-card';
 import { DetailItem } from '@/components/common/detail-item';
 import { SectionTabs } from '@/components/common/section-tabs';
+import { DataTable } from '@/components/common/data-table';
 import { DataTableCard } from '@/components/common/data-table-card';
 import { TableToolbar } from '@/components/common/table-toolbar';
 import { StatusTag } from '@/components/common/status-tag';
@@ -16,6 +17,7 @@ import { MaintenanceConfigPanel } from './agent-maintenance/config-panel';
 import { formatDateTime } from '@/lib/datetime';
 import { formatWeightValue } from '@/lib/weighing/weights';
 import { getErrorMessage } from '@/lib/api-error';
+import type { DataTableColumn } from '@/types';
 
 type ServiceStatus = Record<string, unknown>;
 
@@ -69,6 +71,8 @@ export function AgentMaintenancePage() {
   const [initialLoaded, setInitialLoaded] = useState(false);
   const [error, setError] = useState('');
   const [recordsLoaded, setRecordsLoaded] = useState(false);
+  const [recordsLoading, setRecordsLoading] = useState(false);
+  const [recordsError, setRecordsError] = useState('');
   const [tab, setTab] = useState<'overview' | 'printer' | 'instrument' | 'backups' | 'records'>('overview');
   const deviceOffline = !status || status?.agentProcessOnline === false || status?.maintenanceAvailable === false;
   const canManage = maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:manage');
@@ -133,10 +137,12 @@ export function AgentMaintenancePage() {
       const result = await agentMaintenanceApi.apply(settings, configData.effective?.configVersion ?? 0);
       if (result.status === 'applied') {
         toast.success({ title: '配置已保存并应用', description: '设备重载结果已核实。已有打印作业仍须现场核实。' });
+        await refresh();
       } else {
-        setError(`配置未生效（${result.status}）：${result.message || '请核对设备实际状态'}。维护连接保持，可修正后重试。`);
+        const resolution = result.status === 'unknown' ? '请刷新状态核实后再操作。' : '输入已保留，请检查参数及设备状态。';
+        setError(`配置应用未完成：${result.message || '请核对设备实际状态'}。${resolution}`);
+        try { setStatus(await agentMaintenanceApi.status()); } catch { setStatus(null); }
       }
-      await refresh();
     } catch (failure) {
       setError(`${getErrorMessage(failure, '配置应用失败')}。结果未知时请先读取实际状态核实，不要重复盲写。`);
       try { setConfigData(await agentMaintenanceApi.config()); } catch { /* Keep entered values for correction. */ }
@@ -144,15 +150,15 @@ export function AgentMaintenancePage() {
   }
 
   async function loadRecords() {
-    setBusy(true); setError('');
+    setBusy(true); setRecordsLoading(true); setRecordsError('');
     try {
       const [logText, auditData] = await Promise.all([
         agentMaintenanceApi.logs(),
         agentMaintenanceApi.audit(new URLSearchParams({ offset: '0', limit: '100' })),
       ]);
       setLogs(logText); setAudit(auditData.records ?? []); setRecordsLoaded(true);
-    } catch (failure) { setError(getErrorMessage(failure, '维护记录读取失败')); }
-    finally { setBusy(false); }
+    } catch (failure) { setRecordsError(getErrorMessage(failure, '维护记录读取失败')); }
+    finally { setBusy(false); setRecordsLoading(false); }
   }
 
   async function printSample() {
@@ -256,20 +262,17 @@ export function AgentMaintenancePage() {
     : !configData || !settings ? <ContentCard title="配置尚未读取"><p className="text-sm text-text-secondary">请刷新状态重试；读取成功后可编辑设备参数。</p></ContentCard>
     : <MaintenanceConfigPanel section={tab === 'instrument' ? 'serial' : 'print'} config={configData} settings={settings} setSettings={value => setSettings(current => typeof value === 'function' ? value(current ?? settings) : value)} queues={queues} queuesError={queuesError} serialHint={serialHint} busy={busy} feedback={feedback} onApply={() => void applySettings()} />;
 
+  const recordColumns: DataTableColumn<Record<string, unknown>>[] = [
+    { title: '时间', key: 'at', width: 172, nowrap: true, render: (_, row) => <span className="tabular-nums text-text-secondary">{formatDateTime(typeof row.at === 'string' ? row.at : undefined)}</span> },
+    { title: '操作', key: 'action', width: 136, render: (_, row) => <span className="font-medium">{actionLabels[String(row.action)] ?? String(row.action ?? '—')}</span> },
+    { title: '目标', key: 'target', width: 156, render: (_, row) => <span className="text-text-secondary">{String(row.target || '—')}</span> },
+    { title: '结果', key: 'result', render: (_, row) => String(row.result || '—') },
+  ];
   const records = <div className="space-y-space-4">
     <DataTableCard toolbar={<TableToolbar title="维护记录" description="最近 100 条维护操作，按时间核对操作目标及执行结果。" actions={<Button disabled={busy} onClick={() => void loadRecords()}><RefreshCw className="h-4 w-4" aria-hidden />刷新记录</Button>} />}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[640px] text-left text-sm"><caption className="sr-only">设备维护操作记录</caption>
-          <thead className="bg-neutral-background text-text-secondary"><tr className="border-b border-border">{['时间', '操作', '目标', '结果'].map(label => <th key={label} scope="col" className="px-space-4 py-space-3 font-medium">{label}</th>)}</tr></thead>
-          <tbody>{audit.map((row, index) => <tr key={String(row.id ?? index)} className="border-b border-border last:border-b-0 hover:bg-neutral-background">
-            <td className="whitespace-nowrap px-space-4 py-space-3 tabular-nums text-text-secondary">{formatDateTime(typeof row.at === 'string' ? row.at : undefined)}</td>
-            <td className="px-space-4 py-space-3 font-medium">{actionLabels[String(row.action)] ?? String(row.action ?? '—')}</td>
-            <td className="max-w-xs break-words px-space-4 py-space-3 text-text-secondary">{String(row.target || '—')}</td>
-            <td className="max-w-sm break-words px-space-4 py-space-3">{String(row.result || '—')}</td>
-          </tr>)}</tbody>
-        </table>
-      </div>
-      {!audit.length && <div className="px-space-4 py-space-8 text-center text-sm text-text-tertiary">{busy ? '正在读取维护记录…' : recordsLoaded ? '暂无维护记录' : '尚未读取记录，请点击刷新记录。'}</div>}
+      <DataTable columns={recordColumns} dataSource={audit.map((row, index) => ({ ...row, rowKey: String(row.id ?? index) }))} rowKey="rowKey" minWidth={620} compact stickyHeader ariaLabel="设备维护操作记录"
+        loading={recordsLoading} error={recordsError}
+        empty={<p className="px-space-4 py-space-8 text-center text-sm text-text-tertiary">{recordsLoaded ? '暂无维护记录' : '尚未读取记录，请点击刷新记录。'}</p>} />
     </DataTableCard>
     <ContentCard title="运行日志" description="最近的设备运行输出，用于排查连接与执行问题。" extra={<Button disabled={busy} onClick={async () => { setBusy(true); try { setLogs(await agentMaintenanceApi.logs()); } catch (failure) { setLogs(getErrorMessage(failure, '日志读取失败')); } finally { setBusy(false); } }}>读取最近日志</Button>} className="min-w-0">
       <pre aria-label="运行日志内容" className="max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-neutral-background p-space-4 text-body-secondary leading-relaxed text-text-secondary">{logs || '本次未读取到日志内容。'}</pre>

@@ -22,6 +22,10 @@ try {
   page.setDefaultTimeout(8000);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.abort());
+  await page.route('**/api/system/dict/TRANSPORT_DIRECTION/items', route =>
+    route.fulfill({ json: { code: 200, message: 'ok', data: [] } }),
+  );
 
   await page.goto(`${base}/tests/manual-supplement-entry.html?permission=yes`, { waitUntil: 'networkidle' });
   const button = page.getByRole('button', { name: '人工补单', exact: true });

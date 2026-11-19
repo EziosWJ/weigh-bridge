@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   Pencil,
@@ -22,7 +23,7 @@ import {
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataTableCard } from "@/components/common/data-table-card";
 import { DataTable } from "@/components/common/data-table";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { EmptyState } from "@/components/common/empty-state";
 import { Field } from "@/components/common/field";
 import { FormDialog } from "@/components/common/form-dialog";
@@ -33,6 +34,7 @@ import { StatusTag } from "@/components/common/status-tag";
 import { TableToolbar } from "@/components/common/table-toolbar";
 import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
+import { buttonStyles } from "@/components/ui/button-styles";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -528,7 +530,7 @@ export function SystemConfigsPage() {
     {
       title: "配置名称",
       key: "configName",
-      width: 240,
+      width: 180,
       render: (_, record) => (
         <div>
           <div className="font-medium text-text-primary">
@@ -543,9 +545,9 @@ export function SystemConfigsPage() {
     {
       title: "配置键",
       dataIndex: "configKey",
-      width: 240,
+      width: 174,
       render: (value) => (
-        <span className="block max-w-[240px] truncate font-mono text-body-secondary text-text-secondary">
+        <span className="block max-w-[240px] truncate font-mono text-body-secondary text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -553,9 +555,9 @@ export function SystemConfigsPage() {
     {
       title: "配置值",
       dataIndex: "configValue",
-      width: 220,
+      width: 148,
       render: (value) => (
-        <span className="block max-w-[220px] truncate text-text-secondary">
+        <span className="block max-w-[220px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value ?? "-")}
         </span>
       ),
@@ -563,7 +565,7 @@ export function SystemConfigsPage() {
     {
       title: "配置类型",
       dataIndex: "configType",
-      width: 120,
+      width: 94,
       render: (value) =>
         getConfigTypeLabel(
           value as SystemConfigType | undefined,
@@ -573,7 +575,7 @@ export function SystemConfigsPage() {
     {
       title: "值类型",
       dataIndex: "valueType",
-      width: 100,
+      width: 78,
       render: (value) =>
         getValueTypeLabel(
           value as SystemConfigValueType | undefined,
@@ -583,7 +585,7 @@ export function SystemConfigsPage() {
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 72,
       render: (_, record) => {
         const status = getConfigStatus(record);
         const meta = statusMeta[status];
@@ -593,7 +595,7 @@ export function SystemConfigsPage() {
     {
       title: "属性",
       dataIndex: "isBuiltin",
-      width: 96,
+      width: 72,
       render: (value) =>
         value === 1 ? (
           <StatusTag tone="info">内置</StatusTag>
@@ -616,9 +618,15 @@ export function SystemConfigsPage() {
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 260,
+      width: 154,
       render: (_, record) => {
-        if (record.configKey === TICKET_TITLE_KEY) return <a href="/system/ticket-title" className="text-primary hover:underline">设置过磅单标题</a>;
+        if (record.configKey === TICKET_TITLE_KEY) {
+          return (
+            <Link to="/system/ticket-title" className={buttonStyles({ variant: "secondary", size: "sm" })}>
+              设置过磅单标题
+            </Link>
+          );
+        }
         const builtin = isBuiltinConfig(record);
         const editableBuiltin = isEditableBuiltinConfig(record);
         const nextStatus = getConfigStatus(record) === 1 ? 0 : 1;
@@ -627,7 +635,7 @@ export function SystemConfigsPage() {
           <TableActions>
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               disabled={builtin && !editableBuiltin}
               title={
                 builtin
@@ -641,51 +649,36 @@ export function SystemConfigsPage() {
               <Pencil className="h-4 w-4" aria-hidden />
               编辑
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={
-                record.configKey === MASTER_SYNC_INTERVAL_KEY ||
-                record.configKey === CAMERA_EVENT_MAX_AGE_KEY ||
-                record.configKey === CAPTURE_REQUIRED_KEY ||
-                record.configKey === AUTO_PRINT_KEY ||
-                record.configKey === TICKET_TITLE_KEY ||
-                record.configKey?.startsWith("weighing.local-")
-              }
-              title={
-                record.configKey === CAMERA_EVENT_MAX_AGE_KEY
-                  ? "车牌事件有效期始终启用，请直接编辑分钟数"
-                  : record.configKey === AUTO_PRINT_KEY
-                  ? "请通过编辑布尔值切换自动打印"
-                  : record.configKey === CAPTURE_REQUIRED_KEY
-                  ? "请通过编辑布尔值切换强制抓拍"
-                  : record.configKey === TICKET_TITLE_KEY
-                    ? "单据标题始终启用，请直接编辑配置值"
-                    : builtin
-                      ? "内置配置允许修改启停状态"
-                      : undefined
-              }
-              onClick={() =>
-                setConfirmAction({
-                  type: "status",
-                  config: record,
-                  status: nextStatus,
-                })
-              }
-            >
-              {nextStatus === 1 ? "启用" : "禁用"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-error hover:text-error"
-              disabled={builtin}
-              title={builtin ? "内置配置不允许删除" : undefined}
-              onClick={() => setConfirmAction({ type: "delete", config: record })}
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-              删除
-            </Button>
+            <TableActionMenu
+              items={[
+                {
+                  label: nextStatus === 1 ? "启用" : "禁用",
+                  danger: nextStatus === 0,
+                  disabled:
+                    record.configKey === MASTER_SYNC_INTERVAL_KEY ||
+                    record.configKey === CAMERA_EVENT_MAX_AGE_KEY ||
+                    record.configKey === CAPTURE_REQUIRED_KEY ||
+                    record.configKey === AUTO_PRINT_KEY ||
+                    record.configKey?.startsWith("weighing.local-"),
+                  title:
+                    record.configKey === CAMERA_EVENT_MAX_AGE_KEY
+                      ? "车牌事件有效期始终启用，请直接编辑分钟数"
+                      : record.configKey === AUTO_PRINT_KEY
+                        ? "请通过编辑布尔值切换自动打印"
+                        : record.configKey === CAPTURE_REQUIRED_KEY
+                          ? "请通过编辑布尔值切换强制抓拍"
+                          : undefined,
+                  onSelect: () => setConfirmAction({ type: "status", config: record, status: nextStatus }),
+                },
+                {
+                  label: "删除",
+                  danger: true,
+                  disabled: builtin,
+                  title: builtin ? "内置配置不允许删除" : undefined,
+                  onSelect: () => setConfirmAction({ type: "delete", config: record }),
+                },
+              ]}
+            />
           </TableActions>
         );
       },
@@ -819,7 +812,10 @@ export function SystemConfigsPage() {
           rowKey="id"
           loading={loading}
           error={error}
-          minWidth={1440}
+          minWidth={1220}
+          compact
+          fixedActions
+          ariaLabel="配置列表"
           empty={
             <EmptyState
               title="暂无配置项"

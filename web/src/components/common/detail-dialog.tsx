@@ -50,6 +50,7 @@ export function DetailDialog({
       closeOnEscape={closeOnEscape}
       closeOnOverlayClick={closeOnOverlayClick}
       trapFocus={trapFocus}
+      restoreFocus
     >
       <DialogOverlay />
       <DialogContent

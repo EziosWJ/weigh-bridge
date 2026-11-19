@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/common/empty-state';
 import { Pagination } from '@/components/common/pagination';
 import { StatusTag } from '@/components/common/status-tag';
 import { Button } from '@/components/ui/button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import {
   Dialog,
   DialogClose,
@@ -29,12 +30,6 @@ const linkClass = 'text-primary hover:underline';
 
 const ticketColumns = (directionLabels: Record<Direction, string>): DataTableColumn<WireTicket>[] => [
   {
-    title: '出单时间 ↓',
-    key: 'issuedAt',
-    width: 136,
-    render: (_, row) => <ListDate value={row.issuedAt} />,
-  },
-  {
     title: '单号 / 车牌',
     key: 'ticket',
     width: 190,
@@ -42,6 +37,12 @@ const ticketColumns = (directionLabels: Record<Direction, string>): DataTableCol
       <a className={linkClass} href={`/weighing/tickets/${encodeURIComponent(String(row.id))}`} target="weighbridge-management" rel="noreferrer">{row.ticketNo}</a>
       <div className="mt-1 font-medium">{row.business.plate}</div>
     </div>,
+  },
+  {
+    title: '出单时间 ↓',
+    key: 'issuedAt',
+    width: 130,
+    render: (_, row) => <ListDate value={row.issuedAt} />,
   },
   {
     title: '方向 / 物料',
@@ -62,6 +63,7 @@ const ticketColumns = (directionLabels: Record<Direction, string>): DataTableCol
     title: '最终毛 / 皮 / 净重（吨）',
     key: 'weight',
     width: 210,
+    align: 'right',
     render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div>,
   },
   {
@@ -76,9 +78,9 @@ const ticketColumns = (directionLabels: Record<Direction, string>): DataTableCol
   {
     title: '操作',
     key: 'actions',
-    width: 70,
+    width: 88,
     nowrap: true,
-    render: (_, row) => <a className={linkClass} href={`/weighing/tickets/${encodeURIComponent(String(row.id))}`} target="weighbridge-management" rel="noreferrer" aria-label={`查看单据 ${row.ticketNo}`}>详情</a>,
+    render: (_, row) => <a className={buttonStyles({ size: 'sm', variant: 'ghost' })} href={`/weighing/tickets/${encodeURIComponent(String(row.id))}`} target="weighbridge-management" rel="noreferrer" aria-label={`查看单据 ${row.ticketNo}`}>详情</a>,
   },
 ];
 
@@ -187,7 +189,7 @@ export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
           columns={ticketColumns(directionLabels)}
           dataSource={result.records}
           loading={result.loading}
-          error={result.error}
+          error={result.error && <EmptyState title="过磅单加载失败" description={result.error} actionText="重试" onAction={result.refresh} />}
           rowKey="id"
           minWidth={1176}
           empty={<EmptyState title="暂无过磅单" description="当前筛选条件下没有符合条件的过磅单。" />}
@@ -199,6 +201,7 @@ export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
           pageSize={pageSize}
           total={result.total}
           pageSizeOptions={[10, 20, 50]}
+          disabled={result.loading || !!result.error}
           onPageChange={setPage}
           onPageSizeChange={size => { setPageSize(size); setPage(1); }}
         />

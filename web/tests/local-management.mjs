@@ -246,6 +246,7 @@ try {
   let restorePayload;
   let actionPayload;
   let configRead = 0;
+  let rejectApply = false;
   let backupCreates = 0;
   let backupOnline = true;
   const backups = [{ id: 11, name: '', notes: '', configVersion: 2, digest: 'sha256:v2', settings: structuredClone(currentSettings), appliedAt: '2026-10-23T10:20:30+08:00', source: 'auto', receivedAt: '2026-10-23T10:20:31+08:00' }];
@@ -304,6 +305,7 @@ try {
     if (path.endsWith('/queues')) return route.fulfill({ json: { queues: [{ name: 'Aisino-SK820-raw', state: 'idle', isDefault: true }], at: new Date().toISOString() } });
     if (path.endsWith('/apply') && method === 'POST') {
       applyPayload = request.postDataJSON();
+      if (rejectApply) return route.fulfill({ json: { status: 'rejected', message: '校准参数未通过设备检查' } });
       currentSettings = applyPayload.settings;
       configVersion += 1;
       return route.fulfill({ json: { status: 'applied', configVersion, digest: `sha256:v${configVersion}`, appliedAt: new Date().toISOString() } });
@@ -405,6 +407,11 @@ try {
   await managed.page.getByLabel('单据节长（mm）', { exact: true }).fill('93.13');
   await managed.page.getByLabel('水平偏移（mm）', { exact: true }).fill('2');
   await managed.page.getByLabel('垂直偏移（mm）', { exact: true }).fill('1.5');
+  rejectApply = true;
+  await managed.page.getByRole('button', { name: '保存并应用', exact: true }).click();
+  await managed.page.getByRole('alert').filter({ hasText: '校准参数未通过设备检查' }).waitFor();
+  assert.equal(await managed.page.getByLabel('单据节长（mm）', { exact: true }).inputValue(), '93.13', 'rejected apply preserves entered parameters');
+  rejectApply = false;
   await managed.page.getByRole('button', { name: '保存并应用', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '配置已保存并应用' }).waitFor();
   assert.deepEqual(applyPayload, {

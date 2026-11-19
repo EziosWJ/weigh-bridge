@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>本地设备联调台</title>
+<style>
+  :root { color-scheme: light; --ink:#192b33; --dim:#445d66; --line:#cbd7da; --accent:#115f59; --paper:#edf3f4; --fault:#982e1d; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink); font:15px/1.55 system-ui,sans-serif; }
+  main { width:min(1120px,100%); margin:auto; padding:36px 24px; }
+  header { display:flex; align-items:end; justify-content:space-between; gap:12px; border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:16px; }
+  h1,h2,p { margin:0; }
+  h1 { font-size:clamp(25px,4vw,34px); }
+  h2 { font-size:18px; }
+  small, dt, summary { color:var(--dim); }
+  #agent { min-height:24px; margin:0 0 16px; overflow-wrap:anywhere; }
+  .panels { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; }
+  section { min-width:0; padding:20px; border:1px solid var(--line); border-top:3px solid var(--accent); background:white; }
+  .reading { display:flex; align-items:baseline; flex-wrap:wrap; gap:10px; margin:14px 0; color:#f2f9f8; background:#173c3d; padding:12px 14px; border-radius:4px; }
+  .reading strong { font:700 clamp(25px,4vw,38px)/1.15 ui-monospace,monospace; overflow-wrap:anywhere; }
+  .reading span { font-size:14px; }
+  label { display:block; font-weight:600; margin-bottom:4px; }
+  input,button { font:inherit; border:1px solid #81979b; border-radius:4px; padding:7px 10px; }
+  input { width:100%; color:var(--ink); }
+  input:focus-visible, button:focus-visible, summary:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+  button { background:white; color:var(--ink); min-height:40px; cursor:pointer; }
+  button:hover:not(:disabled) { background:#e2eeed; color:var(--ink); }
+  button.primary { background:var(--accent); color:white; border-color:var(--accent); }
+  button.primary:hover:not(:disabled) { background:#0a4945; color:white; }
+  button:disabled { opacity:.55; cursor:default; }
+  .actions { display:flex; flex-wrap:wrap; gap:7px; margin-top:9px; }
+  dl { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:5px 14px; margin:14px 0; }
+  dd { margin:0; overflow-wrap:anywhere; }
+  details { border-top:1px solid var(--line); padding-top:10px; }
+  summary { cursor:pointer; }
+  .error, [data-state="conflict"], [data-state="stopped"] { color:var(--fault); }
+  .error:not(:empty) { margin-top:8px; }
+  @media(max-width:760px) { main { padding:18px 12px; } header { align-items:start; flex-direction:column; gap:2px; } .panels { grid-template-columns:1fr; } section { padding:14px; } }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>本地设备联调台</h1><small>模拟设备，仅用于开发测试</small></header>
+  <p id="agent">正在读取 Agent 状态…</p>
+  <div class="panels">
+    <section id="d12" aria-labelledby="scale-title">
+      <h2 id="scale-title">地磅</h2>
+      <div class="reading"><strong id="weight">—</strong><span>吨</span><span id="scale-mode"></span></div>
+      <label for="weight-input">目标重量（吨）</label>
+      <input id="weight-input" type="text" inputmode="decimal" value="30.125">
+      <div class="actions">
+        <button type="button" class="primary" data-action="up">模拟上磅</button>
+        <button type="button" data-action="set_weight">设置稳定重量</button>
+        <button type="button" data-action="down">下磅归零</button>
+      </div>
+      <p class="error" role="alert"></p>
+      <dl>
+        <dt>虚拟串口</dt><dd id="port">—</dd>
+        <dt>串口读取端</dt><dd id="reader">—</dd>
+      </dl>
+      <details>
+        <summary>仪表故障模拟</summary>
+        <div class="actions">
+          <button type="button" data-action="unstable">强制失稳</button>
+          <button type="button" data-action="stable">恢复稳定</button>
+          <button type="button" data-action="pause">暂停发送</button>
+          <button type="button" data-action="resume">恢复发送</button>
+          <button type="button" data-action="bad_once">发送一个坏帧</button>
+          <button type="button" data-action="bad_start">连续坏帧</button>
+          <button type="button" data-action="bad_stop">恢复正常校验</button>
+        </div>
+        <dl>
+          <dt>校验状态</dt><dd id="checksum">—</dd>
+          <dt>发送帧／坏帧</dt><dd id="frames">—</dd>
+          <dt>最后一帧</dt><dd id="last-frame">—</dd>
+        </dl>
+      </details>
+    </section>
+    <section id="camera" aria-labelledby="camera-title">
+      <h2 id="camera-title">车牌识别</h2>
+      <div class="reading"><strong id="plate">—</strong></div>
+      <label for="plate-input">指定车牌</label>
+      <input id="plate-input" type="text" maxlength="10" autocomplete="off" spellcheck="false" placeholder="例如 晋A12345">
+      <div class="actions">
+        <button type="button" class="primary" data-action="report_plate">上报指定车牌</button>
+        <button type="button" data-action="recognize">随机车牌并上报</button>
+        <button type="button" data-action="report_current">再次上报当前车牌</button>
+        <button type="button" data-action="retry" disabled>重试上次上报</button>
+      </div>
+      <p class="error" role="alert"></p>
+      <dl>
+        <dt>Server</dt><dd id="server">—</dd>
+        <dt>设备序列号</dt><dd id="serial">—</dd>
+        <dt>最近心跳</dt><dd id="heartbeat">—</dd>
+        <dt>最近上报</dt><dd id="report">—</dd>
+        <dt>上报事件号</dt><dd id="event">—</dd>
+      </dl>
+    </section>
+  </div>
+</main>
+<script>
+const byID = id => document.getElementById(id);
+const display = (id, value) => { byID(id).textContent = value; };
+
+async function request(path, command) {
+  const response = await fetch(path, command && {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(command),
+  });
+  if (!response.ok) throw new Error((await response.text()).trim() || ('HTTP ' + response.status));
+  return response.json();
+}
+
+function controls(id, render, payload) {
+  const panel = byID(id);
+  const buttons = [...panel.querySelectorAll('[data-action]')];
+  const error = panel.querySelector('.error');
+  let busy = false;
+  let revision = 0;
+  let state;
+  let polling = false;
+
+  function update(next) {
+    state = next;
+    render(state);
+    updateButtons();
+  }
+
+  function updateButtons() {
+    for (const button of buttons) {
+      button.disabled = busy || (button.dataset.action === 'retry' && !state?.lastReport?.canRetry);
+    }
+  }
+
+  async function refresh() {
+    if (busy || polling) return;
+    const before = revision;
+    polling = true;
+    try {
+      const next = await request('/' + id + '/api/state');
+      if (before === revision) update(next);
+    } catch {
+      if (before === revision) error.textContent = '无法读取模拟器状态，请检查联调台是否仍在运行。';
+    } finally {
+      polling = false;
+    }
+  }
+
+  for (const button of buttons) {
+    button.addEventListener('click', async () => {
+      if (busy) return;
+      busy = true;
+      revision++;
+      error.textContent = '';
+      updateButtons();
+      try {
+        update(await request('/' + id + '/api/control', payload(button.dataset.action)));
+      } catch (failure) {
+        error.textContent = failure.message;
+      } finally {
+        busy = false;
+        updateButtons();
+      }
+    });
+  }
+  return refresh;
+}
+
+const refreshScale = controls('d12', state => {
+  display('weight', state.weight);
+  display('scale-mode', state.paused ? '已停发' : state.ramping ? '上磅波动中' : state.dynamic ? '不稳定' : '稳定');
+  display('port', state.port);
+  display('reader', state.readerPresent ? '已打开' : '尚未打开');
+  display('checksum', state.continuousBad ? '连续坏帧' : state.badOncePending ? '等待发送单个坏帧' : '正常');
+  display('frames', state.framesSent + ' / ' + state.badFramesSent);
+  display('last-frame', state.writeError || state.lastFrame || '—');
+}, action => (action === 'set_weight' || action === 'up') ?
+  { action, weight: byID('weight-input').value.trim() } : { action });
+
+function attemptText(attempt, pending) {
+  if (!attempt) return pending;
+  const time = new Date(attempt.at).toLocaleTimeString('zh-CN');
+  return time + '　' + (attempt.success ? '已收到 ACK' : attempt.error || '失败');
+}
+
+const refreshCamera = controls('camera', state => {
+  display('plate', state.plate || '—');
+  display('server', state.serverUrl);
+  display('serial', state.serialNumber);
+  display('heartbeat', attemptText(state.lastHeartbeat, '等待首次心跳'));
+  display('report', attemptText(state.lastReport, '尚未上报'));
+  display('event', state.eventId || '—');
+  byID('heartbeat').classList.toggle('error', state.lastHeartbeat?.success === false);
+  byID('report').classList.toggle('error', state.lastReport?.success === false);
+}, action => action === 'report_plate' ? { action, plate: byID('plate-input').value.trim() } : { action });
+
+async function refresh() {
+  await Promise.all([refreshScale(), refreshCamera(), (async () => {
+    try {
+      const agent = await request('/api/agent');
+      display('agent', agent.message);
+      byID('agent').dataset.state = agent.state;
+    } catch {
+      display('agent', '无法读取 Agent 状态，请检查联调台是否仍在运行。');
+      byID('agent').dataset.state = 'stopped';
+    }
+  })()]);
+  setTimeout(refresh, 750);
+}
+refresh();
+</script>
+</body>
+</html>

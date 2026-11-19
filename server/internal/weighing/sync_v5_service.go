@@ -8,11 +8,11 @@ import (
 	"gorm.io/gorm"
 )
 
-func (r *Repository) dueSyncChangesV5(ctx context.Context, limit int) ([]ticketSyncChangeV5, error) {
+func (r *Repository) dueSyncChangesV5(ctx context.Context, siteCode string, limit int) ([]ticketSyncChangeV5, error) {
 	rows := []ticketSyncChangeV5{}
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT c.* FROM wb_ticket_sync_change_v5 c
-		WHERE c.status IN ('pending','waiting_predecessor','temporary_failure')
+		WHERE c.site_code = ? AND c.status IN ('pending','waiting_predecessor','temporary_failure')
 		  AND (c.next_attempt_at IS NULL OR c.next_attempt_at <= now())
 		  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 p WHERE p.ticket_id = c.ticket_id AND p.id < c.id AND p.status <> 'synced')
 		  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_review r WHERE r.ticket_id = c.ticket_id AND r.status = 'open' AND r.blocking)
@@ -21,7 +21,7 @@ func (r *Repository) dueSyncChangesV5(ctx context.Context, limit int) ([]ticketS
 			AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 p WHERE p.ticket_id = c.previous_ticket_id AND p.status <> 'synced')
 		  ))
 		ORDER BY c.next_attempt_at NULLS FIRST, c.id
-		LIMIT ?`, limit).Scan(&rows).Error
+		LIMIT ?`, siteCode, limit).Scan(&rows).Error
 	return rows, err
 }
 
@@ -55,26 +55,30 @@ func (s *Service) RunSyncV5(ctx context.Context) error {
 	if !s.masterSyncEnabled {
 		return nil
 	}
-	ready, err := s.syncV4Ready(ctx)
-	if err != nil {
-		return err
-	}
-	if !ready {
-		return nil
-	}
 	repo, ok := s.store.(*Repository)
 	if !ok {
 		return ErrForbidden
 	}
 	s.ticketSyncMu.Lock()
 	defer s.ticketSyncMu.Unlock()
-	changes, err := repo.dueSyncChangesV5(ctx, 100)
+	siteCode, err := s.LocalSiteCode(ctx)
+	if err != nil || siteCode == "" {
+		return err
+	}
+	if err := repo.pauseOldDigestTicketChanges(ctx, (ticketSyncChangeV5{}).TableName()); err != nil {
+		return err
+	}
+	ready, err := s.syncV4Ready(ctx)
+	if err != nil || !ready {
+		return err
+	}
+	changes, err := repo.dueSyncChangesV5(ctx, siteCode, 100)
 	if err != nil {
 		return err
 	}
 	for _, change := range changes {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if current, err := s.LocalSiteCode(ctx); err != nil || current != siteCode {
+			return err
 		}
 		var receipt syncChangeV4Receipt
 		var cloudErr *SyncCloudError

@@ -1,6 +1,5 @@
-import { Pencil, Plus, Trash2 } from "lucide-react";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getMenuIcon } from "@/lib/menu-icons";
@@ -69,7 +68,7 @@ export function createMenuColumns({
     {
       title: "菜单名称",
       key: "menu",
-      width: 260,
+      width: 228,
       render: (_, menu) => {
         const Icon = getMenuIcon(menu.icon);
 
@@ -82,7 +81,7 @@ export function createMenuColumns({
               <Icon className="h-4 w-4" aria-hidden />
             </span>
             <div className="min-w-0">
-              <div className="truncate font-medium text-text-primary">
+              <div className="truncate font-medium text-text-primary" title={menu.menuName}>
                 {menu.menuName}
               </div>
               <div className="text-xs text-text-tertiary">
@@ -96,15 +95,18 @@ export function createMenuColumns({
     {
       title: "类型",
       dataIndex: "menuType",
-      width: 96,
+      width: 74,
       render: (value) => typeLabelMap[value as SystemMenuType],
     },
     {
       title: "路由 / 外链",
       key: "path",
-      width: 220,
+      width: 165,
       render: (_, menu) => (
-        <span className="block max-w-[220px] truncate text-text-secondary">
+        <span
+          className="block max-w-[220px] truncate text-text-secondary"
+          title={(menu.menuType === "LINK" ? menu.externalUrl : menu.path) || undefined}
+        >
           {menu.menuType === "LINK" ? menu.externalUrl || "-" : menu.path || "-"}
         </span>
       ),
@@ -112,9 +114,9 @@ export function createMenuColumns({
     {
       title: "组件路径",
       dataIndex: "component",
-      width: 200,
+      width: 148,
       render: (value) => (
-        <span className="block max-w-[200px] truncate text-text-secondary">
+        <span className="block max-w-[200px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -122,9 +124,9 @@ export function createMenuColumns({
     {
       title: "权限标识",
       dataIndex: "permissionCode",
-      width: 190,
+      width: 137,
       render: (value) => (
-        <span className="block max-w-[190px] truncate text-text-secondary">
+        <span className="block max-w-[190px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -132,7 +134,7 @@ export function createMenuColumns({
     {
       title: "可见性",
       dataIndex: "visible",
-      width: 96,
+      width: 75,
       render: (value) => {
         const meta = visibleMeta[(value === 0 ? 0 : 1) as ApiStatus];
         return <StatusTag tone={meta.tone}>{meta.label}</StatusTag>;
@@ -141,7 +143,7 @@ export function createMenuColumns({
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 75,
       render: (value) => {
         const meta = statusMeta[(value === 0 ? 0 : 1) as ApiStatus];
         return <StatusTag tone={meta.tone}>{meta.label}</StatusTag>;
@@ -150,7 +152,7 @@ export function createMenuColumns({
     {
       title: "属性",
       dataIndex: "isBuiltin",
-      width: 96,
+      width: 75,
       render: (value) =>
         value === 1 ? (
           <StatusTag tone="info">内置</StatusTag>
@@ -162,7 +164,7 @@ export function createMenuColumns({
       title: "排序",
       dataIndex: "sortOrder",
       align: "center",
-      width: 80,
+      width: 58,
       render: (value) => (
         <span className="tabular-nums">{String(value ?? 0)}</span>
       ),
@@ -172,39 +174,31 @@ export function createMenuColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 330,
+      width: 252,
       render: (_, menu) => (
         <TableActions>
-          <Button size="sm" variant="ghost" onClick={() => onEdit(menu)}>
-            <Pencil className="h-4 w-4" aria-hidden />
+          <Button size="sm" variant="secondary" onClick={() => onEdit(menu)}>
             编辑
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onCreateChild(menu.id)}
-          >
-            <Plus className="h-4 w-4" aria-hidden />
-            子菜单
+          <Button size="sm" variant="ghost" onClick={() => onCreateChild(menu.id)}>
+            新增子菜单
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onToggleStatus(menu, menu.status === 1 ? 0 : 1)}
-          >
-            {menu.status === 1 ? "禁用" : "启用"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-error hover:text-error"
-            disabled={menu.isBuiltin === 1}
-            title={menu.isBuiltin === 1 ? "内置菜单不允许删除" : undefined}
-            onClick={() => onDelete(menu)}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden />
-            删除
-          </Button>
+          <TableActionMenu
+            items={[
+              {
+                label: menu.status === 1 ? "禁用" : "启用",
+                onSelect: () => onToggleStatus(menu, menu.status === 1 ? 0 : 1),
+                danger: menu.status === 1,
+              },
+              {
+                label: "删除",
+                onSelect: () => onDelete(menu),
+                danger: true,
+                disabled: menu.isBuiltin === 1,
+                title: menu.isBuiltin === 1 ? "内置菜单不允许删除" : undefined,
+              },
+            ]}
+          />
         </TableActions>
       ),
     },

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { EmptyState } from "@/components/common/empty-state";
 import { cn } from "@/lib/utils";
 import type { DataTableColumn } from "@/types";
@@ -16,6 +16,8 @@ type DataTableProps<T> = {
   stickyHeader?: boolean;
   /** 桌面端固定首尾两列；业务页面将标识列放首位、操作列放末位。 */
   fixedEdges?: boolean;
+  /** 桌面端只固定末尾的操作列。 */
+  fixedActions?: boolean;
   ariaLabel?: string;
   onRowClick?: (record: T) => void;
   rowClassName?: (record: T, index: number) => string | undefined;
@@ -48,10 +50,27 @@ export function DataTable<T>({
   compact = false,
   stickyHeader = false,
   fixedEdges = false,
+  fixedActions = false,
   ariaLabel = "数据表格",
   onRowClick,
   rowClassName,
 }: DataTableProps<T>) {
+  const frame = useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = useState(false);
+  const hasRows = !loading && !error && dataSource.length > 0;
+  const fixedEnd = fixedEdges || fixedActions;
+
+  useEffect(() => {
+    const element = frame.current;
+    if (!hasRows || !element?.firstElementChild) return;
+    const update = () => setScrollable(element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight);
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    observer.observe(element.firstElementChild);
+    update();
+    return () => observer.disconnect();
+  }, [hasRows]);
+
   if (loading) {
     return (
       <div className={cn("space-y-space-3 p-card", className)} aria-busy="true" aria-live="polite">
@@ -92,10 +111,11 @@ export function DataTable<T>({
 
   return (
     <div
-      className={cn("min-w-0 overflow-auto", (stickyHeader || fixedEdges) && "isolate", className)}
-      role={stickyHeader || fixedEdges ? "region" : undefined}
-      aria-label={stickyHeader || fixedEdges ? ariaLabel : undefined}
-      tabIndex={stickyHeader || fixedEdges ? 0 : undefined}
+      ref={frame}
+      className={cn("min-w-0 overflow-auto focus-visible:-outline-offset-2", (stickyHeader || fixedEnd) && "isolate", className)}
+      role={scrollable || stickyHeader || fixedEnd ? "region" : undefined}
+      aria-label={scrollable || stickyHeader || fixedEnd ? ariaLabel : undefined}
+      tabIndex={scrollable ? 0 : undefined}
     >
       <table
         className={cn("w-full border-separate border-spacing-0 text-left", compact && "table-fixed")}
@@ -111,7 +131,7 @@ export function DataTable<T>({
                   compact && "!px-space-3 !py-space-2",
                   stickyHeader && "sticky top-0 z-20 bg-neutral-background",
                   fixedEdges && index === 0 && "lg:sticky lg:left-0 lg:z-30 lg:bg-neutral-background lg:border-r",
-                  fixedEdges && index === columns.length - 1 && "lg:sticky lg:right-0 lg:z-30 lg:bg-neutral-background lg:border-l",
+                  fixedEnd && index === columns.length - 1 && "lg:sticky lg:right-0 lg:z-30 lg:bg-neutral-background lg:border-l",
                   column.align === "center" && "text-center",
                   column.align === "right" && "text-right",
                   column.nowrap && "whitespace-nowrap",
@@ -129,9 +149,8 @@ export function DataTable<T>({
             <tr
               key={getRowKey(rowKey, record)}
               className={cn(
-                "group transition-colors",
-                compact && "hover:bg-neutral-background",
-                onRowClick && "cursor-pointer hover:bg-neutral-background",
+                "group transition-colors hover:bg-neutral-background",
+                onRowClick && "cursor-pointer",
                 rowClassName?.(record, rowIndex),
               )}
               onClick={(event) => {
@@ -157,7 +176,7 @@ export function DataTable<T>({
                       "border-b border-border px-space-5 py-space-3 align-middle",
                       compact && "break-words !px-space-3 !py-space-2 [overflow-wrap:anywhere]",
                       fixedEdges && columnIndex === 0 && "lg:sticky lg:left-0 lg:z-10 lg:border-r lg:bg-surface lg:group-hover:bg-neutral-background",
-                      fixedEdges && columnIndex === columns.length - 1 && "lg:sticky lg:right-0 lg:z-10 lg:border-l lg:bg-surface lg:group-hover:bg-neutral-background",
+                      fixedEnd && columnIndex === columns.length - 1 && "lg:sticky lg:right-0 lg:z-10 lg:border-l lg:bg-surface lg:group-hover:bg-neutral-background",
                       column.align === "center" && "text-center",
                       column.align === "right" && "text-right",
                       column.nowrap && "whitespace-nowrap",

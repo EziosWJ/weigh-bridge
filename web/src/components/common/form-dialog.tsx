@@ -72,6 +72,7 @@ export function FormDialog({
       closeOnEscape={closeOnEscape && !loading}
       closeOnOverlayClick={closeOnOverlayClick && !loading}
       trapFocus={trapFocus}
+      restoreFocus
     >
       <DialogOverlay />
       <DialogContent

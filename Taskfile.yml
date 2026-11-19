@@ -84,6 +84,26 @@ tasks:
     cmds:
       - go run ./cmd/agent-mock {{.CLI_ARGS}}
 
+  device:lab:
+    desc: 启动本地设备联调台、D12 虚拟串口、车牌识别模拟及开发 Agent（Linux）
+    deps: [device:lab:build]
+    dir: server
+    cmds:
+      - ../.task/device-lab/bin/device-lab {{.CLI_ARGS}}
+
+  device:lab:build:
+    internal: true
+    dir: server
+    cmds:
+      - mkdir -p ../.task/device-lab/bin
+      - go build -o ../.task/device-lab/bin/ ./cmd/device-lab ./cmd/agent-printer
+
+  device:lab:smoke:
+    desc: 用 Chromium、真实 API 和隔离 PostgreSQL 验证本地设备联调台（Linux）
+    deps: [device:lab:build]
+    cmds:
+      - node scripts/check-device-lab.mjs
+
   device:d12:
     desc: 启动 D12 虚拟串口与控制页（8091，Linux）
     dir: server

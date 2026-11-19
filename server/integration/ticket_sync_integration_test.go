@@ -253,17 +253,17 @@ func readSyncV4Rows(t *testing.T, db *gorm.DB) []syncV4Row {
 }
 
 // Exercises the actual business transactions constructed by the workflow test.
-func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
+func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID int64, reopenTicket func() int64) {
 	t.Helper()
 	rows := readSyncV4Rows(t, db)
-	if len(rows) != 3 || rows[0].ChangeType != "issue" || rows[1].ChangeType != "void" || rows[2].ChangeType != "reopen" || rows[0].TicketID != oldID || rows[2].TicketID != newID {
+	if len(rows) != 2 || rows[0].ChangeType != "issue" || rows[1].ChangeType != "void" || rows[0].TicketID != oldID {
 		t.Fatalf("outbox sequence: %+v", rows)
 	}
 	if rows[0].DigestVersion != 3 || rows[0].SchemaVersion != 5 || len(rows[0].Digest) != 64 || rows[0].Status != "pending" {
 		t.Fatalf("outbox identity: %+v", rows[0])
 	}
-	var issue, reopen map[string]any
-	if json.Unmarshal([]byte(rows[0].Payload), &issue) != nil || json.Unmarshal([]byte(rows[2].Payload), &reopen) != nil {
+	var issue map[string]any
+	if json.Unmarshal([]byte(rows[0].Payload), &issue) != nil {
 		t.Fatal("invalid outbox payload")
 	}
 	if issue["digest"] != rows[0].Digest {
@@ -282,9 +282,6 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	item, _ := items[0].(map[string]any)
 	if item["mode"] != "amount" || item["amount"] != "1.5" || item["category"] != "WATER" || item["categoryName"] != "水分" {
 		t.Fatalf("netAdjustments item: %s", rows[0].Payload)
-	}
-	if reopen["siteCode"] != "F001" || reopen["previousSiteCode"] != issue["siteCode"] || reopen["ticket"].(map[string]any)["previousTicketNo"] != issue["ticketNo"] {
-		t.Fatalf("reopen association: %s", rows[2].Payload)
 	}
 
 	cloud := &fakeSyncV4Cloud{mode: "unknown"}
@@ -317,7 +314,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		}
 	}
 	rows = readSyncV4Rows(t, db)
-	if cloud.count() != 1 || rows[0].Status != "temporary_failure" || rows[1].Status != "pending" || rows[2].Status != "pending" {
+	if cloud.count() != 1 || rows[0].Status != "temporary_failure" || rows[1].Status != "pending" {
 		t.Fatalf("failure order: %+v payloads=%d", rows, cloud.count())
 	}
 	firstPayload := rows[0].Payload
@@ -349,7 +346,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 	if err := service.ConfigureMasterSync(ctx, true, offlineURL); err != nil {
 		t.Fatal(err)
 	}
-	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE ticket_id IN (?,?)", oldID, newID)
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET next_attempt_at=now() WHERE ticket_id = ?", oldID)
 	if err := service.RunSyncV4(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +361,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatal(err)
 	}
 	rows = readSyncV4Rows(t, db)
-	if len(rows) != 3 || rows[1].Status != "pending" {
+	if len(rows) != 2 || rows[1].Status != "pending" {
 		t.Fatal("clearing logs changed the outbox")
 	}
 
@@ -390,7 +387,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 			t.Fatalf("confirmed status: %+v", row)
 		}
 	}
-	if payloads := cloud.count(); payloads != 5 {
+	if payloads := cloud.count(); payloads != 4 {
 		t.Fatalf("expected retries to reuse stored payloads, got %d", payloads)
 	}
 	page, err = service.Tickets(ctx, weighing.PageQuery{Page: 1, PageSize: 20})
@@ -398,7 +395,7 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatal(err)
 	}
 	for _, ticket := range page.Records {
-		if (ticket.ID == oldID || ticket.ID == newID) && (ticket.SyncStatus != "synced" || ticket.SyncProtocol != 5) {
+		if ticket.ID == oldID && (ticket.SyncStatus != "synced" || ticket.SyncProtocol != 5) {
 			t.Fatalf("confirmed status: %+v", ticket)
 		}
 	}
@@ -454,11 +451,45 @@ func checkTicketSyncOutbox(t *testing.T, db *gorm.DB, oldID, newID int64) {
 		t.Fatalf("queued change did not resume after re-enable: %+v", rows[0])
 	}
 
-	checkSyncV4Reconciliation(t, db, service, cloud, remote.URL, oldID)
+	newID := reopenTicket()
+	rows = readSyncV4Rows(t, db)
+	if len(rows) != 3 || rows[2].ChangeType != "reopen" || rows[2].TicketID != newID {
+		t.Fatalf("reopen outbox: %+v", rows)
+	}
+	var reopen struct {
+		SiteCode         string
+		PreviousSiteCode string
+		Ticket           struct{ PreviousTicketNo string }
+	}
+	if err := json.Unmarshal([]byte(rows[2].Payload), &reopen); err != nil {
+		t.Fatal(err)
+	}
+	if reopen.SiteCode != "F001" || reopen.PreviousSiteCode != issue["siteCode"] || reopen.Ticket.PreviousTicketNo != issue["ticketNo"] {
+		t.Fatalf("reopen association: %+v", reopen)
+	}
+	if err := service.RunSyncV5(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if row := readSyncV4Rows(t, db)[2]; row.Status != "synced" || row.ReceivedAt == nil {
+		t.Fatalf("cross-code reopen not confirmed: %+v", row)
+	}
 	if os.Getenv("WB_SYNC_V4_TEST_URL") == "" {
 		checkReopenedVoid(t, db, remote.URL, newID, false)
 	}
+	// Exercise simulated reconciliation conflicts separately from the
+	// confirmed cross-code reopen. The fixture's original code is current
+	// during these checks so missing tickets can still be requeued.
+	setSyncFixtureCode(t, db, "SITE01")
+	checkSyncV4Reconciliation(t, db, service, cloud, remote.URL, oldID)
+	setSyncFixtureCode(t, db, "F001")
 	checkLiveSyncV4(t, db, service, oldID, newID)
+}
+
+func setSyncFixtureCode(t *testing.T, db *gorm.DB, code string) {
+	t.Helper()
+	if err := db.Exec("UPDATE wb_local_identity SET site_code=? WHERE id=1", code).Error; err != nil {
+		t.Fatal(err)
+	}
 }
 
 // checkLiveSyncV4 runs the same outbox against an isolated real cloud service
@@ -476,14 +507,22 @@ func checkLiveSyncV4(t *testing.T, db *gorm.DB, service *weighing.Service, oldID
 	if err := db.Exec("UPDATE wb_master_sync_state SET bound=true, last_success=now() WHERE id=1").Error; err != nil {
 		t.Fatal(err)
 	}
-	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', category='', reason_code='', reason='', attempts=0, next_attempt_at=now(), synced_at=NULL, received_at=NULL")
-	if err := db.Exec("SELECT 1").Error; err != nil {
-		t.Fatal(err)
-	}
-	for i := 0; i < 5; i++ {
-		if err := service.RunSyncV4(ctx); err != nil {
-			t.Fatal(err)
+	// The main fixture already changed code. Replay the two installation
+	// stages in sequence for this second, isolated cloud.
+	runOld := func() {
+		setSyncFixtureCode(t, db, "SITE01")
+		defer setSyncFixtureCode(t, db, "F001")
+		for i := 0; i < 2; i++ {
+			if err := service.RunSyncV5(ctx); err != nil {
+				t.Fatal(err)
+			}
 		}
+	}
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', category='', reason_code='', reason='', attempts=0, next_attempt_at=now(), synced_at=NULL, received_at=NULL WHERE ticket_id=?", oldID)
+	runOld()
+	bumpSyncAttempt(db, "UPDATE wb_ticket_sync_change_v4 SET status='pending', category='', reason_code='', reason='', attempts=0, next_attempt_at=now(), synced_at=NULL, received_at=NULL WHERE ticket_id=?", newID)
+	if err := service.RunSyncV5(ctx); err != nil {
+		t.Fatal(err)
 	}
 	rows := readSyncV4Rows(t, db)
 	for _, row := range rows {
@@ -508,12 +547,7 @@ func checkLiveSyncV4(t *testing.T, db *gorm.DB, service *weighing.Service, oldID
 	})(); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.RunSyncV4(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.RunSyncV5(ctx); err != nil {
-		t.Fatal(err)
-	}
+	runOld()
 	rows = readSyncV4Rows(t, db)
 	if rows[0].Status != "synced" {
 		t.Fatalf("duplicate upload was not confirmed: %+v", rows[0])

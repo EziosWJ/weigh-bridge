@@ -34,8 +34,7 @@ export function OperLogDetailDialog({
       loading={loading}
       contentClassName="max-w-[860px]"
       bodyClassName="max-h-[calc(100vh-150px)] px-card py-space-5"
-      closeOnEscape={false}
-      closeOnOverlayClick={false}
+      trapFocus
       onCancel={onCancel}
     >
           <div className="grid gap-4 md:grid-cols-3">

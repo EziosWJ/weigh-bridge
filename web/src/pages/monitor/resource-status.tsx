@@ -20,6 +20,20 @@ export function ResourceSection({ title, state, now, children, className, bodyCl
   </ContentCard></div>;
 }
 
-export function ResourceTable({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
-  return <DataTable columns={headers.map((title, index) => ({ key: String(index), title, nowrap: true, render: (_: unknown, row: { cells: ReactNode[] }) => row.cells[index] }))} dataSource={rows.map((cells, id) => ({ id, cells }))} rowKey="id" />;
+export function ResourceTable({ title, headers, rows, numeric = [] }: { title: string; headers: string[]; rows: ReactNode[][]; numeric?: number[] }) {
+  return <DataTable
+    columns={headers.map((heading, index) => ({
+      key: String(index),
+      title: heading,
+      align: numeric.includes(index) ? "right" : undefined,
+      render: (_: unknown, row: { cells: ReactNode[] }) => <span className="tabular-nums">{row.cells[index]}</span>,
+    }))}
+    dataSource={rows.map((cells, id) => ({ id, cells }))}
+    rowKey="id"
+    minWidth={headers.length * 112}
+    ariaLabel={`${title}数据表`}
+    compact
+    stickyHeader
+    fixedEdges={headers.at(-1) === "操作"}
+  />;
 }

@@ -35,6 +35,7 @@ try {
     requests.push(path);
     if (request.method() !== 'GET') writes.push(request.method() + ' ' + path);
     const data = value => route.fulfill({ json: { code: 200, message: 'success', data: value } });
+    if (path === '/api/system/dict/TRANSPORT_DIRECTION/items') return data([]);
     if (path === '/api/weighing/capabilities') {
       if (scenario === 'caps-failure') return route.fulfill({ status: 500, json: { code: 500, message: '无法读取权限' } });
       return data({ permissionCodes: permissions, localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, scales: [{ code: 'WB01', siteCode: 'F001', enabled: 1, canOperate: true }], sites: [], userId: 1 });
@@ -66,8 +67,8 @@ try {
   assert.equal(await page.getByText(/统计日期：|业务最近更新：/).count(), 0);
   assert.ok((await page.locator('main').innerText()).includes('20.125'));
   assert.equal(await page.getByText('隔日', { exact: true }).count(), 1);
-  assert.equal(await page.getByRole('link', { name: '查看任务', exact: true }).getAttribute('href'), '/weighing/tasks/1');
-  assert.equal(await page.getByRole('link', { name: '查看单据', exact: true }).getAttribute('href'), '/weighing/tickets/8');
+  assert.equal(await page.getByRole('link', { name: '川A12345', exact: true }).getAttribute('href'), '/weighing/tasks/1');
+  assert.equal(await page.getByRole('link', { name: 'WB202610260008', exact: true }).getAttribute('href'), '/weighing/tickets/8');
   await page.getByText('1 台参与抓拍，连通性未检测').waitFor();
   await page.getByText('同步失败', { exact: true }).waitFor();
   await page.getByText('作业状态待核实', { exact: true }).waitFor();
@@ -123,7 +124,7 @@ try {
   assert.equal(await page.getByText('今日有效单', { exact: true }).count(), 0);
   permissions = []; requests.length = 0; await ready();
   await page.getByText('暂无可查看的概览内容', { exact: true }).waitFor();
-  assert.deepEqual(requests, ['/api/weighing/capabilities']);
+  assert.deepEqual(requests.sort(), ['/api/system/dict/TRANSPORT_DIRECTION/items', '/api/weighing/capabilities']);
   scenario = 'caps-failure'; await ready();
   await page.getByText(/权限与本厂信息读取失败/).waitFor();
   assert.deepEqual(writes, [], 'overview performed a write');

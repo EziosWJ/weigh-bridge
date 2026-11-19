@@ -45,6 +45,7 @@ export function ConfirmDialog({
       closeOnEscape={!loading}
       closeOnOverlayClick={!loading}
       trapFocus
+      restoreFocus
     >
       <DialogOverlay />
       <DialogContent className="max-w-modal-sm">

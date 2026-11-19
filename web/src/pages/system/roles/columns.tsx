@@ -1,6 +1,5 @@
-import { Pencil, ShieldCheck, Trash2 } from "lucide-react";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDateOnly } from "@/lib/datetime";
@@ -63,7 +62,7 @@ export function createRoleColumns({
     {
       title: "角色名称",
       key: "role",
-      width: 240,
+      width: 168,
       render: (_, role) => (
         <div>
           <div className="font-medium text-text-primary">{role.roleName}</div>
@@ -76,12 +75,12 @@ export function createRoleColumns({
     {
       title: "角色编码",
       dataIndex: "roleCode",
-      width: 180,
+      width: 146,
     },
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 84,
       render: (value) => {
         const status = value as ApiStatus;
         const meta = statusMeta[status];
@@ -91,7 +90,7 @@ export function createRoleColumns({
     {
       title: "属性",
       dataIndex: "isBuiltin",
-      width: 96,
+      width: 84,
       render: (value) =>
         value === 1 ? (
           <StatusTag tone="info">内置</StatusTag>
@@ -103,7 +102,7 @@ export function createRoleColumns({
       title: "排序",
       dataIndex: "sortOrder",
       align: "center",
-      width: 90,
+      width: 64,
       render: (value) => (
         <span className="tabular-nums">{String(value ?? 0)}</span>
       ),
@@ -111,9 +110,9 @@ export function createRoleColumns({
     {
       title: "备注",
       dataIndex: "remark",
-      width: 220,
+      width: 160,
       render: (value) => (
-        <span className="block max-w-[220px] truncate text-text-secondary">
+        <span className="block max-w-[220px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -121,7 +120,7 @@ export function createRoleColumns({
     {
       title: "创建时间",
       dataIndex: "createTime",
-      width: 180,
+      width: 116,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateOnly(
@@ -135,39 +134,31 @@ export function createRoleColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 320,
+      width: 242,
       render: (_, role) => (
         <TableActions>
-          <Button size="sm" variant="ghost" onClick={() => onEdit(role)}>
-            <Pencil className="h-4 w-4" aria-hidden />
+          <Button size="sm" variant="secondary" onClick={() => onEdit(role)}>
             编辑
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onAssignMenus(role)}
-          >
-            <ShieldCheck className="h-4 w-4" aria-hidden />
+          <Button size="sm" variant="ghost" onClick={() => onAssignMenus(role)}>
             分配菜单
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onToggleStatus(role, role.status === 1 ? 0 : 1)}
-          >
-            {role.status === 1 ? "禁用" : "启用"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-error hover:text-error"
-            disabled={role.isBuiltin === 1}
-            title={role.isBuiltin === 1 ? "内置角色不允许删除" : undefined}
-            onClick={() => onDelete(role)}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden />
-            删除
-          </Button>
+          <TableActionMenu
+            items={[
+              {
+                label: role.status === 1 ? "禁用" : "启用",
+                onSelect: () => onToggleStatus(role, role.status === 1 ? 0 : 1),
+                danger: role.status === 1,
+              },
+              {
+                label: "删除",
+                onSelect: () => onDelete(role),
+                danger: true,
+                disabled: role.isBuiltin === 1,
+                title: role.isBuiltin === 1 ? "内置角色不允许删除" : undefined,
+              },
+            ]}
+          />
         </TableActions>
       ),
     },

@@ -20,6 +20,7 @@ type Service struct {
 	printMu                sync.Mutex
 	masterSyncMu           sync.Mutex
 	ticketSyncMu           sync.Mutex
+	taskSyncMu             sync.Mutex
 	temporaryPartySyncMu   sync.Mutex
 	temporaryPartySyncWake chan struct{}
 	syncReconcileMu        sync.Mutex

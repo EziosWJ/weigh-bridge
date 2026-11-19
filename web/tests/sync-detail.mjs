@@ -44,11 +44,11 @@ try {
   await page.goto(`${base}/tests/sync-detail.html`, { waitUntil: 'networkidle' });
   const differences = page.getByRole('table', { name: '单据字段差异' });
   const adjustment = differences.getByRole('row').filter({ hasText: '调整人' }).locator('td');
-  assert.equal((await adjustment.nth(1).textContent()).trim(), '未提供');
-  assert.equal((await adjustment.nth(2).textContent()).trim(), '空字符串');
+  assert.equal((await adjustment.nth(0).textContent()).trim(), '未提供');
+  assert.equal((await adjustment.nth(1).textContent()).trim(), '空字符串');
   const rate = differences.getByRole('row').filter({ hasText: '净重调整比例' }).locator('td');
-  assert.equal((await rate.nth(1).textContent()).trim(), '0');
-  assert.equal((await rate.nth(2).textContent()).trim(), '2');
+  assert.equal((await rate.nth(0).textContent()).trim(), '0');
+  assert.equal((await rate.nth(1).textContent()).trim(), '2');
   const recheck = page.getByRole('button', { name: '重新核查', exact: true });
   assert.equal(await recheck.isDisabled(), true);
   await page.getByRole('button', { name: '记录核查结论', exact: true }).click();

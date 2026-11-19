@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getAnnouncement, getAnnouncements, type Announcement } from "@/api/announcement";
 import { DataTable } from "@/components/common/data-table";
 import { DataTableCard } from "@/components/common/data-table-card";
+import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ export function AnnouncementsPage() {
   const [detailError, setDetailError] = useState(false);
   const version = useMessageEvents((state) => scope === "PUBLIC" ? state.publicVersion : state.privateVersion);
   const ready = useMessageEvents((state) => scope === "PUBLIC" ? state.publicReady || state.publicStatus === "reconnecting" : state.privateReady || state.status === "reconnecting");
+  const reload = () => setRefresh(value => value + 1);
   useEffect(() => {
     if (!ready && refresh === 0) return;
     const controller = new AbortController(); setLoading(true);
@@ -56,14 +58,16 @@ export function AnnouncementsPage() {
   }, [detail]);
   const columns: DataTableColumn<Announcement>[] = [
     { title: "标题", dataIndex: "title" },
-    { title: "发布时间", key: "time", render: (_, item) => formatDateTime(item.publishTime ?? "") },
-    { title: "到期时间", key: "expiry", render: (_, item) => item.expiresAt ? formatDateTime(item.expiresAt) : "长期有效" },
-    { title: "操作", key: "actions", nowrap: true, align: "center", render: (_, item) => <Button variant="ghost" size="sm" onClick={() => { setDetail(null); setInvalid(false); setDetailError(false); setSelected({ id: item.id, scope: item.scope }); }}>查看</Button> },
+    { title: "发布时间", key: "time", width: 168, nowrap: true, render: (_, item) => formatDateTime(item.publishTime ?? "") },
+    { title: "到期时间", key: "expiry", width: 168, nowrap: true, render: (_, item) => item.expiresAt ? formatDateTime(item.expiresAt) : "长期有效" },
+    { title: "操作", key: "actions", width: 88, nowrap: true, render: (_, item) => <Button variant="ghost" size="sm" onClick={() => { setDetail(null); setInvalid(false); setDetailError(false); setSelected({ id: item.id, scope: item.scope }); }}>查看</Button> },
   ];
-  return <div><PageHeader title="公告" description="" actions={<Button variant="secondary" onClick={() => setRefresh((value) => value + 1)}>刷新</Button>} />
-    <div className="mb-4 flex gap-2" role="group" aria-label="公告范围"><Button variant={scope === "PUBLIC" ? "primary" : "secondary"} onClick={() => { setScope("PUBLIC"); setPage(1); }}>公开公告</Button><Button variant={scope === "INTERNAL" ? "primary" : "secondary"} onClick={() => { setScope("INTERNAL"); setPage(1); }}>站内公告</Button></div>
-    {error && <p role="alert" className="mb-4 text-sm text-error">公告加载失败，请点击刷新重试。</p>}
-    <DataTableCard><DataTable columns={columns} dataSource={items} rowKey="id" loading={loading} /><Pagination page={page} pageSize={10} total={total} onPageChange={setPage} /></DataTableCard>
+  return <div><PageHeader title="公告" description="" actions={<Button variant="secondary" size="sm" disabled={loading} onClick={reload}>刷新</Button>} />
+    <div className="mb-4 flex gap-2" role="group" aria-label="公告范围"><Button size="sm" variant={scope === "PUBLIC" ? "primary" : "secondary"} aria-pressed={scope === "PUBLIC"} onClick={() => { setScope("PUBLIC"); setPage(1); }}>公开公告</Button><Button size="sm" variant={scope === "INTERNAL" ? "primary" : "secondary"} aria-pressed={scope === "INTERNAL"} onClick={() => { setScope("INTERNAL"); setPage(1); }}>站内公告</Button></div>
+    <DataTableCard>
+      <DataTable compact ariaLabel="公告列表" minWidth={600} columns={columns} dataSource={items} rowKey="id" loading={loading || (!ready && refresh === 0)} error={error && <EmptyState title="公告加载失败" actionText="重试" onAction={reload} />} empty={<EmptyState title="暂无有效公告" />} />
+      <Pagination page={page} pageSize={10} total={total} disabled={loading || error} onPageChange={setPage} />
+    </DataTableCard>
     {selected && <Dialog open onOpenChange={(open) => { if (!open) { setSelected(null); setDetail(null); } }}><DialogOverlay /><DialogContent><DialogHeader><DialogTitle>{detail?.title ?? (invalid ? "公告已失效" : detailError ? "公告加载失败" : "加载公告")}</DialogTitle></DialogHeader><DialogBody>{detail ? <p className="whitespace-pre-wrap text-sm leading-7">{detail.content}</p> : <p>{invalid ? "该公告已不可查看，请返回列表。" : detailError ? "暂时无法读取公告，请关闭后重试。" : "加载中…"}</p>}<Button variant="secondary" className="mt-4" onClick={() => { setSelected(null); setDetail(null); }}>关闭</Button></DialogBody></DialogContent></Dialog>}
   </div>;
 }

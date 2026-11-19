@@ -23,6 +23,8 @@ DataTableCard
 
 优先复用 `PageHeader`、`SearchFilterBar`、`DataTableCard`、`TableToolbar`、`DataTable`、`Pagination`、`EmptyState`、`StatusTag`、`TableActions` 和 `Button`。表格卡片的 border、radius、shadow、Toolbar 分隔和分页区由 `DataTableCard` 及其组合组件提供。操作列使用 `TableActions` 保持单行；窄屏时由表格横向滚动承载完整操作，不在单元格内折行。
 
+每行优先展示常用操作，使用可辨识的按钮样式和简明动词。低频和危险操作可放进 `TableActionMenu`。危险菜单项用危险色，点击后继续走对应的确认流程。菜单入口随可见操作出现，支持键盘、Escape 和点击外部关闭。
+
 ## 5. 页面自行负责的业务内容
 
 页面负责 title/description、查询字段、筛选状态、API、data、columns、selection、行操作、权限、业务 Dialog 和业务状态。公共列表组件不调用 API，也不理解业务字段。
@@ -40,6 +42,8 @@ DataTableCard
 筛选区在窄屏下堆叠，Toolbar actions 允许换行；表格通过 `DataTable` 的横向滚动和页面已有的 `minWidth` 保证可读性。不要为响应式而改变业务列定义或行高。
 
 字段较多的业务列表可选择 `compact` 缩小单元格留白，保留 14px 正文与全部字段；该密度对所有屏幕一致。`stickyHeader` 将表头固定在表格自身的滚动区域，`fixedEdges` 在宽度至少 1024px 时固定首尾两列，页面须将业务标识放在首列、操作放在末列。更窄屏幕取消固定列，保留整表横向滚动，避免固定列遮住数据。表格可通过滚动条、触控板及聚焦后的方向键滚动。内容区高度由页面负责，不能以隐藏字段或裁切文本换取适配。
+
+首列无需固定时可用 `fixedActions` 只固定末尾操作列。有实际滚动范围的表格可通过 Tab 聚焦。重量等可比较的数字右对齐并使用等宽数字。
 
 筛选较多时可选择 `SearchFilterBar compact`，使用至少 160px 的弹性列；工具栏操作可换行。默认 Pattern 的列宽与密度保持原样。
 

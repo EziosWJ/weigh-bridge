@@ -172,7 +172,7 @@ export function LocalIdentityConfiguration() {
     <ConfirmDialog
       open={!!codeWarning}
       title="厂区编码变更提示"
-      description={codeWarning ? `本厂还有 ${codeWarning.pending} 张单据的变化未获云端确认。改码后旧编码不再接受新写入，待上传变化不会自动改写；请先完成同步或明确处置。确认继续修改厂区编码吗？` : undefined}
+      description={codeWarning ? `本厂还有 ${codeWarning.pending} 张单据的变化未获云端确认。改码后厂端会暂停旧编码变化的自动上传，原单据与待上传记录会保留。请先完成同步或明确处置。确认继续修改厂区编码吗？` : undefined}
       confirmText="继续改码"
       danger
       loading={saving}

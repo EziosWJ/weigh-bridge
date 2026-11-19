@@ -405,7 +405,10 @@ export function SystemDeptsPage() {
           rowKey="id"
           loading={loading}
           error={error}
-          minWidth={1120}
+          minWidth={980}
+          compact
+          fixedActions
+          ariaLabel="部门列表"
           empty={
             <EmptyState
               title="暂无部门数据"

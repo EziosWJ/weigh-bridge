@@ -1,5 +1,5 @@
 import { Eye, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   clearLoginLogs,
   getLoginLogDetail,
@@ -86,7 +86,8 @@ export function SystemLoginLogsPage() {
 
   const [detail, setDetail] = useState<LoginLogRecord | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequest = useRef(0);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const logStatusDict = useDictOptions(DICT_CODES.LOG_STATUS, {
@@ -96,21 +97,29 @@ export function SystemLoginLogsPage() {
   });
 
   const openDetail = async (record: LoginLogRecord) => {
+    const request = ++detailRequest.current;
     setDetail(record);
     setDetailOpen(true);
-    setDetailLoadingId(record.id);
+    setDetailLoading(true);
 
     try {
       const data = await getLoginLogDetail(record.id);
-      setDetail(data);
+      if (request === detailRequest.current) setDetail(data);
     } catch (detailError) {
+      if (request !== detailRequest.current) return;
       toast.error({
         title: "登录日志详情加载失败",
         description: getErrorMessage(detailError, "无法获取登录日志详情"),
       });
     } finally {
-      setDetailLoadingId(null);
+      if (request === detailRequest.current) setDetailLoading(false);
     }
+  };
+
+  const closeDetail = () => {
+    detailRequest.current += 1;
+    setDetailLoading(false);
+    setDetailOpen(false);
   };
 
   const runClearLogs = async () => {
@@ -120,8 +129,8 @@ export function SystemLoginLogsPage() {
       await clearLoginLogs();
       toast.success("登录日志已清空");
       setClearOpen(false);
-      setPage(1);
-      await loadLogs();
+      if (page === 1) loadLogs();
+      else setPage(1);
     } catch (clearError) {
       toast.error({
         title: "清空失败",
@@ -136,7 +145,7 @@ export function SystemLoginLogsPage() {
     {
       title: "用户",
       key: "user",
-      width: 180,
+      width: 145,
       render: (_, record) => (
         <div>
           <div className="font-medium text-text-primary">
@@ -163,7 +172,7 @@ export function SystemLoginLogsPage() {
     {
       title: "登录 IP",
       dataIndex: "loginIp",
-      width: 150,
+      width: 126,
       render: (value) => (
         <span className="tabular-nums">{String(value || "-")}</span>
       ),
@@ -171,7 +180,7 @@ export function SystemLoginLogsPage() {
     {
       title: "客户端",
       key: "client",
-      width: 220,
+      width: 165,
       render: (_, record) => (
         <div>
           <div className="text-text-primary">{record.browser || "-"}</div>
@@ -182,8 +191,9 @@ export function SystemLoginLogsPage() {
     {
       title: "消息",
       dataIndex: "message",
+      width: 136,
       render: (value) => (
-        <span className="block max-w-[280px] truncate text-text-secondary">
+        <span className="block max-w-[280px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -191,7 +201,7 @@ export function SystemLoginLogsPage() {
     {
       title: "登录时间",
       dataIndex: "loginTime",
-      width: 180,
+      width: 164,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateTime(
@@ -205,12 +215,11 @@ export function SystemLoginLogsPage() {
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 120,
+      width: 108,
       render: (_, record) => (
         <Button
           size="sm"
-          variant="ghost"
-          disabled={detailLoadingId === record.id}
+          variant="secondary"
           onClick={() => void openDetail(record)}
         >
           <Eye className="h-4 w-4" aria-hidden />
@@ -289,10 +298,11 @@ export function SystemLoginLogsPage() {
                   variant="secondary"
                   size="sm"
                   className="text-error hover:text-error"
+                  disabled={loading || clearLoading || Boolean(error)}
                   onClick={() => setClearOpen(true)}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden />
-                  清空日志
+                  清空全部日志
                 </Button>
               )}
             </>
@@ -303,8 +313,11 @@ export function SystemLoginLogsPage() {
           dataSource={logs}
           rowKey="id"
           loading={loading}
-          error={error}
-          minWidth={1080}
+          error={error && <EmptyState title="加载失败" description={error} actionText="重试" onAction={loadLogs} />}
+          minWidth={920}
+          compact
+          fixedActions
+          ariaLabel="登录日志列表"
           empty={
             <EmptyState
               title="暂无登录日志"
@@ -327,14 +340,14 @@ export function SystemLoginLogsPage() {
       <LoginLogDetailDialog
         open={detailOpen}
         detail={detail}
-        loading={detailLoadingId !== null}
-        onCancel={() => setDetailOpen(false)}
+        loading={detailLoading}
+        onCancel={closeDetail}
       />
 
       <ConfirmDialog
         open={clearOpen}
         title="清空登录日志"
-        description="确认清空所有登录日志吗？此操作不可恢复。"
+        description="将永久删除全部登录日志，包括当前筛选范围以外的记录。"
         confirmText="清空"
         danger
         loading={clearLoading}

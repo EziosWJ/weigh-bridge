@@ -14,10 +14,11 @@ import { FormDialog } from "@/components/common/form-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
 import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
+import { buttonStyles } from "@/components/ui/button-styles";
 import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
@@ -67,12 +68,27 @@ export function WeighingTicketsPage() {
     {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteName||row.siteCode||"—"},
     { title: '方向 / 物料规格', key: 'business', width: 180, render: (_, row) => <div>{directionLabels[row.business.direction]} · {row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
     { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
-    { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div> },
+    { title: '最终毛 / 皮 / 净重（吨）', key: 'weight', width: 220, align: 'right', render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div> },
     { title: '状态 / 打印', key: 'status', width: 160, render: (_, row) => <div><StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag><div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div></div> },
     { title: '同步状态', key: 'sync', width: 140, render: (_, row) => { const item = syncLabels[row.syncStatus ?? 'untracked'] ?? syncLabels.untracked; return <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 text-text-tertiary">{protocolLabel(row.syncProtocol)}{row.syncReason ? ` · ${row.syncReason}` : ''}</div></div>; } },
     { title: '最近对账', key: 'reconcile', width: 130, render: (_, row) => { const item = row.reconcileStatus ? reconcileLabels[row.reconcileStatus] : null; return item ? <div><StatusTag tone={item.tone}>{item.label}</StatusTag><div className="mt-1 text-text-tertiary">{formatDateTime(row.reconcileAt)}</div></div> : <span className="text-text-tertiary">未对账</span>; } },
     { title: '出单时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.issuedAt} /> },
-    { title: '操作', key: 'actions', width: 210, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tickets/${row.id}`}>详情</Link>{canSyncAdmin && <Link className={linkClass} to={`/weighing/sync/tickets/${row.id}`}>同步</Link>}{can('print') && <Link className={linkClass} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}{canReopenTicket(row) && <button type="button" className={linkClass} onClick={() => setReopenTicketId(String(row.id))}>重开</button>}</TableActions> },
+    {
+      title: '操作', key: 'actions', width: 224, nowrap: true,
+      render: (_, row) => (
+        <TableActions>
+          <Link className={buttonStyles({ size: "sm", variant: "ghost" })} to={`/weighing/tickets/${row.id}`}>详情</Link>
+          {can('print') && <Link className={buttonStyles({ size: "sm" })} to={`/weighing/tickets/${row.id}/preview`}>预览</Link>}
+          <TableActionMenu
+            label={`${row.ticketNo} 更多操作`}
+            items={[
+              ...(canSyncAdmin ? [{ label: '同步详情', to: `/weighing/sync/tickets/${row.id}` }] : []),
+              ...(canReopenTicket(row) ? [{ label: '更正重开', onSelect: () => setReopenTicketId(String(row.id)) }] : []),
+            ]}
+          />
+        </TableActions>
+      ),
+    },
   ];
   if (params.get('ticket')) return <Navigate replace to={`/weighing/tickets/${encodeURIComponent(params.get('ticket')!)}`} />;
   return <div className="weighing-list-page"><PageHeader title="最终单据" description="" /><DeviceBanner compact />
@@ -130,12 +146,13 @@ export function WeighingTicketDetailPage() {
     } catch (failure) { setError(failure instanceof Error ? failure.message : "操作失败"); }
   }
 
-  if (!ticket) return <><PageHeader title="过磅单详情" actions={<Link className={linkClass} to="/weighing/tickets">返回单据列表</Link>} /><ContentCard><p>未找到该单据，请刷新或核对单据编号。</p></ContentCard></>;
+  const backToTickets = <Link className={buttonStyles({ size: "sm" })} to="/weighing/tickets">返回单据列表</Link>;
+  if (!ticket) return <><PageHeader title="过磅单详情" actions={backToTickets} /><ContentCard>{error ? <p role="alert" className="text-error">单据详情加载失败。{error}</p> : <p role="status">正在加载单据详情…</p>}</ContentCard></>;
   const successors = data.tickets.filter((item) => item.previousId === ticket.id);
   const canReopen = successors.length === 0 && !data.tickets.some((item) => item.taskId === ticket.taskId && item.status === "valid");
   const pending = data.pending?.taskId === ticket.taskId;
   return <>
-    <PageHeader title="过磅单详情" description={ticket.ticketNo ?? ticket.id} actions={<><Link className={linkClass} to="/weighing/tickets">返回单据列表</Link>{canPrint && <Link className={linkClass} to={`/weighing/tickets/${encodeURIComponent(ticket.id)}/preview`}>打印预览</Link>}</>} />
+    <PageHeader title="过磅单详情" description={ticket.ticketNo ?? ticket.id} actions={<>{backToTickets}{canPrint && <Link className={buttonStyles({ variant: "primary", size: "sm" })} to={`/weighing/tickets/${encodeURIComponent(ticket.id)}/preview`}>打印预览</Link>}</>} />
     <DeviceBanner />
     <div className="space-y-space-6">
       <TicketPrintActions ticketId={ticket.id} />
@@ -145,7 +162,7 @@ export function WeighingTicketDetailPage() {
         <TicketWeights ticket={ticket} />
         {ticket.entryType === 'manual_supplement' ? <div className="mt-space-4 rounded-control border border-border p-3">人工补单 · 原因：{supplementReasonLabels[ticket.supplementReason ?? ''] ?? '未记录'}</div> : <div className="mt-space-4"><ManualReturnNotice records={ticket.records} /></div>}
         <div className="mt-space-4 grid gap-space-4 border-t border-border pt-space-4 sm:grid-cols-3"><DetailItem label="出单时间" value={beijingTime(ticket.issuedAt)} /><DetailItem label="打印状态" value={printStatusLabels[ticket.printStatus]} /><DetailItem label="补打次数" value={ticket.reprintCount} /></div>
-        {canOperate && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? can("void") && <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废单据</Button> : canReopen && can("reopen") ? <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.reprintAuthorized && <StatusTag tone="warning">已登记一次补打</StatusTag>}</div>}
+        {canOperate && !pending && <div className="mt-space-4 flex flex-wrap items-center gap-space-2">{ticket.status === "valid" ? can("void") && <Button size="sm" variant="danger" onClick={() => startOperation("void")}>作废单据</Button> : canReopen ? can("reopen") && <Button size="sm" onClick={() => startOperation("reopen")}>关联更正重开</Button> : <span className="text-text-tertiary">已有更正单，请沿关联记录办理。</span>}{ticket.reprintAuthorized && <StatusTag tone="warning">已登记一次补打</StatusTag>}</div>}
         {ticket.printStatus === "unknown" && <p className="mt-space-4 text-warning">上次打印结果未知，重新打印可能重复出纸。</p>}
       </ContentCard>
       {tripBasis?.bound && <ContentCard title="云端流转单与化验依据" description="首磅绑定快照；云端磅单关联状态单独显示。">

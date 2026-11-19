@@ -534,7 +534,10 @@ export function UsersPage() {
           rowKey="id"
           loading={loading}
           error={error}
-          minWidth={1280}
+          minWidth={1160}
+          compact
+          fixedActions
+          ariaLabel="用户列表"
           empty={
             <EmptyState
               title="暂无用户数据"

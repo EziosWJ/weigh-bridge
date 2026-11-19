@@ -1,6 +1,5 @@
-import { Pencil, Trash2 } from "lucide-react";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { ApiStatus, DataTableColumn, DeptRecord } from "@/types";
@@ -63,7 +62,7 @@ export function createDeptColumns({
     {
       title: "部门",
       key: "dept",
-      width: 240,
+      width: 210,
       render: (_, dept) => (
         <div>
           <div className="font-medium text-text-primary">{dept.deptName}</div>
@@ -76,13 +75,13 @@ export function createDeptColumns({
     {
       title: "负责人",
       dataIndex: "leader",
-      width: 120,
+      width: 114,
       render: (value) => String(value || "-"),
     },
     {
       title: "联系方式",
       key: "contact",
-      width: 220,
+      width: 150,
       render: (_, dept) => (
         <div className="space-y-0.5 text-sm">
           <div>{dept.phone || "-"}</div>
@@ -93,7 +92,7 @@ export function createDeptColumns({
     {
       title: "排序",
       dataIndex: "sortOrder",
-      width: 90,
+      width: 64,
       render: (value) => (
         <span className="tabular-nums">{String(value ?? 0)}</span>
       ),
@@ -101,7 +100,7 @@ export function createDeptColumns({
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 80,
       render: (value) => {
         const status = value as ApiStatus;
         const meta = statusMeta[status];
@@ -111,7 +110,7 @@ export function createDeptColumns({
     {
       title: "属性",
       dataIndex: "isBuiltin",
-      width: 96,
+      width: 80,
       render: (value) =>
         value === 1 ? (
           <StatusTag tone="info">内置</StatusTag>
@@ -124,31 +123,28 @@ export function createDeptColumns({
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 260,
+      width: 156,
       render: (_, dept) => (
         <TableActions>
-          <Button size="sm" variant="ghost" onClick={() => void onEdit(dept)}>
-            <Pencil className="h-4 w-4" aria-hidden />
+          <Button size="sm" variant="secondary" onClick={() => void onEdit(dept)}>
             编辑
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => onChangeStatus(dept, dept.status === 1 ? 0 : 1)}
-          >
-            {dept.status === 1 ? "禁用" : "启用"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-error hover:text-error"
-            disabled={dept.isBuiltin === 1}
-            title={dept.isBuiltin === 1 ? "内置部门不允许删除" : undefined}
-            onClick={() => onDelete(dept)}
-          >
-            <Trash2 className="h-4 w-4" aria-hidden />
-            删除
-          </Button>
+          <TableActionMenu
+            items={[
+              {
+                label: dept.status === 1 ? "禁用" : "启用",
+                onSelect: () => onChangeStatus(dept, dept.status === 1 ? 0 : 1),
+                danger: dept.status === 1,
+              },
+              {
+                label: "删除",
+                onSelect: () => onDelete(dept),
+                danger: true,
+                disabled: dept.isBuiltin === 1,
+                title: dept.isBuiltin === 1 ? "内置部门不允许删除" : undefined,
+              },
+            ]}
+          />
         </TableActions>
       ),
     },

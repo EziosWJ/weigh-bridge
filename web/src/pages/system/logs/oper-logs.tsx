@@ -1,5 +1,5 @@
 import { Eye, RefreshCw, RotateCcw, Search, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { clearOperLogs, getOperLogDetail, getOperLogPage } from "@/api/log";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataTableCard } from "@/components/common/data-table-card";
@@ -87,7 +87,8 @@ export function SystemOperLogsPage() {
 
   const [detail, setDetail] = useState<OperLogDetail | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [detailLoadingId, setDetailLoadingId] = useState<number | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const detailRequest = useRef(0);
   const [clearOpen, setClearOpen] = useState(false);
   const [clearLoading, setClearLoading] = useState(false);
   const operationTypeDict = useDictOptions(DICT_CODES.OPERATION_TYPE, {
@@ -102,21 +103,29 @@ export function SystemOperLogsPage() {
   });
 
   const openDetail = async (record: OperLogRecord) => {
+    const request = ++detailRequest.current;
     setDetail(record);
     setDetailOpen(true);
-    setDetailLoadingId(record.id);
+    setDetailLoading(true);
 
     try {
       const data = await getOperLogDetail(record.id);
-      setDetail(data);
+      if (request === detailRequest.current) setDetail(data);
     } catch (detailError) {
+      if (request !== detailRequest.current) return;
       toast.error({
         title: "操作日志详情加载失败",
         description: getErrorMessage(detailError, "无法获取操作日志详情"),
       });
     } finally {
-      setDetailLoadingId(null);
+      if (request === detailRequest.current) setDetailLoading(false);
     }
+  };
+
+  const closeDetail = () => {
+    detailRequest.current += 1;
+    setDetailLoading(false);
+    setDetailOpen(false);
   };
 
   const runClearLogs = async () => {
@@ -126,8 +135,8 @@ export function SystemOperLogsPage() {
       await clearOperLogs();
       toast.success("操作日志已清空");
       setClearOpen(false);
-      setPage(1);
-      await loadLogs();
+      if (page === 1) loadLogs();
+      else setPage(1);
     } catch (clearError) {
       toast.error({
         title: "清空失败",
@@ -142,7 +151,7 @@ export function SystemOperLogsPage() {
     {
       title: "模块",
       key: "module",
-      width: 180,
+      width: 145,
       render: (_, record) => (
         <div>
           <div className="font-medium text-text-primary">
@@ -169,13 +178,13 @@ export function SystemOperLogsPage() {
     {
       title: "请求",
       key: "request",
-      width: 260,
+      width: 207,
       render: (_, record) => (
         <div>
           <div className="font-medium text-text-primary">
             {record.requestMethod || "-"}
           </div>
-          <div className="max-w-[240px] truncate text-xs text-text-tertiary">
+          <div className="max-w-[240px] truncate text-xs text-text-tertiary" title={record.requestUrl || undefined}>
             {record.requestUrl || "-"}
           </div>
         </div>
@@ -184,7 +193,7 @@ export function SystemOperLogsPage() {
     {
       title: "操作人",
       key: "operator",
-      width: 180,
+      width: 145,
       render: (_, record) => (
         <div>
           <div className="text-text-primary">{record.operatorName || "-"}</div>
@@ -220,7 +229,7 @@ export function SystemOperLogsPage() {
     {
       title: "操作时间",
       dataIndex: "operationTime",
-      width: 180,
+      width: 164,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateTime(
@@ -234,12 +243,11 @@ export function SystemOperLogsPage() {
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 120,
+      width: 108,
       render: (_, record) => (
         <Button
           size="sm"
-          variant="ghost"
-          disabled={detailLoadingId === record.id}
+          variant="secondary"
           onClick={() => void openDetail(record)}
         >
           <Eye className="h-4 w-4" aria-hidden />
@@ -330,10 +338,11 @@ export function SystemOperLogsPage() {
                   variant="secondary"
                   size="sm"
                   className="text-error hover:text-error"
+                  disabled={loading || clearLoading || Boolean(error)}
                   onClick={() => setClearOpen(true)}
                 >
                   <Trash2 className="h-4 w-4" aria-hidden />
-                  清空日志
+                  清空全部日志
                 </Button>
               )}
             </>
@@ -344,8 +353,11 @@ export function SystemOperLogsPage() {
           dataSource={logs}
           rowKey="id"
           loading={loading}
-          error={error}
-          minWidth={1220}
+          error={error && <EmptyState title="加载失败" description={error} actionText="重试" onAction={loadLogs} />}
+          minWidth={1080}
+          compact
+          fixedActions
+          ariaLabel="操作日志列表"
           empty={
             <EmptyState
               title="暂无操作日志"
@@ -368,14 +380,14 @@ export function SystemOperLogsPage() {
       <OperLogDetailDialog
         open={detailOpen}
         detail={detail}
-        loading={detailLoadingId !== null}
-        onCancel={() => setDetailOpen(false)}
+        loading={detailLoading}
+        onCancel={closeDetail}
       />
 
       <ConfirmDialog
         open={clearOpen}
         title="清空操作日志"
-        description="确认清空所有操作日志吗？此操作不可恢复。"
+        description="将永久删除全部操作日志，包括当前筛选范围以外的记录。"
         confirmText="清空"
         danger
         loading={clearLoading}

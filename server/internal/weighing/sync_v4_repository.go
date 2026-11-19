@@ -9,11 +9,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (r *Repository) dueSyncChangesV4(ctx context.Context, limit int) ([]ticketSyncChangeV4, error) {
+func (r *Repository) dueSyncChangesV4(ctx context.Context, siteCode string, limit int) ([]ticketSyncChangeV4, error) {
 	rows := []ticketSyncChangeV4{}
 	err := r.db.WithContext(ctx).Raw(`
 		SELECT c.* FROM wb_ticket_sync_change_v4 c
-		WHERE c.status IN ('pending','waiting_predecessor','temporary_failure')
+		WHERE c.site_code = ? AND c.status IN ('pending','waiting_predecessor','temporary_failure')
 		  AND (c.next_attempt_at IS NULL OR c.next_attempt_at <= now())
 		  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 p WHERE p.ticket_id = c.ticket_id AND p.id < c.id AND p.status <> 'synced')
 		  AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_review r WHERE r.ticket_id = c.ticket_id AND r.status = 'open' AND r.blocking)
@@ -22,7 +22,7 @@ func (r *Repository) dueSyncChangesV4(ctx context.Context, limit int) ([]ticketS
 			AND NOT EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 p WHERE p.ticket_id = c.previous_ticket_id AND p.status <> 'synced')
 		  ))
 		ORDER BY c.next_attempt_at NULLS FIRST, c.id
-		LIMIT ?`, limit).Scan(&rows).Error
+		LIMIT ?`, siteCode, limit).Scan(&rows).Error
 	return rows, err
 }
 
@@ -41,8 +41,7 @@ func (r *Repository) syncChangesV4ForTicket(ctx context.Context, ticketID int64)
 	return rows, err
 }
 
-// syncChangeV3View exposes legacy change state for the detail page without
-// changing or migrating the v3 outbox.
+// syncChangeV3View exposes legacy change state for the detail page.
 type syncChangeV3View struct {
 	ID            int64      `json:"id"`
 	ChangeID      string     `json:"changeId"`
@@ -332,4 +331,17 @@ func (r *Repository) writeSyncLog(ctx context.Context, trigger, syncType, ticket
 		"success":      success,
 		"reason":       reason,
 	}).Error
+}
+
+func (r *Repository) pauseOldDigestTicketChanges(ctx context.Context, table string) error {
+	return r.db.WithContext(ctx).Table(table).
+		Where("site_code <> (SELECT site_code FROM wb_local_identity WHERE id=1 AND site_code <> '')").
+		Where("(status IN ('pending','waiting_predecessor','temporary_failure') OR (status = 'needs_admin' AND reason_code = 'site_not_found_or_disabled'))").
+		Updates(map[string]any{
+			"status":          SyncChangeNeedsAdmin,
+			"category":        SyncCategoryConfigOrData,
+			"reason_code":     syncReasonOldSiteCode,
+			"reason":          syncOldSiteMessage,
+			"next_attempt_at": nil,
+		}).Error
 }

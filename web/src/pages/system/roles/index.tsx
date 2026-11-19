@@ -453,7 +453,10 @@ export function SystemRolesPage() {
           rowKey="id"
           loading={loading}
           error={error}
-          minWidth={1320}
+          minWidth={1100}
+          compact
+          fixedActions
+          ariaLabel="角色列表"
           empty={
             <EmptyState
               title="暂无角色数据"

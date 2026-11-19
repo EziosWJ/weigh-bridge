@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Plus, RotateCcw, Search } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import { getPermissionTotal, getPermissions } from "@/api/rbac";
-import { PermissionGuard } from "@/components/auth/permission-guard";
 import { DataTable } from "@/components/common/data-table";
 import { DataTableCard } from "@/components/common/data-table-card";
 import { EmptyState } from "@/components/common/empty-state";
 import { PageHeader } from "@/components/common/page-header";
 import { SearchFilterBar } from "@/components/common/search-filter-bar";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,7 +62,6 @@ export function SystemPermissionsPage() {
       render: (_, record) => (
         <div>
           <div className="font-medium text-text-primary">{record.name}</div>
-          <div className="text-xs text-text-tertiary">{record.code}</div>
         </div>
       ),
     },
@@ -104,7 +101,7 @@ export function SystemPermissionsPage() {
       dataIndex: "description",
       width: 220,
       render: (value) => (
-        <span className="block max-w-[220px] truncate text-text-secondary">
+        <span className="block max-w-[220px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value ?? "-")}
         </span>
       ),
@@ -114,38 +111,13 @@ export function SystemPermissionsPage() {
       dataIndex: "updatedAt",
       width: 160,
     },
-    {
-      title: "操作",
-      key: "actions",
-      nowrap: true,
-      align: "center",
-      width: 220,
-      render: () => (
-        <TableActions>
-          <Button size="sm" variant="ghost">
-            编辑
-          </Button>
-          <Button size="sm" variant="ghost">
-            删除
-          </Button>
-        </TableActions>
-      ),
-    },
   ];
 
   return (
     <>
       <PageHeader
         title="权限点管理"
-        description="维护系统权限点，当前使用前端 mock 数据，不做真实权限控制。"
-        actions={
-          <PermissionGuard permissionCode="system:permission:add">
-            <Button variant="primary">
-              <Plus className="h-4 w-4" aria-hidden />
-              新增权限点
-            </Button>
-          </PermissionGuard>
-        }
+        description="查看当前的模拟权限点。"
       />
 
       <SearchFilterBar
@@ -164,6 +136,7 @@ export function SystemPermissionsPage() {
           <Input
             value={keyword}
             onChange={(event) => setKeyword(event.target.value)}
+            aria-label="搜索权限名称、编码、菜单或描述"
             placeholder="搜索权限名称、编码、菜单或描述"
             className="pl-9"
           />
@@ -198,18 +171,15 @@ export function SystemPermissionsPage() {
         <TableToolbar
           title="权限点列表"
           description={`共 ${total} 条 mock 数据，当前显示 ${permissions.length} 条。`}
-          actions={
-            <StatusTag tone={loading ? "warning" : "info"}>
-              {loading ? "加载中" : "加载完成"}
-            </StatusTag>
-          }
         />
         <DataTable<PermissionRecord>
           columns={columns}
           dataSource={permissions}
           rowKey="id"
           loading={loading}
-          minWidth={1560}
+          minWidth={1060}
+          compact
+          ariaLabel="权限点列表"
           empty={
             <EmptyState
               title="暂无权限点"
@@ -219,17 +189,6 @@ export function SystemPermissionsPage() {
             />
           }
         />
-        <div className="flex items-center justify-between border-t border-border px-5 py-3 text-sm text-text-tertiary">
-          <span>第 1 页 / 共 1 页</span>
-          <div className="flex items-center gap-2">
-            <Button size="sm" disabled>
-              上一页
-            </Button>
-            <Button size="sm" disabled>
-              下一页
-            </Button>
-          </div>
-        </div>
       </DataTableCard>
     </>
   );

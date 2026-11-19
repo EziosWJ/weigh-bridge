@@ -6,51 +6,48 @@ import { PageHeader } from '@/components/common/page-header';
 import { DataTableCard } from '@/components/common/data-table-card';
 import { DataTable } from '@/components/common/data-table';
 import { TableToolbar } from '@/components/common/table-toolbar';
-import { TableActions } from '@/components/common/table-actions';
+import { TableActionMenu, TableActions } from '@/components/common/table-actions';
 import { toast } from '@/components/common/toast-store';
 import { Pagination } from '@/components/common/pagination';
 import { SearchFilterBar } from '@/components/common/search-filter-bar';
+import { EmptyState } from '@/components/common/empty-state';
 import { FormDialog } from '@/components/common/form-dialog';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { StatusTag } from '@/components/common/status-tag';
 import { Field } from '@/components/common/field';
 import { FormSection } from '@/components/common/form-section';
 import { Button } from '@/components/ui/button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useWeighingMasterStore, useWeighingMasterData } from '@/store/weighing-master-store';
 import { useAuthStore } from '@/store/auth-store';
+import { formatDateTime } from '@/lib/datetime';
 import { createId } from '@/lib/id';
 import { partyRoleLabels, partyNatureLabels, type Material, type Party, type PartyKind, type PartyNature, type MaterialCategory } from '@/types/weighing';
 import type { DataTableColumn } from '@/types';
 import './list.css';
 
 
-const linkClass = 'inline-flex h-control-md items-center rounded-control border border-border bg-surface px-4 text-sm text-text-secondary hover:text-primary';
 function ReturnLink() {
   const [params] = useSearchParams();
   const target = params.get('returnTo');
-  return target?.startsWith('/weighing/workbench') ? <WorkbenchLink className={linkClass} to={target}>返回称重工作台</WorkbenchLink> : null;
+  return target?.startsWith('/weighing/workbench') ? <WorkbenchLink className={buttonStyles()} to={target}>返回称重工作台</WorkbenchLink> : null;
 }
-function RoleHint() {
-  return <p className="mb-4 text-sm text-text-secondary">资料为只读。需要维护时请联系管理员授权。</p>;
-}
-
-
-function MasterBanner() {
-  return <aside className="mb-4 rounded-control border border-border bg-neutral-background px-4 py-2 text-sm text-text-secondary">服务端保存 · 使用真实账号权限 · 设备数据由 Agent 提供</aside>;
+function readOnlyDescription(syncBound?: boolean) {
+  return syncBound ? '资料由总部统一维护，本厂可查看和同步。' : '当前账号仅可查看资料。';
 }
 function MasterSyncControls() {
-  const [status, setStatus] = useState<{enabled:boolean;bound:boolean;lastSuccess:string|null;isAdmin:boolean} | null>(null);
+  const [status, setStatus] = useState<Awaited<ReturnType<typeof weighingApi.masterSyncStatus>> | null>(null);
   const [busy, setBusy] = useState(false);
   const load = useWeighingMasterStore(s => s.load);
   useEffect(() => { let active = true; void weighingApi.masterSyncStatus().then(value => { if (active) setStatus(value); }).catch(() => {}); return () => { active = false; }; }, []);
   if (!status || (!status.enabled && !status.isAdmin)) return null;
-  return <aside className="mb-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary">
-    <span>上次成功同步：{status.lastSuccess ? new Date(status.lastSuccess).toLocaleString() : '尚未同步'}</span>
-    {status.enabled && <Button disabled={busy} onClick={async () => { setBusy(true); try { const next = await weighingApi.runMasterSync(); setStatus(next); await load(); toast.success('总部资料同步成功'); } catch (error) { toast.error({ title: '总部资料同步失败', description: error instanceof Error ? error.message : '请稍后重试' }); } finally { setBusy(false); } }}>立即同步</Button>}
-  </aside>;
+  return <>
+    <span className="text-body-secondary text-text-tertiary">上次成功同步：{status.lastSuccess ? formatDateTime(status.lastSuccess) : '尚未同步'}</span>
+    {status.enabled && <Button size="sm" disabled={busy} onClick={async () => { setBusy(true); try { const next = await weighingApi.runMasterSync(); setStatus(next); await load(); toast.success('总部资料同步成功'); } catch (error) { toast.error({ title: '总部资料同步失败', description: error instanceof Error ? error.message : '请稍后重试' }); } finally { setBusy(false); } }}>{busy ? '正在同步…' : '立即同步'}</Button>}
+  </>;
 }
 function MasterBoundary({ children }: { children: ReactNode }) {
   const store = useWeighingMasterData();
@@ -58,7 +55,7 @@ function MasterBoundary({ children }: { children: ReactNode }) {
   if (store.error) return <><PageHeader title="资料加载失败" /><p role="alert" className="mb-4 text-error">{store.error}</p><Button onClick={() => void store.load()}>重新加载</Button></>;
   if (store.loadedToken !== token) return <p role="status" className="p-4 text-text-secondary">正在加载服务端资料…</p>;
   if (!store.capabilities?.permissionCodes.includes('weighing:master:read')) return <PageHeader title="暂无资料查询权限" description="请联系管理员授权。" />;
-  return <><MasterSyncControls />{children}</>;
+  return children;
 }
 export function WeighingMaterialsPage(props: { parties?: boolean }) { return <MasterBoundary><MaterialsContent {...props} /></MasterBoundary>; }
 export function WeighingMaterialEditPage() { return <MasterBoundary><MaterialEditContent /></MasterBoundary>; }
@@ -66,21 +63,36 @@ export function WeighingPartyEditPage() { return <MasterBoundary><PartyEditConte
 export function WeighingCategoriesPage() { return <MasterBoundary><CategoriesContent /></MasterBoundary>; }
 
 function MaterialsContent({ parties = false }: { parties?: boolean }) {
-  const { data, dispatch, capabilities, saving, load } = useWeighingMasterStore();
-  const [params] = useSearchParams();
-  const [keyword, setKeyword] = useState('');
+  const { data, dispatch, capabilities, loading, saving, load } = useWeighingMasterStore();
+  const [params, setParams] = useSearchParams();
+  // Keep the controls responsive while the router updates the shareable URL.
+  const [filters, setFilters] = useState(() => new URLSearchParams(params));
+  const keyword = filters.get('q') ?? '';
   const deferred = useDeferredValue(keyword).trim().toLocaleLowerCase();
-  const [enabled, setEnabled] = useState('');
-  const [classification, setClassification] = useState('');
-  const [nature, setNature] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const enabled = filters.get('enabled') ?? '';
+  const classification = filters.get('classification') ?? '';
+  const nature = parties ? filters.get('nature') ?? '' : '';
+  const requestedPage = Number(filters.get('page'));
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const requestedPageSize = Number(filters.get('pageSize'));
+  const pageSize = [20, 50, 100].includes(requestedPageSize) ? requestedPageSize : 10;
   const [deleting, setDeleting] = useState<Material | Party | null>(null);
   const [error, setError] = useState('');
   const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const name = parties ? '往来主体' : '物料';
   const base = parties ? '/weighing/parties' : '/weighing/materials';
-  const suffix = params.get('returnTo') ? `?${params.toString()}` : '';
+  const suffix = filters.size ? `?${filters}` : '';
+  const hasFilters = Boolean(keyword || enabled || classification || nature);
+  const updateParams = (values: Record<string, string>) => {
+    const next = new URLSearchParams(filters);
+    for (const [key, value] of Object.entries(values)) {
+      if (value) next.set(key, value);
+      else next.delete(key);
+    }
+    setFilters(next);
+    setParams(next, { replace: true, preventScrollReset: true });
+  };
+  const clearFilters = () => updateParams({ q: '', enabled: '', classification: '', nature: '', page: '' });
   const rows: (Material | Party)[] = (parties ? data.parties : data.materials).filter(r => {
     const p = r as Party, m = r as Material;
     const text = [r.name, r.code, parties ? p.shortName : m.spec, parties ? p.phone : ''].join(' ').toLocaleLowerCase();
@@ -90,7 +102,17 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
   });
   const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / pageSize)));
   const columns: DataTableColumn<Material | Party>[] = [
-    { title: `${name}名称 / 编码`, key: 'name', width: 220, render: (_, r) => <div><Link className="font-medium text-primary hover:underline" to={`${base}/${r.id}/edit${suffix}`}>{r.name}</Link><p className="mt-1 text-xs text-text-tertiary">{r.code}{parties && (r as Party).shortName ? ` · ${(r as Party).shortName}` : ''}</p></div> },
+    {
+      title: `${name}名称 / 编码`, key: 'name', width: 220,
+      render: (_, record) => {
+        const party = parties ? record as Party : undefined;
+        return <div>
+          <Link className="font-medium text-primary hover:underline focus-visible:underline" to={`${base}/${record.id}/edit${suffix}`}>{record.name}</Link>
+          {party?.temporaryState && <span className="ml-space-2"><StatusTag tone="warning">临时</StatusTag></span>}
+          <p className="mt-1 text-body-secondary tabular-nums text-text-tertiary">{record.code}{party?.shortName ? ` · ${party.shortName}` : ''}</p>
+        </div>;
+      },
+    },
     ...(parties ? [
       { title: '性质 / 业务身份', key: 'roles', width: 180, render: (_: unknown, r: Material | Party) => <div>{partyNatureLabels[(r as Party).nature]}<p className="mt-1 text-text-secondary">{(r as Party).roles.map(role => partyRoleLabels[role]).join('、')}</p></div> },
       { title: '联系信息', key: 'phone', width: 176, render: (_: unknown, r: Material | Party) => <div>{(r as Party).phone || '—'}<p className="text-text-tertiary">{(r as Party).contacts.find(c => c.isDefault)?.name || '未设默认联系人'}</p></div> },
@@ -101,20 +123,76 @@ function MaterialsContent({ parties = false }: { parties?: boolean }) {
       { title: '称重单位', key: 'unit', width: 88, render: () => '吨' },
     ]),
     { title: '状态', key: 'enabled', width: 88, render: (_, r) => <StatusTag tone={r.enabled ? 'success' : 'neutral'}>{r.enabled ? '启用' : '停用'}</StatusTag> },
-    { title: '备注', dataIndex: 'remark', width: 180 },
-    { title: '操作', key: 'actions', width: 144, nowrap: true, render: (_, r) => <TableActions><Link className="text-primary hover:underline" to={`${base}/${r.id}/edit${suffix}`}>{admin ? '编辑' : '查看'}</Link>{admin && <Button size="sm" variant="ghost" onClick={() => { setError(''); setDeleting(r); }}>删除</Button>}</TableActions> },
+    { title: '备注', key: 'remark', width: 180, render: (_, r) => r.remark || '—' },
+    {
+      title: '操作', key: 'actions', width: 160, nowrap: true,
+      render: (_, record) => <TableActions>
+        <Link className={buttonStyles({ size: 'sm' })} to={`${base}/${record.id}/edit${suffix}`}>{admin ? '编辑' : '查看'}</Link>
+        {admin && <TableActionMenu label={`${record.name}（${record.code}）的更多操作`} items={[{
+          label: '删除', danger: true, disabled: saving,
+          onSelect: () => { setError(''); setDeleting(record); },
+        }]} />}
+      </TableActions>,
+    },
   ];
   return <div className="weighing-list-page">
-    <PageHeader title={`${name}资料`} description={parties ? '' : ''} actions={<><ReturnLink />{admin && <Link className={linkClass} to={`${base}/new${suffix}`}>新增{name}</Link>}</>} />
-    {!admin && <RoleHint />}
-    <SearchFilterBar compact actions={<Button onClick={() => { setKeyword(''); setEnabled(''); setClassification(''); setNature(''); setPage(1); }}>清空筛选</Button>}>
-      <Input aria-label="资料搜索" placeholder={parties ? '名称 / 简称 / 编码 / 电话' : '名称 / 编码 / 规格'} value={keyword} onChange={e => { setKeyword(e.target.value); setPage(1); }} />
-      <Select aria-label="资料状态" value={enabled} onChange={e => { setEnabled(e.target.value); setPage(1); }}><option value="">全部状态</option><option value="true">启用</option><option value="false">停用</option></Select>
-      <Select aria-label={parties ? '业务身份筛选' : '物料分类筛选'} value={classification} onChange={e => { setClassification(e.target.value); setPage(1); }}><option value="">{parties ? '全部业务身份' : '全部分类'}</option>{parties ? Object.entries(partyRoleLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>) : data.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
-      {parties && <Select aria-label="主体性质筛选" value={nature} onChange={e => { setNature(e.target.value); setPage(1); }}><option value="">全部主体性质</option><option value="enterprise">企业</option><option value="individual">个人</option></Select>}
+    <PageHeader
+      title={`${name}资料`}
+      description={admin ? undefined : parties && capabilities?.masterSyncBound
+        ? '正式往来主体由总部维护。本厂临时主体在称重工作台登记。'
+        : readOnlyDescription(capabilities?.masterSyncBound)}
+      actions={<><ReturnLink />{admin && <Link className={buttonStyles({ variant: 'primary' })} to={`${base}/new${suffix}`}>新增{name}</Link>}</>}
+    />
+    <SearchFilterBar compact actions={<Button disabled={!hasFilters} onClick={clearFilters}>清空筛选</Button>}>
+      <Input aria-label="资料搜索" placeholder={parties ? '名称 / 简称 / 编码 / 电话' : '名称 / 编码 / 规格'} value={keyword} onChange={e => updateParams({ q: e.target.value, page: '' })} />
+      <Select aria-label="资料状态" value={enabled} onChange={e => updateParams({ enabled: e.target.value, page: '' })}><option value="">全部状态</option><option value="true">启用</option><option value="false">停用</option></Select>
+      <Select aria-label={parties ? '业务身份筛选' : '物料分类筛选'} value={classification} onChange={e => updateParams({ classification: e.target.value, page: '' })}><option value="">{parties ? '全部业务身份' : '全部分类'}</option>{parties ? Object.entries(partyRoleLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>) : data.categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
+      {parties && <Select aria-label="主体性质筛选" value={nature} onChange={e => updateParams({ nature: e.target.value, page: '' })}><option value="">全部主体性质</option><option value="enterprise">企业</option><option value="individual">个人</option></Select>}
     </SearchFilterBar>
-    <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title={`${name}列表`} description={`共 ${rows.length} 条；已引用资料可停用，不能删除。`} actions={<Button disabled={saving} onClick={() => void load()}>刷新</Button>} /><DataTable compact stickyHeader fixedEdges ariaLabel={`${name}列表`} className="weighing-list-scroll" columns={columns} dataSource={rows.slice((currentPage - 1) * pageSize, currentPage * pageSize)} rowKey="id" minWidth={parties ? 1208 : 992} /><Pagination page={currentPage} pageSize={pageSize} total={rows.length} onPageChange={setPage} onPageSizeChange={v => { setPageSize(v); setPage(1); }} /></DataTableCard>
-    <ConfirmDialog open={!!deleting} title={`删除${name}`} description={<><span>确认删除“{deleting?.name}”？引用过的资料请改为停用。</span>{error && <p role="alert" className="mt-2 text-error">{error}</p>}</>} onCancel={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await dispatch({ type: parties ? 'deleteParty' : 'deleteMaterial', id: deleting.id, version: deleting.version }); toast.success(`${name}已删除`); setDeleting(null); } catch (e) { setError(e instanceof Error ? e.message : '删除失败'); } }} />
+    <DataTableCard className="weighing-list-table">
+      <TableToolbar className="!py-space-3" title={`${name}列表`} actions={<>
+        <MasterSyncControls />
+        <Button size="sm" disabled={loading || saving} onClick={() => void load()}>{loading && !saving ? '正在刷新…' : '刷新'}</Button>
+      </>} />
+      <DataTable
+        compact stickyHeader fixedEdges
+        ariaLabel={`${name}列表`}
+        className="weighing-list-scroll"
+        columns={columns}
+        dataSource={rows.slice((currentPage - 1) * pageSize, currentPage * pageSize)}
+        rowKey="id"
+        minWidth={parties ? 1224 : 1008}
+        loading={loading && !saving}
+        empty={hasFilters
+          ? <EmptyState title={`没有符合条件的${name}`} actionText="清空筛选" onAction={clearFilters} />
+          : <EmptyState title={`暂无${name}资料`} />}
+      />
+      <Pagination
+        page={currentPage} pageSize={pageSize} total={rows.length} disabled={loading || saving}
+        onPageChange={value => updateParams({ page: value === 1 ? '' : String(value) })}
+        onPageSizeChange={value => updateParams({ pageSize: value === 10 ? '' : String(value), page: '' })}
+      />
+    </DataTableCard>
+    <ConfirmDialog
+      open={!!deleting}
+      title={`删除${name}`}
+      description={<><span>确认删除“{deleting?.name}（{deleting?.code}）”？引用过的资料请改为停用。</span>{error && <p role="alert" className="mt-2 text-error">{error}</p>}</>}
+      confirmText="删除"
+      danger
+      loading={saving}
+      onCancel={() => setDeleting(null)}
+      onConfirm={async () => {
+        if (!deleting || !admin || saving) return;
+        setError('');
+        try {
+          await dispatch({ type: parties ? 'deleteParty' : 'deleteMaterial', id: deleting.id, version: deleting.version });
+          toast.success(`${name}已删除`);
+          setDeleting(null);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : '删除失败');
+        }
+      }}
+    />
   </div>;
 }
 
@@ -129,10 +207,10 @@ function MaterialEditContent() {
   const [error, setError] = useState('');
   const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const back = `/weighing/materials${params.toString() ? `?${params}` : ''}`;
-  if (id && !current) return <PageHeader title="物料不存在" actions={<Link to={back}>返回资料列表</Link>} />;
+  if (id && !current) return <PageHeader title="物料不存在" actions={<Link className={buttonStyles()} to={back}>返回物料列表</Link>} />;
   return <>
-    <PageHeader title={`${id ? admin ? '编辑' : '查看' : '新增'}物料`} description="一种可独立称重和汇总的规格对应一条资料。" actions={<Link className={linkClass} to={back}>返回物料列表</Link>} /><MasterBanner />
-    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); try { await dispatch({ type: 'saveMaterial', id, version: baseVersion, ...form }); toast.success(id ? '物料已更新' : '物料已创建'); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
+    <PageHeader title={`${id ? admin ? '编辑' : '查看' : '新增'}物料`} description={admin ? '一种可独立称重和汇总的规格对应一条资料。' : readOnlyDescription(capabilities?.masterSyncBound)} actions={<Link className={buttonStyles()} to={back}>返回物料列表</Link>} />
+    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); if (!admin || saving) return; try { await dispatch({ type: 'saveMaterial', id, version: baseVersion, ...form }); toast.success(id ? '物料已更新' : '物料已创建'); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
       <fieldset disabled={!admin || saving}><FormSection title="物料信息"><div className="grid gap-x-5 md:col-span-2 md:grid-cols-2">
         <Field label="物料编码" help="自动生成且唯一，保存后不可修改"><Input value={current?.code ?? '保存时自动生成'} readOnly /></Field>
         <Field label="物料名称" htmlFor="material-name" required><Input id="material-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
@@ -144,7 +222,7 @@ function MaterialEditContent() {
       </div></FormSection></fieldset>
       {data.materials.some(m => m.id !== id && m.name === form.name.trim()) && <p className="text-sm text-warning">已有同名物料，请用规格和编码区分。</p>}
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
-      {admin && <Button type="submit" variant="primary" disabled={saving}>保存物料</Button>}
+      {admin && <Button type="submit" variant="primary" disabled={saving}>{saving ? '正在保存…' : '保存物料'}</Button>}
     </form>
   </>;
 }
@@ -160,10 +238,16 @@ function PartyEditContent() {
   const [error, setError] = useState('');
   const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const back = `/weighing/parties${params.toString() ? `?${params}` : ''}`;
-  if (id && !current) return <PageHeader title="往来主体不存在" actions={<Link to={back}>返回资料列表</Link>} />;
+  if (id && !current) return <PageHeader title="往来主体不存在" actions={<Link className={buttonStyles()} to={back}>返回主体列表</Link>} />;
   return <>
-    <PageHeader title={`${id ? admin ? '编辑' : '查看' : '新增'}往来主体`} description="同一企业或个人可兼具多种业务身份；司机属于本趟运输，不自动建档。" actions={<Link className={linkClass} to={back}>返回主体列表</Link>} /><MasterBanner />
-    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); try { await dispatch({ type: 'saveParty', id, version: baseVersion, ...form }); toast.success(id ? '往来主体已更新' : '往来主体已创建'); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
+    <PageHeader
+      title={`${id ? admin ? '编辑' : '查看' : '新增'}往来主体`}
+      description={admin ? '同一企业或个人可兼具多种业务身份，司机信息在办理运输任务时填写。'
+        : current?.temporaryState ? '本厂临时主体，可在称重工作台更正。'
+        : readOnlyDescription(capabilities?.masterSyncBound)}
+      actions={<Link className={buttonStyles()} to={back}>返回主体列表</Link>}
+    />
+    <form className="max-w-5xl space-y-5" onSubmit={async e => { e.preventDefault(); if (!admin || saving) return; try { await dispatch({ type: 'saveParty', id, version: baseVersion, ...form }); toast.success(id ? '往来主体已更新' : '往来主体已创建'); navigate(back); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>
       <fieldset disabled={!admin || saving} className="space-y-5"><FormSection title="主体信息"><div className="grid gap-x-5 md:col-span-2 md:grid-cols-2">
         <Field label="主体编码" help="自动生成且唯一，保存后不可修改"><Input value={current?.code ?? '保存时自动生成'} readOnly /></Field>
         <Field label="名称" htmlFor="party-name" required><Input id="party-name" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
@@ -184,24 +268,97 @@ function PartyEditContent() {
       </FormSection></fieldset>
       {data.parties.some(p => p.id !== id && p.name === form.name.trim()) && <p className="text-sm text-warning">存在同名主体，允许保存。请通过编码、电话和性质核对，避免重复建档。</p>}
       {error && <p role="alert" className="text-sm text-error">{error}</p>}
-      {admin && <Button type="submit" variant="primary" disabled={saving}>保存往来主体</Button>}
+      {admin && <Button type="submit" variant="primary" disabled={saving}>{saving ? '正在保存…' : '保存往来主体'}</Button>}
     </form>
   </>;
 }
 
 function CategoriesContent() {
-  const { data, dispatch, capabilities, saving } = useWeighingMasterStore();
+  const { data, dispatch, capabilities, loading, saving, load } = useWeighingMasterStore();
   const admin = !!capabilities?.permissionCodes.includes('weighing:master:write') && !capabilities.masterSyncBound;
   const [editing, setEditing] = useState<{ id?: string; name: string; enabled: boolean; version?: number } | null>(null);
   const [deleting, setDeleting] = useState<MaterialCategory | null>(null);
   const [error, setError] = useState('');
   const columns: DataTableColumn<MaterialCategory>[] = [
-    { title: '分类名称', dataIndex: 'name', width: 260 },
+    { title: '分类名称', dataIndex: 'name', width: admin ? 260 : undefined },
     { title: '状态', key: 'status', width: 120, render: (_, c) => <StatusTag tone={c.enabled ? 'success' : 'neutral'}>{c.enabled ? '启用' : '停用'}</StatusTag> },
-    { title: '操作', key: 'action', width: 180, render: (_, c) => <TableActions><Button size="sm" variant="ghost" disabled={!admin || saving} onClick={() => { setError(''); setEditing(c); }}>编辑</Button><Button size="sm" variant="ghost" disabled={!admin || saving} onClick={() => { setError(''); setDeleting(c); }}>删除</Button></TableActions> },
   ];
-  return <div className="weighing-list-page"><PageHeader title="物料分类" description="" actions={admin && <Button onClick={() => { setError(''); setEditing({ name: '', enabled: true }); }}>新增分类</Button>} /><MasterBanner />{!admin && <RoleHint />}<DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="分类列表" description={`共 ${data.categories.length} 项`} /><DataTable compact stickyHeader ariaLabel="物料分类列表" className="weighing-list-scroll" columns={columns} dataSource={data.categories} rowKey="id" minWidth={600} /></DataTableCard>
-    <FormDialog open={!!editing} title="维护物料分类" onCancel={() => setEditing(null)} onSubmit={async () => { if (!editing) return; try { await dispatch({ type: 'saveCategory', ...editing }); toast.success(editing.id ? '物料分类已更新' : '物料分类已创建'); setEditing(null); } catch (failure) { setError(failure instanceof Error ? failure.message : '保存失败'); } }}>{editing && <><Field label="分类名称" htmlFor="category-name" required><Input id="category-name" required value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} /></Field><Field label="分类状态" htmlFor="category-enabled"><Select id="category-enabled" value={String(editing.enabled)} onChange={e => setEditing({ ...editing, enabled: e.target.value === 'true' })}><option value="true">启用</option><option value="false">停用</option></Select></Field></>}{error && <p role="alert" className="text-error">{error}</p>}</FormDialog>
-    <ConfirmDialog open={!!deleting} title="删除分类" description={<><span>确认删除“{deleting?.name}”？</span>{error && <p role="alert" className="text-error">{error}</p>}</>} onCancel={() => setDeleting(null)} onConfirm={async () => { if (!deleting) return; try { await dispatch({ type: 'deleteCategory', id: deleting.id, version: deleting.version }); toast.success('物料分类已删除'); setDeleting(null); } catch (failure) { setError(failure instanceof Error ? failure.message : '删除失败'); } }} />
+  if (admin) columns.push({
+    title: '操作', key: 'action', width: 160, nowrap: true,
+    render: (_, category) => <TableActions>
+      <Button size="sm" disabled={saving} onClick={() => { setError(''); setEditing(category); }}>编辑</Button>
+      <TableActionMenu label={`${category.name}的更多操作`} items={[{
+        label: '删除', danger: true, disabled: saving,
+        onSelect: () => { setError(''); setDeleting(category); },
+      }]} />
+    </TableActions>,
+  });
+  return <div className="weighing-list-page">
+    <PageHeader
+      title="物料分类"
+      description={admin ? undefined : readOnlyDescription(capabilities?.masterSyncBound)}
+      actions={admin && <Button variant="primary" disabled={saving} onClick={() => { setError(''); setEditing({ name: '', enabled: true }); }}>新增分类</Button>}
+    />
+    <DataTableCard className="weighing-list-table">
+      <TableToolbar className="!py-space-3" title="分类列表" description={`共 ${data.categories.length} 项`} actions={<>
+        <MasterSyncControls />
+        <Button size="sm" disabled={loading || saving} onClick={() => void load()}>{loading && !saving ? '正在刷新…' : '刷新'}</Button>
+      </>} />
+      <DataTable
+        compact stickyHeader ariaLabel="物料分类列表"
+        className="weighing-list-scroll" columns={columns} dataSource={data.categories}
+        rowKey="id" minWidth={admin ? 540 : 320} loading={loading && !saving}
+        empty={<EmptyState title="暂无物料分类" />}
+      />
+    </DataTableCard>
+    <FormDialog
+      open={!!editing}
+      title={editing?.id ? '编辑物料分类' : '新增物料分类'}
+      loading={saving}
+      onCancel={() => setEditing(null)}
+      onSubmit={async () => {
+        if (!editing || !admin || saving) return;
+        setError('');
+        try {
+          await dispatch({ type: 'saveCategory', ...editing });
+          toast.success(editing.id ? '物料分类已更新' : '物料分类已创建');
+          setEditing(null);
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : '保存失败');
+        }
+      }}
+    >
+      {editing && <>
+        <Field label="分类名称" htmlFor="category-name" required>
+          <Input id="category-name" required disabled={saving} value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} />
+        </Field>
+        <Field label="分类状态" htmlFor="category-enabled">
+          <Select id="category-enabled" disabled={saving} value={String(editing.enabled)} onChange={e => setEditing({ ...editing, enabled: e.target.value === 'true' })}>
+            <option value="true">启用</option><option value="false">停用</option>
+          </Select>
+        </Field>
+      </>}
+      {error && <p role="alert" className="text-error">{error}</p>}
+    </FormDialog>
+    <ConfirmDialog
+      open={!!deleting}
+      title="删除分类"
+      description={<><span>确认删除“{deleting?.name}”？引用过的分类请改为停用。</span>{error && <p role="alert" className="mt-2 text-error">{error}</p>}</>}
+      confirmText="删除"
+      danger
+      loading={saving}
+      onCancel={() => setDeleting(null)}
+      onConfirm={async () => {
+        if (!deleting || !admin || saving) return;
+        setError('');
+        try {
+          await dispatch({ type: 'deleteCategory', id: deleting.id, version: deleting.version });
+          toast.success('物料分类已删除');
+          setDeleting(null);
+        } catch (failure) {
+          setError(failure instanceof Error ? failure.message : '删除失败');
+        }
+      }}
+    />
   </div>;
 }

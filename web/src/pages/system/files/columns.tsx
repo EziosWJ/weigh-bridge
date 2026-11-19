@@ -1,14 +1,6 @@
-import {
-  Download,
-  Eye,
-  FileText,
-  Info,
-  Loader2,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { Download, Eye, FileText, Loader2 } from "lucide-react";
 import { ApiStatusTag } from "@/components/common/api-status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { formatDateTime } from "@/lib/datetime";
@@ -57,7 +49,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "文件名",
       key: "originalName",
-      width: 260,
+      width: 184,
       render: (_, record) => (
         <div className="flex items-start gap-2">
           <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-tertiary" aria-hidden />
@@ -75,7 +67,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "扩展名",
       dataIndex: "extension",
-      width: 90,
+      width: 66,
       render: (value) => (
         <span className="font-mono text-body-secondary text-text-secondary">
           {String(value || "-")}
@@ -85,9 +77,9 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "MIME 类型",
       dataIndex: "mimeType",
-      width: 180,
+      width: 146,
       render: (value) => (
-        <span className="block max-w-[180px] truncate font-mono text-body-secondary text-text-secondary">
+        <span className="block max-w-[180px] truncate font-mono text-body-secondary text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -95,7 +87,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "文件大小",
       key: "fileSize",
-      width: 100,
+      width: 96,
       render: (_, record) => (
         <span className="tabular-nums text-text-secondary">
           {formatFileSize(record.fileSize)}
@@ -105,7 +97,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "业务模块",
       dataIndex: "businessModule",
-      width: 120,
+      width: 94,
       render: (value) => (
         <span className="text-text-secondary">
           {String(value || "-")}
@@ -115,15 +107,15 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "状态",
       dataIndex: "status",
-      width: 96,
+      width: 75,
       render: (_, record) => <ApiStatusTag status={record.status} />,
     },
     {
       title: "备注",
       dataIndex: "remark",
-      width: 160,
+      width: 136,
       render: (value) => (
-        <span className="block max-w-[160px] truncate text-text-secondary">
+        <span className="block max-w-[160px] truncate text-text-secondary" title={typeof value === "string" ? value : undefined}>
           {String(value || "-")}
         </span>
       ),
@@ -131,7 +123,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
     {
       title: "创建时间",
       dataIndex: "createTime",
-      width: 170,
+      width: 164,
       render: (value) => (
         <span className="whitespace-nowrap tabular-nums">
           {formatDateTime(String(value ?? ""))}
@@ -143,7 +135,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
       key: "actions",
       nowrap: true,
       align: "center",
-      width: 300,
+      width: 266,
       render: (_, record) => {
         const previewable = isPreviewable(record.mimeType);
         const isDownloading = actions.downloadingIds.has(record.id);
@@ -163,7 +155,7 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
             </Button>
             <Button
               size="sm"
-              variant="ghost"
+              variant="secondary"
               disabled={isDownloading}
               onClick={() => actions.onDownload(record)}
             >
@@ -172,42 +164,20 @@ export function createFileColumns(actions: FileColumnActions): DataTableColumn<F
               ) : (
                 <Download className="h-4 w-4" aria-hidden />
               )}
-              下载
+              {isDownloading ? "下载中" : "下载"}
             </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => actions.onDetail(record)}
-            >
-              <Info className="h-4 w-4" aria-hidden />
-              详情
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => actions.onEdit(record)}
-            >
-              <Pencil className="h-4 w-4" aria-hidden />
-              编辑
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() =>
-                actions.onChangeStatus(record, nextStatus)
-              }
-            >
-              {nextStatus === 1 ? "启用" : "禁用"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-error hover:text-error"
-              onClick={() => actions.onDelete(record)}
-            >
-              <Trash2 className="h-4 w-4" aria-hidden />
-              删除
-            </Button>
+            <TableActionMenu
+              items={[
+                { label: "详情", onSelect: () => actions.onDetail(record) },
+                { label: "编辑", onSelect: () => actions.onEdit(record) },
+                {
+                  label: nextStatus === 1 ? "启用" : "禁用",
+                  onSelect: () => actions.onChangeStatus(record, nextStatus),
+                  danger: nextStatus === 0,
+                },
+                { label: "删除", onSelect: () => actions.onDelete(record), danger: true },
+              ]}
+            />
           </TableActions>
         );
       },

@@ -15,7 +15,7 @@ const deadline = setTimeout(() => { void browser?.close(); vite.kill('SIGTERM');
 const user = {id: 1, username: 'admin', nickname: '管理员', roles: []};
 const capabilities = {
   localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true,
-  userId: 1, permissionCodes: ['weighing:read', 'weighing:confirm', 'weighing:export', 'weighing:print', 'weighing:master:read', 'weighing:master:write', 'weighing:site:manage', 'weighing:site:export'],
+  userId: 1, permissionCodes: ['weighing:read', 'weighing:confirm', 'weighing:manual-return', 'weighing:terminate', 'weighing:export', 'weighing:print', 'weighing:master:read', 'weighing:master:write', 'weighing:site:manage', 'weighing:site:export', 'weighing:sync:tickets'],
   sites: [{code: 'F001', name: '一厂区', enabled: 1, canOperate: true}],
   scales: [{code: 'WB01', siteCode: 'F001', name: '一号地磅', siteName: '一厂区', enabled: 1, canOperate: true}],
 };
@@ -32,7 +32,7 @@ const materials = rows.map(row => ({id: row.id, version: 1, enabled: 1, name: '�
 const parties = rows.map(row => ({id: row.id, version: 1, enabled: 1, name: '四川省粮食供应有限公司', code: `PARTY${row.id}`, shortName: '粮食供应', nature: 'enterprise', roles: ['supplier', 'carrier'], phone: '13800138000', contacts: [{id: 1, name: '张师傅', isDefault: 1}], address: '四川省宜宾市翠屏区产业园区粮食仓储中心一号仓库', remark: 'LONG_REFERENCE_WITHOUT_SPACES_'.repeat(3)}));
 const pageResult = records => ({records, total: records.length, page: 1, pageSize: 10});
 const pages = [
-  ['tasks', '运输任务列表', 9], ['originals', '原始称重列表', 8], ['tickets', '最终单据列表', 9],
+  ['tasks', '运输任务列表', 9], ['originals', '原始称重列表', 8], ['tickets', '最终单据列表', 10],
   ['materials', '物料列表', 7], ['parties', '往来主体列表', 7],
   ['categories', '物料分类列表', 3],
 ];
@@ -64,8 +64,13 @@ try {
     else if (path.endsWith('/material-categories')) data = pageResult(rows.map(row => ({id: row.id, enabled: 1, name: `原粮分类${row.id}`})));
     else if (path.endsWith('/materials')) data = pageResult(materials);
     else if (path.endsWith('/parties')) data = pageResult(parties);
+    else if (path.endsWith('/plate-candidates')) data = {items: [], nextCursor: '', serverTime: new Date().toISOString()};
+    else if (path.endsWith('/cameras')) data = {cameras: []};
+    else if (path === '/api/weighing/tasks/1') data = rows[0];
     else if (path.endsWith('/tasks') || path.endsWith('/originals')) data = pageResult(rows.slice(0, 10));
-    else if (path.endsWith('/tickets')) data = pageResult(rows.slice(0, 10).map(row => ({...row, status: 'valid', syncStatus: 'pending'})));
+    else if (path.endsWith('/tickets')) data = new URL(route.request().url()).searchParams.has('taskId')
+      ? pageResult([])
+      : pageResult(rows.slice(0, 10).map(row => ({...row, status: 'valid', syncStatus: 'pending'})));
     else if (path.endsWith('/agent-settings')) data = {serverUrl: 'http://192.168.1.100:8900'};
     await route.fulfill({json: {code: 200, message: 'ok', data}});
   });
@@ -108,6 +113,7 @@ try {
           await workbench.click();
           const popup = await popupPromise;
           await popup.waitForURL('**/weighing/workbench?scale=WB01');
+          await popup.getByRole('heading', {name: '称重工作台', exact: true}).waitFor();
           assert.equal(await popup.evaluate(() => window.name), 'weighbridge-workbench-WB01');
           await page.bringToFront();
           await workbench.click();
@@ -117,6 +123,7 @@ try {
       }
       if (path === 'tickets') {
         assert.equal(await region.getByRole('columnheader', {name: '同步状态'}).count(), 1);
+        assert.equal(await region.getByRole('columnheader', {name: '最近对账'}).count(), 1);
         assert.ok(await region.getByText('待同步').count() > 0);
       }
       assert.equal(await region.locator('thead th').count(), count, `${path}: all columns retained`);
@@ -150,6 +157,31 @@ try {
       }
       if (path === 'tasks' && viewport.width === 1366) {
         await region.evaluate(el => {el.scrollLeft = 0; el.scrollTop = 0;});
+        const row = region.locator('tbody tr').first();
+        const more = row.getByRole('button', {name: `${rows[0].taskNo} 更多操作`});
+        const manual = row.getByRole('button', {name: '人工补录回磅', exact: true});
+        const terminate = row.getByRole('button', {name: '终止任务', exact: true});
+        const weigh = row.getByRole('link', {name: '办理称重', exact: true});
+        assert.equal(await weigh.isVisible(), true);
+        assert.equal(await weigh.evaluate(el => getComputedStyle(el).color), 'rgb(255, 255, 255)', 'small primary button preserves its text color');
+        assert.equal(await manual.count(), 0);
+        await more.focus();
+        await page.keyboard.press('Enter');
+        await manual.waitFor();
+        await page.waitForFunction(() => document.activeElement?.textContent?.trim() === '人工补录回磅');
+        await page.keyboard.press('Escape');
+        await manual.waitFor({state: 'hidden'});
+        assert.equal(await more.evaluate(el => document.activeElement === el), true, 'Escape returns focus to the row trigger');
+        await more.click();
+        await manual.click();
+        const manualDialog = page.getByRole('dialog', {name: '人工补录回磅', exact: true});
+        await manualDialog.getByRole('button', {name: '取消', exact: true}).click();
+        assert.equal(await more.evaluate(el => document.activeElement === el), true, 'closing the dialog restores the row trigger');
+        await more.click();
+        await terminate.click();
+        const confirmation = page.getByRole('dialog', {name: '终止运输任务', exact: true});
+        assert.equal(await confirmation.getByRole('button', {name: '确认终止', exact: true}).isDisabled(), true);
+        await confirmation.getByRole('button', {name: '取消', exact: true}).click();
         const frame = await region.boundingBox();
         await page.mouse.move(frame.x + 60, frame.y + frame.height - 6);
         await page.mouse.down();
@@ -171,7 +203,10 @@ try {
   assert.equal(await page.locator('header').getByRole('button', {name: '称重工作台', exact: true}).isDisabled(), true, 'ambiguous scale does not open a guessed target');
   capabilities.permissionCodes = ['weighing:read'];
   await page.goto(`${base}/weighing/tasks`);
-  await page.getByRole('region', {name: '运输任务列表', exact: true}).waitFor();
+  const readonlyTasks = page.getByRole('region', {name: '运输任务列表', exact: true});
+  await readonlyTasks.locator('tbody tr').first().waitFor();
+  assert.equal(await readonlyTasks.getByRole('button', {name: /更多操作/}).count(), 0);
+  assert.equal(await readonlyTasks.getByRole('link', {name: '办理称重', exact: true}).count(), 0);
   assert.equal(await page.locator('header').getByRole('link', {name: '称重工作台', exact: true}).count(), 0, 'query-only account has no workbench shortcut');
   assert.equal(await page.locator('header').getByRole('button', {name: '称重工作台', exact: true}).count(), 0);
   assert.deepEqual(errors, []);

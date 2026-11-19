@@ -61,6 +61,7 @@ try {
       let status = 200;
       if (url.pathname === "/api/auth/me") result = user(role);
       else if (url.pathname === "/api/auth/menus") result = role === "ADMIN" && !disabled ? menu : [];
+      else if (url.pathname === "/api/weighing/capabilities") result = { permissionCodes: [], sites: [], scales: [] };
       else if (url.pathname.endsWith("unread-count")) result = 0;
       else if (url.pathname.endsWith("/announcement/page")) result = { records: [], total: 0 };
       else if (url.pathname.endsWith("/overview")) { overviewCount += 1; result = data; if (forbidden) status = 403; }
@@ -205,8 +206,8 @@ try {
     await page.getByText("首样本正在建立基线", { exact: true }).waitFor();
     await page.getByText("逻辑核 0", { exact: true }).locator("..").getByText("采集中", { exact: true }).waitFor();
     await page.getByText("采集中，暂无历史样本", { exact: true }).waitFor();
-    await page.getByRole("link", { name: "工作台", exact: true }).click();
-    await page.getByRole("heading", { name: "工作台", exact: true }).waitFor();
+    await page.getByRole("link", { name: "系统概览", exact: true }).click();
+    await page.getByRole("heading", { name: "系统概览", exact: true }).waitFor();
     const beforeUnmount = overviewCount;
     const historyBeforeUnmount = historyRequests.length;
     await page.clock.fastForward(20000);

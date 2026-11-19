@@ -17,10 +17,11 @@ import { FormDialog } from "@/components/common/form-dialog";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
 import { StatusTag } from "@/components/common/status-tag";
-import { TableActions } from "@/components/common/table-actions";
+import { TableActionMenu, TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
 import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
+import { buttonStyles } from "@/components/ui/button-styles";
 import { Input } from "@/components/ui/input";
 import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
@@ -47,29 +48,62 @@ export function WeighingTasksPage() {
   const loadTask = useWeighingStore(state => state.loadTask);
   const [manualTask, setManualTask] = useState<TransportTask | null>(null);
   const [terminateTask, setTerminateTask] = useState<TransportTask | null>(null);
+  const [loadingActionTask, setLoadingActionTask] = useState<number | null>(null);
   const can = (code: string) => capabilities?.permissionCodes.includes(`weighing:${code}`) ?? false;
   const siteCanOperate = capabilities?.sites.some(site => site.canOperate) ?? false;
+  const canWeigh = can('confirm') && capabilities?.scales.some(scale => scale.canOperate);
   async function openTask(id: number, target: (task: TransportTask) => void) {
-    try { target(await loadTask(id)); } catch (failure) { toast.error({ title: "任务加载失败", description: failure instanceof Error ? failure.message : "请稍后重试" }); }
+    if (loadingActionTask !== null) return;
+    setLoadingActionTask(id);
+    try {
+      target(await loadTask(id));
+    } catch (failure) {
+      toast.error({ title: "任务加载失败", description: failure instanceof Error ? failure.message : "请稍后重试" });
+    } finally {
+      setLoadingActionTask(null);
+    }
   }
   const taskActionDone = () => { setManualTask(null); setTerminateTask(null); result.refresh(); };
   const columns: DataTableColumn<WireTask>[] = [
-    { title: '任务编号 / 车牌', key: 'task', width: 220, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
-    {title:"厂区",key:"site",width:100,render:(_,row)=>row.siteCode||"—"},
-    { title: '方向', key: 'direction', width: 100, render: (_, row) => directionLabels[row.business.direction] },
-    { title: '物料 / 规格', key: 'material', width: 180, render: (_, row) => <div>{row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
-    { title: '供收方', key: 'party', width: 160, render: (_, row) => row.business.partyName },
-    { title: '首次 / 二次重量（吨）', key: 'weights', width: 180, render: (_, row) => `${row.firstWeight ?? '—'} / ${row.secondWeight ?? '—'}` },
-    { title: '任务状态', key: 'status', width: 120, render: (_, row) => <StatusTag tone={row.status === 'completed' ? 'success' : row.status === 'terminated' ? 'neutral' : 'warning'}>{row.status === 'awaiting_second' ? '待二次称重' : row.status === 'completed' ? '已完成' : '已终止'}</StatusTag> },
-    { title: '创建时间', key: 'date', width: 144, render: (_, row) => <ListDate value={row.createTime} /> },
-    { title: '操作', key: 'actions', width: 320, nowrap: true, render: (_, row) => <TableActions><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>详情</Link>{can('confirm') && capabilities?.scales.some(s=>s.canOperate) && row.status === 'awaiting_second' && <WorkbenchLink className={linkClass} to={`/weighing/workbench?scale=${encodeURIComponent(capabilities?.localScaleCode ?? "")}&task=${row.id}`}>办理称重</WorkbenchLink>}{siteCanOperate && row.status === 'awaiting_second' && can('manual-return') && <button type="button" className={linkClass} onClick={() => void openTask(row.id, setManualTask)}>人工补录回磅</button>}{siteCanOperate && row.status === 'awaiting_second' && can('terminate') && <button type="button" className={linkClass} onClick={() => void openTask(row.id, setTerminateTask)}>终止任务</button>}</TableActions> },
+    { title: '任务编号 / 车牌', key: 'task', width: 212, render: (_, row) => <div><Link className={linkClass} to={`/weighing/tasks/${row.id}`}>{row.taskNo}</Link><div className="mt-1 font-medium">{row.business.plate}</div></div> },
+    { title: '方向', key: 'direction', width: 116, render: (_, row) => directionLabels[row.business.direction] },
+    { title: '首次 / 二次重量（吨）', key: 'weights', width: 176, align: 'right', render: (_, row) => <span className="tabular-nums">{row.firstWeight ?? '—'} / {row.secondWeight ?? '—'}</span> },
+    { title: '任务状态', key: 'status', width: 112, render: (_, row) => <StatusTag tone={row.status === 'completed' ? 'success' : row.status === 'terminated' ? 'neutral' : 'warning'}>{row.status === 'awaiting_second' ? '待二次称重' : row.status === 'completed' ? '已完成' : '已终止'}</StatusTag> },
+    { title: '物料 / 规格', key: 'material', width: 160, render: (_, row) => <div>{row.business.materialName}<div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode}</div></div> },
+    { title: '供收方', key: 'party', width: 144, render: (_, row) => row.business.partyName },
+    { title: '厂区', key: 'site', width: 80, render: (_, row) => row.siteCode || '—' },
+    { title: '创建时间', key: 'date', width: 124, render: (_, row) => <ListDate value={row.createTime} /> },
+    {
+      title: '操作', key: 'actions', width: 240, nowrap: true,
+      render: (_, row) => {
+        const awaitingSecond = row.status === 'awaiting_second';
+        const canHandleException = awaitingSecond && siteCanOperate;
+        return (
+          <TableActions>
+            {awaitingSecond && canWeigh && (
+              <WorkbenchLink className={buttonStyles({ variant: "primary", size: "sm" })} to={`/weighing/workbench?scale=${encodeURIComponent(capabilities?.localScaleCode ?? "")}&task=${row.id}`}>
+                办理称重
+              </WorkbenchLink>
+            )}
+            <Link className={buttonStyles({ size: "sm", variant: "ghost", className: "px-2" })} to={`/weighing/tasks/${row.id}`}>详情</Link>
+            <TableActionMenu
+              label={`${row.taskNo} 更多操作`}
+              items={[
+                ...(canHandleException && can('manual-return') ? [{ label: '人工补录回磅', disabled: loadingActionTask !== null, onSelect: () => void openTask(row.id, setManualTask) }] : []),
+                ...(canHandleException && can('terminate') ? [{ label: '终止任务', danger: true, disabled: loadingActionTask !== null, onSelect: () => void openTask(row.id, setTerminateTask) }] : []),
+              ]}
+            />
+          </TableActions>
+        );
+      },
+    },
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
   return <div className="weighing-list-page">
     <PageHeader title="待回磅任务" description="" />
     <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(Object.keys(value).length ? value : { status: 'second' }); setPage(1); }} />
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).then(() => toast.success("运输任务 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }))}>导出筛选明细 CSV</Button>}</>} />
-      <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1524} />
+      <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1364} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
     <ManualReturnDialog task={manualTask} onClose={() => setManualTask(null)} onDone={taskActionDone} />
@@ -140,10 +174,11 @@ export function WeighingTaskDetailPage() {
     } catch (failure) { setError(failure instanceof Error ? failure.message : "操作失败"); }
   }
 
-  if (!task) return <><PageHeader title="运输任务详情" actions={<Link className={linkClass} to="/weighing/tasks">返回任务列表</Link>} /><ContentCard><p>未找到该测试任务，请刷新或核对任务编号。</p></ContentCard></>;
+  const backToTasks = <Link className={buttonStyles({ size: "sm" })} to="/weighing/tasks">返回任务列表</Link>;
+  if (!task) return <><PageHeader title="运输任务详情" actions={backToTasks} /><ContentCard>{error ? <p role="alert" className="text-error">任务详情加载失败。{error}</p> : <p role="status">正在加载任务详情…</p>}</ContentCard></>;
   const tickets = data.tickets.filter((ticket) => ticket.taskId === task.id);
   return <>
-    <PageHeader title="运输任务详情" description={task.taskNo ?? task.id} actions={<><Link className={linkClass} to="/weighing/tasks">返回任务列表</Link>{canWeigh && (pending || ["first", "second"].includes(task.status)) && <WorkbenchLink className={linkClass} to={`/weighing/workbench?task=${encodeURIComponent(task.id)}`}>{pending ? "前往工作台查询提交结果" : "前往工作台办理"}</WorkbenchLink>}</>} />
+    <PageHeader title="运输任务详情" description={task.taskNo ?? task.id} actions={<>{backToTasks}{canWeigh && (pending || ["first", "second"].includes(task.status)) && <WorkbenchLink className={buttonStyles({ variant: "primary", size: "sm" })} to={`/weighing/workbench?task=${encodeURIComponent(task.id)}`}>{pending ? "前往工作台查询提交结果" : "前往工作台办理"}</WorkbenchLink>}</>} />
     <DeviceBanner />
     <div className="space-y-space-6">
       {notice && <p role="status" className="text-success">{notice}</p>}
@@ -151,7 +186,7 @@ export function WeighingTaskDetailPage() {
         {task.records.some(record => record.source === 'manual') && <div className="mb-space-4"><ManualReturnNotice records={task.records} /></div>}
         {pending && <p role="alert" className="mb-space-4 text-warning">上次提交结果尚未核实。当前保存的记录不表示已核实成功；请先到工作台查询结果，再继续办理。</p>}
         <div className="grid gap-space-4 sm:grid-cols-3"><DetailItem label="创建时间" value={beijingTime(task.createdAt)} /><DetailItem label="首次确认时间" value={task.records.filter(record=>record.stage==='first').slice(-1)[0]?.at ? beijingTime(task.records.filter(record=>record.stage==='first').slice(-1)[0].at) : '尚未确认'} /><DetailItem label="二次确认时间" value={task.records.filter(record=>record.stage==='second').slice(-1)[0]?.at ? beijingTime(task.records.filter(record=>record.stage==='second').slice(-1)[0].at) : '尚未确认'} /></div>
-        {!pending && task.status !== "completed" && task.status !== "terminated" && <div className="mt-space-4 flex flex-wrap gap-space-2">{canOperate && <>{can("correct") && <Button size="sm" onClick={() => startOperation("correct")}>业务纠错</Button>}{can("reweigh") && task.records.length > 0 && <Button size="sm" onClick={() => startOperation("reweigh")}>重称</Button>}{can("manual-return") && <Button size="sm" onClick={() => setManualOpen(true)}>人工补录回磅</Button>}{can("terminate") && <Button size="sm" variant="danger" onClick={() => setTerminateOpen(true)}>终止任务</Button>}</>}</div>}
+        {!pending && task.status !== "completed" && task.status !== "terminated" && canOperate && <div className="mt-space-4 flex flex-wrap gap-space-2">{can("correct") && <Button size="sm" onClick={() => startOperation("correct")}>业务纠错</Button>}{can("reweigh") && task.records.length > 0 && <Button size="sm" onClick={() => startOperation("reweigh")}>重称</Button>}{task.status === "second" && can("manual-return") && <Button size="sm" onClick={() => setManualOpen(true)}>人工补录回磅</Button>}{can("terminate") && <Button size="sm" variant="danger" onClick={() => setTerminateOpen(true)}>终止任务</Button>}</div>}
       </ContentCard>
       {tripBasis?.bound && <ContentCard title="云端流转单与化验依据" description="首磅绑定快照；回磅扣减以此为依据。">
         <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">

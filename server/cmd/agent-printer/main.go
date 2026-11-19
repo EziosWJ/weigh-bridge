@@ -66,7 +66,12 @@ func main() {
 			slog.Info("Agent 已被后台踢出，停止运行")
 			return
 		} else if err != nil {
-			writeAgentStatus(statusPath, false, digest)
+			var refusal *admissionError
+			code := ""
+			if errors.As(err, &refusal) {
+				code = refusal.payload.Code
+			}
+			writeAgentConnectionStatus(statusPath, false, digest, code)
 			slog.Warn("connection ended", "error", err)
 		}
 		select {
@@ -667,6 +672,12 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
+type admissionError struct{ payload p.Error }
+
+func (e *admissionError) Error() string {
+	return fmt.Sprintf("Agent 接入失败（%s）：%s", e.payload.Code, e.payload.Message)
+}
+
 // helloHandshake performs the revision 2 keyless admission handshake. A
 // rejection (uninitialized site, missing scale, conflict or unsupported
 // protocol) is surfaced with its actual reason for logging and retry.
@@ -711,7 +722,7 @@ func helloHandshake(conn *websocket.Conn) (p.HelloAck, error) {
 			if refusal.Message == "" {
 				refusal.Message = "Server 拒绝了设备接入"
 			}
-			return ack, fmt.Errorf("Agent 接入失败（%s）：%s", refusal.Code, refusal.Message)
+			return ack, &admissionError{refusal}
 		}
 	}
 }
@@ -855,11 +866,16 @@ func writeScaleStatus(ctx context.Context, path string, scale *agentscale.Monito
 }
 
 func writeAgentStatus(path string, connected bool, digest string) {
+	writeAgentConnectionStatus(path, connected, digest, "")
+}
+
+func writeAgentConnectionStatus(path string, connected bool, digest, code string) {
 	b, _ := json.Marshal(struct {
 		At           time.Time `json:"at"`
 		Connected    bool      `json:"connected"`
 		ConfigDigest string    `json:"configDigest"`
-	}{time.Now(), connected, digest})
+		ErrorCode    string    `json:"errorCode,omitempty"`
+	}{time.Now(), connected, digest, code})
 	tmp := path + ".tmp"
 	if os.WriteFile(tmp, b, 0600) == nil {
 		_ = os.Rename(tmp, path)

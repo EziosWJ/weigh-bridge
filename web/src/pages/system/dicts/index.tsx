@@ -515,6 +515,7 @@ export function SystemDictsPage() {
   }, [confirmAction]);
 
   const typeColumns = createDictTypeColumns({
+    activeTypeId: selectedTypeId,
     onSelect: selectType,
     onEdit: openEditTypeForm,
     onChangeStatus: (dictType, status) =>
@@ -601,7 +602,7 @@ export function SystemDictsPage() {
         className={cn(
           "grid gap-6",
           selectedType
-            ? "xl:grid-cols-[minmax(0,0.88fr)_minmax(420px,1.12fr)]"
+            ? "2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]"
             : "grid-cols-1",
         )}
       >
@@ -638,7 +639,10 @@ export function SystemDictsPage() {
             rowKey="id"
             loading={typeLoading}
             error={typeError}
-            minWidth={1000}
+            minWidth={790}
+            compact
+            fixedActions
+            ariaLabel="字典类型列表"
             onRowClick={selectType}
             rowClassName={(record) =>
               selectedType?.id === record.id ? "bg-primary/5" : undefined
@@ -745,7 +749,10 @@ export function SystemDictsPage() {
               rowKey="id"
               loading={itemLoading}
               error={itemError}
-              minWidth={830}
+              minWidth={695}
+              compact
+              fixedActions
+              ariaLabel="字典项列表"
               empty={
                 <EmptyState
                   title="暂无字典项"

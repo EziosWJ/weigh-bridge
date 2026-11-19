@@ -464,32 +464,39 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	// targetRecordId is a record id, never a sample id.
 	oldCaptureBody["targetRecordId"] = completed.RecordID
 	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/samples", encode(oldCaptureBody), token), 200, 400, weighing.ErrConflict.Error())
-	// Change the local code after voiding; the reopened ticket keeps the new
-	// identity while its dependency continues to reference the original ticket.
-	configs := weighingData[[]weighing.SiteConfiguration](t, router, "GET", "/api/weighing/site-config", "", token)
-	config := configs[0]
-	identity := weighing.SiteConfigurationInput{ServerURL: config.ServerURL, Code: "F001", Name: config.Name, ScaleCode: config.ScaleCode, ScaleName: config.ScaleName, AgentID: config.AgentID, Enabled: config.Enabled, Version: config.Version}
-	changedIdentity := weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
-	// A reopen must reject upward adjustments without creating a ticket.
-	upwardReopen := map[string]any{"requestId": "upward-reopen-amount", "taskVersion": voided.TaskVersion, "reason": "测试上调", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustments": []map[string]any{{"mode": "amount", "amount": "-0.5", "category": "WATER"}}}
-	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(upwardReopen), token), 200, 400, weighing.ErrInvalid.Error())
-	upwardReopen["requestId"] = "upward-reopen-percent"
-	upwardReopen["netAdjustments"] = []map[string]any{{"mode": "percent", "rateBp": -50, "category": "WATER"}}
-	assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(upwardReopen), token), 200, 400, weighing.ErrInvalid.Error())
-	reopenBody := map[string]any{"requestId": "manual-reopen-0001", "taskVersion": voided.TaskVersion, "reason": "旧依据人工更正", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustment": map[string]any{"mode": "amount", "amount": "2", "category": "OTHER", "remark": "其他"}}
-	reopened := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(reopenBody), token)
-	if reopened.TicketID == ticket.ID {
-		t.Fatal("reopen reused old ticket identity")
-	}
-	oldTicket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(ticket.ID), "", token)
-	if oldTicket.Status != "void" || oldTicket.FinalGross != 30000 || oldTicket.FinalTare != 10000 || oldTicket.FinalNet != 18500 || oldTicket.NetAdjustment != 1500 || oldTicket.OriginalTare != 10000 {
-		t.Fatalf("old ticket snapshot rewritten: %+v", oldTicket)
-	}
-	newTicket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(reopened.TicketID), "", token)
-	if newTicket.PreviousTicketID == nil || *newTicket.PreviousTicketID != ticket.ID || newTicket.PreviousFinal == nil || newTicket.PreviousFinal.Gross != 30000 || newTicket.PreviousFinal.Net != 18500 || newTicket.PreviousFinal.NetAdjustment != 1500 {
-		t.Fatalf("reopen chain/prior final weights: %+v", newTicket)
-	}
-	checkTicketSyncOutbox(t, database.GORM, ticket.ID, newTicket.ID)
+	var (
+		identity        weighing.SiteConfigurationInput
+		changedIdentity weighing.SiteConfiguration
+		newTicket       weighing.TicketView
+	)
+	checkTicketSyncOutbox(t, database.GORM, ticket.ID, func() int64 {
+		// Change the local code after voiding; the reopened ticket keeps the new
+		// identity while its dependency continues to reference the original ticket.
+		configs := weighingData[[]weighing.SiteConfiguration](t, router, "GET", "/api/weighing/site-config", "", token)
+		config := configs[0]
+		identity = weighing.SiteConfigurationInput{ServerURL: config.ServerURL, Code: "F001", Name: config.Name, ScaleCode: config.ScaleCode, ScaleName: config.ScaleName, AgentID: config.AgentID, Enabled: config.Enabled, Version: config.Version}
+		changedIdentity = weighingData[weighing.SiteConfiguration](t, router, "PUT", "/api/weighing/site-config", encode(identity), token)
+		// A reopen must reject upward adjustments without creating a ticket.
+		upwardReopen := map[string]any{"requestId": "upward-reopen-amount", "taskVersion": voided.TaskVersion, "reason": "测试上调", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustments": []map[string]any{{"mode": "amount", "amount": "-0.5", "category": "WATER"}}}
+		assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(upwardReopen), token), 200, 400, weighing.ErrInvalid.Error())
+		upwardReopen["requestId"] = "upward-reopen-percent"
+		upwardReopen["netAdjustments"] = []map[string]any{{"mode": "percent", "rateBp": -50, "category": "WATER"}}
+		assertEnvelopeCode(t, serveJSON(router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(upwardReopen), token), 200, 400, weighing.ErrInvalid.Error())
+		reopenBody := map[string]any{"requestId": "manual-reopen-0001", "taskVersion": voided.TaskVersion, "reason": "旧依据人工更正", "business": business, "basisValid": true, "finalWeights": map[string]any{"gross": "32", "tare": "11"}, "netAdjustment": map[string]any{"mode": "amount", "amount": "2", "category": "OTHER", "remark": "其他"}}
+		reopened := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(ticket.ID)+"/reopen", encode(reopenBody), token)
+		if reopened.TicketID == ticket.ID {
+			t.Fatal("reopen reused old ticket identity")
+		}
+		oldTicket := weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(ticket.ID), "", token)
+		if oldTicket.Status != "void" || oldTicket.FinalGross != 30000 || oldTicket.FinalTare != 10000 || oldTicket.FinalNet != 18500 || oldTicket.NetAdjustment != 1500 || oldTicket.OriginalTare != 10000 {
+			t.Fatalf("old ticket snapshot rewritten: %+v", oldTicket)
+		}
+		newTicket = weighingData[weighing.TicketView](t, router, "GET", "/api/weighing/tickets/"+itoa(reopened.TicketID), "", token)
+		if newTicket.PreviousTicketID == nil || *newTicket.PreviousTicketID != ticket.ID || newTicket.PreviousFinal == nil || newTicket.PreviousFinal.Gross != 30000 || newTicket.PreviousFinal.Net != 18500 || newTicket.PreviousFinal.NetAdjustment != 1500 {
+			t.Fatalf("reopen chain/prior final weights: %+v", newTicket)
+		}
+		return newTicket.ID
+	})
 	// Simulate a ticket already tracked under v2/v3 before the upgrade. Later
 	// void/reopen of that ticket must stay on v2/v3 instead of mixing protocols.
 	if err := database.GORM.Exec("INSERT INTO wb_ticket_sync_change (ticket_id, change_id, ticket_no, change_type, payload, status, synced_at) VALUES (?, 'legacy-reopen', ?, 'reopen', '{}', 'synced', now())", newTicket.ID, newTicket.TicketNo).Error; err != nil {

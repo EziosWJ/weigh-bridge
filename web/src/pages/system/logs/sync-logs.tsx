@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { getErrorMessage } from "@/lib/api-error";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateOnly, formatDateTime } from "@/lib/datetime";
 import type { DataTableColumn } from "@/types";
 import { categoryLabels } from "@/pages/weighing/sync/labels";
 
@@ -50,11 +50,12 @@ export function SystemSyncLogsPage() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const filtered = useMemo(() => logs.filter(log => {
-    const time = new Date(log.attemptedAt);
-    const localDate = `${time.getFullYear()}-${String(time.getMonth() + 1).padStart(2, "0")}-${String(time.getDate()).padStart(2, "0")}`;
-    return (!date || localDate === date) && (!kind || kindOf(log) === kind) && (!category || log.category === category) && (!result || String(log.success) === result);
-  }), [logs, date, kind, category, result]);
+  const filtered = useMemo(() => logs.filter(log =>
+    (!date || formatDateOnly(log.attemptedAt) === date) &&
+    (!kind || kindOf(log) === kind) &&
+    (!category || log.category === category) &&
+    (!result || String(log.success) === result),
+  ), [logs, date, kind, category, result]);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
   const reset = () => { setDate(""); setKind(""); setCategory(""); setResult(""); setPage(1); };
   const clear = async () => {
@@ -73,7 +74,7 @@ export function SystemSyncLogsPage() {
     { title: "失败原因", dataIndex: "reason", render: (_, row) => row.reason || "—" },
   ];
   return <>
-    <PageHeader title="同步日志" description="记录总部资料同步、临时主体登记上传、单据上传和对账结果。单据核查记录独立保留。" actions={<Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>} />
+    <PageHeader title="同步日志" description="记录总部资料同步、临时主体登记上传、单据上传和对账结果。单据核查记录独立保留。" />
     <SearchFilterBar actions={<Button variant="secondary" onClick={reset}><RotateCcw className="h-4 w-4" aria-hidden />重置</Button>}>
       <Input type="date" aria-label="同步日期" value={date} onChange={event => { setDate(event.target.value); setPage(1); }} />
       <Select aria-label="同步类型" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }}>
@@ -89,11 +90,21 @@ export function SystemSyncLogsPage() {
     <DataTableCard>
       <TableToolbar title="同步日志列表" description={`共 ${filtered.length} 条普通记录；日志可手动清空，但不删除变化、对账结果或核查记录。`} actions={<>
         <Button variant="secondary" size="sm" disabled={loading} onClick={() => void load()}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>
-        <Button variant="secondary" size="sm" className="text-error hover:text-error" disabled={loading || !!error || logs.length === 0} onClick={() => setClearOpen(true)}><Trash2 className="h-4 w-4" aria-hidden />清空日志</Button>
+        <Button variant="secondary" size="sm" className="text-error hover:text-error" disabled={loading || clearing || !!error || logs.length === 0} onClick={() => setClearOpen(true)}><Trash2 className="h-4 w-4" aria-hidden />清空全部日志</Button>
       </>} />
-      <DataTable columns={columns} dataSource={filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)} rowKey="id" loading={loading} error={error} minWidth={1020} empty={<EmptyState title="暂无同步日志" description="当前筛选条件下没有同步记录。" />} />
+      <DataTable
+        columns={columns}
+        dataSource={filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)}
+        rowKey="id"
+        loading={loading}
+        error={error && <EmptyState title="加载失败" description={error} actionText="重试" onAction={() => void load()} />}
+        minWidth={1020}
+        compact
+        ariaLabel="同步日志列表"
+        empty={<EmptyState title="暂无同步日志" description={logs.length ? "当前筛选条件下没有同步记录。" : "同步记录会显示在这里。"} actionText={logs.length ? "重置筛选" : undefined} onAction={reset} />}
+      />
       <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} disabled={loading} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
-    <ConfirmDialog open={clearOpen} title="清空普通同步日志" description="确认清空全部普通同步日志吗？此操作不可恢复，不影响待上传变化、对账结果、冲突记录或核查结论。" confirmText="清空" danger loading={clearing} onConfirm={() => void clear()} onCancel={() => setClearOpen(false)} />
+    <ConfirmDialog open={clearOpen} title="清空普通同步日志" description="将永久删除全部普通同步日志，包括当前筛选范围以外的记录。待上传变化、对账结果、冲突记录和核查结论会继续保留。" confirmText="清空" danger loading={clearing} onConfirm={() => void clear()} onCancel={() => setClearOpen(false)} />
   </>;
 }

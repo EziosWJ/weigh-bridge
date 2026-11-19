@@ -21,6 +21,10 @@ try {
   page.on('request', request => {
     if (request.url().includes('/api/weighing/tickets')) requests.push(new URL(request.url()));
   });
+  await page.route(url => url.pathname.startsWith('/api/'), route => route.abort());
+  await page.route('**/api/system/dict/TRANSPORT_DIRECTION/items', route =>
+    route.fulfill({ json: { code: 200, message: 'ok', data: [] } }),
+  );
 
   const tickets = Array.from({ length: 10 }, (_, index) => ({
     id: index + 1,

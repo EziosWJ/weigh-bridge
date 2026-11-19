@@ -16,6 +16,7 @@ import { TableActions } from "@/components/common/table-actions";
 import { TableToolbar } from "@/components/common/table-toolbar";
 import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
+import { buttonStyles } from "@/components/ui/button-styles";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getErrorMessage } from "@/lib/api-error";
@@ -149,14 +150,19 @@ export function SyncTicketDetailPage() {
     { title: "类型", key: "type", width: 80, render: (_, row) => changeTypeLabels[row.changeType] ?? row.changeType },
     { title: "状态", key: "status", width: 130, render: (_, row) => { const item = syncLabels[row.status] ?? syncLabels.pending; return <StatusTag tone={item.tone}>{item.label}</StatusTag>; } },
     { title: "摘要", key: "digest", width: 190, render: (_, row) => <span className="font-mono text-xs" title={row.digest}>{shortDigest(row.digest)}</span> },
-    { title: "类别 / 原因", key: "reason", width: 250, render: (_, row) => <div>{row.category ? <span className="text-xs text-text-tertiary">{categoryLabels[row.category] ?? row.category}</span> : null}<div>{row.reason || "—"}</div></div> },
-    { title: "尝试 / 下次", key: "attempts", width: 150, render: (_, row) => <div>{row.attempts} 次{row.nextAttemptAt ? <div className="text-text-tertiary">下次 {formatDateTime(row.nextAttemptAt)}</div> : null}</div> },
-    { title: "云端确认", key: "confirmed", width: 165, render: (_, row) => row.syncedAt ? formatDateTime(row.receivedAt ?? row.syncedAt) : "—" },
-    { title: "操作", key: "actions", width: 90, nowrap: true, render: (_, row) => canManage && row.status !== "synced" && row.status !== "conflict" ? <TableActions><button type="button" className="text-primary hover:underline" disabled={busy} onClick={() => void retry(row)}>立即重试</button></TableActions> : null },
+    { title: "类别 / 原因", key: "reason", render: (_, row) => <div>{row.category ? <span className="text-xs text-text-tertiary">{categoryLabels[row.category] ?? row.category}</span> : null}<div>{row.reason || "—"}</div></div> },
+    { title: "尝试 / 下次", key: "attempts", width: 172, render: (_, row) => <div className="tabular-nums">{row.attempts} 次{row.nextAttemptAt ? <div className="text-text-tertiary"><span className="block">下次</span><span className="whitespace-nowrap">{formatDateTime(row.nextAttemptAt)}</span></div> : null}</div> },
+    { title: "云端确认", key: "confirmed", width: 175, nowrap: true, render: (_, row) => <span className="tabular-nums">{row.syncedAt ? formatDateTime(row.receivedAt ?? row.syncedAt) : "—"}</span> },
   ];
+  if (canManage) changeColumns.push({
+    title: "操作", key: "actions", width: 112, nowrap: true,
+    render: (_, row) => row.status !== "synced" && row.status !== "conflict"
+      ? <TableActions><Button size="sm" disabled={busy} onClick={() => void retry(row)}>立即重试</Button></TableActions>
+      : <span className="text-text-tertiary">—</span>,
+  });
 
   if (loading && !detail) return <><PageHeader title="单据同步详情" /><ContentCard><p role="status">正在加载…</p></ContentCard></>;
-  if (error) return <><PageHeader title="单据同步详情" actions={<Link className="text-primary hover:underline" to="/weighing/sync/tickets">返回单据同步</Link>} /><ContentCard><p role="alert" className="text-error">{error}</p><Button className="mt-space-3" onClick={() => void load()}>重新加载</Button></ContentCard></>;
+  if (error) return <><PageHeader title="单据同步详情" actions={<Link className={buttonStyles()} to="/weighing/sync/tickets">返回单据同步</Link>} /><ContentCard><p role="alert" className="text-error">{error}</p><Button className="mt-space-3" onClick={() => void load()}>重新加载</Button></ContentCard></>;
   if (!detail) return <><PageHeader title="单据同步详情" /><ContentCard><EmptyState title="未找到该单据" description="请返回列表核对单据编号。" /></ContentCard></>;
   const ticket = detail.ticket;
   const latest = detail.changes[detail.changes.length - 1];
@@ -165,7 +171,7 @@ export function SyncTicketDetailPage() {
   const differences = fieldDifferences(detail.reconcile?.detail);
 
   return <>
-    <PageHeader title="单据同步详情" description={ticket.ticketNo} actions={<><Link className="text-primary hover:underline" to="/weighing/sync/tickets">返回单据同步</Link>{canManage && detail.changes.length > 0 && <Button variant="secondary" disabled={busy} onClick={() => void reconcile()}><Search className="h-4 w-4" aria-hidden />立即核对</Button>}</>} />
+    <PageHeader title="单据同步详情" description={ticket.ticketNo} actions={<><Link className={buttonStyles()} to="/weighing/sync/tickets">返回单据同步</Link>{canManage && detail.changes.length > 0 && <Button variant="primary" disabled={busy} onClick={() => void reconcile()}><Search className="h-4 w-4" aria-hidden />立即核对</Button>}</>} />
     <div className="space-y-space-6">
       <ContentCard title="单据与同步状态" extra={<StatusTag tone={latestSync.tone}>{latestSync.label}</StatusTag>}>
         <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -183,18 +189,18 @@ export function SyncTicketDetailPage() {
 
       <DataTableCard>
         <TableToolbar title="变化与确认状态" description={detail.changes.length ? `共 ${detail.changes.length} 个摘要变化；只有云端确认对应摘要后才标记完成。` : "该单据未纳入摘要同步。"} />
-        <DataTable columns={changeColumns} dataSource={detail.changes} rowKey="id" loading={loading} error={error} minWidth={1100} empty={<EmptyState title="暂无摘要变化" description="旧版协议单据保留只读记录，见下方。" />} />
+        <DataTable columns={changeColumns} dataSource={detail.changes} rowKey="id" loading={loading} error={error} minWidth={canManage ? 1010 : 898} compact stickyHeader fixedEdges={canManage} ariaLabel="变化与确认状态" empty={<EmptyState title="暂无摘要变化" description="旧版协议单据保留只读记录，见下方。" />} />
       </DataTableCard>
 
       {detail.legacyChanges && detail.legacyChanges.length > 0 && <DataTableCard>
         <TableToolbar title="旧版协议变化（只读）" description="已使用 v2/v3 出单的单据继续沿用旧协议；不参与摘要对账，也不与新协议混用。" />
         <DataTable columns={[
           { title: "类型", key: "type", width: 80, render: (_, row) => changeTypeLabels[row.changeType] ?? row.changeType },
-          { title: "状态", key: "status", width: 110, render: (_, row) => <StatusTag tone={row.status === "synced" ? "success" : row.status === "failed" ? "error" : "warning"}>{row.status === "synced" ? "已同步" : row.status === "failed" ? "同步失败" : "待同步"}</StatusTag> },
+          { title: "状态", key: "status", width: 130, render: (_, row) => { const item = syncLabels[row.status] ?? syncLabels.pending; return <StatusTag tone={item.tone}>{item.label}</StatusTag>; } },
           { title: "变化标识", key: "changeId", width: 220, render: (_, row) => <span className="font-mono text-xs">{row.changeId}</span> },
           { title: "说明", key: "reason", render: (_, row) => row.reason || "—" },
           { title: "时间", key: "time", width: 170, render: (_, row) => formatDateTime(row.syncedAt ?? row.lastAttemptAt ?? row.createdAt) },
-        ]} dataSource={detail.legacyChanges} rowKey="id" minWidth={820} />
+        ]} dataSource={detail.legacyChanges} rowKey="id" minWidth={780} compact stickyHeader ariaLabel="旧版协议变化" />
       </DataTableCard>}
 
       <ContentCard title="最近对账" extra={reconcileInfo ? <StatusTag tone={reconcileInfo.tone}>{reconcileInfo.label}</StatusTag> : <span className="text-sm text-text-tertiary">尚未对账</span>}>
@@ -209,10 +215,10 @@ export function SyncTicketDetailPage() {
             <DetailItem label="云端摘要版本" value={detail.reconcile.cloudLatestDigestVersion ?? "—"} />
             <DetailItem label="云端接收时间" value={formatDateTime(detail.reconcile.cloudReceivedAt)} />
           </div>
-          {differences.length > 0 && <div className="mt-space-4 overflow-x-auto">
-            <table className="w-full text-left text-sm" aria-label="单据字段差异">
-              <thead><tr><th className="p-space-2">字段</th><th className="p-space-2">厂端</th><th className="p-space-2">云端</th></tr></thead>
-              <tbody>{differences.map(item => <tr key={item.field} className="border-t border-border"><td className="p-space-2">{fieldLabels[item.field] ?? item.field}</td><td className="p-space-2">{differenceValue(item.local)}</td><td className="p-space-2">{differenceValue(item.cloud)}</td></tr>)}</tbody>
+          {differences.length > 0 && <div className="mt-space-4 overflow-x-auto rounded-control border border-border">
+            <table className="w-full min-w-[320px] table-fixed text-left text-sm" aria-label="单据字段差异">
+              <thead className="bg-neutral-background text-text-secondary"><tr><th scope="col" className="w-[28%] p-space-3 font-medium">字段</th><th scope="col" className="p-space-3 font-medium">厂端</th><th scope="col" className="p-space-3 font-medium">云端</th></tr></thead>
+              <tbody>{differences.map(item => <tr key={item.field} className="border-t border-border hover:bg-neutral-background"><th scope="row" className="p-space-3 text-left font-medium [overflow-wrap:anywhere]">{fieldLabels[item.field] ?? item.field}</th><td className="p-space-3 [overflow-wrap:anywhere]">{differenceValue(item.local)}</td><td className="p-space-3 [overflow-wrap:anywhere]">{differenceValue(item.cloud)}</td></tr>)}</tbody>
             </table>
           </div>}
           <details className="mt-space-4 rounded-control border border-border p-space-3">
