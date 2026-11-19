@@ -59,7 +59,7 @@ func decodeCloudTicket(data json.RawMessage, ref syncTicketRef, withHistory bool
 	}
 	latestFound := false
 	for _, change := range result.Changes {
-		if !syncDigestPattern.MatchString(change.Digest) || change.TicketNo != ref.TicketNo || !validSyncChangeType(change.ChangeType) || change.DigestVersion < 1 || (change.SchemaVersion != SyncSchemaVersionV4 && change.SchemaVersion != SyncSchemaVersionV5) || change.ReceivedAt.IsZero() {
+		if !syncDigestPattern.MatchString(change.Digest) || change.TicketNo != ref.TicketNo || !validSyncChangeType(change.ChangeType) || change.DigestVersion < 1 || (change.SchemaVersion != SyncSchemaVersionV4 && change.SchemaVersion != SyncSchemaVersionV5 && change.SchemaVersion != SyncSchemaVersionV6) || change.ReceivedAt.IsZero() {
 			return syncCloudTicket{}, invalidCloudResponse()
 		}
 		if result.LatestDigest != nil && change.Digest == *result.LatestDigest {
@@ -154,6 +154,7 @@ const (
 	syncV4ChangesPath   = "/api/v1/weighbridge/sync/v4/changes"
 	syncV4TicketsPath   = "/api/v1/weighbridge/sync/v4/tickets"
 	syncV4ReconcilePath = "/api/v1/weighbridge/sync/v4/reconcile"
+	syncV6ChangesPath   = "/api/v1/weighbridge/sync/v6/changes"
 	syncV5ChangesPath   = "/api/v1/weighbridge/sync/v5/changes"
 	syncV5TicketsPath   = "/api/v1/weighbridge/sync/v5/tickets"
 	syncV5ReconcilePath = "/api/v1/weighbridge/sync/v5/reconcile"
@@ -165,6 +166,10 @@ func (c *syncV4Client) uploadChange(ctx context.Context, address, payload, diges
 
 func (c *syncV4Client) uploadChangeV5(ctx context.Context, address, payload, digest, ticketNo, changeType string) (syncChangeV4Receipt, *SyncCloudError) {
 	return c.uploadChangeAt(ctx, address, syncV5ChangesPath, payload, digest, ticketNo, changeType)
+}
+
+func (c *syncV4Client) uploadChangeV6(ctx context.Context, address, payload, digest, ticketNo, changeType string) (syncChangeV4Receipt, *SyncCloudError) {
+	return c.uploadChangeAt(ctx, address, syncV6ChangesPath, payload, digest, ticketNo, changeType)
 }
 
 func (c *syncV4Client) uploadChangeAt(ctx context.Context, address, path, payload, digest, ticketNo, changeType string) (syncChangeV4Receipt, *SyncCloudError) {
@@ -260,7 +265,7 @@ func (c *syncV4Client) lookupChange(ctx context.Context, address, siteCode, dige
 	var required struct {
 		Found *bool `json:"found"`
 	}
-	if err := json.Unmarshal(envelope.Data, &result); err != nil || json.Unmarshal(envelope.Data, &required) != nil || required.Found == nil || result.SiteCode != siteCode || result.Digest != digest || (result.Found && (result.Confirmation == nil || result.Confirmation.Digest != digest || result.Confirmation.TicketNo == "" || !validSyncChangeType(result.Confirmation.ChangeType) || result.Confirmation.DigestVersion < 1 || (result.Confirmation.SchemaVersion != SyncSchemaVersionV4 && result.Confirmation.SchemaVersion != SyncSchemaVersionV5) || result.Confirmation.ReceivedAt.IsZero())) {
+	if err := json.Unmarshal(envelope.Data, &result); err != nil || json.Unmarshal(envelope.Data, &required) != nil || required.Found == nil || result.SiteCode != siteCode || result.Digest != digest || (result.Found && (result.Confirmation == nil || result.Confirmation.Digest != digest || result.Confirmation.TicketNo == "" || !validSyncChangeType(result.Confirmation.ChangeType) || result.Confirmation.DigestVersion < 1 || (result.Confirmation.SchemaVersion != SyncSchemaVersionV4 && result.Confirmation.SchemaVersion != SyncSchemaVersionV5 && result.Confirmation.SchemaVersion != SyncSchemaVersionV6) || result.Confirmation.ReceivedAt.IsZero())) {
 		return syncCloudLookup{}, &SyncCloudError{Category: SyncCategoryTemporary, Reason: "invalid_response", Retryable: true, Message: "云端摘要确认响应无效，结果未知"}
 	}
 	return result, nil

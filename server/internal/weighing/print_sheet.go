@@ -36,7 +36,11 @@ func compactPrintSheet(ticket TicketView, title string) *PrintSheet {
 	confirmedAt := func(id int64) string {
 		for _, record := range ticket.Basis {
 			if record.ID == id && !record.ConfirmedAt.IsZero() {
-				return record.ConfirmedAt.In(time.FixedZone("Asia/Shanghai", 8*60*60)).Format("2006-01-02 15:04:05")
+				at := record.ConfirmedAt
+				if ticket.EntryType == "manual_supplement" {
+					at = record.CapturedAt
+				}
+				return at.In(time.FixedZone("Asia/Shanghai", 8*60*60)).Format("2006-01-02 15:04:05")
 			}
 		}
 		return ""
@@ -52,7 +56,11 @@ func compactPrintSheet(ticket TicketView, title string) *PrintSheet {
 	marks := []string{}
 	for _, record := range ticket.Basis {
 		if record.Source == "manual" {
-			marks = append(marks, "回磅人工补录")
+			if ticket.EntryType == "manual_supplement" {
+				marks = append(marks, "人工补单")
+			} else {
+				marks = append(marks, "回磅人工补录")
+			}
 			break
 		}
 	}

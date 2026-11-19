@@ -784,6 +784,10 @@ func (s *Service) RecordSyncReviewConclusion(ctx context.Context, reviewID int64
 }
 
 func (s *Service) RetrySyncChange(ctx context.Context, changeID int64, e audit.Event) (SyncRetryResult, error) {
+	return s.retrySyncChangeProtocol(ctx, changeID, 0, e)
+}
+
+func (s *Service) retrySyncChangeProtocol(ctx context.Context, changeID int64, protocol int, e audit.Event) (SyncRetryResult, error) {
 	s.ticketSyncMu.Lock()
 	defer s.ticketSyncMu.Unlock()
 	if !s.masterSyncEnabled {
@@ -802,8 +806,23 @@ func (s *Service) RetrySyncChange(ctx context.Context, changeID int64, e audit.E
 	}
 	changeV4, err := repo.syncChangeV4ByID(ctx, changeID)
 	v5Change, v5Err := repo.syncChangeV5ByID(ctx, changeID)
+	if protocol != 0 && protocol != 4 && protocol != 5 && protocol != 6 {
+		return SyncRetryResult{}, ErrInvalid
+	}
+	if protocol == 0 && err == nil && v5Err == nil {
+		return SyncRetryResult{}, RejectionError("变化编号在多个协议中重复，请指定协议")
+	}
+	if protocol == 4 {
+		v5Err = ErrNotFound
+	}
+	if protocol == 5 || protocol == 6 {
+		err = ErrNotFound
+		if v5Err == nil && v5Change.SchemaVersion != protocol {
+			v5Err = ErrNotFound
+		}
+	}
 	if err != nil && v5Err != nil {
-		return SyncRetryResult{}, err
+		return SyncRetryResult{}, ErrNotFound
 	}
 	change, changesV5 := changeV4, false
 	if v5Err == nil {

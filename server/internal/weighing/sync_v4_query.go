@@ -166,7 +166,7 @@ func (r *Repository) SyncTickets(ctx context.Context, q SyncTicketQuery) (Page[T
 		Joins("JOIN wb_transport_task t ON t.id=k.task_id").
 		Joins("LEFT JOIN wb_ticket_reconcile r ON r.ticket_id=k.id").
 		Select(`k.*,
-			CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id=k.id) THEN 5
+			CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id=k.id) THEN (SELECT v.schema_version FROM wb_ticket_sync_change_v5 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1)
 			     WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4
 			     WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id) THEN 3 ELSE 0 END AS sync_protocol,
 			COALESCE(
@@ -244,6 +244,10 @@ func (r *Repository) SyncTicketDetail(ctx context.Context, ticketID int64) (Sync
 	}
 	for _, row := range v5rows {
 		result.Changes = append(result.Changes, syncChangeViewV5(row))
+		result.Ticket.SyncProtocol = row.SchemaVersion
+	}
+	if len(rows) > 0 && len(v5rows) == 0 {
+		result.Ticket.SyncProtocol = SyncSchemaVersionV4
 	}
 	legacy, err := r.syncChangesV3ForTicket(ctx, ticketID)
 	if err != nil {
@@ -282,7 +286,7 @@ func syncChangeView(row ticketSyncChangeV4) SyncChangeView {
 }
 
 func syncChangeViewV5(row ticketSyncChangeV5) SyncChangeView {
-	return syncChangeViewValues(SyncSchemaVersionV5, row.ID, row.Digest, row.DigestVersion, row.SchemaVersion, row.SiteCode, row.TicketNo, row.ChangeType, row.Status, row.Category, row.ReasonCode, row.Reason, row.Attempts, row.NextAttemptAt, row.LastAttemptAt, row.SyncedAt, row.ReceivedAt, row.CreatedAt)
+	return syncChangeViewValues(row.SchemaVersion, row.ID, row.Digest, row.DigestVersion, row.SchemaVersion, row.SiteCode, row.TicketNo, row.ChangeType, row.Status, row.Category, row.ReasonCode, row.Reason, row.Attempts, row.NextAttemptAt, row.LastAttemptAt, row.SyncedAt, row.ReceivedAt, row.CreatedAt)
 }
 
 func syncChangeViewValues(protocol int, id int64, digest string, digestVersion, schemaVersion int, siteCode, ticketNo, changeType, status, category, reasonCode, reason string, attempts int, nextAttemptAt, lastAttemptAt, syncedAt, receivedAt *time.Time, createdAt time.Time) SyncChangeView {

@@ -68,6 +68,17 @@ func TestPostgresManualReturnAndTermination(t *testing.T) {
 		first := f.createFirstTask("川A12345", "inbound", 30000)
 		f.backdateFirst(first)
 		before := f.taskDetail(first.TaskID)
+		var initialPayload string
+		if err := f.database.GORM.Raw("SELECT payload FROM wb_task_sync_outbox WHERE task_id=? AND version=?", first.TaskID, first.TaskVersion).Scan(&initialPayload).Error; err != nil {
+			t.Fatal(err)
+		}
+		var initial struct {
+			Status string `json:"status"`
+			TaskNo string `json:"taskNo"`
+		}
+		if err := json.Unmarshal([]byte(initialPayload), &initial); err != nil || initial.Status != "awaiting_second" || initial.TaskNo != before.TaskNo {
+			t.Fatalf("initial task outbox: %s %v", initialPayload, err)
+		}
 		// No operation session, device sample, stability state or image is needed.
 		assertEnvelopeCode(t, serveJSON(f.router, "POST", f.sessionPath("release"), encodeJSON(t, map[string]any{"clientId": "manual-browser", "sessionToken": f.session.SessionToken}), f.admin), 200, 200, "success")
 
@@ -88,6 +99,20 @@ func TestPostgresManualReturnAndTermination(t *testing.T) {
 			t.Fatalf("manual return fabricated a device sample: %d -> %d", samplesBefore, samplesAfter)
 		}
 		detail := f.taskDetail(first.TaskID)
+		var completedPayload string
+		if err := f.database.GORM.Raw("SELECT payload FROM wb_task_sync_outbox WHERE task_id=? AND version=?", first.TaskID, result.TaskVersion).Scan(&completedPayload).Error; err != nil {
+			t.Fatal(err)
+		}
+		var completed struct {
+			Status string `json:"status"`
+			Ticket *struct {
+				TicketNo string `json:"ticketNo"`
+				SiteCode string `json:"siteCode"`
+			} `json:"ticket"`
+		}
+		if err := json.Unmarshal([]byte(completedPayload), &completed); err != nil || completed.Status != "completed" || completed.Ticket == nil || completed.Ticket.TicketNo == "" || completed.Ticket.SiteCode == "" {
+			t.Fatalf("completed task outbox: %s %v", completedPayload, err)
+		}
 		if detail.Status != "completed" || detail.CompletedAt == nil || detail.CurrentSecondRecordID == nil || len(detail.Records) != 2 {
 			t.Fatalf("manual return task: %+v", detail)
 		}
@@ -160,6 +185,20 @@ func TestPostgresManualReturnAndTermination(t *testing.T) {
 			t.Fatalf("termination replay: %+v", terminatedReplay)
 		}
 		terminatedDetail := f.taskDetail(next.TaskID)
+		var terminatedPayload string
+		if err := f.database.GORM.Raw("SELECT payload FROM wb_task_sync_outbox WHERE task_id=? AND version=?", next.TaskID, terminated.TaskVersion).Scan(&terminatedPayload).Error; err != nil {
+			t.Fatal(err)
+		}
+		var terminatedSync struct {
+			Status      string `json:"status"`
+			Termination *struct {
+				Actor  string `json:"actor"`
+				Reason string `json:"reason"`
+			} `json:"termination"`
+		}
+		if err := json.Unmarshal([]byte(terminatedPayload), &terminatedSync); err != nil || terminatedSync.Status != "terminated" || terminatedSync.Termination == nil || terminatedSync.Termination.Actor == "" || terminatedSync.Termination.Reason != "不再回磅" {
+			t.Fatalf("terminated task outbox: %s %v", terminatedPayload, err)
+		}
 		if terminatedDetail.Status != "terminated" || len(terminatedDetail.Records) != 1 || terminatedDetail.TerminateReason != "不再回磅" {
 			t.Fatalf("termination retained facts: %+v", terminatedDetail)
 		}

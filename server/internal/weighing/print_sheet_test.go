@@ -79,3 +79,13 @@ func TestCompactPrintSheetPreservesLegacyAndVoidMarksWithoutInventingMissingData
 		t.Fatal("missing historical times and actor must not be replaced with current data")
 	}
 }
+
+func TestManualSupplementPrintUsesActualWeighingTimes(t *testing.T) {
+	first := time.Date(2026, 10, 17, 15, 0, 0, 0, time.UTC)
+	second := first.Add(time.Hour)
+	entered := second.Add(24 * time.Hour)
+	sheet := compactPrintSheet(ticketView(Ticket{EntryType: "manual_supplement", Status: "valid", FirstRecordID: 1, SecondRecordID: 2, Basis: []WeighRecord{{ID: 1, Source: "manual", CapturedAt: first, ConfirmedAt: entered}, {ID: 2, Source: "manual", CapturedAt: second, ConfirmedAt: entered}}}), "")
+	if sheet.Rows[4][0].Value != "2026-10-17 23:00:00" || sheet.Rows[4][1].Value != "2026-10-18 00:00:00" || strings.Join(sheet.Marks, ",") != "人工补单" {
+		t.Fatalf("manual paper: %+v", sheet)
+	}
+}

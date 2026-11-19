@@ -102,7 +102,7 @@ func normalizeSyncField(name string, value any) (any, error) {
 			return nil, ErrInvalid
 		}
 		return canonicalDigestWeight(text, true)
-	case "firstConfirmedAt", "secondConfirmedAt", "issuedAt", "adjustedAt", "voidedAt":
+	case "firstConfirmedAt", "secondConfirmedAt", "firstWeighedAt", "secondWeighedAt", "issuedAt", "adjustedAt", "voidedAt":
 		text, ok := value.(string)
 		if !ok {
 			return nil, ErrInvalid

@@ -7,6 +7,7 @@ import (
 )
 
 func registerCorrectionRoutes(router gin.IRouter, h *Handler) {
+	router.POST("/manual-supplements", rbac.RequirePermission(h.permissions, "weighing:manual-supplement"), h.manualSupplement)
 	router.POST("/tasks/:id/corrections", rbac.RequirePermission(h.permissions, "weighing:correct"), h.correctTask)
 	router.POST("/tasks/:id/termination", rbac.RequirePermission(h.permissions, "weighing:terminate"), h.terminateTask)
 	router.POST("/tasks/:id/manual-returns", rbac.RequirePermission(h.permissions, "weighing:manual-return"), h.manualReturn)
@@ -162,4 +163,21 @@ func (h *Handler) reopenTicket(c *gin.Context) {
 	}
 	v, e := h.service.ReopenTicket(c, id, in, requestEvent(c))
 	writeResult(c, v, e)
+}
+
+func (h *Handler) manualSupplement(c *gin.Context) {
+	var in ManualSupplementInput
+	if c.ShouldBindJSON(&in) != nil {
+		writeResult(c, nil, ErrInvalid)
+		return
+	}
+	principal, _ := auth.PrincipalFromContext(c.Request.Context())
+	var err error
+	in.AllowAdjust, err = h.permissions.HasPermission(c, principal.UserID, "weighing:adjust")
+	if err != nil {
+		writeResult(c, nil, err)
+		return
+	}
+	v, err := h.service.ManualSupplement(c, in, requestEvent(c))
+	writeResult(c, v, err)
 }

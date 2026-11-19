@@ -76,7 +76,13 @@ func (s *Service) RunSyncV5(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		receipt, cloudErr := s.syncV4Client.uploadChangeV5(ctx, s.masterSyncAddress, change.Payload, change.Digest, change.TicketNo, change.ChangeType)
+		var receipt syncChangeV4Receipt
+		var cloudErr *SyncCloudError
+		if change.SchemaVersion == SyncSchemaVersionV6 {
+			receipt, cloudErr = s.syncV4Client.uploadChangeV6(ctx, s.masterSyncAddress, change.Payload, change.Digest, change.TicketNo, change.ChangeType)
+		} else {
+			receipt, cloudErr = s.syncV4Client.uploadChangeV5(ctx, s.masterSyncAddress, change.Payload, change.Digest, change.TicketNo, change.ChangeType)
+		}
 		now := time.Now().UTC()
 		dbCtx := context.WithoutCancel(ctx)
 		if cloudErr == nil {

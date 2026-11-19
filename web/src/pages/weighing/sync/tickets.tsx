@@ -95,7 +95,7 @@ export function SyncTicketsPage() {
     { title: "出单时间", key: "issuedAt", width: 165, render: (_, row) => formatDateTime(row.issuedAt) },
     { title: "操作", key: "actions", width: 160, nowrap: true, render: (_, row) => <TableActions>
       <button type="button" className="text-primary hover:underline" onClick={() => navigate(`/weighing/sync/tickets/${row.id}`)}>详情</button>
-      {canManage && row.syncProtocol === 4 && <button type="button" className="text-primary hover:underline" disabled={busy} onClick={() => void reconcileOne(row)}>核对</button>}
+      {canManage && (row.syncProtocol === 4 || row.syncProtocol === 5 || row.syncProtocol === 6) && <button type="button" className="text-primary hover:underline" disabled={busy} onClick={() => void reconcileOne(row)}>核对</button>}
     </TableActions> },
   ];
 

@@ -12,6 +12,7 @@ import { WORKBENCH_WINDOW,workbenchWindow } from '@/lib/workbench-window';
 import './workbench.css';
 import { WorkbenchEntry } from './workbench-entry';
 import { TicketDrawer } from './ticket-drawer';
+import { ManualSupplementDialog } from './manual-supplement-dialog';
 
 export function WorkbenchShell() {
   const capabilities=useWeighingStore(s=>s.capabilities);
@@ -37,7 +38,9 @@ export function WorkbenchShell() {
   const [releasing, setReleasing] = useState(false);
   const [takeoverOpen, setTakeoverOpen] = useState(false);
   const [takeoverReason, setTakeoverReason] = useState('');
+  const [supplementOpen, setSupplementOpen] = useState(false);
   const canReadTickets = capabilities?.permissionCodes.includes('weighing:read') ?? false;
+  const canSupplement = !!capabilities?.permissionCodes.includes('weighing:manual-supplement') && !!capabilities.sites.some(site => site.canOperate);
   useEffect(() => {
     const name=workbenchWindow(scaleCode);
     const previousName=window.name.startsWith(WORKBENCH_WINDOW)?'':window.name;
@@ -47,7 +50,7 @@ export function WorkbenchShell() {
     return () => { document.removeEventListener('fullscreenchange', update); if (window.name === name) window.name = previousName; };
   }, [scaleCode]);
   if(!routeScale)return <WorkbenchEntry />;
-  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.includes('weighing:confirm')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/tasks" className="text-primary underline">返回后台查询</a></div>;
+  if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.some(code => code === 'weighing:confirm' || code === 'weighing:manual-supplement')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/tasks" className="text-primary underline">返回后台查询</a></div>;
   if(!ready)return <p role="status" className="p-6">正在核对本厂操作权限…</p>;
   return <div className="weighing-workbench min-h-screen bg-background">
     <a href="#main-content" className="workbench-skip">跳转到称重操作</a>
@@ -55,6 +58,7 @@ export function WorkbenchShell() {
       <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name} · 人工核对确认</p></div></div>
       <span className="workbench-connection text-sm text-text-secondary"><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
       <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
+        {canSupplement && <Button size="sm" onClick={() => setSupplementOpen(true)}>人工补单</Button>}
         {owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <Button size="sm" className="workbench-takeover-button" onClick={() => setTakeoverOpen(true)}>接管操作权</Button>}
         {canReadTickets && <button type="button" className="workbench-management-link" aria-haspopup="dialog" aria-expanded={ticketsOpen} title="打开过磅单列表" onClick={() => setTicketsOpen(true)}><FileText className="h-4 w-4" aria-hidden />过磅单</button>}
         <a className="workbench-management-link" href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>
@@ -86,5 +90,6 @@ export function WorkbenchShell() {
       </DialogContent>
     </Dialog>
     {ticketsOpen && scale && <TicketDrawer siteName={scale.siteName} onClose={() => setTicketsOpen(false)} />}
+    {supplementOpen && <ManualSupplementDialog open onClose={() => setSupplementOpen(false)} userId={capabilities?.userId ?? 0} allowAdjust={!!capabilities?.permissionCodes.includes('weighing:adjust')} />}
   </div>;
 }

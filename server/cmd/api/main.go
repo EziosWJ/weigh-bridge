@@ -244,6 +244,7 @@ func main() {
 	cameraService.Start(monitoringContext)
 	if cfg.MasterSync.Enabled {
 		go weighService.RunTemporaryPartySyncWorker(monitoringContext)
+		go weighService.RunTaskSyncWorker(monitoringContext)
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)
 			defer ticker.Stop()

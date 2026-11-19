@@ -323,7 +323,7 @@ export function buildAppNavigation({
       return [{ ...item, children }];
     });
     const items = restrict(merged);
-    if (permissionCodes.includes("weighing:confirm")) {
+    if (permissionCodes.some(code => code === "weighing:confirm" || code === "weighing:manual-supplement")) {
       items.push({ label: "称重工作台", path: "/weighing/workbench", icon: Scale, sortOrder: 30 });
     }
     return sortNavigationItems(items);

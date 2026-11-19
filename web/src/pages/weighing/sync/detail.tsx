@@ -85,7 +85,7 @@ export function SyncTicketDetailPage() {
   const retry = async (change: SyncChange) => {
     setBusy(true);
     try {
-      const result = await syncApi.retryChange(change.id);
+      const result = await syncApi.retryChange(change.id, change.protocol);
       toast.success({ title: "已排入重试", description: result.message });
       await load();
     } catch (failure) {

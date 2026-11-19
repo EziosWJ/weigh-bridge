@@ -32,4 +32,4 @@ export const categoryLabels: Record<string, string> = {
   conflict: "冲突",
 };
 
-export const protocolLabel = (value?: number) => value === 4 ? "摘要 v4" : value === 3 ? "旧版 v3" : "未纳入";
+export const protocolLabel = (value?: number) => value === 6 ? "摘要 v6" : value === 5 ? "摘要 v5" : value === 4 ? "摘要 v4" : value === 3 ? "旧版 v3" : "未纳入";

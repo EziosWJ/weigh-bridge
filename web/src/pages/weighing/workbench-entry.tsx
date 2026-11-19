@@ -15,7 +15,7 @@ export function WorkbenchEntry() {
       const siteCode = localSiteCode(capabilities);
       const site = capabilities.sites.find(item => item.code === siteCode);
       const scales = capabilities.scales.filter(item => item.siteCode === siteCode && item.enabled === 1);
-      if (!capabilities.permissionCodes.includes('weighing:confirm') || site?.enabled !== 1 || !site.canOperate || scales.length !== 1 || !scales[0].canOperate) {
+      if (!capabilities.permissionCodes.some(code => code === 'weighing:confirm' || code === 'weighing:manual-supplement') || site?.enabled !== 1 || !site.canOperate || scales.length !== 1 || !scales[0].canOperate) {
         setError('本厂地磅未就绪或当前账号无操作权限，请联系管理员检查。');
         return;
       }

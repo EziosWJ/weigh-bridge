@@ -540,6 +540,9 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 			return err
 		}
 		outcome := commandOutcome{}
+		if err := tx.SavePoint("business_command").Error; err != nil {
+			return err
+		}
 		if lockErr == nil {
 			outcome, err = perform(tx, name)
 		} else {
@@ -547,6 +550,11 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 		}
 		if err != nil && !domainError(err) {
 			return err
+		}
+		if err != nil {
+			if rollbackErr := tx.RollbackTo("business_command").Error; rollbackErr != nil {
+				return rollbackErr
+			}
 		}
 		businessErr = err
 		result = outcome.result
@@ -585,6 +593,17 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 		}
 		if err := tx.Create(&event).Error; err != nil {
 			return err
+		}
+		if businessErr == nil && result.TaskID > 0 {
+			var task Task
+			if err := tx.First(&task, result.TaskID).Error; err != nil {
+				return err
+			}
+			if task.Status == "awaiting_second" || (task.Status == "terminated" && action == "task.terminate") || (task.Status == "completed" && result.TicketID > 0 && (action == "second.confirm" || action == "task.manual-return")) {
+				if err := enqueueTaskSync(tx, task, name); err != nil {
+					return err
+				}
+			}
 		}
 		if businessErr == nil {
 			e.Action = action

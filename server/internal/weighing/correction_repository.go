@@ -238,6 +238,13 @@ func (r *Repository) Reweigh(ctx context.Context, id int64, in ReweighInput, e a
 			return out, ErrConflict
 		}
 		if task.Status == "completed" {
+			var supplementCount int64
+			if err := tx.Model(&Ticket{}).Where("task_id=? AND entry_type=?", id, "manual_supplement").Count(&supplementCount).Error; err != nil {
+				return out, err
+			}
+			if supplementCount > 0 {
+				return out, RejectionError("人工补单暂不支持设备重称：云端协议要求两次重量均为人工来源；可更正重量并重开")
+			}
 			var active int64
 			if err := tx.Model(&Ticket{}).Where("task_id=? AND status='valid'", id).Count(&active).Error; err != nil {
 				return out, err

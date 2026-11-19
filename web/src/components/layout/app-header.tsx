@@ -22,7 +22,7 @@ export function AppHeader({ onToggleSidebar }: AppHeaderProps) {
   const site = capabilities?.sites.find((item) => item.code === siteCode);
   const scales = capabilities?.scales.filter((item) => item.siteCode === siteCode && item.enabled === 1) ?? [];
   const scale = scales.length === 1 ? scales[0] : undefined;
-  const canConfirm = capabilities?.permissionCodes.includes("weighing:confirm");
+  const canConfirm = capabilities?.permissionCodes.some(code => code === "weighing:confirm" || code === "weighing:manual-supplement");
   const canOpenWorkbench = site?.enabled === 1 && site.canOperate && scale?.canOperate;
   const workbenchLabel = <><Scale className="h-4 w-4" aria-hidden /><span className="hidden sm:inline">称重工作台</span></>;
   const shortcut = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘ K" : "Ctrl K";

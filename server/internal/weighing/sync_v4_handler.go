@@ -54,7 +54,14 @@ func registerSyncV4Routes(router gin.IRouter, h *Handler) {
 			writeResult(c, nil, err)
 			return
 		}
-		value, err := h.service.RetrySyncChange(c, id, requestEvent(c))
+		var input struct {
+			Protocol int `json:"protocol"`
+		}
+		if c.ShouldBindJSON(&input) != nil {
+			writeResult(c, nil, ErrInvalid)
+			return
+		}
+		value, err := h.service.retrySyncChangeProtocol(c, id, input.Protocol, requestEvent(c))
 		writeResult(c, value, err)
 	})
 	router.POST("/sync/reviews/:id/conclusion", manage, func(c *gin.Context) {
@@ -118,7 +125,7 @@ func (h *Handler) syncTickets(c *gin.Context) {
 	}
 	if value := c.Query("protocol"); value != "" {
 		q.Protocol, err = strconv.Atoi(value)
-		if err != nil || (q.Protocol != 0 && q.Protocol != 3 && q.Protocol != 4) {
+		if err != nil || (q.Protocol != 0 && q.Protocol != 3 && q.Protocol != 4 && q.Protocol != 5 && q.Protocol != 6) {
 			writeResult(c, nil, ErrInvalid)
 			return
 		}

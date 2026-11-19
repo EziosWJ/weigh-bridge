@@ -30,7 +30,10 @@ func TestSyncUploadUsesVersionedPaths(t *testing.T) {
 	if _, cloudErr := client.uploadChangeV5(context.Background(), server.URL, "{}", digest, "T1", "issue"); cloudErr != nil {
 		t.Fatalf("v5 upload: %v", cloudErr)
 	}
-	want := []string{syncV4ChangesPath, syncV5ChangesPath}
+	if _, cloudErr := client.uploadChangeV6(context.Background(), server.URL, "{}", digest, "T1", "issue"); cloudErr != nil {
+		t.Fatalf("v6 upload: %v", cloudErr)
+	}
+	want := []string{syncV4ChangesPath, syncV5ChangesPath, syncV6ChangesPath}
 	if fmt.Sprint(paths) != fmt.Sprint(want) {
 		t.Fatalf("upload paths = %v, want %v", paths, want)
 	}

@@ -49,6 +49,10 @@ func enqueueTicketChangeV5(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, a
 		TicketNo:      ticket.TicketNo,
 		Type:          kind,
 	}
+	if ticket.EntryType == "manual_supplement" {
+		change.SchemaVersion = SyncSchemaVersionV6
+		change.DigestVersion = SyncDigestVersion4
+	}
 	if kind == "void" {
 		void, err := buildVoidSnapshot(ticket, actor)
 		if err != nil {
@@ -71,15 +75,32 @@ func enqueueTicketChangeV5(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, a
 		change.PreviousSiteCode = previous.SiteCode
 	}
 	change.Ticket = snapshot.ticket
-	digest, err := computeChangeDigestV5(change, snapshot.items)
+	var manual *syncManualSupplementV6
+	var digest string
+	if change.SchemaVersion == SyncSchemaVersionV6 {
+		if len(ticket.Basis) != 2 {
+			return errSyncMissingBasis
+		}
+		manual = &syncManualSupplementV6{EntryType: ticket.EntryType, FirstWeighedAt: ticket.Basis[0].CapturedAt, SecondWeighedAt: ticket.Basis[1].CapturedAt}
+		digest, err = computeChangeDigestV6(change, snapshot.items, *manual)
+	} else {
+		digest, err = computeChangeDigestV5(change, snapshot.items)
+	}
 	if err != nil {
 		return err
 	}
 	change.Digest = digest
+	var wire any = snapshot.wire
+	if manual != nil {
+		wire = struct {
+			*syncTicketV5
+			*syncManualSupplementV6
+		}{snapshot.wire, manual}
+	}
 	payload, err := json.Marshal(struct {
 		syncChangeV4
-		Ticket *syncTicketV5 `json:"ticket,omitempty"`
-	}{syncChangeV4: change, Ticket: snapshot.wire})
+		Ticket any `json:"ticket,omitempty"`
+	}{syncChangeV4: change, Ticket: wire})
 	if err != nil {
 		return err
 	}
@@ -93,8 +114,8 @@ func enqueueTicketChangeV5(tx *gorm.DB, ticket Ticket, previous *Ticket, kind, a
 		TicketID:         ticket.ID,
 		PreviousTicketID: previousID,
 		Digest:           digest,
-		DigestVersion:    SyncDigestVersion3,
-		SchemaVersion:    SyncSchemaVersionV5,
+		DigestVersion:    change.DigestVersion,
+		SchemaVersion:    change.SchemaVersion,
 		SiteCode:         ticket.SiteCode,
 		TicketNo:         ticket.TicketNo,
 		ChangeType:       kind,
@@ -156,7 +177,12 @@ func (e errorString) Error() string { return string(e) }
 // except that the four single-item net-adjustment fields are replaced by the
 // ordered netAdjustments array (count, then per-item fields in fixed order).
 func computeChangeDigestV5(c syncChangeV4, items []syncNetAdjustmentItemV5) (string, error) {
-	if c.SchemaVersion != SyncSchemaVersionV5 || c.DigestVersion != SyncDigestVersion3 {
+	return computeChangeDigestV5OrV6(c, items, nil)
+}
+
+func computeChangeDigestV5OrV6(c syncChangeV4, items []syncNetAdjustmentItemV5, manual *syncManualSupplementV6) (string, error) {
+	if (manual == nil && (c.SchemaVersion != SyncSchemaVersionV5 || c.DigestVersion != SyncDigestVersion3)) ||
+		(manual != nil && (c.SchemaVersion != SyncSchemaVersionV6 || c.DigestVersion != SyncDigestVersion4)) {
 		return "", ErrInvalid
 	}
 	if !siteCodePattern.MatchString(c.SiteCode) || c.TicketNo == "" || len(c.TicketNo) > 200 {
@@ -164,7 +190,7 @@ func computeChangeDigestV5(c syncChangeV4, items []syncNetAdjustmentItemV5) (str
 	}
 	var b strings.Builder
 	b.WriteString(syncDigestPrefix)
-	writeDigestField(&b, "rulesVersion", strconv.Itoa(SyncDigestVersion3))
+	writeDigestField(&b, "rulesVersion", strconv.Itoa(c.DigestVersion))
 	writeDigestField(&b, "siteCode", c.SiteCode)
 	writeDigestField(&b, "ticketNo", c.TicketNo)
 	writeDigestField(&b, "changeType", c.Type)
@@ -206,6 +232,22 @@ func computeChangeDigestV5(c syncChangeV4, items []syncNetAdjustmentItemV5) (str
 	}
 	if err := writeTicketDigestFieldsV5(&b, c.Ticket, items); err != nil {
 		return "", err
+	}
+	if manual != nil {
+		if manual.EntryType != "manual_supplement" || c.Ticket.GrossSource != "manual" || c.Ticket.TareSource != "manual" || manual.FirstWeighedAt.After(manual.SecondWeighedAt) || manual.SecondWeighedAt.After(c.Ticket.IssuedAt) {
+			return "", ErrInvalid
+		}
+		writeDigestField(&b, "entryType", manual.EntryType)
+		for _, field := range []struct {
+			name  string
+			value time.Time
+		}{{"firstWeighedAt", manual.FirstWeighedAt}, {"secondWeighedAt", manual.SecondWeighedAt}} {
+			value, err := canonicalDigestTime(field.value)
+			if err != nil {
+				return "", err
+			}
+			writeDigestField(&b, field.name, value)
+		}
 	}
 	if c.Type == "void" {
 		if c.Void.Reason == "" || c.Void.Actor == "" {

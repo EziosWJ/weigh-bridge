@@ -32,13 +32,24 @@ type fakeSyncV4Cloud struct {
 	lookupResponse string
 }
 
+// fakeSyncPath matches the versioned sync resource the same way the real
+// cloud mounts v4, v5 and v6 on parallel paths.
+func fakeSyncPath(r *http.Request, resource string) bool {
+	for _, version := range []string{"v4", "v5", "v6"} {
+		if r.URL.Path == "/api/v1/weighbridge/sync/"+version+"/"+resource {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") != "" {
 		http.Error(w, "unexpected credential", http.StatusBadRequest)
 		return
 	}
 	switch {
-	case r.URL.Path == "/api/v1/weighbridge/sync/v4/changes" && r.Method == http.MethodPost:
+	case fakeSyncPath(r, "changes") && r.Method == http.MethodPost:
 		body, _ := io.ReadAll(r.Body)
 		f.mu.Lock()
 		f.payloads = append(f.payloads, string(body))
@@ -55,6 +66,10 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid change", http.StatusBadRequest)
 			return
 		}
+		if change.SchemaVersion == 6 && change.DigestVersion != 4 {
+			http.Error(w, "invalid v6 change", http.StatusBadRequest)
+			return
+		}
 		if change.SchemaVersion == 5 && change.DigestVersion != 3 {
 			http.Error(w, "invalid v5 change", http.StatusBadRequest)
 			return
@@ -63,7 +78,7 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid v4 change", http.StatusBadRequest)
 			return
 		}
-		if change.SchemaVersion != 4 && change.SchemaVersion != 5 {
+		if change.SchemaVersion < 4 || change.SchemaVersion > 6 {
 			http.Error(w, "unsupported schema", http.StatusBadRequest)
 			return
 		}
@@ -82,7 +97,7 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 		default:
 			fmt.Fprintf(w, `{"code":200,"message":"success","data":{"digest":%q,"ticketNo":%q,"changeType":%q,"receivedAt":%q,"duplicate":false}}`, change.Digest, change.TicketNo, change.Type, time.Now().UTC().Format(time.RFC3339Nano))
 		}
-	case r.URL.Path == "/api/v1/weighbridge/sync/v4/changes" && r.Method == http.MethodGet:
+	case fakeSyncPath(r, "changes") && r.Method == http.MethodGet:
 		f.mu.Lock()
 		response := f.lookupResponse
 		f.mu.Unlock()
@@ -90,7 +105,7 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 			response = fmt.Sprintf(`{"found":false,"siteCode":%q,"digest":%q,"confirmation":null}`, r.URL.Query().Get("siteCode"), r.URL.Query().Get("digest"))
 		}
 		fmt.Fprintf(w, `{"code":200,"message":"success","data":%s}`, response)
-	case r.URL.Path == "/api/v1/weighbridge/sync/v4/tickets":
+	case fakeSyncPath(r, "tickets"):
 		f.mu.Lock()
 		response := f.ticketResponse
 		payloads := append([]string(nil), f.payloads...)
@@ -155,7 +170,7 @@ func (f *fakeSyncV4Cloud) handler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		fmt.Fprintf(w, `{"code":200,"message":"success","data":%s}`, response)
-	case r.URL.Path == "/api/v1/weighbridge/sync/v4/reconcile":
+	case fakeSyncPath(r, "reconcile"):
 		var input struct {
 			Items []struct {
 				SiteCode string `json:"siteCode"`
