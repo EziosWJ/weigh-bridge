@@ -47,15 +47,8 @@ func (s *Service) CloudConnection(ctx context.Context) (CloudConnection, error) 
 		return CloudConnection{}, err
 	}
 	out := CloudConnection{Enabled: status.Enabled, SiteCode: local.SiteCode, Bound: status.Bound, LastSuccess: status.LastSuccess}
-	var attempt MasterSyncAttempt
-	err = repo.db.WithContext(ctx).Table("wb_master_sync_log").
-		Select("attempted_at", "success", "reason").
-		Where("sync_type = ?", "master").
-		Order("attempted_at DESC, id DESC").Take(&attempt).Error
-	switch {
-	case err == nil:
-		out.LastAttempt = &attempt
-	case !errors.Is(err, gorm.ErrRecordNotFound):
+	out.LastAttempt, err = repo.latestMasterSyncAttempt(ctx)
+	if err != nil {
 		return CloudConnection{}, err
 	}
 	target, err := syncV4URL(s.masterSyncAddress, "/ready", nil)
@@ -73,6 +66,21 @@ func (s *Service) CloudConnection(ctx context.Context) (CloudConnection, error) 
 		out.Readiness = s.checkCloudReadiness(ctx, target)
 	}
 	return out, nil
+}
+
+func (r *Repository) latestMasterSyncAttempt(ctx context.Context) (*MasterSyncAttempt, error) {
+	var attempt MasterSyncAttempt
+	err := r.db.WithContext(ctx).Table("wb_master_sync_log").
+		Select("attempted_at", "success", "reason").
+		Where("sync_type = ?", "master").
+		Order("attempted_at DESC, id DESC").Take(&attempt).Error
+	switch {
+	case err == nil:
+		return &attempt, nil
+	case !errors.Is(err, gorm.ErrRecordNotFound):
+		return nil, err
+	}
+	return nil, nil
 }
 
 func (s *Service) checkCloudReadiness(ctx context.Context, target string) CloudReadiness {

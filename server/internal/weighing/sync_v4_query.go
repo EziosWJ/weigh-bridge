@@ -200,12 +200,14 @@ func (r *Repository) SyncTickets(ctx context.Context, q SyncTicketQuery) (Page[T
 		}
 	}
 	wrapped := r.db.WithContext(ctx).Table("(?) AS x", base)
-	if q.SyncStatus != "" {
-		if q.SyncStatus == "untracked" {
-			wrapped = wrapped.Where("x.sync_status = 'untracked'")
-		} else {
-			wrapped = wrapped.Where("x.sync_status = ?", q.SyncStatus)
-		}
+	switch q.SyncStatus {
+	case "":
+	case "retry":
+		wrapped = wrapped.Where("x.sync_status IN ?", []string{SyncChangeTemporaryFailure, "failed"})
+	case syncReasonOldSiteCode:
+		wrapped = wrapped.Where("x.sync_status = ? AND x.sync_reason = ?", SyncChangeNeedsAdmin, syncOldSiteMessage)
+	default:
+		wrapped = wrapped.Where("x.sync_status = ?", q.SyncStatus)
 	}
 	if q.ReconcileStatus != "" {
 		wrapped = wrapped.Where("x.reconcile_status = ?", q.ReconcileStatus)

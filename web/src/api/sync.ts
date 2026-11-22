@@ -26,13 +26,19 @@ export interface SyncReconcileSummary {
   reason: string;
 }
 
+export interface MasterSyncAttempt {
+  attemptedAt: string;
+  success: boolean;
+  reason: string;
+}
+
 export interface CloudConnection {
   enabled: boolean;
   address: string;
   siteCode: string;
   bound: boolean;
   lastSuccess: string | null;
-  lastAttempt: { attemptedAt: string; success: boolean; reason: string } | null;
+  lastAttempt: MasterSyncAttempt | null;
   readiness: {
     status: 'disabled' | 'unconfigured' | 'invalid_address' | 'ready' | 'not_ready' | 'unreachable' | 'unexpected_response';
     checkedAt: string | null;
@@ -126,9 +132,10 @@ export interface SyncLog {
   id: number;
   attemptedAt: string;
   triggerType: 'manual' | 'automatic';
-  syncType: 'master' | 'issue' | 'void' | 'reopen' | 'reconcile' | 'temp_party';
+  syncType: 'master' | 'issue' | 'void' | 'reopen' | 'reconcile' | 'temp_party' | 'task';
   ticketNo: string;
   temporaryCode?: string;
+  taskNo?: string;
   digest: string;
   category: string;
   success: boolean;
@@ -172,5 +179,5 @@ export const syncApi = {
   recheck: (id: number) => http.post<{ status: string; reasonCode: string; message: string }>(`${base}/reviews/${id}/recheck`, {}),
   lookupConfirmation: (siteCode: string, digest: string) => http.get<SyncConfirmation>(`${base}/confirmations`, { query: { siteCode, digest } }),
   logs: () => http.get<SyncLog[]>(`${base}/logs`),
-  clearLogs: () => http.delete(`${base}/logs`),
+  clearLogs: (throughId: number, count: number) => http.delete(`${base}/logs`, undefined, { query: { throughId, count } }),
 };

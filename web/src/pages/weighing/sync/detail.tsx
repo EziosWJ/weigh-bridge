@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { syncApi, type SyncChange, type SyncConfirmation, type SyncReview, type SyncTicketDetail } from "@/api/sync";
 import { weighingApi } from "@/api/weighing";
+import { HelpHint } from "@/components/common/help-hint";
 import { ContentCard } from "@/components/common/content-card";
 import { DataTable } from "@/components/common/data-table";
 import { DataTableCard } from "@/components/common/data-table-card";
@@ -20,12 +21,13 @@ import { buttonStyles } from "@/components/ui/button-styles";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { getErrorMessage } from "@/lib/api-error";
+import { directionLabels } from "@/types/weighing";
 import { formatDateTime } from "@/lib/datetime";
 import type { DataTableColumn } from "@/types";
-import { categoryLabels, changeTypeLabels, protocolLabel, reconcileLabels, syncLabels } from "./labels";
+import { categoryLabels, changeTypeLabels, isOldSitePause, protocolLabel, reconcileLabels, reviewReasonLabels, ticketSyncLabel } from "./labels";
 
-const shortDigest = (value?: string | null) => value ? `${value.slice(0, 12)}…${value.slice(-8)}` : "—";
 const fieldLabels: Record<string, string> = {
+  entryType: "出单来源", firstWeighedAt: "首磅实际时间", secondWeighedAt: "回磅实际时间", netAdjustments: "净重调整明细",
   ticketNo: "单号", previousTicketNo: "原单号", previousSiteCode: "原单厂区编码", title: "单据标题", plate: "车牌",
   direction: "运输方向", materialCode: "物料编码", materialName: "物料名称", materialSpec: "物料规格",
   partyCode: "供收方编码", partyName: "供收方名称", firstConfirmedAt: "首磅确认时间", secondConfirmedAt: "回磅确认时间",
@@ -45,10 +47,53 @@ function fieldDifferences(detail: unknown): FieldDifference[] {
   return detail.fieldDifferences.filter((item): item is FieldDifference => item && typeof item === "object" && typeof item.field === "string");
 }
 
-function differenceValue(value: unknown): string {
+const weightFields = new Set([
+  "originalGross", "originalTare", "finalGross", "finalTare", "finalNet", "netAdjustment",
+  "previousFinalGross", "previousFinalTare", "previousFinalNet", "previousNetAdjustment", "amount",
+]);
+
+const valueLabels: Record<string, Record<string, string>> = {
+  status: { valid: "有效", void: "作废" },
+  direction: directionLabels,
+  entryType: { manual_supplement: "人工补单" },
+  grossSource: { collected: "设备称重", manual: "人工录入", adjusted: "人工更正", manual_supplement: "人工补单" },
+  tareSource: { collected: "设备称重", manual: "人工录入", adjusted: "人工更正", manual_supplement: "人工补单" },
+  mode: { amount: "按重量", percent: "按比例" },
+};
+
+function differenceValue(field: string, value: unknown): string {
   if (value == null) return "未提供";
   if (value === "") return "空字符串";
-  return String(value);
+  if (field === "netAdjustmentRateBp" || field === "rateBp") {
+    const rate = Number(value);
+    if (Number.isFinite(rate)) return `${rate / 100}%`;
+  }
+  if (weightFields.has(field)) return `${String(value)} 吨`;
+  if (field.endsWith("At") && typeof value === "string") return formatDateTime(value);
+  if (field === "netAdjustments" && Array.isArray(value)) {
+    if (!value.length) return "无调整项";
+    return value.map(item => {
+      if (!item || typeof item !== "object") return "调整项未知";
+      const category = item.categoryName || item.category || "未分类";
+      const rate = item.mode === "percent" ? differenceValue("rateBp", item.rateBp) : "";
+      return [category, rate, differenceValue("amount", item.amount), item.remark].filter(Boolean).join("，");
+    }).join("\n");
+  }
+  const labelKey = field === "netAdjustmentMode" ? "mode" : field;
+  return valueLabels[labelKey] ? valueLabels[labelKey][String(value)] ?? "未知" : String(value);
+}
+
+function DifferencesTable({ items, label }: { items: FieldDifference[]; label: string }) {
+  return <div className="overflow-x-auto rounded-control border border-border">
+    <table className="w-full min-w-[300px] table-fixed text-left text-sm" aria-label={label}>
+      <thead className="bg-neutral-background text-text-secondary"><tr><th scope="col" className="w-[28%] p-space-3 font-medium">字段</th><th scope="col" className="p-space-3 font-medium">厂端</th><th scope="col" className="p-space-3 font-medium">云端</th></tr></thead>
+      <tbody>{items.map(item => <tr key={item.field} className="border-t border-border">
+        <th scope="row" className="p-space-3 text-left font-medium [overflow-wrap:anywhere]">{fieldLabels[item.field] ?? "其他字段"}</th>
+        <td className="whitespace-pre-line p-space-3 [overflow-wrap:anywhere]">{differenceValue(item.field, item.local)}</td>
+        <td className="whitespace-pre-line p-space-3 [overflow-wrap:anywhere]">{differenceValue(item.field, item.cloud)}</td>
+      </tr>)}</tbody>
+    </table>
+  </div>;
 }
 
 export function SyncTicketDetailPage() {
@@ -57,7 +102,14 @@ export function SyncTicketDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [canManage, setCanManage] = useState(false);
+  const [capabilities, setCapabilities] = useState<Awaited<ReturnType<typeof weighingApi.capabilities>> | null>(null);
+  const canManage = capabilities?.permissionCodes.includes("weighing:sync:manage") === true;
+  const enabled = capabilities?.masterSyncEnabled;
+  const bound = capabilities?.masterSyncBound;
+  const syncActive = enabled !== false && bound !== false;
+  const [actionError, setActionError] = useState("");
+  const [conclusionError, setConclusionError] = useState("");
+  const [lookupError, setLookupError] = useState("");
   const [reviewing, setReviewing] = useState<SyncReview | null>(null);
   const [conclusion, setConclusion] = useState("");
   const [lookupSite, setLookupSite] = useState("");
@@ -80,67 +132,77 @@ export function SyncTicketDetailPage() {
   }, [id]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
-    void weighingApi.capabilities().then(value => setCanManage(value.permissionCodes.includes("weighing:sync:manage"))).catch(() => setCanManage(false));
+    void weighingApi.capabilities().then(setCapabilities).catch(() => setCapabilities(null));
   }, []);
 
   const retry = async (change: SyncChange) => {
     setBusy(true);
+    setActionError("");
     try {
       const result = await syncApi.retryChange(change.id, change.protocol);
       toast.success({ title: "已排入重试", description: result.message });
       await load();
     } catch (failure) {
-      toast.error({ title: "重试失败", description: getErrorMessage(failure, "请稍后重试") });
+      setActionError(getErrorMessage(failure, "重试失败"));
     } finally {
       setBusy(false);
     }
   };
   const reconcile = async () => {
     setBusy(true);
+    setActionError("");
     try {
       const result = await syncApi.reconcileTicket(id!);
       toast.success({ title: "核对完成", description: result.message });
       await load();
     } catch (failure) {
-      toast.error({ title: "核对失败", description: getErrorMessage(failure, "请稍后重试") });
+      setActionError(getErrorMessage(failure, "核对失败"));
     } finally {
       setBusy(false);
     }
   };
-  const recheck = async (review: SyncReview) => {
+  const recheck = async (review: Pick<SyncReview, "id">) => {
     setBusy(true);
+    setActionError("");
     try {
       const result = await syncApi.recheck(review.id);
       toast.success({ title: "重新核查完成", description: result.message });
-      await load();
     } catch (failure) {
-      toast.error({ title: "重新核查失败", description: getErrorMessage(failure, "请稍后重试") });
+      setActionError(getErrorMessage(failure, "重新核查失败"));
     } finally {
+      await load();
       setBusy(false);
     }
   };
-  const saveConclusion = async () => {
-    if (!reviewing) return;
+  const saveConclusion = async (recheckAfterSave = false) => {
+    if (!reviewing || !conclusion.trim() || busy) return;
     setBusy(true);
+    setConclusionError("");
     try {
       await syncApi.recordConclusion(reviewing.id, conclusion);
-      toast.success("核查结论已记录");
-      setReviewing(null);
-      setConclusion("");
-      await load();
     } catch (failure) {
-      toast.error({ title: "保存失败", description: getErrorMessage(failure, "请稍后重试") });
-    } finally {
+      setConclusionError(getErrorMessage(failure, "保存核查结论失败"));
+      setBusy(false);
+      return;
+    }
+    toast.success("核查结论已记录");
+    setReviewing(null);
+    setConclusion("");
+    if (recheckAfterSave) {
+      await recheck(reviewing);
+    } else {
+      await load();
       setBusy(false);
     }
   };
   const lookupConfirmation = async () => {
     setBusy(true);
     setLookup(null);
+    setLookupError("");
     try {
       setLookup(await syncApi.lookupConfirmation(lookupSite.trim(), lookupDigest.trim().toLowerCase()));
     } catch (failure) {
-      toast.error({ title: "查询失败", description: getErrorMessage(failure, "请稍后重试") });
+      setLookupError(getErrorMessage(failure, "查询云端确认失败"));
     } finally {
       setBusy(false);
     }
@@ -148,15 +210,14 @@ export function SyncTicketDetailPage() {
 
   const changeColumns: DataTableColumn<SyncChange>[] = [
     { title: "类型", key: "type", width: 80, render: (_, row) => changeTypeLabels[row.changeType] ?? row.changeType },
-    { title: "状态", key: "status", width: 130, render: (_, row) => { const item = syncLabels[row.status] ?? syncLabels.pending; return <StatusTag tone={item.tone}>{item.label}</StatusTag>; } },
-    { title: "摘要", key: "digest", width: 190, render: (_, row) => <span className="font-mono text-xs" title={row.digest}>{shortDigest(row.digest)}</span> },
-    { title: "类别 / 原因", key: "reason", render: (_, row) => <div>{row.category ? <span className="text-xs text-text-tertiary">{categoryLabels[row.category] ?? row.category}</span> : null}<div>{row.reason || "—"}</div></div> },
+    { title: "状态", key: "status", width: 130, render: (_, row) => { const item = ticketSyncLabel(row.status, enabled, bound, row.reasonCode || row.reason); return <StatusTag tone={item.tone}>{item.label}</StatusTag>; } },
+    { title: "类别 / 原因", key: "reason", render: (_, row) => <div>{row.category ? <span className="text-xs text-text-tertiary">{categoryLabels[row.category] ?? "其他原因"}</span> : null}<div>{row.reason || "—"}</div></div> },
     { title: "尝试 / 下次", key: "attempts", width: 172, render: (_, row) => <div className="tabular-nums">{row.attempts} 次{row.nextAttemptAt ? <div className="text-text-tertiary"><span className="block">下次</span><span className="whitespace-nowrap">{formatDateTime(row.nextAttemptAt)}</span></div> : null}</div> },
     { title: "云端确认", key: "confirmed", width: 175, nowrap: true, render: (_, row) => <span className="tabular-nums">{row.syncedAt ? formatDateTime(row.receivedAt ?? row.syncedAt) : "—"}</span> },
   ];
   if (canManage) changeColumns.push({
     title: "操作", key: "actions", width: 112, nowrap: true,
-    render: (_, row) => row.status !== "synced" && row.status !== "conflict"
+    render: (_, row) => syncActive && row.status !== "synced" && row.status !== "conflict" && !isOldSitePause(row.reasonCode || row.reason) && !detail?.reviews.some(review => review.status === "open" && review.blocking)
       ? <TableActions><Button size="sm" disabled={busy} onClick={() => void retry(row)}>立即重试</Button></TableActions>
       : <span className="text-text-tertiary">—</span>,
   });
@@ -165,104 +226,146 @@ export function SyncTicketDetailPage() {
   if (error) return <><PageHeader title="单据同步详情" actions={<Link className={buttonStyles()} to="/weighing/sync/tickets">返回单据同步</Link>} /><ContentCard><p role="alert" className="text-error">{error}</p><Button className="mt-space-3" onClick={() => void load()}>重新加载</Button></ContentCard></>;
   if (!detail) return <><PageHeader title="单据同步详情" /><ContentCard><EmptyState title="未找到该单据" description="请返回列表核对单据编号。" /></ContentCard></>;
   const ticket = detail.ticket;
-  const latest = detail.changes[detail.changes.length - 1];
-  const latestSync = syncLabels[latest?.status ?? ticket.syncStatus ?? "untracked"] ?? syncLabels.untracked;
-  const reconcileInfo = detail.reconcile ? reconcileLabels[detail.reconcile.status] : null;
+  const latest = detail.changes.at(-1);
+  const legacyLatest = detail.legacyChanges?.at(-1);
+  const latestReason = latest?.reasonCode || latest?.reason || legacyLatest?.reason || ticket.syncReason;
+  const latestSync = ticketSyncLabel(latest?.status ?? legacyLatest?.status ?? ticket.syncStatus, enabled, bound, latestReason);
+  const oldSitePaused = isOldSitePause(latestReason);
+  const reconcileInfo = detail.reconcile ? reconcileLabels[detail.reconcile.status] ?? reconcileLabels.unknown : null;
   const differences = fieldDifferences(detail.reconcile?.detail);
-
+  const reviews = [...detail.reviews].sort((a, b) => Number(b.status === "open") - Number(a.status === "open"));
+  const hasOpenReview = reviews.some(review => review.status === "open");
   return <>
-    <PageHeader title="单据同步详情" description={ticket.ticketNo} actions={<><Link className={buttonStyles()} to="/weighing/sync/tickets">返回单据同步</Link>{canManage && detail.changes.length > 0 && <Button variant="primary" disabled={busy} onClick={() => void reconcile()}><Search className="h-4 w-4" aria-hidden />立即核对</Button>}</>} />
+    <PageHeader title="单据同步详情" actions={<>
+      <Link className={buttonStyles()} to="/weighing/sync/tickets">返回单据同步</Link>
+      {canManage && detail.changes.length > 0 && <Button variant="primary" disabled={busy || !syncActive} onClick={() => void reconcile()}><Search className="h-4 w-4" aria-hidden />立即核对</Button>}
+    </>} />
     <div className="space-y-space-6">
       <ContentCard title="单据与同步状态" extra={<StatusTag tone={latestSync.tone}>{latestSync.label}</StatusTag>}>
         <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="单号" value={ticket.ticketNo} />
           <DetailItem label="车牌" value={ticket.business?.plate ?? "—"} />
           <DetailItem label="物料 / 供收方" value={`${ticket.business?.materialName ?? "—"} / ${ticket.business?.partyName ?? "—"}`} />
           <DetailItem label="单据状态" value={ticket.status === "valid" ? "有效" : "已作废"} />
           <DetailItem label="出单时间" value={formatDateTime(ticket.issuedAt)} />
-          <DetailItem label="同步协议" value={protocolLabel(ticket.syncProtocol)} />
-          <DetailItem label="最新摘要" value={<span className="font-mono text-xs" title={latest?.digest}>{shortDigest(latest?.digest)}</span>} />
           <DetailItem label="关联原单" value={detail.predecessor ? <Link className="text-primary hover:underline" to={`/weighing/sync/tickets/${detail.predecessor.id}`}>{detail.predecessor.ticketNo}</Link> : "无"} />
           <DetailItem label="关联重开单" value={detail.successor ? <Link className="text-primary hover:underline" to={`/weighing/sync/tickets/${detail.successor.id}`}>{detail.successor.ticketNo}</Link> : "无"} />
+          {(hasOpenReview || latestSync.tone === "error") && <DetailItem label="处理责任" value="本厂管理员" />}
         </div>
-        {ticket.syncReason && <p className="mt-space-4 text-sm text-text-secondary">最新变化说明：{ticket.syncReason}</p>}
+        {(latest?.reason || legacyLatest?.reason || ticket.syncReason) && <p className="mt-space-3 text-sm text-text-secondary">{latest?.reason || legacyLatest?.reason || ticket.syncReason}</p>}
+        {canManage && hasOpenReview && <a className={buttonStyles({ size: "sm", className: "mt-space-3" })} href="#sync-reviews">处理核查</a>}
+        {canManage && oldSitePaused && latest?.digest && <a className={buttonStyles({ size: "sm", className: "mt-space-3" })} href="#confirmation-lookup" onClick={() => {
+          setLookupSite(latest.siteCode);
+          setLookupDigest(latest.digest ?? "");
+          setLookup(null);
+          setLookupError("");
+        }}>查询历史回执</a>}
+        {actionError && <p role="alert" className="mt-space-3 text-sm text-error">{actionError}</p>}
       </ContentCard>
 
+      <ContentCard title="最近对账" extra={<div className="flex items-center gap-space-2">
+        {reconcileInfo && <StatusTag tone={reconcileInfo.tone}>{reconcileInfo.label}</StatusTag>}
+        <HelpHint label="对账结果说明" align="right">对账以云端保存的单据和变化确认记录为依据。连接失败时结果为未知。</HelpHint>
+      </div>}>
+        {detail.reconcile ? <>
+          {differences.length > 0 && <DifferencesTable items={differences} label="单据字段差异" />}
+          <div className={`grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4 ${differences.length ? "mt-space-4" : ""}`}>
+            <DetailItem label="对账时间" value={formatDateTime(detail.reconcile.checkedAt)} />
+            <DetailItem label="触发方式" value={detail.reconcile.triggerType === "automatic" ? "自动" : "手动"} />
+            <DetailItem label="云端单据" value={detail.reconcile.cloudFound == null ? "未知" : detail.reconcile.cloudFound ? differenceValue("status", detail.reconcile.cloudStatus) : "缺单"} />
+            <DetailItem label="云端接收时间" value={formatDateTime(detail.reconcile.cloudReceivedAt)} />
+          </div>
+          <details className="mt-space-4 rounded-control border border-border p-space-3">
+            <summary className="cursor-pointer text-sm font-medium">对账技术详情</summary>
+            <pre className="mt-space-2 max-h-80 overflow-auto whitespace-pre-wrap break-all text-xs text-text-secondary">{pretty(detail.reconcile.detail)}</pre>
+          </details>
+        </> : <p className="text-sm text-text-secondary">尚未对账</p>}
+      </ContentCard>
+
+      {reviews.length > 0 && <ContentCard title="核查记录">
+        <div id="sync-reviews" className="space-y-space-4">
+          {reviews.map(review => {
+            const reviewDifferences = fieldDifferences(review.detail);
+            const open = review.status === "open";
+            return <div key={review.id} className="rounded-admin border border-border p-space-3">
+              <div className="flex flex-wrap items-center gap-space-2">
+                <StatusTag tone={open ? (review.blocking ? "error" : "warning") : "neutral"}>{open ? (review.blocking ? "冲突暂停" : "待核查") : "已结束"}</StatusTag>
+                <span className="text-sm font-medium">{reviewReasonLabels[review.reasonCode] ?? "需核查的同步差异"}</span>
+              </div>
+              <DetailItem className="mt-space-3" label="最近核查" value={formatDateTime(review.lastCheckedAt)} />
+              {reviewDifferences.length > 0 && !differences.length && <div className="mt-space-3"><DifferencesTable items={reviewDifferences} label="核查字段差异" /></div>}
+              {review.conclusion && <div className="mt-space-3 grid gap-space-3 sm:grid-cols-2">
+                <DetailItem label="核查结论" value={review.conclusion} />
+                <DetailItem label="结论记录人" value={[review.concludedByName || "管理员", formatDateTime(review.concludedAt)].join(" / ")} />
+              </div>}
+              {canManage && open && <div className="mt-space-3 flex flex-wrap gap-space-2">
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => {
+                  setReviewing(review);
+                  setConclusion(review.conclusion);
+                  setConclusionError("");
+                }}><Stamp className="h-4 w-4" aria-hidden />{review.conclusion ? "更新核查结论" : "记录核查结论"}</Button>
+                <Button size="sm" disabled={busy || !syncActive || !review.conclusion.trim()} onClick={() => void recheck(review)}><RotateCw className="h-4 w-4" aria-hidden />重新核查</Button>
+              </div>}
+              <details className="mt-space-3"><summary className="cursor-pointer text-sm text-text-secondary">核查技术详情</summary>
+                <p className="mt-space-2 break-all font-mono text-xs">{review.digest}</p>
+                <pre className="mt-space-2 max-h-64 overflow-auto whitespace-pre-wrap break-all text-xs text-text-secondary">{pretty(review.detail)}</pre>
+              </details>
+            </div>;
+          })}
+        </div>
+      </ContentCard>}
+
       <DataTableCard>
-        <TableToolbar title="变化与确认状态" description={detail.changes.length ? `共 ${detail.changes.length} 个摘要变化；只有云端确认对应摘要后才标记完成。` : "该单据未纳入摘要同步。"} />
-        <DataTable columns={changeColumns} dataSource={detail.changes} rowKey="id" loading={loading} error={error} minWidth={canManage ? 1010 : 898} compact stickyHeader fixedEdges={canManage} ariaLabel="变化与确认状态" empty={<EmptyState title="暂无摘要变化" description="旧版协议单据保留只读记录，见下方。" />} />
+        <TableToolbar title="变化与确认状态" />
+        <DataTable columns={changeColumns} dataSource={detail.changes} rowKey="id" loading={loading} error={error} minWidth={canManage ? 820 : 708} compact stickyHeader fixedEdges={canManage} ariaLabel="变化与确认状态" empty={<EmptyState title="暂无摘要变化" />} />
       </DataTableCard>
 
       {detail.legacyChanges && detail.legacyChanges.length > 0 && <DataTableCard>
-        <TableToolbar title="旧版协议变化（只读）" description="已使用 v2/v3 出单的单据继续沿用旧协议；不参与摘要对账，也不与新协议混用。" />
+        <TableToolbar title="旧版协议变化（只读）" />
         <DataTable columns={[
           { title: "类型", key: "type", width: 80, render: (_, row) => changeTypeLabels[row.changeType] ?? row.changeType },
-          { title: "状态", key: "status", width: 130, render: (_, row) => { const item = syncLabels[row.status] ?? syncLabels.pending; return <StatusTag tone={item.tone}>{item.label}</StatusTag>; } },
+          { title: "状态", key: "status", width: 130, render: (_, row) => { const item = ticketSyncLabel(row.status, enabled, bound, row.reason); return <StatusTag tone={item.tone}>{item.label}</StatusTag>; } },
           { title: "变化标识", key: "changeId", width: 220, render: (_, row) => <span className="font-mono text-xs">{row.changeId}</span> },
           { title: "说明", key: "reason", render: (_, row) => row.reason || "—" },
           { title: "时间", key: "time", width: 170, render: (_, row) => formatDateTime(row.syncedAt ?? row.lastAttemptAt ?? row.createdAt) },
         ]} dataSource={detail.legacyChanges} rowKey="id" minWidth={780} compact stickyHeader ariaLabel="旧版协议变化" />
       </DataTableCard>}
 
-      <ContentCard title="最近对账" extra={reconcileInfo ? <StatusTag tone={reconcileInfo.tone}>{reconcileInfo.label}</StatusTag> : <span className="text-sm text-text-tertiary">尚未对账</span>}>
-        {detail.reconcile ? <>
-          <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
-            <DetailItem label="对账时间" value={formatDateTime(detail.reconcile.checkedAt)} />
-            <DetailItem label="触发方式" value={detail.reconcile.triggerType === "automatic" ? "自动" : "手动"} />
-            <DetailItem label="云端是否找到" value={detail.reconcile.cloudFound === null ? "—" : detail.reconcile.cloudFound ? "找到" : "缺单"} />
-            <DetailItem label="云端单据状态" value={detail.reconcile.cloudStatus ?? "—"} />
-            <DetailItem label="厂端最新摘要" value={<span className="font-mono text-xs" title={detail.reconcile.localLatestDigest ?? ""}>{shortDigest(detail.reconcile.localLatestDigest)}</span>} />
-            <DetailItem label="云端最新摘要" value={<span className="font-mono text-xs" title={detail.reconcile.cloudLatestDigest ?? ""}>{shortDigest(detail.reconcile.cloudLatestDigest)}</span>} />
-            <DetailItem label="云端摘要版本" value={detail.reconcile.cloudLatestDigestVersion ?? "—"} />
-            <DetailItem label="云端接收时间" value={formatDateTime(detail.reconcile.cloudReceivedAt)} />
-          </div>
-          {differences.length > 0 && <div className="mt-space-4 overflow-x-auto rounded-control border border-border">
-            <table className="w-full min-w-[320px] table-fixed text-left text-sm" aria-label="单据字段差异">
-              <thead className="bg-neutral-background text-text-secondary"><tr><th scope="col" className="w-[28%] p-space-3 font-medium">字段</th><th scope="col" className="p-space-3 font-medium">厂端</th><th scope="col" className="p-space-3 font-medium">云端</th></tr></thead>
-              <tbody>{differences.map(item => <tr key={item.field} className="border-t border-border hover:bg-neutral-background"><th scope="row" className="p-space-3 text-left font-medium [overflow-wrap:anywhere]">{fieldLabels[item.field] ?? item.field}</th><td className="p-space-3 [overflow-wrap:anywhere]">{differenceValue(item.local)}</td><td className="p-space-3 [overflow-wrap:anywhere]">{differenceValue(item.cloud)}</td></tr>)}</tbody>
-            </table>
-          </div>}
-          <details className="mt-space-4 rounded-control border border-border p-space-3">
-            <summary className="cursor-pointer text-sm font-medium">差异与云端变化详情</summary>
-            <pre className="mt-space-2 max-h-80 overflow-auto whitespace-pre-wrap text-xs text-text-secondary">{pretty(detail.reconcile.detail)}</pre>
-          </details>
-          <p className="mt-space-3 text-xs text-text-tertiary">摘要相同只表示双方记录的最新变化摘要一致，不代表云端独立校验了业务内容；查询失败不会显示为一致。</p>
-        </> : <p className="text-sm text-text-secondary">尚未执行单张或批量对账。同步确认状态与对账结果分别判断。</p>}
-      </ContentCard>
-
-      {detail.reviews.length > 0 && <ContentCard title="冲突、核查结论与处理记录" description="这些记录独立于普通同步日志，清空日志不会删除。">
-        <div className="space-y-space-4">
-          {detail.reviews.map(review => <div key={review.id} className="rounded-admin border border-border p-space-3">
-            <div className="flex flex-wrap items-center gap-space-2">
-              <StatusTag tone={review.status === "open" ? (review.blocking ? "error" : "warning") : "neutral"}>{review.status === "open" ? (review.blocking ? "冲突暂停" : "待核查") : "已结束"}</StatusTag>
-              <span className="text-sm font-medium">{review.reasonCode || "核查记录"}</span>
-              <span className="font-mono text-xs text-text-tertiary" title={review.digest}>{shortDigest(review.digest)}</span>
-              <span className="text-xs text-text-tertiary">最近检查 {formatDateTime(review.lastCheckedAt)}</span>
-            </div>
-            {review.conclusion ? <p className="mt-space-2 text-sm">核查结论：{review.conclusion}<span className="ml-space-2 text-text-tertiary">{review.concludedByName || "管理员"} · {formatDateTime(review.concludedAt)}</span></p> : <p className="mt-space-2 text-sm text-text-tertiary">尚未记录核查结论。</p>}
-            <details className="mt-space-2"><summary className="cursor-pointer text-xs text-text-secondary">差异详情</summary><pre className="mt-space-1 max-h-64 overflow-auto whitespace-pre-wrap text-xs text-text-secondary">{pretty(review.detail)}</pre></details>
-            {canManage && review.status === "open" && <div className="mt-space-3 flex flex-wrap gap-space-2">
-              <Button size="sm" variant="secondary" disabled={busy} onClick={() => { setReviewing(review); setConclusion(review.conclusion); }}><Stamp className="h-4 w-4" aria-hidden />记录核查结论</Button>
-              <Button size="sm" disabled={busy || !review.conclusion.trim()} onClick={() => void recheck(review)}><RotateCw className="h-4 w-4" aria-hidden />重新核查</Button>
-            </div>}
-          </div>)}
-        </div>
+      {detail.changes.length > 0 && <ContentCard>
+        <details>
+          <summary className="cursor-pointer text-sm font-medium">上传技术详情</summary>
+          <ul className="mt-space-3 space-y-space-3">
+            {detail.changes.map(change => <li key={`${change.protocol}-${change.id}`} className="text-sm">
+              <span>{changeTypeLabels[change.changeType]} / {protocolLabel(change.protocol)} / {formatDateTime(change.createdAt)}</span>
+              <code className="mt-space-1 block break-all text-xs">{change.digest}</code>
+              {canManage && change.digest && <a href="#confirmation-lookup" className="text-sm text-primary hover:underline" onClick={() => {
+                setLookupSite(change.siteCode);
+                setLookupDigest(change.digest ?? "");
+                setLookup(null);
+                setLookupError("");
+              }}>填入回执查询</a>}
+            </li>)}
+          </ul>
+        </details>
       </ContentCard>}
 
-      {canManage && <ContentCard title="旧编码历史确认查询" description="按出单时的厂区编码和已保存摘要只读查询云端确认，用于回执丢失；不能借此继续写入旧编码变化。">
-        <div className="grid gap-space-3 sm:grid-cols-3">
+      {canManage && <ContentCard title="旧编码历史确认查询" extra={<HelpHint label="历史确认查询规则" align="right">按出单时的厂区编码和已保存的变化摘要查询对应云端回执。</HelpHint>}>
+        <div id="confirmation-lookup" className="grid gap-space-3 sm:grid-cols-3">
           <Field label="出单厂区编码" htmlFor="sync-lookup-site"><Input id="sync-lookup-site" value={lookupSite} maxLength={40} onChange={event => setLookupSite(event.target.value)} /></Field>
           <Field label="变化摘要" htmlFor="sync-lookup-digest"><Input id="sync-lookup-digest" value={lookupDigest} maxLength={64} onChange={event => setLookupDigest(event.target.value)} /></Field>
-          <div className="flex items-end"><Button variant="secondary" disabled={busy || lookupSite.trim() === "" || lookupDigest.trim().length !== 64} onClick={() => void lookupConfirmation()}>查询云端确认</Button></div>
+          <div className="flex items-end"><Button variant="secondary" disabled={busy || enabled === false || lookupSite.trim() === "" || lookupDigest.trim().length !== 64} onClick={() => void lookupConfirmation()}>查询云端确认</Button></div>
         </div>
+        {lookupError && <p role="alert" className="mt-space-3 text-sm text-error">{lookupError}</p>}
         {lookup && <div className="mt-space-3 rounded-control border border-border p-space-3 text-sm">
-          {lookup.found && lookup.confirmation ? <div className="grid gap-space-2 sm:grid-cols-2"><DetailItem label="单号" value={lookup.confirmation.ticketNo} /><DetailItem label="类型" value={changeTypeLabels[lookup.confirmation.changeType] ?? lookup.confirmation.changeType} /><DetailItem label="摘要版本" value={`${lookup.confirmation.digestVersion} / 协议 ${lookup.confirmation.schemaVersion}`} /><DetailItem label="云端接收时间" value={formatDateTime(lookup.confirmation.receivedAt)} /></div> : <p className="text-text-secondary">云端未保存该摘要（包括被拒绝的变化），不代表内容无效。</p>}
+          {lookup.found && lookup.confirmation ? <div className="grid gap-space-2 sm:grid-cols-2"><DetailItem label="单号" value={lookup.confirmation.ticketNo} /><DetailItem label="类型" value={changeTypeLabels[lookup.confirmation.changeType] ?? lookup.confirmation.changeType} /><DetailItem label="摘要版本" value={`${lookup.confirmation.digestVersion} / 协议 ${lookup.confirmation.schemaVersion}`} /><DetailItem label="云端接收时间" value={formatDateTime(lookup.confirmation.receivedAt)} /></div> : <p className="text-text-secondary">未查到该变化的云端确认。</p>}
         </div>}
       </ContentCard>}
     </div>
-    <FormDialog open={!!reviewing} title="记录核查结论" description="结论只作为处理记录保存；恢复同步仍需明确发起重新核查。" loading={busy} submitDisabled={!conclusion.trim()} submitText="保存结论" onCancel={() => setReviewing(null)} onSubmit={() => void saveConclusion()}>
-      <Field label="核查结论" htmlFor="sync-conclusion" required help="请记录差异原因、处理方式或维护人员结论。">
+    <FormDialog open={!!reviewing} title="记录核查结论" loading={busy} submitDisabled={!conclusion.trim()} submitText="保存结论" onCancel={() => setReviewing(null)} onSubmit={() => void saveConclusion()}>
+      <Field label="核查结论" htmlFor="sync-conclusion" required error={conclusionError}>
         <Textarea id="sync-conclusion" rows={5} maxLength={2000} value={conclusion} onChange={event => setConclusion(event.target.value)} />
       </Field>
+      {syncActive && <Button variant="secondary" disabled={busy || !conclusion.trim()} onClick={() => void saveConclusion(true)}>保存并重新核查</Button>}
     </FormDialog>
   </>;
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -160,19 +161,48 @@ func (s *Service) RunTaskSync(ctx context.Context) error {
 			return err
 		}
 		pending := db.Model(&taskSyncOutbox{}).Where("id = ? AND confirmed_at IS NULL AND blocked_at IS NULL", row.ID)
-		err = s.sendTaskSync(ctx, row.SiteCode, []taskSyncItem{item})
-		if err != nil {
-			canContinue, updateErr := recordTaskSyncFailure(pending, row, err)
-			if updateErr != nil || !canContinue {
-				return updateErr
-			}
-			continue
+		failure := s.sendTaskSync(ctx, row.SiteCode, []taskSyncItem{item})
+		canContinue := true
+		if failure != nil {
+			canContinue, err = recordTaskSyncFailure(pending, row, failure)
+		} else {
+			err = pending.Updates(map[string]any{"confirmed_at": time.Now().UTC(), "last_error": ""}).Error
 		}
-		if err = pending.Updates(map[string]any{"confirmed_at": time.Now().UTC(), "last_error": ""}).Error; err != nil {
+		if err != nil {
 			return err
+		}
+		// Diagnostic writes must not change whether task updates retry or advance.
+		if logErr := writeTaskSyncLog(repo.db.WithContext(context.WithoutCancel(ctx)), row.TaskNo, failure); logErr != nil {
+			slog.Warn("写入任务同步日志失败", "taskNo", row.TaskNo)
+		}
+		if !canContinue {
+			return nil
 		}
 	}
 	return s.sendTaskSyncHeartbeat(ctx, db)
+}
+
+func writeTaskSyncLog(db *gorm.DB, taskNo string, failure error) error {
+	entry := map[string]any{"trigger_type": "automatic", "sync_type": "task", "task_no": taskNo, "success": failure == nil, "reason": ""}
+	if failure != nil {
+		entry["category"] = SyncCategoryTemporary
+		entry["reason"] = "任务上传未获确认，将由系统重试"
+		var rejection *taskSyncRejection
+		if errors.As(failure, &rejection) {
+			switch rejection.status {
+			case http.StatusUnauthorized:
+				entry["category"] = SyncCategoryConfigOrData
+				entry["reason"] = "云端拒绝该厂区编码"
+			case http.StatusBadRequest:
+				entry["category"] = SyncCategoryConfigOrData
+				entry["reason"] = "云端未通过任务资料校验"
+			case http.StatusConflict:
+				entry["category"] = SyncCategoryConflict
+				entry["reason"] = "云端任务记录有冲突"
+			}
+		}
+	}
+	return db.Table("wb_master_sync_log").Create(entry).Error
 }
 
 func recordTaskSyncFailure(pending *gorm.DB, row taskSyncOutbox, failure error) (bool, error) {

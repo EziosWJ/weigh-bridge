@@ -9,11 +9,7 @@ import (
 func registerMasterSyncRoutes(router gin.IRouter, h *Handler) {
 	read := rbac.RequirePermission(h.permissions, "weighing:master:read")
 	router.GET("/master-sync/status", read, func(c *gin.Context) {
-		status, err := h.service.MasterSyncStatus(c)
-		if err == nil {
-			p, _ := auth.PrincipalFromContext(c.Request.Context())
-			status.IsAdmin, err = h.service.masterSyncAdmin(c, p.UserID)
-		}
+		status, err := h.masterSyncPageStatus(c)
 		writeResult(c, status, err)
 	})
 	router.POST("/master-sync", read, func(c *gin.Context) {
@@ -39,11 +35,7 @@ func registerMasterSyncRoutes(router gin.IRouter, h *Handler) {
 			writeResult(c, nil, err)
 			return
 		}
-		status, err = h.service.MasterSyncStatus(c)
-		if err == nil {
-			p, _ := auth.PrincipalFromContext(c.Request.Context())
-			status.IsAdmin, err = h.service.masterSyncAdmin(c, p.UserID)
-		}
+		status, err = h.masterSyncPageStatus(c)
 		writeResult(c, status, err)
 	})
 	admin := func(c *gin.Context) bool {
@@ -78,7 +70,20 @@ func registerMasterSyncRoutes(router gin.IRouter, h *Handler) {
 		if !admin(c) {
 			return
 		}
-		err := h.service.clearMasterSyncLogs(c, requestEvent(c))
+		err := h.service.clearMasterSyncLogs(c, requestEvent(c), nil)
 		writeResult(c, nil, err)
 	})
+}
+
+func (h *Handler) masterSyncPageStatus(c *gin.Context) (MasterSyncStatus, error) {
+	status, err := h.service.MasterSyncStatus(c)
+	if err != nil {
+		return status, err
+	}
+	p, _ := auth.PrincipalFromContext(c.Request.Context())
+	status.IsAdmin, err = h.service.masterSyncAdmin(c, p.UserID)
+	if err == nil && status.IsAdmin {
+		status.LastAttempt, err = h.service.store.(*Repository).latestMasterSyncAttempt(c)
+	}
+	return status, err
 }

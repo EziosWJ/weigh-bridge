@@ -97,7 +97,17 @@ func registerSyncV4Routes(router gin.IRouter, h *Handler) {
 		writeResult(c, rows, err)
 	})
 	router.DELETE("/sync/logs", logs, func(c *gin.Context) {
-		err := h.service.clearMasterSyncLogs(c, requestEvent(c))
+		var scope *syncLogClearScope
+		if c.Query("throughId") != "" || c.Query("count") != "" {
+			throughID, idErr := strconv.ParseInt(c.Query("throughId"), 10, 64)
+			count, countErr := strconv.ParseInt(c.Query("count"), 10, 64)
+			if idErr != nil || countErr != nil || throughID < 1 || count < 1 {
+				writeResult(c, nil, ErrInvalid)
+				return
+			}
+			scope = &syncLogClearScope{ThroughID: throughID, Count: count}
+		}
+		err := h.service.clearMasterSyncLogs(c, requestEvent(c), scope)
 		writeResult(c, nil, err)
 	})
 }
