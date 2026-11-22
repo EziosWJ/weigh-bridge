@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, type PropsWithChildren } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Ellipsis } from "lucide-react";
 import { Link } from "react-router-dom";
 import { buttonStyles } from "@/components/ui/button-styles";
 import { cn } from "@/lib/utils";
@@ -37,9 +37,11 @@ type TableActionItem = {
 export function TableActionMenu({
   items,
   label = "更多操作",
+  compact = false,
 }: {
   items: TableActionItem[];
   label?: string;
+  compact?: boolean;
 }) {
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -100,9 +102,10 @@ export function TableActionMenu({
         type="button"
         popoverTarget={id}
         aria-label={label}
-        className={buttonStyles({ size: "sm", className: "px-2" })}
+        title={compact ? label : undefined}
+        className={buttonStyles({ size: "sm", className: compact ? "w-8 px-0" : "px-2" })}
       >
-        更多<ChevronDown className="h-3.5 w-3.5" aria-hidden />
+        {compact ? <Ellipsis className="h-4 w-4" aria-hidden /> : <>更多<ChevronDown className="h-3.5 w-3.5" aria-hidden /></>}
       </button>
       <div
         ref={panel}

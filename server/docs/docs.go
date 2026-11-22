@@ -4512,8 +4512,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Page-weighing_OriginalView"
                         }
                     }
                 }
@@ -8057,6 +8056,20 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-weighing_Page-weighing_OriginalView": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Page-weighing_OriginalView"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.HTTPEnvelope-weighing_Sample": {
             "type": "object",
             "properties": {
@@ -8285,6 +8298,125 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.OriginalView": {
+            "type": "object",
+            "properties": {
+                "actorId": {
+                    "type": "integer"
+                },
+                "actorName": {
+                    "type": "string"
+                },
+                "business": {
+                    "$ref": "#/definitions/weighing.BusinessInfo"
+                },
+                "carrierId": {
+                    "type": "integer"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "createTime": {
+                    "type": "string"
+                },
+                "currentFirstRecordId": {
+                    "type": "integer"
+                },
+                "currentSecondRecordId": {
+                    "type": "integer"
+                },
+                "currentTicketId": {
+                    "type": "integer"
+                },
+                "currentTicketStatus": {
+                    "type": "string"
+                },
+                "direction": {
+                    "type": "string"
+                },
+                "entryType": {
+                    "type": "string"
+                },
+                "firstConfirmedAt": {
+                    "type": "string"
+                },
+                "firstSource": {
+                    "type": "string"
+                },
+                "firstWeighedAt": {
+                    "type": "string"
+                },
+                "firstWeight": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "materialId": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "originalGross": {
+                    "type": "string"
+                },
+                "originalNet": {
+                    "type": "string"
+                },
+                "originalTare": {
+                    "type": "string"
+                },
+                "partyId": {
+                    "type": "integer"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "relatedTicketId": {
+                    "type": "integer"
+                },
+                "relatedTicketNo": {
+                    "type": "string"
+                },
+                "scaleCode": {
+                    "type": "string"
+                },
+                "secondConfirmedAt": {
+                    "type": "string"
+                },
+                "secondSource": {
+                    "type": "string"
+                },
+                "secondWeighedAt": {
+                    "type": "string"
+                },
+                "secondWeight": {
+                    "type": "string"
+                },
+                "siteCode": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskNo": {
+                    "type": "string"
+                },
+                "terminateReason": {
+                    "type": "string"
+                },
+                "terminatedAt": {
+                    "type": "string"
+                },
+                "updateTime": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                }
+            }
+        },
         "weighing.Overview": {
             "type": "object",
             "properties": {
@@ -8427,6 +8559,26 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/weighing.BusinessEvent"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.Page-weighing_OriginalView": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "pageSize": {
+                    "type": "integer"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.OriginalView"
                     }
                 },
                 "total": {
@@ -9082,6 +9234,9 @@ const docTemplate = `{
                 "business": {
                     "$ref": "#/definitions/weighing.BusinessInfo"
                 },
+                "entryType": {
+                    "type": "string"
+                },
                 "finalGross": {
                     "type": "string"
                 },
@@ -9186,6 +9341,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "supplementReason": {
                     "type": "string"
                 },
                 "syncProtocol": {

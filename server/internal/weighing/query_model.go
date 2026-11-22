@@ -9,6 +9,13 @@ type OriginalView struct {
 	OriginalNet         Tonnes    `json:"originalNet" gorm:"-" swaggertype:"string"`
 	FirstConfirmedAt    time.Time `json:"firstConfirmedAt"`
 	SecondConfirmedAt   time.Time `json:"secondConfirmedAt"`
+	FirstWeighedAt      time.Time `json:"firstWeighedAt"`
+	SecondWeighedAt     time.Time `json:"secondWeighedAt"`
+	FirstSource         string    `json:"firstSource"`
+	SecondSource        string    `json:"secondSource"`
+	RelatedTicketID     *int64    `json:"relatedTicketId,omitempty"`
+	RelatedTicketNo     string    `json:"relatedTicketNo,omitempty"`
+	EntryType           string    `json:"entryType,omitempty"`
 	CurrentTicketID     *int64    `json:"currentTicketId"`
 	CurrentTicketStatus string    `json:"currentTicketStatus"`
 }

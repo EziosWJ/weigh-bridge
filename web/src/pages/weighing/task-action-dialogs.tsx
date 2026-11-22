@@ -1,6 +1,8 @@
 import { hasAdjustmentInput } from '@/lib/weighing/weights';
 import { useEffect, useMemo, useState } from 'react';
+import { WorkbenchLink } from '@/components/common/workbench-link';
 import { DetailItem } from '@/components/common/detail-item';
+import { HelpHint } from '@/components/common/help-hint';
 import { Field } from '@/components/common/field';
 import { FormDialog } from '@/components/common/form-dialog';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
@@ -11,18 +13,15 @@ import { useTransportDirections } from '@/hooks/use-transport-directions';
 import { beijingTime } from '@/lib/weighing/query';
 import { formatWeight, weightInMilliTonnes, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { useWeighingStore } from '@/store/weighing-store';
-import type { NetAdjustmentsInput, TransportTask } from '@/types/weighing';
+import { activeWeighRecord, type NetAdjustmentsInput, type TransportTask } from '@/types/weighing';
 import { NetAdjustmentFields } from './deduction-fields';
 
 /** Business dates are Beijing wall-clock values in inputs and storage. */
-function beijingInputValue(iso: string): string {
-  return new Date(new Date(iso).getTime() + 8 * 3600_000).toISOString().slice(0, 16);
-}
 function fromBeijingInputValue(value: string): string {
   return new Date(`${value}${value.length === 16 ? ':00' : ''}+08:00`).toISOString();
 }
 function currentFirst(task: TransportTask) {
-  return [...task.records].reverse().find(record => record.stage === 'first');
+  return activeWeighRecord(task.records, 'first');
 }
 
 function ActionSummary({ task, first, secondWeight, returnedAt, estimatedNet }: {
@@ -40,7 +39,7 @@ function ActionSummary({ task, first, secondWeight, returnedAt, estimatedNet }: 
     <DetailItem label={`首磅重量${first ? `（${first.kind === 'gross' ? '毛重' : '皮重'}）` : ''} / 时间`} value={first ? `${formatWeight(first.weight)} · ${beijingTime(first.capturedAt ?? first.at)}` : '首磅依据缺失'} />
     {secondWeight !== undefined && <DetailItem label={`补录回磅重量（${task.direction === 'inbound' ? '皮重' : '毛重'}）`} value={formatWeight(secondWeight)} />}
     {returnedAt && <DetailItem label="实际回磅时间" value={beijingTime(returnedAt)} />}
-    {estimatedNet !== undefined && <DetailItem label="预计净重" value={<strong className="tabular-nums text-text-primary">{formatWeight(estimatedNet)}</strong>} />}
+    {estimatedNet !== undefined && <DetailItem label="预计出单净重" value={<strong className="tabular-nums text-text-primary">{formatWeight(estimatedNet)}</strong>} />}
   </div>;
 }
 
@@ -50,10 +49,11 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
   onDone: () => void;
 }) {
   const dispatch = useWeighingStore(state => state.dispatch);
+  const pending = useWeighingStore(state => state.data.pending);
   const [confirmClose, setConfirmClose] = useState(false);
   const [fieldError, setFieldError] = useState('');
   const [weight, setWeight] = useState('');
-  const [returnedAt, setReturnedAt] = useState(() => beijingInputValue(new Date().toISOString()));
+  const [returnedAt, setReturnedAt] = useState('');
   const [reason, setReason] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
   const [netAdjustments, setNetAdjustments] = useState<NetAdjustmentsInput>([]);
   const first = useMemo(() => task ? currentFirst(task) : undefined, [task]);
 
-  useEffect(() => { if (task) { setWeight(''); setReturnedAt(beijingInputValue(new Date().toISOString())); setReason(''); setConfirmed(false); setError(''); setNetAdjustments([]); } }, [task]);
+  useEffect(() => { if (task) { setWeight(''); setReturnedAt(''); setReason(''); setConfirmed(false); setError(''); setFieldError(''); setNetAdjustments([]); } }, [task]);
 
   let entered: number | undefined;
   let net: number | undefined;
@@ -84,30 +84,38 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
 
   let adjustmentBasis: { gross: number; tare: number; net: number } | undefined;
   let adjustmentError = '';
+  let finalNet: number | undefined;
   // Inbound: gross is the first weighing, tare is the manual entry; outbound
   // reverses them. net above is already gross minus tare.
   if (net !== undefined && first && task) {
     const gross = task.direction === 'outbound' ? entered! : first.weight;
     const tare = task.direction === 'outbound' ? first.weight : entered!;
     adjustmentBasis = { gross, tare, net };
-    try { resolveNetAdjustments(adjustmentBasis, netAdjustments); } catch (failure) { adjustmentError = failure instanceof Error ? failure.message : '请核对净重调整'; }
+    try {
+      const { amount } = resolveNetAdjustments(adjustmentBasis, netAdjustments);
+      finalNet = (weightInMilliTonnes(net) - weightInMilliTonnes(amount)) / 1000;
+    } catch (failure) {
+      adjustmentError = failure instanceof Error ? failure.message : '请核对净重调整';
+    }
   }
 
   let returnedIso = '';
   let timeError = '';
   try {
-    returnedIso = fromBeijingInputValue(returnedAt);
+    if (!returnedAt) throw new Error('请填写实际回磅时间');
+    const iso = fromBeijingInputValue(returnedAt);
     if (first) {
-      const actual = new Date(returnedIso);
+      const actual = new Date(iso);
       const firstAt = new Date(first.capturedAt ?? first.at);
       if (actual.getTime() < firstAt.getTime()) throw new Error('实际回磅时间不能早于有效首磅时间');
       if (actual.getTime() > Date.now()) throw new Error('实际回磅时间不能晚于当前时间');
     }
+    returnedIso = iso;
   } catch (failure) {
-    timeError = failure instanceof Error ? failure.message : '请填写有效的实际回磅时间';
+    timeError = failure instanceof RangeError ? '请填写有效的实际回磅时间' : failure instanceof Error ? failure.message : '请填写有效的实际回磅时间';
   }
 
-  const ready = !!task && !!first && !!entered && !weightError && !timeError && !adjustmentError && !fieldError && reason.trim() !== '' && confirmed;
+  const ready = !pending && task?.status === 'second' && !!first && !!entered && !weightError && !timeError && !adjustmentError && !fieldError && reason.trim() !== '' && confirmed;
 
   async function submit() {
     if (!task || !ready) { setError(weightError || timeError || (reason.trim() === '' ? '请填写补录原因' : '请核对并明确确认人工补录')); return; }
@@ -125,29 +133,39 @@ export function ManualReturnDialog({ task, onClose, onDone }: {
     } finally { setLoading(false); }
   }
 
-  const requestClose = () => { if (hasAdjustmentInput(netAdjustments)) setConfirmClose(true); else onClose(); };
-  return <><FormDialog open={!!task} title="人工补录回磅" description="人工录入回磅重量完成原任务并出单；不要求上传照片，系统也不会保存照片依据。" onCancel={requestClose} trapFocus={!confirmClose} closeOnEscape={!confirmClose} onSubmit={submit} submitDisabled={!ready || loading} submitText="确认人工补录" loading={loading}>
+  const requestClose = () => {
+    if (weight || returnedAt || reason || confirmed || hasAdjustmentInput(netAdjustments)) setConfirmClose(true);
+    else onClose();
+  };
+  return <><FormDialog open={!!task} title="人工补录回磅" onCancel={requestClose} trapFocus={!confirmClose} closeOnEscape={!confirmClose} closeOnOverlayClick={!confirmClose} onSubmit={submit} submitDisabled={!ready || loading} submitText="确认补录并出单" loading={loading}>
     {task && <div className="space-y-space-4">
-      <ActionSummary task={task} first={first} secondWeight={entered} returnedAt={returnedIso || undefined} estimatedNet={net} />
-      <div className="rounded-control border border-border px-space-3 py-space-2 text-sm"><span className="text-text-tertiary">系统补录时间：</span>提交时由服务器记录，与实际回磅时间分开保存。</div>
-      <p className="text-sm text-text-secondary">补录重量标记为“人工补录”，不是设备采集值；系统不伪造设备报文、稳定状态或抓拍结果。</p>
-      <Field label="回磅重量（吨）" htmlFor="manual-return-weight" required error={weightError} help="精确到 0.001 吨；按原运输方向确定毛重和皮重。">
+      <ActionSummary task={task} first={first} secondWeight={entered} returnedAt={returnedIso || undefined} estimatedNet={fieldError ? undefined : finalNet} />
+      <Field label={task.direction === 'inbound' ? '补录皮重（吨）' : '补录毛重（吨）'} htmlFor="manual-return-weight" required error={weight ? weightError : undefined}>
         <Input id="manual-return-weight" type="number" inputMode="decimal" min="0.001" step="0.001" value={weight} onChange={event => setWeight(event.target.value)} />
       </Field>
-      <Field label="实际回磅时间（北京时间）" htmlFor="manual-return-time" required error={timeError} help="不早于有效首磅时间，不晚于当前时间；与系统补录时间分别保存。">
-        <Input id="manual-return-time" type="datetime-local" step="1" value={returnedAt} onChange={event => setReturnedAt(event.target.value)} />
-      </Field>
-      {adjustmentBasis && <NetAdjustmentFields basis={adjustmentBasis} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} />}
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1">
+          <label htmlFor="manual-return-time" className="text-form-label font-medium">实际回磅时间（北京时间） <span className="text-error">*</span></label>
+          <HelpHint label="回磅时间规则">按现场记录填写实际时间，须介于有效首磅和当前时间之间。系统补录时间可在称重记录中查看。</HelpHint>
+        </div>
+        <Input id="manual-return-time" type="datetime-local" step="1" required value={returnedAt}
+          aria-invalid={!!returnedAt && !!timeError} aria-describedby={returnedAt && timeError ? 'manual-return-time-error' : undefined}
+          onChange={event => setReturnedAt(event.target.value)} />
+        {returnedAt && timeError && <p id="manual-return-time-error" role="alert" className="text-helper text-error">{timeError}</p>}
+      </div>
+      {adjustmentBasis && <NetAdjustmentFields basis={adjustmentBasis} value={netAdjustments} onChange={setNetAdjustments} onValidationChange={setFieldError} />}
       <Field label="补录原因" htmlFor="manual-return-reason" required>
-        <Textarea id="manual-return-reason" rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="例如：车辆已回磅离开，现场已拍下地磅读数，经核对后补录" />
+        <Textarea id="manual-return-reason" rows={3} value={reason} onChange={event => setReason(event.target.value)} />
       </Field>
       <label className="flex items-start gap-space-2 text-sm">
         <input type="checkbox" className="mt-0.5" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
-        <span>我已核对车牌、首磅依据、实际回磅重量和时间，确认由我人工补录；此操作将完成原任务并生成正式单据。</span>
+        <span>已核对现场称重记录</span>
       </label>
-      {error && <p role="alert" className="text-error">{error}</p>}
+      {pending?.taskId === task.id
+        ? <p role="alert" className="text-warning">提交结果待核实。<WorkbenchLink className="text-primary hover:underline" to={`/weighing/workbench?task=${encodeURIComponent(task.id)}`}>查询原请求</WorkbenchLink></p>
+        : error && <p role="alert" className="text-error">{error}</p>}
     </div>}
-  </FormDialog><ConfirmDialog open={confirmClose} title="放弃已填写的扣减内容？" description="关闭后已填写的扣减内容将丢失。" confirmText="放弃并关闭" cancelText="返回修改" onConfirm={() => { setConfirmClose(false); onClose(); }} onCancel={() => setConfirmClose(false)} /></>;
+  </FormDialog><ConfirmDialog open={confirmClose} title="放弃本次补录？" confirmText="放弃并关闭" cancelText="返回修改" onConfirm={() => { setConfirmClose(false); onClose(); }} onCancel={() => setConfirmClose(false)} /></>;
 }
 
 export function TerminateTaskDialog({ task, onClose, onDone }: {
@@ -156,6 +174,7 @@ export function TerminateTaskDialog({ task, onClose, onDone }: {
   onDone: () => void;
 }) {
   const dispatch = useWeighingStore(state => state.dispatch);
+  const pending = useWeighingStore(state => state.data.pending);
   const [reason, setReason] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -165,7 +184,7 @@ export function TerminateTaskDialog({ task, onClose, onDone }: {
   useEffect(() => { if (task) { setReason(''); setConfirmed(false); setError(''); } }, [task]);
 
   async function submit() {
-    if (!task || reason.trim() === '' || !confirmed) { setError(reason.trim() === '' ? '请填写终止原因' : '请确认终止不可恢复'); return; }
+    if (!task || pending || reason.trim() === '' || !confirmed) { setError(reason.trim() === '' ? '请填写终止原因' : '请确认终止不可恢复'); return; }
     setLoading(true); setError('');
     try {
       await dispatch({ type: 'terminate', taskId: task.id, reason: reason.trim() });
@@ -180,18 +199,19 @@ export function TerminateTaskDialog({ task, onClose, onDone }: {
     } finally { setLoading(false); }
   }
 
-  return <FormDialog open={!!task} title="终止运输任务" description="终止后不可恢复；已有称重记录保留，不生成正式单据，车牌可办理新任务。" onCancel={onClose} onSubmit={submit} submitDisabled={reason.trim() === '' || !confirmed || loading} submitText="确认终止" loading={loading}>
+  return <FormDialog open={!!task} title="终止运输任务" onCancel={onClose} onSubmit={submit} submitDisabled={!!pending || reason.trim() === '' || !confirmed || loading} submitText="确认终止" loading={loading}>
     {task && <div className="space-y-space-4">
       <ActionSummary task={task} first={first} />
-      <p className="text-error">终止后该任务不能恢复使用，也不能再按普通回磅出单；已有首磅记录和操作历史继续保留。</p>
       <Field label="终止原因" htmlFor="terminate-task-reason" required>
-        <Textarea id="terminate-task-reason" rows={3} value={reason} onChange={event => setReason(event.target.value)} placeholder="例如：车辆已离开，现场确认不再回磅" />
+        <Textarea id="terminate-task-reason" rows={3} value={reason} onChange={event => setReason(event.target.value)} />
       </Field>
       <label className="flex items-start gap-space-2 text-sm">
         <input type="checkbox" className="mt-0.5" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />
-        <span>我已核对车牌和首磅依据，确认终止该任务且不可恢复。</span>
+        <span>已核对本趟任务，确认终止后不可恢复</span>
       </label>
-      {error && <p role="alert" className="text-error">{error}</p>}
+      {pending?.taskId === task.id
+        ? <p role="alert" className="text-warning">提交结果待核实。<WorkbenchLink className="text-primary hover:underline" to={`/weighing/workbench?task=${encodeURIComponent(task.id)}`}>查询原请求</WorkbenchLink></p>
+        : error && <p role="alert" className="text-error">{error}</p>}
     </div>}
   </FormDialog>;
 }

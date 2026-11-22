@@ -117,7 +117,19 @@ const originalGrossSQL = "CASE WHEN f.kind='gross' THEN f.weight_milli_tonne ELS
 const originalTareSQL = "CASE WHEN f.kind='tare' THEN f.weight_milli_tonne ELSE s.weight_milli_tonne END"
 
 func originalColumns() string {
-	return "t.*, " + originalGrossSQL + " AS original_gross, " + originalTareSQL + " AS original_tare, f.confirmed_at AS first_confirmed_at, s.confirmed_at AS second_confirmed_at, vt.id AS current_ticket_id, CASE WHEN vt.id IS NULL THEN 'void' ELSE 'valid' END AS current_ticket_status"
+	return "t.*, " + originalGrossSQL + " AS original_gross, " + originalTareSQL + " AS original_tare, " +
+		"f.confirmed_at AS first_confirmed_at, s.confirmed_at AS second_confirmed_at, " +
+		"f.captured_at AS first_weighed_at, s.captured_at AS second_weighed_at, f.source AS first_source, s.source AS second_source, " +
+		"vt.id AS current_ticket_id, CASE WHEN vt.id IS NULL THEN 'void' ELSE 'valid' END AS current_ticket_status, " +
+		"ref.id AS related_ticket_id, ref.ticket_no AS related_ticket_no, ref.entry_type"
+}
+
+// Prefer the effective ticket. If all versions are void, expose the most recent
+// void ticket for traceability without changing the effective-ticket filters.
+func withOriginalTicketReference(query *gorm.DB) *gorm.DB {
+	return query.Joins("LEFT JOIN wb_ticket ref ON ref.id=COALESCE(vt.id, " +
+		"(SELECT k.id FROM wb_ticket k WHERE k.task_id=t.id ORDER BY k.revision DESC LIMIT 1))")
+
 }
 func workflowPage[T any](query *gorm.DB, q PageQuery, order string) (Page[T], error) {
 	result := Page[T]{Records: []T{}, Page: q.Page, PageSize: q.PageSize}
@@ -132,7 +144,7 @@ func (r *Repository) Originals(ctx context.Context, q PageQuery) (Page[OriginalV
 	if err != nil {
 		return Page[OriginalView]{}, err
 	}
-	page, err := workflowPage[OriginalView](query.Select(originalColumns()), q, "s.confirmed_at DESC,t.id DESC")
+	page, err := workflowPage[OriginalView](withOriginalTicketReference(query).Select(originalColumns()), q, "s.confirmed_at DESC,t.id DESC")
 	for i := range page.Records {
 		page.Records[i].OriginalNet = page.Records[i].OriginalGross - page.Records[i].OriginalTare
 	}
@@ -144,7 +156,7 @@ func (r *Repository) OriginalsAll(ctx context.Context, q PageQuery) ([]OriginalV
 		return nil, err
 	}
 	rows := []OriginalView{}
-	err = query.Select(originalColumns()).Order("s.confirmed_at DESC,t.id DESC").Find(&rows).Error
+	err = withOriginalTicketReference(query).Select(originalColumns()).Order("s.confirmed_at DESC,t.id DESC").Find(&rows).Error
 	for i := range rows {
 		rows[i].OriginalNet = rows[i].OriginalGross - rows[i].OriginalTare
 	}

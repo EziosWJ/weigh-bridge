@@ -40,7 +40,7 @@ func registerQueryRoutes(router gin.IRouter, h *Handler) {
 // @Param status query string false "对应列表状态"
 // @Param page query int false "页码，默认 1"
 // @Param pageSize query int false "每页条数 1-500，默认 10"
-// @Success 200 {object} map[string]interface{}
+// @Success 200 {object} HTTPEnvelope[Page[OriginalView]]
 // @Router /api/weighing/originals [get]
 func (h *Handler) originals(c *gin.Context) {
 	q, err := pageQuery(c)

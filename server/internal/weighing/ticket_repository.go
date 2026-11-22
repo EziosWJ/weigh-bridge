@@ -347,8 +347,12 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, error) {
 	var view TicketView
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		ticket, err := findOne[Ticket](tx, id)
-		if err != nil {
+		var ticket Ticket
+		query := withTicketReconcile(tx.Table("wb_ticket AS k"))
+		if err := query.Select("k.*, "+ticketSyncColumns).Where("k.id=?", id).Take(&ticket).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
 			return err
 		}
 		if err := fillPrintStatus(tx, &ticket); err != nil {
@@ -368,6 +372,7 @@ func (r *Repository) FindTicket(ctx context.Context, id int64) (TicketView, erro
 			ticket.SiteName = site.Name
 		}
 		view = ticketView(ticket)
+		var err error
 		// ADR 0030: each ticket keeps the title frozen when it was generated.
 		// Tickets created before snapshots existed fall back to the current
 		// effective title until the API start freezes their upgrade baseline.
@@ -412,13 +417,26 @@ func (r *Repository) Tasks(ctx context.Context, q PageQuery) (Page[Task], error)
 	}
 	return workflowPage[Task](query, q, "t.create_time DESC,t.id DESC")
 }
+
+const ticketSyncColumns = "COALESCE((SELECT f.status FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1),(SELECT v.status FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.status FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'untracked') AS sync_status, " +
+	"CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id) THEN (SELECT f.schema_version FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1) WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4 WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id) THEN 3 ELSE 0 END AS sync_protocol, " +
+	"COALESCE((SELECT f.reason FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1),(SELECT v.reason FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.reason FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'') AS sync_reason, " +
+	"COALESCE(r.status,'') AS reconcile_status, r.checked_at AS reconcile_at"
+
+const ticketPrintColumns = "COALESCE((SELECT CASE WHEN p.status='initiated' THEN 'unknown' ELSE p.status END FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1),'unprinted') AS print_status, " +
+	"(SELECT COUNT(*) FROM wb_print_attempt p WHERE p.ticket_id=k.id AND p.intent='reprint') AS reprint_count, " +
+	"(SELECT p.id FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1) AS last_print_attempt_id"
+
+func withTicketReconcile(query *gorm.DB) *gorm.DB {
+	return query.Joins("LEFT JOIN wb_ticket_reconcile r ON r.ticket_id=k.id")
+}
+
 func (r *Repository) Tickets(ctx context.Context, q PageQuery) (Page[TicketView], error) {
 	query, err := ticketQuery(r.db.WithContext(ctx), q)
 	if err != nil {
 		return Page[TicketView]{}, err
 	}
-	query = query.Joins("LEFT JOIN wb_ticket_reconcile r ON r.ticket_id=k.id")
-	query = query.Select("k.*, COALESCE((SELECT f.status FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1),(SELECT v.status FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.status FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'untracked') AS sync_status, CASE WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id) THEN (SELECT f.schema_version FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1) WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id) THEN 4 WHEN EXISTS (SELECT 1 FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id) THEN 3 ELSE 0 END AS sync_protocol, COALESCE((SELECT f.reason FROM wb_ticket_sync_change_v5 f WHERE f.ticket_id=k.id ORDER BY f.id DESC LIMIT 1),(SELECT v.reason FROM wb_ticket_sync_change_v4 v WHERE v.ticket_id=k.id ORDER BY v.id DESC LIMIT 1),(SELECT c.reason FROM wb_ticket_sync_change c WHERE c.ticket_id=k.id ORDER BY c.id DESC LIMIT 1),'') AS sync_reason, COALESCE(r.status,'') AS reconcile_status, r.checked_at AS reconcile_at, COALESCE((SELECT CASE WHEN p.status='initiated' THEN 'unknown' ELSE p.status END FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1),'unprinted') AS print_status, (SELECT COUNT(*) FROM wb_print_attempt p WHERE p.ticket_id=k.id AND p.intent='reprint') AS reprint_count, (SELECT p.id FROM wb_print_attempt p WHERE p.ticket_id=k.id ORDER BY p.attempt_no DESC LIMIT 1) AS last_print_attempt_id")
+	query = withTicketReconcile(query).Select("k.*, " + ticketSyncColumns + ", " + ticketPrintColumns)
 	raw, err := workflowPage[Ticket](query, q, "k.issued_at DESC,k.id DESC")
 	result := Page[TicketView]{Records: []TicketView{}, Total: raw.Total, Page: raw.Page, PageSize: raw.PageSize}
 	for _, row := range raw.Records {

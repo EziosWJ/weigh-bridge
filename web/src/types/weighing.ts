@@ -20,7 +20,7 @@ export interface PlateEvidence { source: 'agent' | 'simulated' | 'manual' | 'ser
 export interface CaptureFailure { cameraId: number; cameraPublicId?: string; cameraName: string; code: string; message: string }
 export interface CaptureSnapshot { captureRequired?: boolean; capturePolicyRevision?: string; imageStatus?: 'complete' | 'disabled' | 'capture_failed' | 'upload_failed'; imageError?: string; stage?: 'first' | 'second'; plateEvidence?: PlateEvidence; id: string; preset?: CameraPreset; imageSrc?: string; source?: 'agent' | 'simulated' | 'server'; images?: DeviceImage[]; failures?: CaptureFailure[]; cameraConfigVersion?: number; cameraLabel?: string; at: string; weight: number; sourceWeightKg?: number; plate?: string }
 export interface WeighRecord { actor?: string; role?: OperatorRole; retainedRecordId?: string; id: string; stage: 'first' | 'second'; kind: 'gross' | 'tare'; weight: number; sourceWeightKg?: number; at: string; capturedAt?: string; source?: 'collected' | 'manual'; evidence: 'agent' | 'simulated' | 'server' | 'manual'; capture?: CaptureSnapshot; replaces?: string; reason?: string }
-export interface HistoryEntry { actor?: string; at: string; role?: OperatorRole; action: string; reason?: string }
+export interface HistoryEntry { ticketId?: string; actor?: string; at: string; role?: OperatorRole; action: string; reason?: string }
 export interface TransportTask extends BusinessInfo { siteCode?:string;scaleCode?:string; taskNo?: string; version?: number; id: string; createdAt: string; status: TaskStatus; records: WeighRecord[]; history: HistoryEntry[]; verifiedDate?: string; crossDayDoubt?: boolean; example?: boolean }
 export type PrintStatus = 'unprinted' | 'failed' | 'unknown' | 'printed';
 export interface WeightValues { gross: number; tare: number; net: number; sourceKg?: { gross: number; tare: number; net: number } }
@@ -46,7 +46,7 @@ export interface WeightDeduction { grossDeduction: number; tareDeduction: number
 export type FinalWeightInput = Pick<WeightValues, 'gross' | 'tare'> & { reason?: string };
 export interface WeightAdjustment extends WeightDeduction { source?: 'manual' | 'collected'; actor: string; role?: OperatorRole; at: string; original: WeightValues; before: WeightValues; after: WeightValues; netAdjustment: number; netAdjustmentMode: NetAdjustmentMode; netAdjustmentRateBp?: number; netAdjustmentCategory?: string; netAdjustmentCategoryName?: string }
 export interface PrintSheet { template: string; widthMm: number; heightMm: number; layers: number; title: string; marks: string[]; rows: { label: string; value: string }[][] }
-export interface WeighingTicket extends BusinessInfo { entryType?: string; supplementReason?: string; siteCode?:string;siteName?:string; printSheet?: PrintSheet; legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; grossSource?: string; tareSource?: string; netAdjustment?: number; netAdjustmentMode?: NetAdjustmentMode; netAdjustmentRateBp?: number; netAdjustmentCategory?: string; netAdjustmentCategoryName?: string; netAdjustmentItems?: NetAdjustmentItemView[]; previousItems?: NetAdjustmentItemView[]; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
+export interface WeighingTicket extends BusinessInfo { entryType?: string; supplementReason?: string; siteCode?:string;siteName?:string; printSheet?: PrintSheet; syncStatus?: string; syncReason?: string; reconcileStatus?: string; reconcileAt?: string | null; legacyTest?: boolean; lastPrintAttemptId?: string; ticketNo?: string; id: string; taskId: string; issuedAt: string; status: 'valid' | 'void'; gross: number; tare: number; net: number; grossSource?: string; tareSource?: string; netAdjustment?: number; netAdjustmentMode?: NetAdjustmentMode; netAdjustmentRateBp?: number; netAdjustmentCategory?: string; netAdjustmentCategoryName?: string; netAdjustmentItems?: NetAdjustmentItemView[]; previousItems?: NetAdjustmentItemView[]; sourceKg?: { gross: number; tare: number; net: number }; adjustment?: WeightAdjustment; unit: '吨'; records: WeighRecord[]; history: HistoryEntry[]; previousId?: string; printStatus: PrintStatus; reprintCount: number; reprintAuthorized: boolean; example?: boolean }
 export interface DeviceImage {
   id: string;
   /** Legacy Agent images keep front/rear; Server images use cameraName instead. */
@@ -105,3 +105,20 @@ export const roleLabels: Record<OperatorRole, string> = { operator: '操作员',
 export const directionLabels: Record<Direction, string> = { inbound: '入厂卸货', outbound: '出厂装货' };
 export const taskStatusLabels: Record<TaskStatus, string> = { first: '待首次称重', second: '待二次称重', completed: '已完成', terminated: '已终止' };
 export const printStatusLabels: Record<PrintStatus, string> = { unprinted: '未发起打印', failed: '明确失败未出纸', unknown: '待核实', printed: '已打印' };
+
+export function weighingSourceLabel(entryType?: string, firstSource?: string, secondSource?: string): string | undefined {
+  if (entryType === 'manual_supplement' || firstSource === 'manual') return '人工补单';
+  if (secondSource === 'manual') return '人工补录回磅';
+  if (firstSource === 'collected' || secondSource === 'collected') return '设备称重';
+  return undefined;
+}
+
+export function recordSourceLabel(stage: WeighRecord['stage'], source: WeighRecord['source'], entryType?: string) {
+  return source === 'manual'
+    ? weighingSourceLabel(entryType, stage === 'first' ? source : undefined, stage === 'second' ? source : undefined)
+    : weighingSourceLabel(undefined, source);
+}
+
+export function activeWeighRecord(records: WeighRecord[], stage: WeighRecord['stage']): WeighRecord | undefined {
+  return records.find(record => record.stage === stage && !records.some(next => next.replaces === record.id));
+}
