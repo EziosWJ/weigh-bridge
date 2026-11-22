@@ -80,7 +80,7 @@ func (h *Handler) capabilities(c *gin.Context) {
 		writeResult(c, nil, autoPrintErr)
 		return
 	}
-	writeResult(c, map[string]any{"autoPrintEnabled": autoPrint, "masterSyncBound": syncStatus.Bound, "userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
+	writeResult(c, map[string]any{"autoPrintEnabled": autoPrint, "masterSyncBound": syncStatus.Bound, "masterSyncEnabled": syncStatus.Enabled, "userId": principal.UserID, "permissionCodes": codes, "scales": scales, "sites": sites, "maintenanceEnabled": h.service.maintenanceEnabled, "localSiteCode": status.SiteCode, "localScaleCode": status.ScaleCode, "configured": status.Configured, "initialized": status.Initialized}, err)
 }
 func pageQuery(c *gin.Context) (PageQuery, error) {
 	q := PageQuery{Page: 1, PageSize: 10, Keyword: strings.TrimSpace(c.Query("keyword")), Role: c.Query("role"), Nature: c.Query("nature")}

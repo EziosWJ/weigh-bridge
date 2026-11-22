@@ -79,6 +79,13 @@ func TestPostgresMasterSyncPermissionsAndLogAudit(t *testing.T) {
 	if success.Code != http.StatusOK || envelopeCode(t, success) != 200 {
 		t.Fatalf("operator sync: %d %s", success.Code, success.Body.String())
 	}
+	capabilities := weighingData[struct {
+		MasterSyncEnabled bool `json:"masterSyncEnabled"`
+		MasterSyncBound   bool `json:"masterSyncBound"`
+	}](t, router, http.MethodGet, "/api/weighing/capabilities", "", admin)
+	if !capabilities.MasterSyncEnabled || !capabilities.MasterSyncBound {
+		t.Fatalf("expected configured and bound capabilities: %+v", capabilities)
+	}
 	const connectionPath = "/api/weighing/sync/connection"
 	denied = serveJSON(router, http.MethodGet, connectionPath, "", operator)
 	assertEnvelopeCode(t, denied, http.StatusForbidden, http.StatusForbidden, "无权执行此操作")
@@ -126,6 +133,25 @@ func TestPostgresMasterSyncPermissionsAndLogAudit(t *testing.T) {
 	if denied.Code != http.StatusForbidden {
 		t.Fatalf("operator cleared logs: %d %s", denied.Code, denied.Body.String())
 	}
+	const logsPath = "/api/weighing/sync/logs"
+	entries := weighingData[[]weighing.MasterSyncLog](t, router, http.MethodGet, logsPath, "", admin)
+	var throughID int64
+	for _, entry := range entries {
+		throughID = max(throughID, entry.ID)
+	}
+	if err := db.GORM.Exec("INSERT INTO wb_master_sync_log (trigger_type, sync_type, success, reason, task_no) VALUES ('automatic', 'task', true, '', 'RW-F001-0001')").Error; err != nil {
+		t.Fatal(err)
+	}
+	stale := serveJSON(router, http.MethodDelete, fmt.Sprintf("%s?throughId=%d&count=%d", logsPath, throughID, len(entries)-1), "", admin)
+	if stale.Code == http.StatusOK && envelopeCode(t, stale) == 200 {
+		t.Fatal("clear accepted a stale count")
+	}
+	success = serveJSON(router, http.MethodDelete, fmt.Sprintf("%s?throughId=%d&count=%d", logsPath, throughID, len(entries)), "", admin)
+	assertEnvelopeCode(t, success, http.StatusOK, 200, "success")
+	remaining := weighingData[[]weighing.MasterSyncLog](t, router, http.MethodGet, logsPath, "", admin)
+	if len(remaining) != 1 || remaining[0].TaskNo != "RW-F001-0001" {
+		t.Fatalf("clear deleted a newly added log: %+v", remaining)
+	}
 	success = serveJSON(router, http.MethodDelete, "/api/weighing/master-sync/logs", "", admin)
 	if success.Code != http.StatusOK || envelopeCode(t, success) != 200 {
 		t.Fatalf("admin clear: %d %s", success.Code, success.Body.String())
@@ -137,7 +163,7 @@ func TestPostgresMasterSyncPermissionsAndLogAudit(t *testing.T) {
 	if err := db.GORM.Table("sys_oper_log").Where("operation_type = ?", "master-sync.logs.clear").Count(&audits).Error; err != nil {
 		t.Fatal(err)
 	}
-	if logs != 0 || audits != 1 {
+	if logs != 0 || audits != 2 {
 		t.Fatalf("log clear: logs=%d audits=%d", logs, audits)
 	}
 }

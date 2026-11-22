@@ -3,8 +3,9 @@ package weighing
 import (
 	"context"
 	"errors"
-	"github.com/EziosWJ/weighbridge/server/internal/audit"
 	"time"
+
+	"github.com/EziosWJ/weighbridge/server/internal/audit"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -85,10 +86,11 @@ func (s *Service) ConfigureMasterSync(ctx context.Context, enabled bool, address
 }
 
 type MasterSyncStatus struct {
-	Enabled     bool       `json:"enabled"`
-	Bound       bool       `json:"bound"`
-	LastSuccess *time.Time `json:"lastSuccess"`
-	IsAdmin     bool       `json:"isAdmin"`
+	Enabled     bool               `json:"enabled"`
+	Bound       bool               `json:"bound"`
+	LastSuccess *time.Time         `json:"lastSuccess"`
+	IsAdmin     bool               `json:"isAdmin"`
+	LastAttempt *MasterSyncAttempt `json:"lastAttempt,omitempty"`
 }
 
 func (s *Service) MasterSyncStatus(ctx context.Context) (MasterSyncStatus, error) {
@@ -147,6 +149,7 @@ type MasterSyncLog struct {
 	TriggerType   string    `json:"triggerType"`
 	SyncType      string    `json:"syncType"`
 	TicketNo      string    `json:"ticketNo"`
+	TaskNo        string    `json:"taskNo,omitempty"`
 	TemporaryCode string    `json:"temporaryCode,omitempty"`
 	Digest        string    `json:"digest"`
 	Category      string    `json:"category"`
@@ -163,7 +166,13 @@ func (s *Service) masterSyncLogs(ctx context.Context) ([]MasterSyncLog, error) {
 	err := repo.db.WithContext(ctx).Table("wb_master_sync_log").Order("attempted_at DESC, id DESC").Find(&rows).Error
 	return rows, err
 }
-func (s *Service) clearMasterSyncLogs(ctx context.Context, event audit.Event) error {
+
+type syncLogClearScope struct {
+	ThroughID int64
+	Count     int64
+}
+
+func (s *Service) clearMasterSyncLogs(ctx context.Context, event audit.Event, scope *syncLogClearScope) error {
 	repo, ok := s.store.(*Repository)
 	if !ok {
 		return ErrForbidden
@@ -171,8 +180,17 @@ func (s *Service) clearMasterSyncLogs(ctx context.Context, event audit.Event) er
 	event.Action = "master-sync.logs.clear"
 	event.Resource = "weighing.master-sync"
 	return repo.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec("DELETE FROM wb_master_sync_log").Error; err != nil {
-			return err
+		var result *gorm.DB
+		if scope == nil {
+			result = tx.Exec("DELETE FROM wb_master_sync_log")
+		} else {
+			result = tx.Exec("DELETE FROM wb_master_sync_log WHERE id <= ?", scope.ThroughID)
+		}
+		if result.Error != nil {
+			return result.Error
+		}
+		if scope != nil && result.RowsAffected != scope.Count {
+			return RejectionError("同步日志已变化，请刷新后重新确认")
 		}
 		return audit.RecordOn(ctx, tx, event)
 	})

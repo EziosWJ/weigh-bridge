@@ -4,12 +4,14 @@ import { Link } from "react-router-dom";
 import { weighingApi } from "@/api/weighing";
 import { ContentCard } from "@/components/common/content-card";
 import { DetailItem } from "@/components/common/detail-item";
+import { HelpHint } from "@/components/common/help-hint";
 import { PageHeader } from "@/components/common/page-header";
 import { StatusTag } from "@/components/common/status-tag";
 import { toast } from "@/components/common/toast-store";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/datetime";
+import { masterDataLabel } from "./labels";
 
 type MasterStatus = Awaited<ReturnType<typeof weighingApi.masterSyncStatus>>;
 
@@ -18,6 +20,7 @@ export function SyncMasterPage() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [syncError, setSyncError] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -25,6 +28,7 @@ export function SyncMasterPage() {
     try {
       setStatus(await weighingApi.masterSyncStatus());
     } catch (failure) {
+      setStatus(null);
       setError(getErrorMessage(failure, "无法读取资料同步状态"));
     } finally {
       setLoading(false);
@@ -34,41 +38,36 @@ export function SyncMasterPage() {
 
   const sync = async () => {
     setBusy(true);
+    setSyncError("");
     try {
-      const next = await weighingApi.runMasterSync();
-      setStatus(next);
-      toast.success({ title: "总部资料同步成功", description: "资料已整体生效；本次同步不触发单据上传。" });
+      setStatus(await weighingApi.runMasterSync());
+      toast.success("总部资料已生效");
     } catch (failure) {
-      toast.error({ title: "总部资料同步失败", description: getErrorMessage(failure, "请稍后重试") });
+      setSyncError(getErrorMessage(failure, "总部资料同步失败"));
+      await load();
     } finally {
       setBusy(false);
     }
   };
 
+  const mode = status && masterDataLabel(status);
+  const attempt = status?.lastAttempt;
   return <>
-    <PageHeader title="基础资料同步" description="物料分类、物料、往来主体及联系人由总部统一维护；完整下载并校验成功后才整体生效。" actions={<Button variant="secondary" onClick={() => void load()} disabled={loading}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>} />
+    <PageHeader title="基础资料同步" actions={<Button variant="secondary" onClick={() => { setSyncError(""); void load(); }} disabled={loading || busy}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>} />
     {error && <p role="alert" className="mb-space-4 text-sm text-error">{error}</p>}
-    <ContentCard title="资料同步状态" extra={status ? <StatusTag tone={!status.enabled ? "neutral" : status.bound ? "success" : "warning"}>{!status.enabled ? "同步未开启" : status.bound ? "云端资料模式" : "待首次同步"}</StatusTag> : null}>
-      <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-3">
-        <DetailItem label="同步开关" value={status ? (status.enabled ? "开启" : "关闭") : "—"} />
-        <DetailItem label="资料模式" value={status ? (status.bound ? "已应用总部资料" : "尚未完成首次同步") : "—"} />
+    <ContentCard title="当前资料" extra={<HelpHint label="资料同步规则" align="right">同步范围包括物料分类、物料、往来主体及联系人。完整校验后一次生效，失败时保留上次成功资料。启用同步后，由管理员完成首次同步。</HelpHint>}>
+      <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
+        <DetailItem label="资料状态" value={mode ? <StatusTag tone={mode.tone}>{mode.label}</StatusTag> : loading ? "读取中…" : "—"} />
         <DetailItem label="最近成功同步" value={formatDateTime(status?.lastSuccess)} />
+        <DetailItem label="最近同步结果" value={attempt ? <StatusTag tone={attempt.success ? "success" : "error"}>{attempt.success ? "成功" : "失败"}</StatusTag> : "—"} />
+        <DetailItem label="最近同步时间" value={formatDateTime(attempt?.attemptedAt)} />
       </div>
-      <p className="mt-space-4 text-sm text-text-secondary">首次成功前不办理正式称重；失败保留上一版资料，可手动重试。成功后可继续使用上次同步资料，互联网中断不影响本地业务。</p>
-      {status && !status.enabled && <p role="alert" className="mt-space-3 rounded-control border border-warning-border bg-warning-background px-space-3 py-space-2 text-sm text-warning">当前为单机模式。待上传单据变化保留；重新开启并重启后，由管理员完成手动资料同步再继续。</p>}
       <div className="mt-space-4 flex flex-wrap gap-space-2">
-        <Button variant="primary" disabled={busy || !status?.enabled} onClick={() => void sync()}>{busy ? "正在同步…" : "立即同步全部资料"}</Button>
-        <Link className="inline-flex h-control items-center text-sm text-primary hover:underline" to="/weighing/materials">前往物料资料</Link>
-        <Link className="inline-flex h-control items-center text-sm text-primary hover:underline" to="/weighing/sync/logs">查看同步日志</Link>
+        <Button variant="primary" disabled={loading || busy || !status?.enabled || (!status.bound && !status.isAdmin)} onClick={() => void sync()}>{busy ? "正在同步…" : "立即同步全部资料"}</Button>
+        <Link className="inline-flex h-control items-center text-sm text-primary hover:underline" to="/weighing/materials">物料资料</Link>
+        <Link className="inline-flex h-control items-center text-sm text-primary hover:underline" to="/weighing/sync/logs">同步日志</Link>
       </div>
-    </ContentCard>
-    <ContentCard title="同步范围与失败处理" className="mt-space-6">
-      <ul className="list-disc space-y-2 pl-5 text-sm text-text-secondary">
-        <li>自动同步按配置间隔执行；本页与资料页的主动同步入口执行同一完整资料同步。</li>
-        <li>一次同步物料分类、物料、往来主体及联系人；全部校验成功后在单个事务中生效，不产生部分更新。</li>
-        <li>主动同步资料不触发单据上传；单据上传与资料同步相互独立。</li>
-        <li>已同步资料在后续快照中意外消失时整次失败并保留上一版；联系人可由主体移除，历史业务快照不改写。</li>
-      </ul>
+      {syncError ? <p role="alert" className="mt-space-3 text-sm text-error">{syncError}</p> : attempt && !attempt.success && attempt.reason && <p className="mt-space-3 text-sm text-error">{attempt.reason}</p>}
     </ContentCard>
   </>;
 }

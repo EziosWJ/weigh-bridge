@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { DataTableCard } from "@/components/common/data-table-card";
 import { DataTable } from "@/components/common/data-table";
 import { EmptyState } from "@/components/common/empty-state";
+import { HelpHint } from "@/components/common/help-hint";
 import { PageHeader } from "@/components/common/page-header";
 import { Pagination } from "@/components/common/pagination";
 import { SearchFilterBar } from "@/components/common/search-filter-bar";
@@ -27,6 +28,7 @@ const typeLabels: Record<string, string> = {
   reopen: "重开上传",
   reconcile: "单据对账",
   temp_party: "临时主体登记上传",
+  task: "任务上传",
 };
 const kindOf = (log: SyncLog) => log.syncType === "master" ? `master-${log.triggerType}` : log.syncType;
 
@@ -35,12 +37,13 @@ export function SystemSyncLogsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [date, setDate] = useState("");
+  const [keyword, setKeyword] = useState("");
   const [kind, setKind] = useState("");
   const [category, setCategory] = useState("");
   const [result, setResult] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [clearOpen, setClearOpen] = useState(false);
+  const [clearScope, setClearScope] = useState<{ throughId: number; count: number; outsideFilter: number } | null>(null);
   const [clearing, setClearing] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
@@ -50,32 +53,52 @@ export function SystemSyncLogsPage() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  const filtered = useMemo(() => logs.filter(log =>
-    (!date || formatDateOnly(log.attemptedAt) === date) &&
-    (!kind || kindOf(log) === kind) &&
-    (!category || log.category === category) &&
-    (!result || String(log.success) === result),
-  ), [logs, date, kind, category, result]);
+  const filtered = useMemo(() => {
+    const text = keyword.trim().toLowerCase();
+    return logs.filter(log =>
+      (!text || [log.ticketNo, log.taskNo, log.temporaryCode].some(value => value?.toLowerCase().includes(text))) &&
+      (!date || formatDateOnly(log.attemptedAt) === date) &&
+      (!kind || kindOf(log) === kind) &&
+      (!category || log.category === category) &&
+      (!result || String(log.success) === result),
+    );
+  }, [logs, keyword, date, kind, category, result]);
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / pageSize)));
-  const reset = () => { setDate(""); setKind(""); setCategory(""); setResult(""); setPage(1); };
+  const reset = () => { setKeyword(""); setDate(""); setKind(""); setCategory(""); setResult(""); setPage(1); };
   const clear = async () => {
+    if (!clearScope) return;
     setClearing(true);
-    try { await syncApi.clearLogs(); setClearOpen(false); setPage(1); toast.success("普通同步日志已清空"); await load(); }
-    catch (err) { toast.error({ title: "清空失败", description: getErrorMessage(err, "请稍后重试") }); }
-    finally { setClearing(false); }
+    try {
+      await syncApi.clearLogs(clearScope.throughId, clearScope.count);
+      setClearScope(null);
+      setPage(1);
+      toast.success(`已清空 ${clearScope.count} 条普通同步日志`);
+      await load();
+    } catch (err) {
+      setClearScope(null);
+      await load();
+      toast.error({ title: "清空失败", description: getErrorMessage(err, "请稍后重试") });
+    } finally {
+      setClearing(false);
+    }
   };
   const columns: DataTableColumn<SyncLog>[] = [
     { title: "同步时间", dataIndex: "attemptedAt", width: 180, render: (_, row) => formatDateTime(row.attemptedAt) },
-    { title: "同步类型", dataIndex: "syncType", width: 130, render: (_, row) => typeLabels[kindOf(row)] ?? row.syncType },
-    { title: "范围 / 编码", dataIndex: "ticketNo", width: 190, render: (_, row) => row.temporaryCode ? <span className="break-all">{row.temporaryCode}</span> : row.ticketNo || (row.syncType === "reconcile" ? "对账批次" : "全部资料") },
-    { title: "类别", dataIndex: "category", width: 130, render: (_, row) => row.category ? (categoryLabels[row.category] ?? row.category) : "—" },
-    { title: "摘要", dataIndex: "digest", width: 150, render: (_, row) => row.digest ? <span className="font-mono text-xs" title={row.digest}>{row.digest.slice(0, 10)}…</span> : "—" },
+    { title: "同步类型", dataIndex: "syncType", width: 130, render: (_, row) => typeLabels[kindOf(row)] ?? "其他同步" },
+    { title: "单号 / 任务号 / 主体编码", key: "object", width: 222, render: (_, row) => <span className="break-all">
+      {row.temporaryCode || row.taskNo || row.ticketNo || (row.syncType === "reconcile" ? "对账批次" : "全部资料")}
+    </span> },
+    { title: "类别", dataIndex: "category", width: 130, render: (_, row) => row.category ? (categoryLabels[row.category] ?? "其他类别") : "—" },
     { title: "结果", dataIndex: "success", width: 90, render: (_, row) => <StatusTag tone={row.success ? "success" : "error"}>{row.success ? "成功" : "失败"}</StatusTag> },
-    { title: "失败原因", dataIndex: "reason", render: (_, row) => row.reason || "—" },
+    { title: "结果详情", dataIndex: "reason", render: (_, row) => <div className="[overflow-wrap:anywhere]">
+      {row.reason || (row.digest?.trim() ? null : "—")}
+      {row.digest?.trim() && <details><summary className="cursor-pointer text-xs text-text-secondary">查看摘要</summary><code className="break-all text-xs">{row.digest}</code></details>}
+    </div> },
   ];
   return <>
-    <PageHeader title="同步日志" description="记录总部资料同步、临时主体登记上传、单据上传和对账结果。单据核查记录独立保留。" />
+    <PageHeader title="同步日志" actions={<HelpHint label="日志清理范围" align="right">清除的是普通同步日志。核查结论、单据对账结果及待上传变化继续保留。</HelpHint>} />
     <SearchFilterBar actions={<Button variant="secondary" onClick={reset}><RotateCcw className="h-4 w-4" aria-hidden />重置</Button>}>
+      <Input aria-label="单号、任务号或临时主体编码" placeholder="单号、任务号或临时主体编码" value={keyword} onChange={event => { setKeyword(event.target.value); setPage(1); }} />
       <Input type="date" aria-label="同步日期" value={date} onChange={event => { setDate(event.target.value); setPage(1); }} />
       <Select aria-label="同步类型" value={kind} onChange={event => { setKind(event.target.value); setPage(1); }}>
         <option value="">全部类型</option>
@@ -88,9 +111,9 @@ export function SystemSyncLogsPage() {
       <Select aria-label="同步结果" value={result} onChange={event => { setResult(event.target.value); setPage(1); }}><option value="">全部结果</option><option value="true">成功</option><option value="false">失败</option></Select>
     </SearchFilterBar>
     <DataTableCard>
-      <TableToolbar title="同步日志列表" description={`共 ${filtered.length} 条普通记录；日志可手动清空，但不删除变化、对账结果或核查记录。`} actions={<>
+      <TableToolbar title="同步日志列表" description={`共 ${filtered.length} 条`} actions={<>
         <Button variant="secondary" size="sm" disabled={loading} onClick={() => void load()}><RefreshCw className="h-4 w-4" aria-hidden />刷新</Button>
-        <Button variant="secondary" size="sm" className="text-error hover:text-error" disabled={loading || clearing || !!error || logs.length === 0} onClick={() => setClearOpen(true)}><Trash2 className="h-4 w-4" aria-hidden />清空全部日志</Button>
+        <Button variant="secondary" size="sm" className="text-error hover:text-error" disabled={loading || clearing || !!error || logs.length === 0} onClick={() => setClearScope({ throughId: logs.reduce((last, log) => Math.max(last, log.id), 0), count: logs.length, outsideFilter: logs.length - filtered.length })}><Trash2 className="h-4 w-4" aria-hidden />清空全部日志</Button>
       </>} />
       <DataTable
         columns={columns}
@@ -98,13 +121,15 @@ export function SystemSyncLogsPage() {
         rowKey="id"
         loading={loading}
         error={error && <EmptyState title="加载失败" description={error} actionText="重试" onAction={() => void load()} />}
-        minWidth={1020}
+        minWidth={850}
         compact
         ariaLabel="同步日志列表"
-        empty={<EmptyState title="暂无同步日志" description={logs.length ? "当前筛选条件下没有同步记录。" : "同步记录会显示在这里。"} actionText={logs.length ? "重置筛选" : undefined} onAction={reset} />}
+        empty={<EmptyState title="暂无同步日志"  actionText={logs.length ? "重置筛选" : undefined} onAction={reset} />}
       />
       <Pagination page={currentPage} pageSize={pageSize} total={filtered.length} disabled={loading} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
-    <ConfirmDialog open={clearOpen} title="清空普通同步日志" description="将永久删除全部普通同步日志，包括当前筛选范围以外的记录。待上传变化、对账结果、冲突记录和核查结论会继续保留。" confirmText="清空" danger loading={clearing} onConfirm={() => void clear()} onCancel={() => setClearOpen(false)} />
+    <ConfirmDialog open={clearScope != null} title="清空普通同步日志"
+      description={clearScope && `永久删除已读取的 ${clearScope.count} 条普通同步日志${clearScope.outsideFilter ? `，其中 ${clearScope.outsideFilter} 条在当前筛选范围外` : ""}。`}
+      confirmText="清空" danger loading={clearing} onConfirm={() => void clear()} onCancel={() => setClearScope(null)} />
   </>;
 }

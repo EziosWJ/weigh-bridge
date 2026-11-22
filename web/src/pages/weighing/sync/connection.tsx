@@ -9,6 +9,7 @@ import { StatusTag } from "@/components/common/status-tag";
 import { Button } from "@/components/ui/button";
 import { getErrorMessage } from "@/lib/api-error";
 import { formatDateTime } from "@/lib/datetime";
+import { masterDataLabel } from "./labels";
 
 const readinessLabels = {
   disabled: { label: "同步已关闭", tone: "neutral" },
@@ -28,8 +29,11 @@ export function CloudConnectionPage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    void syncApi.connection(controller.signal).then(setConnection).catch((failure: unknown) => {
-      if (!controller.signal.aborted) setError(getErrorMessage(failure, "无法读取云端连接状态"));
+    void syncApi.connection(controller.signal).then(value => { if (!controller.signal.aborted) setConnection(value); }).catch((failure: unknown) => {
+      if (!controller.signal.aborted) {
+        setConnection(null);
+        setError(getErrorMessage(failure, "无法读取云端连接状态"));
+      }
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
@@ -38,6 +42,7 @@ export function CloudConnectionPage() {
 
   const readiness = connection ? readinessLabels[connection.readiness.status] : null;
   const attempt = connection?.lastAttempt;
+  const master = connection && masterDataLabel(connection);
 
   return <>
     <PageHeader title="云端连接" actions={<Button variant="secondary" disabled={loading} onClick={() => {
@@ -59,12 +64,12 @@ export function CloudConnectionPage() {
             <DetailItem label="本厂编码" value={connection.siteCode || "未配置"} />
           </div>
         </ContentCard>
-        <ContentCard title="云端就绪检测" extra={readiness && <StatusTag tone={readiness.tone}>{readiness.label}</StatusTag>}>
+        <ContentCard title="云端就绪检测" extra={loading ? <StatusTag tone="neutral">正在检测</StatusTag> : readiness && <StatusTag tone={readiness.tone}>{readiness.label}</StatusTag>}>
           <DetailItem label="检测时间（北京时间）" value={formatDateTime(connection.readiness.checkedAt)} />
         </ContentCard>
-        <ContentCard title="基础资料同步" extra={<Link className="text-sm text-primary hover:underline" to="/weighing/sync/logs">查看同步日志</Link>}>
+        <ContentCard title="基础资料同步" extra={<Link className="text-sm text-primary hover:underline" to="/weighing/sync/master">查看资料同步</Link>}>
           <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
-            <DetailItem label="资料模式" value={connection.bound ? "已应用总部资料" : connection.enabled ? "待首次同步" : "单机模式"} />
+            <DetailItem label="资料状态" value={master && <StatusTag tone={master.tone}>{master.label}</StatusTag>} />
             <DetailItem label="最近一次同步结果" value={attempt
               ? <StatusTag tone={attempt.success ? "success" : "error"}>{attempt.success ? "成功" : "失败"}</StatusTag>
               : "暂无记录"} />

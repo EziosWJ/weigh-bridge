@@ -301,4 +301,13 @@ func checkTaskSyncBackoff(t *testing.T, status int, reason string) {
 	if recovered.ConfirmedAt == nil || recovered.Payload != failed.Payload || recovered.LastError != "" {
 		t.Fatalf("network retry did not confirm the saved snapshot: %+v", recovered)
 	}
+	var logs []weighing.MasterSyncLog
+	if err := db.Table("wb_master_sync_log").Order("id").Find(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 4 || logs[0].SyncType != "task" || logs[0].TaskNo != currentNo || logs[0].Success || logs[0].Reason == "" ||
+		logs[1].TaskNo != independentNo || !logs[1].Success || logs[2].TaskNo != currentNo || !logs[2].Success ||
+		logs[3].TaskNo != currentNo || !logs[3].Success {
+		t.Fatalf("unexpected task attempt log (heartbeat must be omitted): %+v", logs)
+	}
 }
