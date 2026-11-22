@@ -27,7 +27,7 @@ try {
   let grainCandidates = [];
   let temporaryParty;
   const temporaryRequests = [];
-  const formalParty = { id: 21, code: 'C-P-0001', name: '测试供货方', nature: 'enterprise', roles: ['supplier'], enabled: 1, version: 1, contacts: [] };
+  const formalParty = { id: 21, code: 'C-P-0001', name: '测试供货方', nature: 'enterprise', roles: ['supplier'], enabled: 1, version: 1, shortName: '测试粮站', address: '仁怀市茅台镇', contacts: [{ id: 1, name: '陈师傅', phone: '13900000000', isDefault: true }] };
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jKxoAAAAASUVORK5CYII=', 'base64');
   await page.route('**/api/system/dict/TRANSPORT_DIRECTION/items', route => route.fulfill({ json: { code: 200, data: [] } }));
   await page.route('**/api/weighing/**', async route => {
@@ -71,9 +71,13 @@ try {
   const plateInput = page.getByRole('textbox', { name: '车牌号码', exact: true });
   assert.equal(await plateInput.getAttribute('placeholder'), '请输入车牌号码');
   assert.equal(await plateInput.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
+  await page.getByRole('button', { name: '清除车牌', exact: true }).click();
   await plateInput.fill('ad12345');
   assert.equal(await plateInput.inputValue(), 'AD12345');
   assert.equal(await plateInput.evaluate(el => el.scrollWidth <= el.clientWidth && el.scrollLeft === 0), true);
+  await page.getByRole('button', { name: '确认车辆', exact: true }).click();
+  await page.getByRole('alert').getByText('请选择车牌省份简称').waitFor();
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'workbench-plate-province');
   await plateInput.evaluate(el => {
     const clipboardData = new DataTransfer();
     clipboardData.setData('text/plain', '苏A12345');
@@ -117,7 +121,7 @@ try {
   assert.equal(JSON.parse(await page.locator('output').textContent()).images, 0);
   const optionalReview = page.getByRole('dialog', { name: '核对首磅（毛重）', exact: true });
   await optionalReview.waitFor();
-  await optionalReview.getByText('本次未强制抓拍，允许无图确认；请对照现场车辆核对。', { exact: true }).waitFor();
+  await optionalReview.getByText('0 张 · 非强制抓拍', { exact: true }).waitFor();
   assert.equal(confirmations, 0, '无图采集仍不能自动确认');
   await optionalReview.getByRole('button', { name: '关闭核对', exact: true }).click();
   await open('optional-review');
@@ -173,6 +177,7 @@ try {
   await company.check();
   await registerAndUse.click();
   await create.getByRole('region', { name: '同名档案核对' }).getByText('正式', { exact: true }).waitFor();
+  await create.getByText('测试粮站 · 仁怀市茅台镇 · 陈师傅 13900000000', { exact: true }).waitFor();
   assert.equal(temporaryRequests.length, 0, '先核对同名记录才允许登记');
   await create.getByRole('button', { name: '选用已有档案 C-P-0001' }).click();
   await create.waitFor({ state: 'hidden' });
@@ -220,7 +225,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="搜索承运方"]').value === '已更正供货方');
   await supplementary.getByRole('button', { name: '登记临时承运方' }).click();
   const createCarrier = page.getByRole('dialog', { name: '登记临时承运方' });
-  await createCarrier.getByText('承运方', { exact: true }).waitFor();
+  await createCarrier.waitFor();
   assert.equal(await createCarrier.getByRole('checkbox', { name: '承运商' }).count(), 0);
   await createCarrier.getByRole('button', { name: '取消' }).click();
   await page.getByRole('tab', { name: '基本信息' }).click();
@@ -233,7 +238,9 @@ try {
   await open('temporary-grain');
   const boundSupplier = basic.getByRole('group', { name: '粮食流转单供货方' });
   await boundSupplier.getByText('来自粮食流转单', { exact: true }).waitFor();
-  await boundSupplier.getByText('C-P-0001', { exact: true }).waitFor();
+  assert.equal(await boundSupplier.getByText('C-P-0001', { exact: true }).count(), 0);
+  await boundSupplier.getByRole('button', { name: '供货方编码' }).focus();
+  await page.getByRole('tooltip').getByText('C-P-0001', { exact: true }).waitFor();
   assert.equal(await supplier.count(), 0);
   assert.equal(await registerSupplier.count(), 0);
   await page.getByRole('tab', { name: '补充信息（选填）' }).click();
@@ -247,14 +254,18 @@ try {
   await page.getByRole('button', { name: '确认车辆', exact: true }).click();
   await page.getByRole('alert').getByText(/LT-001 暂无法关联。.*指定正式供货方已停用/).waitFor();
   assert.equal(await boundSupplier.count(), 0, '不可用供货方的流转单不能完成关联');
-  grainCandidates = [grain('LT-001'), grain('LT-002')];
+  grainCandidates = [
+    { ...grain('LT-001'), registeredAt: '2026-11-19T01:20:00Z', contractNo: 'HT-001', driver: '张师傅' },
+    { ...grain('LT-002'), registeredAt: '2026-11-19T02:30:00Z', driver: '李师傅' },
+  ];
   await open('temporary-grain');
   await page.getByRole('button', { name: '确认车辆', exact: true }).click();
   const trips = page.getByLabel('云端流转单人工选择');
-  await trips.getByRole('button', { name: /LT-001/ }).click();
+  await trips.getByRole('button', { name: /LT-001.*登记 2026-11-19 09:20:00.*合同 HT-001.*司机 张师傅/ }).click();
+  await trips.getByRole('button', { name: /LT-002.*登记 2026-11-19 10:30:00.*司机 李师傅/ }).waitFor();
   await boundSupplier.getByText('来自粮食流转单').waitFor();
   await trips.getByRole('button', { name: /LT-002/ }).click();
-  await trips.getByText('已选 LT-002，可在此更换。', { exact: true }).waitFor();
+  await trips.getByText('已选 LT-002', { exact: true }).waitFor();
   assert.equal(await supplier.count(), 0, '换流转单后供货方仍为只读');
   grainCandidates = [];
 
@@ -284,7 +295,7 @@ try {
   await individual.check();
   await registerAndUse.click();
   await create.waitFor({ state: 'hidden' });
-  await review.getByText(/采集后登记供货方 · T-P-LOCAL-32/).waitFor();
+  await review.getByText('采集后登记供货方', { exact: true }).waitFor();
   await page.waitForFunction(() => Array.from(document.querySelectorAll('button')).some(button =>
     button.textContent.trim() === '确认首磅（毛重）' && !button.disabled));
   const frozen = JSON.parse(await page.locator('output').textContent());

@@ -1,3 +1,4 @@
+import { HelpHint } from '@/components/common/help-hint';
 import { WorkbenchLink } from "@/components/common/workbench-link";
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, Info, Plus } from 'lucide-react';
@@ -36,11 +37,12 @@ export function DeviceBanner({ compact = false }: { compact?: boolean }) {
 }
 
 /** 运输方向控件：工作台简单行、标准表单字段和带说明的资料弹窗三种排布。 */
-export function BusinessDirectionControl({ value, update, lockDirection = false, variant = 'field' }: {
+export function BusinessDirectionControl({ value, update, lockDirection = false, variant = 'field', showHelp = true }: {
   value: TaskInput;
   update: (patch: Partial<TaskInput>) => void;
   lockDirection?: boolean;
   variant?: 'field' | 'simple' | 'panel';
+  showHelp?: boolean;
 }) {
   const inbound = value.direction === 'inbound';
   const directionGroup = useId();
@@ -83,7 +85,7 @@ export function BusinessDirectionControl({ value, update, lockDirection = false,
       </div>
     </div>
   </div>;
-  return <Field label="运输方向" htmlFor="business-direction" required help={lockDirection ? '首次称重后方向锁定；回磅沿用原方向，净重 = 毛重 − 皮重。' : `${directionLabels.inbound}先称毛重、卸货后称皮重；${directionLabels.outbound}先称皮重、装货后称毛重。首磅建立任务，回磅确认后出单；净重 = 毛重 − 皮重。`}>{select}</Field>;
+  return <Field label="运输方向" htmlFor="business-direction" required help={showHelp ? (lockDirection ? '首次称重后方向锁定；回磅沿用原方向，净重 = 毛重 − 皮重。' : `${directionLabels.inbound}先称毛重、卸货后称皮重；${directionLabels.outbound}先称皮重、装货后称毛重。首磅建立任务，回磅确认后出单；净重 = 毛重 − 皮重。`) : undefined}>{select}</Field>;
 }
 
 function PartyRoleLookup({ label, role, value, options, loadOptions, loadParties, onChange, showDetails = true, allowTemporary = false }: {
@@ -131,19 +133,21 @@ function PartyRoleLookup({ label, role, value, options, loadOptions, loadParties
 }
 
 /** 首磅现场必填项：物料和按方向限定的供收方。 */
-export function BusinessRequiredFields({ value, update, hidePlate = true, compact = false, allowTemporary = false, trip }: {
+export function BusinessRequiredFields({ value, update, hidePlate = true, compact = false, allowTemporary = false, trip, plateValidation }: {
   value: TaskInput;
   update: (patch: Partial<TaskInput>) => void;
   hidePlate?: boolean;
   compact?: boolean;
   allowTemporary?: boolean;
   trip?: TripCandidate;
+  plateValidation?: string;
 }) {
   const legacyPlate = useRef(value.plate);
-  const { parties, materialOptions, partyOptions, loadMaterials, loadPartyOptions, loadParties } = useBusinessOptions(value, compact);
+  const { materials, parties, materialOptions, partyOptions, loadMaterials, loadPartyOptions, loadParties } = useBusinessOptions(value, compact);
   const partyLabel = value.direction === 'inbound' ? '供货方' : '收货方';
   const material = <WeighingLookup label="物料" value={value.materialId} options={materialOptions} loadOptions={loadMaterials}
     placeholder="名称、规格或编码" showDetails={!compact} onChange={materialId => update({ materialId })} />;
+  const materialSpec = materials.find(item => item.id === value.materialId)?.spec;
   const tripSupplier = trip ? parties.find(item => item.code === trip.partyCode) : undefined;
   const tripProblem = trip ? tripSupplierProblem(tripSupplier) : '';
   const party = trip ? <div className="workbench-compact-field" role="group" aria-label="粮食流转单供货方">
@@ -151,7 +155,7 @@ export function BusinessRequiredFields({ value, update, hidePlate = true, compac
     <div className="workbench-trip-supplier">
       <strong className="min-w-0 break-words">{tripSupplier?.name || trip.partyName}</strong>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
-        <span className="break-all">{trip.partyCode}</span><StatusTag tone="info">来自粮食流转单</StatusTag>
+        <StatusTag tone="info">来自粮食流转单</StatusTag>{trip.partyCode && <HelpHint label="供货方编码">{trip.partyCode}</HelpHint>}
       </div>
     </div>
     {tripProblem && <p role="alert" className="text-sm text-warning">{tripProblem}</p>}
@@ -163,22 +167,23 @@ export function BusinessRequiredFields({ value, update, hidePlate = true, compac
       update({ partyId, contactName: contact?.name ?? '', contactPhone: contact ? contact.phone : selected?.phone ?? '' });
     }} />;
   if (compact) return <>
-    {!hidePlate && <div className="workbench-compact-field"><span>车牌<span className="text-error">*</span></span><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></div>}
-    <div className="workbench-compact-field"><span>物料<span className="text-error">*</span></span>{material}</div>
+    {!hidePlate && <div className="workbench-compact-field"><span>车牌<span className="text-error">*</span></span><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} validationError={plateValidation} onChange={plate => update({ plate })} /></div>}
+    <div className="workbench-compact-field"><span>物料<span className="text-error">*</span></span>{material}{materialSpec && <span className="text-xs text-text-secondary">{materialSpec}</span>}</div>
     {party}
   </>;
   return <>
-    {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} onChange={plate => update({ plate })} /></Field>}
+    {!hidePlate && <Field label="车牌" htmlFor="business-plate" required><PlateInput id="business-plate" value={value.plate} legacyValue={legacyPlate.current} validationError={plateValidation} onChange={plate => update({ plate })} /></Field>}
     <Field label="物料" required>{material}</Field>
     {party}
   </>;
 }
 
 /** 选填补充资料；工作台折叠展示，资料表单直接展开。 */
-export function BusinessSupplementaryFields({ value, update, allowTemporary = false }: {
+export function BusinessSupplementaryFields({ value, update, allowTemporary = false, showHelp = true }: {
   value: TaskInput;
   update: (patch: Partial<TaskInput>) => void;
   allowTemporary?: boolean;
+  showHelp?: boolean;
 }) {
   const { parties, carrierOptions, loadCarrierOptions, loadParties } = useBusinessOptions(value);
   const party = parties.find(p => p.id === value.partyId);
@@ -186,7 +191,7 @@ export function BusinessSupplementaryFields({ value, update, allowTemporary = fa
     <div className="space-y-1.5">
       <PartyRoleLookup label="承运方" role="carrier" value={value.carrierId ?? ''} options={carrierOptions}
         loadOptions={loadCarrierOptions} loadParties={loadParties} allowTemporary={allowTemporary} onChange={carrierId => update({ carrierId })} />
-      <p className="text-helper text-text-tertiary">可与供收方相同，须具有承运商身份</p>
+      {showHelp && <p className="text-helper text-text-tertiary">可与供收方相同，须具有承运商身份</p>}
     </div>
     {!!party?.contacts.length && <Field label="选择主体联系人" htmlFor="business-contact"><Select id="business-contact" value={party.contacts.find(c => c.name === value.contactName && c.phone === value.contactPhone)?.id ?? ''} onChange={e => { const contact = party.contacts.find(c => c.id === e.target.value); if (contact) update({ contactName: contact.name, contactPhone: contact.phone }); }}><option value="">手工填写本趟联系信息</option>{party.contacts.map(c => <option key={c.id} value={c.id}>{c.name} · {c.phone || '无电话'}{c.isDefault ? '（默认）' : ''}</option>)}</Select></Field>}
     <Field label="本趟联系人（选填）" htmlFor="business-contact-name"><Input id="business-contact-name" value={value.contactName ?? ''} onChange={e => update({ contactName: e.target.value })} /></Field>

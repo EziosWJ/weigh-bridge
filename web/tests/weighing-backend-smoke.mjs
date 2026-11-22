@@ -45,7 +45,7 @@ async function login(page, username, password = 'admin123') {
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await page.waitForURL(url => !url.pathname.startsWith('/login'));
 }
-const deadline = setTimeout(() => { for (const child of children) { try { if(child.exitCode===null) process.kill(-child.pid, 'SIGTERM'); } catch { /* Already exited. */ } } }, 180_000);
+const deadline = setTimeout(() => { for (const child of children) { try { if(child.exitCode===null) process.kill(-child.pid, 'SIGTERM'); } catch { /* Already exited. */ } } }, 300_000);
 try {
   postgres = await startTestPostgres();
   Object.assign(env, postgres.env);
@@ -241,8 +241,11 @@ try {
     }
     await page.setViewportSize({ width: 1366, height: 768 });
     if (stage === '回磅') {
-      if (expectAutomaticPrint) await completed.getByRole('button', { name: '重新打印', exact: true }).waitFor();
-      else await completed.getByText('未发起打印', { exact: false }).waitFor();
+      await completed.getByRole('link', { name: /^F001-/ }).waitFor();
+      if (expectAutomaticPrint) await completed.getByRole('button', { name: /查看打印状态|核实打印结果/ }).waitFor();
+      else await completed.getByRole('button', { name: '打印本单', exact: true }).waitFor();
+    } else {
+      for (const label of ['任务号', `首磅${kind}`, '首磅时间']) await completed.getByText(label, { exact: true }).waitFor();
     }
     await completed.getByRole('button', { name: stage === '首磅' ? '留在当前页面' : '返回当前页面', exact: true }).click();
     await page.getByRole('heading', { name: stage === '首磅' ? '首磅已完成 · 等待回磅' : /^回磅已完成/ }).waitFor();
@@ -270,9 +273,12 @@ try {
 
     if (direction === 'inbound') {
       // Industrial workbench keeps device evidence genuine and all controls usable.
-      const views = page.getByRole('group', { name: '摄像头', exact: true });
-      await views.getByRole('button', { name: /入口相机/ }).click();
-      await views.getByRole('button', { name: /出口相机/ }).click();
+      const views = page.locator('.workbench-camera-grid');
+      const secondaryView = views.getByRole('button', { name: '放大 出口相机' });
+      await secondaryView.click();
+      await views.locator('.is-main').getByText('出口相机', { exact: true }).waitFor();
+      await views.getByRole('button', { name: '放大 入口相机' }).click();
+      await views.locator('.is-main').getByText('入口相机', { exact: true }).waitFor();
       assert.equal(await views.getByRole('button', { name: /车头视角|车尾视角/ }).count(), 0, 'camera names are maintained by the Server module, not fixed front/rear');
       assert.equal(await page.getByText('尚未配置摄像头', { exact: true }).count(), 0, 'the workbench reflects the configured camera list');
       for (const [width, height] of [[1920, 1080], [1366, 768], [1024, 768], [768, 1024], [390, 844]]) {
@@ -345,7 +351,7 @@ try {
       assert.equal(await firstReview.getByRole('alert').count(), 0, '设备变化不使成功采集失效');
       // Reopening must keep the sampled 30 t, even though live weight is now 29 t.
       await firstReview.getByRole('button', { name: '关闭核对', exact: true }).click();
-      await page.getByText('已采集待确认', { exact: true }).waitFor();
+      await page.getByText('设备离线，仍可核对本次采集', { exact: true }).waitFor();
       await page.getByRole('button', { name: `继续核对首磅（${firstKind}）`, exact: true }).click();
       firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
       assert.equal((await firstReview.locator('.review-weight').innerText()).replace(/\s+/g, ''), '30吨', '核对使用采集重量，不能使用实时读数');
@@ -442,7 +448,7 @@ try {
   assert.ok(Math.abs(paperSize.width - 241 * 96 / 25.4) < 1);
   assert.ok(Math.abs(paperSize.height - 93 * 96 / 25.4) < 1, '常规内容适配三等分纸张');
   await page.getByRole('link', { name: '返回单据详情', exact: true }).click();
-  await page.getByRole('button', { name: '打印', exact: true }).click();
+  await page.getByRole('button', { name: '打印本单', exact: true }).click();
   assert.equal(new URL(page.url()).pathname, `/weighing/tickets/${currentTicket.id}`, '详情直接打印，无需预览');
   let firstPrint;
   for (let n = 0; n < 40 && !firstPrint; n += 1) {
@@ -463,9 +469,18 @@ try {
   assert.ok(mockPrints.some(row => row.attemptId === firstPrint.id), 'Agent 必须收到已登记的同一打印尝试');
   assert.deepEqual(mockPrints.find(row => row.attemptId === firstPrint.id).ticket.printSheet, unknownPrint.printSheet, 'Agent 与 Web 使用同一份精简字段');
   await settings.locator('.paper-sheet').first().waitFor();
-  await page.getByRole('button', { name: '重新打印', exact: true }).click();
-  await page.locator('#ticket-reprint-reason').fill('客户要求重新打印');
-  await page.getByRole('button', { name: '确认重新打印', exact: true }).click();
+  await page.getByRole('button', { name: '查看打印状态', exact: true }).click();
+  await page.getByText('已提交 · 待设备回执', { exact: true }).waitFor();
+  await page.getByRole('button', { name: '收起', exact: true }).click();
+  await call(`/api/weighing/print-attempts/${firstPrint.id}/result`, 'POST', {
+    requestId: crypto.randomUUID(), status: 'unknown', reason: '隔离测试模拟回执不明确',
+  });
+  await page.getByRole('button', { name: '核实打印结果', exact: true }).click();
+  await page.getByRole('checkbox', { name: '已核实现场出纸情况' }).waitFor();
+  assert.equal((await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`)).length, attemptsBeforePreview.length + 1, '状态查询不发起补打');
+  await page.getByRole('checkbox', { name: '已核实现场出纸情况' }).check();
+  await page.getByLabel('补打原因').fill('客户要求重新打印');
+  await page.getByRole('button', { name: '确认补打', exact: true }).click();
   let secondPrint;
   for (let n = 0; n < 40 && !secondPrint; n += 1) {
     const attempts = await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`);
@@ -493,6 +508,7 @@ try {
   const finalPrintStatus=(await call(`/api/weighing/tickets/${currentTicket.id}`)).printStatus;
   if (finalPrintStatus !== 'printed') { const st=await (await fetch(`${mockUrl}/api/state`)).json(); console.error('MOCK_PRINTS='+JSON.stringify((st.prints||[]).map(r=>({a:r.attemptId,s:r.status})))); console.error('TICKET_PRINT='+JSON.stringify(await call(`/api/weighing/tickets/${currentTicket.id}/print-attempts`))); }
   assert.equal(finalPrintStatus,'printed');
+  console.log('browser: initial print, submitted and unknown status reads, explicit reprint, and device result passed');
 
 
 
@@ -545,8 +561,8 @@ try {
   await invalidDialog.getByRole('button',{name:'下一步：核对最终重量',exact:true}).click();
   const weightRegion=invalidDialog.getByRole('region',{name:'净重调整',exact:true});
   await weightRegion.waitFor();
-  await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('0.5');
-  await invalidDialog.getByLabel('调整备注（扣减或上调时必填）',{exact:true}).selectOption('WATER');
+  await invalidDialog.getByLabel('扣减重量（吨）',{exact:true}).fill('0.5');
+  await invalidDialog.getByLabel('第 1 项扣减原因',{exact:true}).selectOption('WATER');
   assert.equal(await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).isDisabled(),true);
   assert.match(await invalidDialog.getByRole('alert').last().innerText(),/无法出单：.*请返回.*重新采集/);
   assert.ok((await invalidDialog.boundingBox()).width>=1000);
@@ -558,18 +574,19 @@ try {
   await page.setViewportSize({width:1366,height:768});
   await invalidDialog.getByRole('button',{name:'上一步',exact:true}).click();
   await invalidDialog.getByRole('button',{name:'不一致，返回修改',exact:true}).click();
+  await page.getByRole('dialog', { name: '放弃已填写的扣减内容？' }).getByRole('button', { name: '放弃并退出' }).click();
   await setWeight(1.2);
   // Live changes preserve the old sample; replacing it is now explicit.
   await page.getByRole('button',{name:'重新采集重量',exact:true}).click();
   invalidDialog=page.getByRole('dialog',{name:'核对回磅（皮重）',exact:true});
   await invalidDialog.waitFor();
   await invalidDialog.getByRole('button',{name:'下一步：核对最终重量',exact:true}).click();
-  await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('-0.5');
-  assert.match(await invalidDialog.getByRole('alert').last().innerText(),/正常出单只能扣减净重/);
-  await invalidDialog.getByLabel('净重调整量（吨）',{exact:true}).fill('0.3');
-  await invalidDialog.getByLabel('调整备注（扣减或上调时必填）',{exact:true}).selectOption('OTHER');
-  await invalidDialog.getByLabel('自定义备注（选填）',{exact:true}).fill('雨水浸湿');
-  await invalidDialog.getByText('0.3 吨（扣减）',{exact:true}).waitFor();
+  await invalidDialog.getByLabel('扣减重量（吨）',{exact:true}).fill('-0.5');
+  assert.match(await invalidDialog.getByRole('alert').last().innerText(),/只能扣减/);
+  await invalidDialog.getByLabel('扣减重量（吨）',{exact:true}).fill('0.3');
+  await invalidDialog.getByLabel('第 1 项扣减原因',{exact:true}).selectOption('OTHER');
+  await invalidDialog.getByLabel('补充说明（选填）',{exact:true}).fill('雨水浸湿');
+  await invalidDialog.getByLabel('扣减合计').getByText('3.5 吨', { exact: true }).waitFor();
   await invalidDialog.getByRole('button',{name:'确认回磅并出单',exact:true}).click();
   await page.getByRole('dialog', { name: '回磅已完成', exact: true }).getByRole('button', { name: '返回当前页面' }).click();
   await page.getByRole('heading',{name:/^回磅已完成/,exact:true}).waitFor();

@@ -27,6 +27,18 @@ try {
     route.fulfill({ json: { code: 200, message: 'ok', data: [] } }),
   );
 
+  const business = { plate: '晋A12345', direction: 'outbound', materialId: 11, materialName: '高粱', materialSpec: '散装', partyId: 21, partyName: '测试收货方', carrierId: null };
+  const ok = (route, data) => route.fulfill({ json: { code: 200, data } });
+  await page.route('**/api/weighing/materials?*', route => ok(route, { records: [{ id: 11, code: 'M-001', name: business.materialName, spec: business.materialSpec, enabled: 1 }], total: 1 }));
+  await page.route('**/api/weighing/parties?*', route => ok(route, { records: [{ id: 21, code: 'P-001', name: business.partyName, nature: 'enterprise', roles: ['customer'], enabled: 1, contacts: [] }], total: 1 }));
+  const issued = { id: 91, taskId: 51, status: 'valid', ticketNo: 'F001-20261122-0009', basis: [], business, issuedAt: '2026-11-22T01:00:00Z', finalGross: '28', finalTare: '10', finalNet: '17.5' };
+  await page.route('**/api/weighing/tickets/91', route => ok(route, issued));
+  const submissions = [];
+  await page.route('**/api/weighing/manual-supplements', route => {
+    submissions.push(route.request().postDataJSON());
+    return ok(route, { taskId: 51, ticketId: 91, taskVersion: 1, status: 'completed' });
+  });
+
   await page.goto(`${base}/tests/manual-supplement-entry.html?permission=yes`, { waitUntil: 'networkidle' });
   const button = page.getByRole('button', { name: '人工补单', exact: true });
   await button.waitFor();
@@ -37,8 +49,41 @@ try {
   await button.click();
   const dialog = page.getByRole('dialog');
   await dialog.getByText('人工补单', { exact: true }).first().waitFor();
-  await dialog.getByText('两次称重均已完成且系统没有称重记录时，核对现场记录后补单。', { exact: true }).waitFor();
-  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+  await dialog.getByRole('button', { name: '人工补单适用规则' }).focus();
+  await page.getByRole('tooltip').filter({ hasText: '两次称重均已完成且系统没有称重记录时' }).waitFor();
+  const confirmation = dialog.getByRole('region', { name: '出单核对' });
+  assert.equal(await confirmation.getByLabel('首磅实际时间（北京时间）').inputValue(), '');
+  assert.equal(await confirmation.getByLabel('回磅实际时间（北京时间）').inputValue(), '');
+  await dialog.getByLabel('首磅毛重（吨）').fill('31');
+  await dialog.getByLabel('回磅皮重（吨）').fill('12.5');
+  await confirmation.getByText('18.5 吨', { exact: true }).waitFor();
+  await dialog.getByRole('combobox', { name: '运输方向', exact: true }).selectOption('outbound');
+  await dialog.getByLabel('首磅皮重（吨）').fill('10');
+  await dialog.getByLabel('回磅毛重（吨）').fill('28');
+  await confirmation.getByText('18 吨', { exact: true }).waitFor();
+  await dialog.getByText('有扣减时填写', { exact: true }).click();
+  await dialog.getByLabel('第 1 项扣减原因').selectOption('IMPURITY');
+  await dialog.getByLabel('扣减重量（吨）').fill('0.5');
+  await confirmation.getByText('17.5 吨', { exact: true }).waitFor();
+  await dialog.getByRole('textbox', { name: '车牌号码' }).fill(business.plate);
+  await dialog.getByRole('combobox', { name: '搜索物料' }).fill(business.materialName);
+  await dialog.getByRole('option', { name: /高粱/ }).click();
+  await dialog.getByRole('combobox', { name: '搜索收货方' }).fill(business.partyName);
+  await dialog.getByRole('option', { name: /测试收货方/ }).click();
+  await dialog.getByLabel('补单原因').selectOption({ label: '停电' });
+  await confirmation.getByLabel('首磅实际时间（北京时间）').fill('2026-01-12T08:00');
+  await confirmation.getByLabel('回磅实际时间（北京时间）').fill('2026-01-12T07:00');
+  await dialog.getByRole('button', { name: '确认出单', exact: true }).click();
+  await confirmation.getByRole('alert').getByText('首磅不能晚于回磅').waitFor();
+  assert.equal(submissions.length, 0);
+  await confirmation.getByLabel('回磅实际时间（北京时间）').fill('2026-01-12T09:00');
+  await dialog.getByRole('button', { name: '确认出单', exact: true }).click();
+  const issuedDialog = page.getByRole('dialog', { name: '人工补单已出单' });
+  await issuedDialog.getByRole('link', { name: issued.ticketNo, exact: true }).waitFor();
+  await issuedDialog.getByText('17.5 吨', { exact: true }).waitFor();
+  await issuedDialog.getByRole('button', { name: '关闭详情弹窗' }).click();
+  assert.equal(submissions.length, 1);
+  assert.deepEqual(submissions[0].netAdjustments, [{ mode: 'amount', amount: '0.5', category: 'IMPURITY', remark: '' }]);
 
   await page.goto(`${base}/tests/manual-supplement-entry.html?permission=no`, { waitUntil: 'networkidle' });
   await page.getByRole('navigation', { name: '工作台操作' }).waitFor();
@@ -49,7 +94,7 @@ try {
   assert.equal(await page.getByRole('button', { name: '人工补单', exact: true }).count(), 0, '无可用厂区时不应显示人工补单入口');
 
   assert.deepEqual(errors, []);
-  console.log('工作台人工补单入口：权限可见性、顶栏位置与弹窗打开通过。');
+  console.log('工作台人工补单入口：权限、双向毛皮重、实际时间校验、扣减净重与出单回执通过。');
 } finally {
   clearTimeout(deadline);
   await browser?.close();

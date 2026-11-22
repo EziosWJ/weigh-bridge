@@ -9,9 +9,9 @@ import { HelpHint } from '@/components/common/help-hint';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/common/toast-store';
 import { isApiError } from '@/lib/api-error';
-import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogClose, DialogBody, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogClose, DialogBody, DialogFooter } from '@/components/ui/dialog';
 import { PlateInput } from './plate-input';
-import { normalizePlate, plateError } from '@/lib/weighing/plate';
+import { normalizePlate, plateError, provinces } from '@/lib/weighing/plate';
 import { beijingDate, beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import { weighingApi } from '@/api/weighing';
@@ -35,7 +35,14 @@ const emptyTripBusinessFields: Partial<TaskInput> = {
 const sourceCameraNames = (item: PlateCandidate) => [...new Set(item.sourceEvents.map(source => source.cameraName).filter(Boolean))].join('、');
 const clockTime = (value: string) => beijingTime(value).slice(11, 19);
 
-type WorkbenchStatus = { tone: 'success' | 'warning' | 'error' | 'info' | 'neutral'; label: string; detail: string; next: string };
+function tripCandidateDetails(candidate: TripCandidate) {
+  return [
+    candidate.registeredAt && Number.isFinite(Date.parse(candidate.registeredAt)) && !candidate.registeredAt.startsWith('0001')
+      ? `登记 ${beijingTime(candidate.registeredAt)}` : '',
+    candidate.contractNo?.trim() ? `合同 ${candidate.contractNo}` : '',
+    candidate.driver?.trim() ? `司机 ${candidate.driver}` : '',
+  ].filter(Boolean).join(' · ');
+}
 
 function reviewTitle(latest: WeighingState, taskId?: string) {
   const task = taskId ? latest.tasks.find(item => item.id === taskId) : undefined;
@@ -66,6 +73,9 @@ function WorkbenchContent() {
   const navigate = useNavigate();
   const { data, dispatch, storageError, syncNotice, capabilities, busy, device } = useWeighingStore();
   const plateInput = useRef<HTMLInputElement>(null);
+  const [plateValidation, setPlateValidation] = useState('');
+  const [lookupError, setLookupError] = useState('');
+  const [captureError, setCaptureError] = useState('');
   const [businessOpen, setBusinessOpen] = useState(false);
   const [params, setSearchParams] = useSearchParams();
   const setParams = (next: Record<string, string>) => setSearchParams({ scale: capabilities?.localScaleCode || params.get('scale') || '', ...next });
@@ -238,9 +248,8 @@ function WorkbenchContent() {
   const taskInfo = successfulTask || selected;
   const summaryPlate = taskInfo?.plate || data.draft.plate || plate;
   const summaryDirection = taskInfo?.direction ?? data.draft.direction;
-  const summaryMaterial = taskInfo ? [taskInfo.materialName, taskInfo.materialSpec, taskInfo.materialCode].filter(Boolean).join(' · ') : material ? [material.name, material.spec, material.code].filter(Boolean).join(' · ') : '未选择';
-  const summaryMaterialName = taskInfo?.materialName || material?.name || '未选择';
-  const summaryParty = taskInfo ? [taskInfo.partyName, taskInfo.partyCode].filter(Boolean).join(' · ') : party ? `${party.name} · ${party.code}` : '未选择';
+  const summaryMaterial = (taskInfo ? [taskInfo.materialName, taskInfo.materialSpec] : [material?.name, material?.spec]).filter(Boolean).join(' · ') || '未选择';
+  const summaryParty = taskInfo?.partyName || party?.name || '未选择';
   const businessPartyLabel = summaryDirection === 'inbound' ? '供货方' : '收货方';
   const selectedTrip = data.trip?.candidate;
   const canUseParty = !!party && isAvailableParty(party)
@@ -255,6 +264,7 @@ function WorkbenchContent() {
   const shouldVerifyDay = !conditionIssue && needsDayVerification;
   const businessBlocked = !capabilities?.permissionCodes.includes('weighing:confirm') ? '当前账号没有称重确认权限' : data.owner === 'other' ? '现场正在由其他会话占用，请操作员接管' : needsDayVerification ? '请先核实跨天运输，再继续称重' : '';
   const confirmedRecord = !awaitingResult ? successfulTask?.records.filter(record => record.stage === successfulStage).slice(-1)[0] : undefined;
+  const firstCompletion = successfulStage === 'first' && confirmedRecord ? confirmedRecord : undefined;
   const sampleReady = data.sampleReady && data.capture?.plate === summaryPlate;
   const frozenCapture = !confirmedRecord && sampleReady ? data.capture : undefined;
   const shownWeight = confirmedRecord?.weight ?? frozenCapture?.weight ?? data.config.weight;
@@ -275,24 +285,8 @@ function WorkbenchContent() {
     && capabilities.sites.some(site => site.code === capabilities.localSiteCode && site.enabled === 1 && site.canOperate);
   const liveVisible = !!confirmedRecord || !!frozenCapture || (!!device && data.config.online && !data.config.deviceError);
 
-  const status: WorkbenchStatus = (() => {
-    if (awaitingResult) return { tone: 'warning', label: '提交结果待核实', detail: '上次提交结果未知，不能新建请求重复称重或出单。', next: '先查询原结果，再决定是否按原请求重试。' };
-    if (successfulTask) return successfulStage === 'first'
-      ? { tone: 'success', label: '首磅已完成', detail: '首次称重已保存，车辆等待回磅。', next: '装卸完成后按同一车牌确认车辆并办理回磅。' }
-      : { tone: 'success', label: ticket ? '回磅已完成 · 已出单' : '回磅已完成', detail: ticket ? `正式单据已生成，最终净重 ${formatWeight(ticket.net)}。` : '第二次称重已保存。', next: '可打印单据、查看详情或办理下一辆车。' };
-    if (!canConfirm) return { tone: 'error', label: '无称重操作权限', detail: '当前账号不能确认正式称重。', next: '请联系管理员分配称重权限。' };
-    if (data.owner === 'other') return { tone: 'warning', label: '操作权被占用', detail: '现场正在由其他会话办理。', next: '由当前会话释放后接手，或填写原因后接管操作权。' };
-    if (frozenCapture) return { tone: 'info', label: '已采集待确认', detail: `已冻结 ${formatWeight(frozenCapture.weight)} · ${beijingTime(frozenCapture.at)}${frozenCapture.captureRequired === false ? ' · 本次未强制抓拍' : frozenCapture.imageStatus === 'capture_failed' ? ' · 本次抓拍失败' : ''}${!data.config.online ? ' · 设备当前离线，冻结值仍可确认' : data.config.deviceError ? ' · 设备当前异常，冻结值仍可确认' : ''}。`, next: missingFields.length ? `补齐${missingFields.join('、')}后集中核对确认。` : '核对车牌、资料、重量与图片后确认；设备变化不影响本次冻结依据。' };
-    if (data.config.deviceError) return { tone: 'error', label: '设备异常', detail: '仪表或采集链路报告故障，不能取得有效重量。', next: '检查现场 Agent 与仪表，恢复后重新采集。' };
-    if (!data.config.online) return { tone: 'warning', label: '设备离线', detail: device?.receivedAt && !device.receivedAt.startsWith('0001') ? `最近上报 ${beijingTime(device.receivedAt)}；离线期间不把旧值当实时重量。` : '尚未收到 Agent 上报。', next: '检查现场 Agent 与网络，等待重量恢复上报。' };
-    if (taskInfo && !canWeigh) return { tone: 'warning', label: '当前任务不能继续称重', detail: '任务已完成或已终止。', next: '查看任务详情与异常处置。' };
-    if (!hasWeighingContext) return { tone: 'neutral', label: '等待确认车辆', detail: '识别候选或手工录入车牌后确认车辆，即可定位首磅或回磅。', next: '核对车牌后点击“确认车辆”。' };
-    if (!Number.isFinite(data.config.weight) || data.config.weight <= 0) return { tone: 'info', label: '等待有效上磅', detail: '当前没有可用的上磅重量。', next: '请车辆完全上磅并等待设备读数。' };
-    if (!data.config.stable) return { tone: 'warning', label: '重量未稳定', detail: `当前读数 ${formatWeight(data.config.weight)}，仍在变化。`, next: '等待稳定状态后再采集。' };
-    if (busy && !sampleReady) return { tone: 'info', label: '采集中', detail: '正在冻结重量与现场抓拍。', next: '请保持车辆完全上磅，等待采集结果。' };
-    if (!located) return { tone: 'neutral', label: '等待确认车辆', detail: '尚未定位本趟运输。', next: '核对车牌后点击“确认车辆”。' };
-    return { tone: 'success', label: '稳定可采集', detail: `当前读数 ${formatWeight(data.config.weight)}，设备稳定。`, next: '确认车辆完全上磅后点击“采集重量”。' };
-  })();
+  const frozenDeviceNotice = frozenCapture && !data.config.online ? '设备离线，仍可核对本次采集'
+    : frozenCapture && data.config.deviceError ? '设备异常，仍可核对本次采集' : '';
 
   // 快照保留冻结称重与图片；操作会话失效或资料变更后仍可查看原核对内容。
   const reviewTask = review && selected ? review.data.tasks.find(task => task.id === selected.id) ?? selected : undefined;
@@ -305,9 +299,9 @@ function WorkbenchContent() {
   const reviewValue: WeighingReviewValue | undefined = review ? {
     plate: reviewTask?.plate || data.draft.plate || plate,
     direction: directionLabels[reviewDirection],
-    material: reviewTask ? reviewTask.materialName || '未选择' : material?.name || '未选择',
+    material: (reviewTask ? [reviewTask.materialName, reviewTask.materialSpec] : [material?.name, material?.spec]).filter(Boolean).join(' · ') || '未选择',
     partyLabel: reviewDirection === 'inbound' ? '供货方' : '收货方',
-    party: reviewTask ? [reviewTask.partyName, reviewTask.partyCode].filter(Boolean).join(' · ') : party ? `${party.name} · ${party.code}` : '未选择',
+    party: (reviewTask ? reviewTask.partyName : party?.name) || '未选择',
     weight: reviewCapture?.weight ?? 0,
     kind: reviewKind,
     capture: reviewCapture,
@@ -475,18 +469,17 @@ function WorkbenchContent() {
   async function lookup(event: FormEvent) {
     event.preventDefault();
     if (lookingUp) return;
+    setLookupError('');
     const normalized = normalizeLegacy(plate);
-    if (!normalized) {
-      warn('请先填写车牌', '输入普通或新能源车牌后再确认车辆。');
-      plateInput.current?.focus();
-      return;
-    }
     const legacy = data.tasks.some(task => task.plate === normalized) || data.tickets.some(ticket => ticket.plate === normalized);
-    if (!legacy && plateError(normalized)) {
-      warn('车牌格式不正确', plateError(normalized));
-      plateInput.current?.focus();
+    const invalid = legacy ? '' : plateError(normalized);
+    if (invalid) {
+      setPlateValidation(invalid);
+      if (provinces.includes(normalized[0])) plateInput.current?.focus();
+      else document.getElementById('workbench-plate-province')?.focus();
       return;
     }
+    setPlateValidation('');
     if (data.pending) {
       warn('上次提交结果待核实', '请先查询原结果，避免重复称重或出单。');
       return;
@@ -500,11 +493,10 @@ function WorkbenchContent() {
       try {
         existing = await useWeighingStore.getState().locate(normalized);
       } catch (error) {
-        const text = error instanceof Error ? error.message : '服务端任务查找失败';
-        toast.error({ title: '查找运输失败', description: text, duration: 5000 });
+        setLookupError(error instanceof Error ? error.message : '查找运输任务失败，请重试。');
         return;
       }
-      setPlate(normalized); setSuccess(null); setReview(null);
+      setPlate(normalized); setSuccess(null); setReview(null); setCaptureError('');
       if (data.firstRequests[data.draftRequestId] && !existing && !await run({ type: 'clearDraft' }, '车牌核对失败')) return;
       if (!await run({ type: 'draft', patch: { plate: normalized, ...emptyTripBusinessFields } }, '车牌核对失败')) return;
       const chosen = selectedCandidate.current;
@@ -535,14 +527,9 @@ function WorkbenchContent() {
             setRecognitionHint('');
           } else if (linkable.length > 1) {
             setTripResult(result);
-            setRecognitionHint(`发现 ${linkable.length} 张可关联流转单，请人工选择`);
-            toast.info({ title: '已确认车辆', description: '发现多张可关联流转单，请人工选择' });
           } else {
             if (result.candidates.length > 0) {
               setTripResult(result);
-              const blocked = result.candidates.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；');
-              setRecognitionHint(`找到 ${result.candidates.length} 张流转单，但均不可关联：${blocked}`);
-              toast.warning({ title: '找到流转单，但暂不可关联', description: blocked, duration: 6000 });
             } else {
               setTripResult(null);
               setRecognitionHint(result.available ? '未找到可关联的云端流转单，可按无流转单办理' : (result.message || '云端流转单查询失败，可按无流转单办理'));
@@ -584,20 +571,23 @@ function WorkbenchContent() {
   }
 
   async function capture(repeat = false) {
-    const ok = await run({
-      type: 'capture',
-      taskId: selected?.id,
-      plate: summaryPlate,
-      plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() },
-    }, repeat ? '重新采集失败' : '采集失败');
-    if (!ok && data.draftPlateEvidence?.source === 'server') { setOfferManualSource(true); setRecognitionHint('采集未完成；若识别来源已失效，请重新核对车牌或改为人工来源。'); }
-    if (ok) {
-      toast.success({
-        title: repeat ? '已重新采集' : '重量已采集',
-        description: '已冻结重量与现场图片，直接进入集中核对。',
+    setCaptureError('');
+    try {
+      await dispatch({
+        type: 'capture',
+        taskId: selected?.id,
+        plate: summaryPlate,
+        plateEvidence: data.draftPlateEvidence?.confirmedPlate === summaryPlate ? data.draftPlateEvidence : { source: 'manual', confirmedPlate: summaryPlate, at: new Date().toISOString() },
       });
-      await openReview();
+    } catch (error) {
+      setCaptureError(error instanceof Error ? error.message : repeat ? '重新采集失败' : '采集失败');
+      if (data.draftPlateEvidence?.source === 'server') {
+        setOfferManualSource(true);
+        setRecognitionHint('请重新核对车牌或改为人工来源。');
+      }
+      return;
     }
+    await openReview();
   }
 
   function recapture() {
@@ -727,6 +717,9 @@ function WorkbenchContent() {
   }
 
   async function changePlate(value: string) {
+    setPlateValidation('');
+    setLookupError('');
+    setCaptureError('');
     candidateOwner.current = 'manual';
     editing.current = true; setSearchedPlate('');
     setPlate(value); setParams({}); setSuccess(null); setReview(null); setTripResult(null); setTripBasis(null); setTripSelectionError('');
@@ -765,26 +758,27 @@ function WorkbenchContent() {
         <ContentCard className="weighing-vehicle-bar shadow-none" bodyClassName="px-4 py-3">
           <div className="workbench-current-vehicle"><h2>当前车辆</h2></div>
           <form className="flex flex-wrap items-center gap-3" onSubmit={lookup}>
-            <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span>{manualMatch && <span className="plate-exact-badge">完全匹配</span>}</label>
+            <label className="flex items-center gap-2 text-sm font-medium" htmlFor="workbench-plate"><Truck className="h-5 w-5 text-text-tertiary" aria-hidden />车牌<span className="text-error">*</span>{manualMatch && <span className="plate-exact-badge">车牌匹配</span>}</label>
             <div className="plate-field">
-              <PlateInput inputRef={plateInput} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} clearable onChange={changePlate} />
+              <PlateInput inputRef={plateInput} validationError={plateValidation} id="workbench-plate" value={plate} legacyValue={data.tasks.find(task => task.plate === plate)?.plate} disabled={awaitingResult} clearable onChange={changePlate} />
               {candidates.length > 0 && <ul className="plate-candidates" aria-label="识别候选">
-                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className="plate-candidate" disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}${item.plate === exactMatchPlate ? ' · 云端流转单完全匹配' : ''}`} onClick={() => {
+                {candidates.map(item => <li key={item.id}><Button size="sm" type="button" aria-pressed={plate === item.plate} className="plate-candidate" disabled={candidateBlocked.current || busy} title={`${item.plate} · ${sourceCameraNames(item)} · ${beijingTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}${item.plate === exactMatchPlate ? ' · 云端流转单车牌匹配' : ''}`} onClick={() => {
                   candidateOwner.current = 'manual'; selectedCandidate.current = item;
                   setRecognitionHint(`已选择 ${item.plate} · ${sourceCameraNames(item)} · 待人工核对`);
                   void changePlate(item.plate);
-                }}>{item.plate === exactMatchPlate && <span className="plate-exact-badge">完全匹配</span>}{item.plate} · {sourceCameraNames(item)} · {clockTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button></li>)}
+                }}>{item.plate === exactMatchPlate && <span className="plate-exact-badge">车牌匹配</span>}{item.plate} · {sourceCameraNames(item)} · {clockTime(item.sourceEvents.at(-1)?.recognizedAt ?? item.lastReceivedAt)}</Button></li>)}
               </ul>}
             </div>
             <Button type="submit" size="lg" variant="primary" disabled={awaitingResult || lookingUp} aria-busy={lookingUp}>{lookingUp ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : null}{lookingUp ? '正在确认…' : '确认车辆'}</Button>
           </form>
+          {lookupError && <p role="alert" className="mt-2 text-sm text-error">{lookupError}</p>}
           {candidateNotice && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />{candidateNotice}</p>}
           {manualActiveConflict
             ? <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现多张未完成任务，无法判断本趟任务。请先到<Link className="text-primary hover:underline" to="/weighing/tasks">运输任务</Link>核实处理。</p>
             : manualActiveTask
               ? <p role="status" className="plate-recognition mt-2 text-sm text-info"><CircleCheck className="h-4 w-4 shrink-0" aria-hidden />本趟回磅任务 {manualActiveTask.taskNo ?? manualActiveTask.id} · {taskStatusLabels[manualActiveTask.status]}{manualTaskTrip?.bound && manualTaskTrip.tripNo ? <>，已关联云端流转单 <strong>{manualTaskTrip.tripNo}</strong></> : ''}</p>
               : <>
-                {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName} · 确认车辆后自动带入</p>}
+                {manualMatch && <p role="status" className="plate-recognition mt-2 text-sm text-info">云端流转单 {manualMatch.tripNo} · {manualMatch.materialName}</p>}
                 {manualMatchCount > 1 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />发现 {manualMatchCount} 张可关联流转单，确认车辆后人工选择</p>}
                 {manualMatchCount === 0 && manualTotal > 0 && <p role="status" className="plate-recognition mt-2 text-sm text-warning"><TriangleAlert className="h-4 w-4 shrink-0" aria-hidden />找到 {manualTotal} 张流转单，但均不可关联：{manualBlocked.map(item => `${item.tripNo}（${item.blockers.join('；') || '不可关联'}）`).join('；')}</p>}
               </>}
@@ -801,7 +795,7 @@ function WorkbenchContent() {
               if (tripResult.candidates.length === 0) return null;
               return <div className="workbench-trip-panel" aria-label="云端流转单不可关联">
                 <div className="workbench-trip-head"><h3>云端流转单</h3><span>找到 {tripResult.candidates.length} 张流转单</span></div>
-                <p className="workbench-trip-note is-warning">均不可关联，请先处理以下阻断后重新查询。</p>
+                <p className="workbench-trip-note is-warning">均不可关联</p>
                 {tripResult.candidates.map(item => <div key={item.tripNo} className="workbench-trip-blocked">
                   <p><strong>{item.tripNo} · {item.materialName}</strong></p>
                   <p>{item.blockers.join('；') || '不可关联'}</p>
@@ -811,12 +805,13 @@ function WorkbenchContent() {
             if (linkable.length === 1) return null;
             return <div className="workbench-trip-panel" aria-label="云端流转单人工选择">
               <div className="workbench-trip-head"><h3>云端流转单</h3><span>发现 {linkable.length} 张可关联流转单</span></div>
-              <p className={`workbench-trip-note${data.trip ? '' : ' is-warning'}`}>{data.trip ? `已选 ${data.trip.tripNo}，可在此更换。` : '请选择本趟流转单。'}</p>
-              {linkable.map(item => <button key={item.tripNo} type="button" className={`workbench-trip-option${data.trip?.tripNo === item.tripNo ? ' is-selected' : ''}`} onClick={() => void chooseTrip(item)}>
+              <p className={`workbench-trip-note${data.trip ? '' : ' is-warning'}`}>{data.trip ? `已选 ${data.trip.tripNo}` : '请选择本趟流转单。'}</p>
+              {linkable.map(item => <button key={item.tripNo} type="button" className={`workbench-trip-option${data.trip?.tripNo === item.tripNo ? ' is-selected' : ''}`} aria-pressed={data.trip?.tripNo === item.tripNo} onClick={() => void chooseTrip(item)}>
                 <span className="workbench-trip-option-main">{item.tripNo} · {item.materialName} · {item.partyName}</span>
+                {tripCandidateDetails(item) && <span className="workbench-trip-option-meta">{tripCandidateDetails(item)}</span>}
                 <span className="workbench-trip-option-meta">
                   {item.inspection
-                    ? `化验 水分 ${item.inspection.moisture}% · 容量 ${item.inspection.bulkDensity ? `${item.inspection.bulkDensity} g/L` : '—'}`
+                    ? [`化验 水分 ${item.inspection.moisture}%`, item.inspection.bulkDensity && `容重 ${item.inspection.bulkDensity} g/L`].filter(Boolean).join(' · ')
                     : item.effectiveConclusion === 'accept' ? '目测接收' : '化验待确认'}
                 </span>
               </button>)}
@@ -845,7 +840,7 @@ function WorkbenchContent() {
                   <BusinessRequiredFields value={data.draft} update={patchDraft} compact trip={selectedTrip} allowTemporary={canRegisterTemporaryParty} />
                 </div> },
                 { value: 'supplementary', label: '补充信息（选填）', content: <>
-                  <div className="workbench-extra-grid"><BusinessSupplementaryFields value={data.draft} update={patchDraft} allowTemporary={canRegisterTemporaryParty} /></div>
+                  <div className="workbench-extra-grid"><BusinessSupplementaryFields value={data.draft} update={patchDraft} allowTemporary={canRegisterTemporaryParty} showHelp={false} /></div>
                   <p className="workbench-inline-links"><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/materials?returnTo=${encodeURIComponent(returnTo)}`}>维护物料</Link><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/parties?returnTo=${encodeURIComponent(returnTo)}`}>维护往来主体</Link></p>
                 </> },
               ]} />
@@ -859,10 +854,7 @@ function WorkbenchContent() {
             </h2>
             <StatusTag tone={confirmedRecord ? 'info' : frozenCapture ? 'info' : !data.config.online || data.config.deviceError ? 'warning' : data.config.stable ? 'success' : 'warning'}>{confirmedRecord ? '已确认' : frozenCapture ? '已采集' : !data.config.online ? '设备离线' : data.config.deviceError ? '设备异常' : data.config.stable ? '稳定' : '未稳定'}</StatusTag>
           </div>
-          {(!successfulTask || awaitingResult) && status.label !== '等待确认车辆' && status.label !== '稳定可采集' && !(frozenCapture && status.label === '已采集待确认' && data.config.online && !data.config.deviceError && frozenCapture.imageStatus !== 'capture_failed') && <div className={`workbench-status is-${status.tone}`} role="status" aria-live="polite">
-            <strong>{status.label}</strong>
-            <span>{status.detail}</span><span className="workbench-status-next">下一步：{status.next}</span>
-          </div>}
+          {frozenDeviceNotice && <p className="workbench-status is-warning" role="status">{frozenDeviceNotice}</p>}
           <div className="weighing-instrument">
             <div className="space-y-2"><p className="instrument-label min-w-0 text-sm text-text-secondary"><Truck className="h-8 w-8" aria-hidden />{confirmedRecord ? '本次已确认重量' : frozenCapture ? '已采集重量（已冻结）' : '当前设备重量'}</p>{sampleReady && !awaitingResult && !successfulTask && <Button disabled={busy} aria-busy={busy} onClick={recapture}>{busy ? '正在采集…' : '重新采集重量'}</Button>}</div>
             <p className="weighing-readout" aria-label="当前重量">{liveVisible && Number.isFinite(shownWeight) ? formatWeightValue(shownWeight) : '—'}<span>吨</span></p>
@@ -875,26 +867,27 @@ function WorkbenchContent() {
               <div role="status" className={`rounded-control border p-3 text-sm ${tripCloudStatus.available && tripCloudStatus.unloaded ? 'border-success-border bg-success-background text-success' : 'border-warning-border bg-warning-background text-warning'}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <strong className="block">云端卸货确认</strong>
+                    <strong className="flex items-center gap-1">云端卸货确认<HelpHint label="云端卸货确认说明">云端库管确认卸货后才可自动关联磅单，本厂可照常回磅。</HelpHint></strong>
                     <span>
                       {!tripCloudStatus.available
-                        ? `云端状态查询失败：${tripCloudStatus.message || '请稍后重试'}。请核对卸货确认后再回磅；未确认不会阻止本地称重。`
+                        ? `查询失败：${tripCloudStatus.message || '请稍后重试'}`
                         : tripCloudStatus.unloaded
                           ? `已确认卸货${tripCloudStatus.unloadingLocation ? `：${tripCloudStatus.unloadingLocation}` : ''}${tripCloudStatus.unloadedAt ? ` · ${beijingTime(tripCloudStatus.unloadedAt)}` : ''}。`
-                          : '云端尚未确认卸货。请通知云端库管确认卸货后再回磅；未确认卸货，称重磅单将无法自动关联。'}
+                          : '待库管确认 · 单据待关联'}
                     </span>
                   </div>
                   <Button size="sm" variant="secondary" disabled={tripCloudLoading} onClick={() => void refreshTripCloudStatus(selected.id)}>{tripCloudLoading ? '查询中…' : '刷新'}</Button>
                 </div>
               </div>
             )}
+            {captureError && <p role="alert" className="text-sm text-error">{captureError}</p>}
             {awaitingResult ? <><h2 className="font-semibold text-warning">提交结果待核实</h2><p className="text-sm text-text-secondary">先查询原结果，避免重复称重或出单。</p><><Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={resolve}>查询上次提交结果</Button><Button size="lg" className="w-full" disabled={busy} onClick={retry}>按原请求重试</Button></></>
             : successfulTask ? <>
               <h2 className="font-semibold text-success">{successfulStage === 'first' ? '首磅已完成 · 等待回磅' : ticket ? '回磅已完成 · 已出单' : '回磅已完成'}</h2>
-              {ticket && <p className="text-sm text-text-secondary">最终净重 {formatWeight(ticket.net)}{ticket.ticketNo ? ` · 单据号 ${ticket.ticketNo}` : ''}</p>}
+              {ticket && <div className="text-sm"><Link className="break-all font-semibold text-primary hover:underline" target="weighbridge-management" to={`/weighing/tickets/${ticket.id}`}>{ticket.ticketNo || '查看单据'}</Link><p className="mt-1 text-text-secondary">最终净重 {formatWeight(ticket.net)}</p></div>}
+              {firstCompletion && <p className="text-sm text-text-secondary">{successfulTask.taskNo || successfulTask.id} · {firstCompletion.kind === 'gross' ? '毛重' : '皮重'} {formatWeight(firstCompletion.weight)} · {beijingTime(firstCompletion.at)}</p>}
               {ticket && !completionOpen && <TicketPrintActions ticketId={ticket.id} />}
-              <Button size="lg" variant="primary" className="w-full" onClick={nextVehicle}>办理下一辆车</Button>
-              {ticket && <Link target="weighbridge-management" className="inline-block text-sm text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>查看单据</Link>}
+              <Button size="lg" variant="primary" className="w-full" disabled={busy || awaitingResult} onClick={nextVehicle}>办理下一辆车</Button>
             </>
             : sampleReady ? <>
               <div className="flex items-center gap-1"><h2 className="font-semibold text-info">重量与图片已冻结</h2>{missingFields.length === 0 && <HelpHint label="核对提示">请核对车辆、重量和现场图片后确认。设备后续变化不撤销本次采集。</HelpHint>}</div>
@@ -903,7 +896,7 @@ function WorkbenchContent() {
                 <Button size="lg" variant="primary" className="flex-1" onClick={() => void openReview()}><ClipboardCheck className="h-4 w-4" aria-hidden />继续核对{stage === 'first' ? '首磅' : '回磅'}（{kind}）</Button>
               </div>
             </>
-            : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p><span className="text-sm text-text-secondary">{shouldVerifyDay && selected ? <Link to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link> : status.next}</span><Button size="lg" className="w-full" disabled>采集重量</Button></>
+            : blocked && located ? <><p role="alert" className="font-medium text-warning">{blocked}</p>{shouldVerifyDay && selected && <Link className="text-sm text-primary hover:underline" to={`/weighing/tasks/${selected.id}`}>前往任务详情核实</Link>}<Button size="lg" className="w-full" disabled>采集重量</Button></>
             : !located ? <Button size="lg" className="w-full" disabled>采集重量</Button>
             : !canWeigh ? <><p className="text-sm text-warning">当前任务不能继续称重，请查看任务详情。</p><Button size="lg" className="w-full" disabled>当前不可称重</Button></>
             : <><Button size="lg" variant="primary" className="w-full" disabled={busy || !!blocked} aria-busy={busy} onClick={() => void capture()}>{busy ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden /> : <Scale className="h-5 w-5" aria-hidden />}{busy ? '采集中…' : '采集重量'}</Button></>}
@@ -914,37 +907,38 @@ function WorkbenchContent() {
     <Dialog open={completionOpen} onOpenChange={setCompletionOpen} closeOnEscape={false} closeOnOverlayClick={false} trapFocus restoreFocus lockScroll>
       <DialogOverlay className="workbench-modal-overlay" />
       <DialogContent className="workbench-modal workbench-completion-dialog">
-        <DialogHeader><div><DialogTitle>{successfulStage === 'first' ? '首磅称重已办理完成' : '回磅已完成'}</DialogTitle><DialogDescription>{successfulStage === 'first' ? '车辆等待回磅，是否开始办理下一辆车？' : '请确认打印状态后继续办理。'}</DialogDescription></div></DialogHeader>
+        <DialogHeader><DialogTitle>{successfulStage === 'first' ? '首磅称重已办理完成' : '回磅已完成'}</DialogTitle></DialogHeader>
         <DialogBody>
           <dl className="workbench-completion-details">
             <div><dt>车牌</dt><dd>{summaryPlate}</dd></div>
-            {ticket && <><div><dt>单据号</dt><dd>{ticket.ticketNo || '—'}</dd></div><div><dt>最终净重</dt><dd>{formatWeight(ticket.net)}</dd></div></>}
+            {firstCompletion && <><div><dt>任务号</dt><dd>{successfulTask?.taskNo || successfulTask?.id}</dd></div><div><dt>首磅{firstCompletion.kind === 'gross' ? '毛重' : '皮重'}</dt><dd>{formatWeight(firstCompletion.weight)}</dd></div><div><dt>首磅时间</dt><dd>{beijingTime(firstCompletion.at)}</dd></div></>}
+            {ticket && <><div><dt>单据号</dt><dd><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticket.id}`}>{ticket.ticketNo || '查看单据'}</Link></dd></div><div><dt>最终净重</dt><dd>{formatWeight(ticket.net)}</dd></div></>}
           </dl>
           {ticket && <div className="workbench-completion-print">{autoPrintNotice && <p role="alert" className="text-warning">{autoPrintNotice}</p>}{checkingAutoPrint ? <p role="status">正在读取自动打印配置…</p> : <TicketPrintActions ticketId={ticket.id} autoPrint={autoPrintTicket === ticket.id} />}</div>}
         </DialogBody>
-        <DialogFooter className="workbench-completion-actions"><Button disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => setCompletionOpen(false)}>{successfulStage === 'first' ? '留在当前页面' : '返回当前页面'}</Button><Button variant="primary" disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => void nextVehicle()}>开始办理下一辆</Button></DialogFooter>
+        <DialogFooter className="workbench-completion-actions"><Button disabled={busy || checkingAutoPrint} onClick={() => setCompletionOpen(false)}>{successfulStage === 'first' ? '留在当前页面' : '返回当前页面'}</Button><Button variant="primary" disabled={busy || awaitingResult || checkingAutoPrint} onClick={() => void nextVehicle()}>开始办理下一辆</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     <Dialog open={businessOpen} onOpenChange={setBusinessOpen} trapFocus restoreFocus lockScroll>
       <DialogOverlay className="workbench-modal-overlay" />
       <DialogContent className="workbench-business-dialog workbench-modal flex max-h-[calc(100dvh-32px)] max-w-[1200px] flex-col">
-        <DialogHeader><div><DialogTitle>查看运输资料</DialogTitle><DialogDescription>{taskInfo ? '本趟资料快照只读；纠错请前往任务详情。' : '当前提交信息。'}</DialogDescription></div><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
+        <DialogHeader><DialogTitle>查看运输资料</DialogTitle><DialogClose aria-label="关闭运输资料"><X className="h-4 w-4" aria-hidden /></DialogClose></DialogHeader>
         <DialogBody><div className="weighing-business min-w-0">{taskInfo ? <ContentCard title={successfulTask ? '本趟运输' : '核对本趟运输'} extra={<StatusTag>{awaitingResult ? '提交待核实' : taskStatusLabels[taskInfo.status]}</StatusTag>}>
           <SectionTabs key={taskInfo.id} label="本趟运输信息" items={[
             { value: 'basic', label: '基本信息', content: <>
-              <div className="review-facts"><ReviewFact label="车牌" value={taskInfo.plate} /><ReviewFact label="运输方向" value={directionLabels[taskInfo.direction]} /><ReviewFact label="物料" value={summaryMaterialName} /><ReviewFact label={businessPartyLabel} value={summaryParty} /></div>
+              <div className="review-facts"><ReviewFact label="车牌" value={taskInfo.plate} /><ReviewFact label="运输方向" value={directionLabels[taskInfo.direction]} /><ReviewFact label="物料" value={summaryMaterial} /><ReviewFact label={businessPartyLabel} value={summaryParty} /></div>
               {firstRecord && <div className="business-first-record">
                 <p className="business-first-record-label">首次当前依据 · {firstRecord.kind === 'gross' ? '毛重' : '皮重'}</p>
                 <p className="business-first-record-value">{formatWeightValue(firstRecord.weight)}<span>吨</span></p>
                 <p className="business-first-record-time">{beijingTime(firstRecord.at)}</p>
-                {beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) && <p className="business-first-record-note">隔日回磅：沿用原任务和首次称重，无需额外说明。</p>}
+                {beijingDate(firstRecord.at) !== beijingDate(new Date().toISOString()) && <p className="business-first-record-note">隔日回磅</p>}
                 {firstRecord.replaces && <p className="business-first-record-note">已重称替代原记录，原因：{firstRecord.reason}</p>}
               </div>}
             </> },
-            { value: 'supplementary', label: '补充运输信息', content: <div className="review-facts"><ReviewFact label="承运方" value={[taskInfo.carrierName, taskInfo.carrierCode].filter(Boolean).join(' · ')} /><ReviewFact label="本趟联系人 / 电话" value={[taskInfo.contactName, taskInfo.contactPhone].filter(Boolean).join(' / ')} /><ReviewFact label="司机 / 电话" value={[taskInfo.driver, taskInfo.driverPhone].filter(Boolean).join(' / ')} /><ReviewFact label="备注" value={taskInfo.remark} wide /></div> },
+            { value: 'supplementary', label: '补充运输信息', content: <div className="review-facts"><ReviewFact label="供收方编码" value={taskInfo.partyCode} /><ReviewFact label="物料编码" value={taskInfo.materialCode} /><ReviewFact label="承运方" value={[taskInfo.carrierName, taskInfo.carrierCode].filter(Boolean).join(' · ')} /><ReviewFact label="本趟联系人 / 电话" value={[taskInfo.contactName, taskInfo.contactPhone].filter(Boolean).join(' / ')} /><ReviewFact label="司机 / 电话" value={[taskInfo.driver, taskInfo.driverPhone].filter(Boolean).join(' / ')} /><ReviewFact label="备注" value={taskInfo.remark} wide /></div> },
           ]} />
           <Link target="weighbridge-management" className="mt-4 inline-block text-sm text-primary hover:underline" to={`/weighing/tasks/${taskInfo.id}`}>查看任务详情与异常处置</Link>
-        </ContentCard> : <ContentCard title="核对提交信息"><div className="review-facts"><ReviewFact label="车牌" value={summaryPlate} /><ReviewFact label="运输方向" value={directionLabels[summaryDirection]} /><ReviewFact label="物料" value={summaryMaterialName} /><ReviewFact label={businessPartyLabel} value={summaryParty} /></div></ContentCard>}</div></DialogBody>
+        </ContentCard> : <ContentCard title="核对提交信息"><div className="review-facts"><ReviewFact label="车牌" value={summaryPlate} /><ReviewFact label="运输方向" value={directionLabels[summaryDirection]} /><ReviewFact label="物料" value={summaryMaterial} /><ReviewFact label={businessPartyLabel} value={summaryParty} /></div></ContentCard>}</div></DialogBody>
         <DialogFooter><Button onClick={() => setBusinessOpen(false)}>关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>
@@ -955,7 +949,6 @@ function WorkbenchContent() {
       missing={missingFields}
       initialAdjustments={review.initialAdjustments}
       businessEditor={!selected && missingFields.length ? <div className="review-business-editor">
-        <p>重量与抓拍已冻结；补选以下资料后，无需重新采集即可确认。</p>
         <div className="review-business-editor-grid"><BusinessRequiredFields value={data.draft} update={patchReview} compact trip={selectedTrip} allowTemporary={canRegisterTemporaryParty} /></div>
       </div> : undefined}
       submitting={submitting}

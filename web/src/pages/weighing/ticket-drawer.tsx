@@ -28,59 +28,62 @@ import { ListDate } from './shared';
 
 const linkClass = 'text-primary hover:underline';
 
-const ticketColumns = (directionLabels: Record<Direction, string>): DataTableColumn<WireTicket>[] => [
+const ticketColumns = (directionLabels: Record<Direction, string>, canPreview: boolean): DataTableColumn<WireTicket>[] => [
   {
-    title: '单号 / 车牌',
+    title: '车牌 / 单号',
     key: 'ticket',
-    width: 190,
+    width: 195,
     render: (_, row) => <div>
-      <a className={linkClass} href={`/weighing/tickets/${encodeURIComponent(String(row.id))}`} target="weighbridge-management" rel="noreferrer">{row.ticketNo}</a>
-      <div className="mt-1 font-medium">{row.business.plate}</div>
+      <div className="font-semibold">{row.business.plate}</div>
+      <a className={linkClass} href={`/weighing/tickets/${row.id}`} target="weighbridge-management" rel="noreferrer">{row.ticketNo}</a>
     </div>,
+  },
+  {
+    title: '状态 / 打印',
+    key: 'status',
+    width: 142,
+    render: (_, row) => <div>
+      <StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag>
+      <div className={row.printStatus === 'unknown' || row.printStatus === 'failed' ? 'mt-1 text-warning' : 'mt-1 text-text-secondary'}>{printStatusLabels[row.printStatus ?? 'unprinted']}{(row.reprintCount ?? 0) > 0 && ` · 补打 ${row.reprintCount} 次`}</div>
+    </div>,
+  },
+  {
+    title: '最终净重（吨）',
+    key: 'weight',
+    width: 110,
+    align: 'right',
+    render: (_, row) => <div className="tabular-nums"><strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-xs text-text-tertiary">{netAdjustmentText(Number(row.netAdjustment))}</div>}</div>,
   },
   {
     title: '出单时间 ↓',
     key: 'issuedAt',
-    width: 130,
+    width: 104,
     render: (_, row) => <ListDate value={row.issuedAt} />,
   },
   {
     title: '方向 / 物料',
     key: 'business',
-    width: 230,
+    width: 150,
     render: (_, row) => <div>
-      {directionLabels[row.business.direction]} · {row.business.materialName}
-      <div className="text-text-tertiary">{row.business.materialSpec || '—'} · {row.business.materialCode || '—'}</div>
+      <strong>{[row.business.materialName, row.business.materialSpec].filter(Boolean).join(' · ')}</strong>
+      <div className="text-text-secondary">{directionLabels[row.business.direction]}</div>
     </div>,
   },
   {
     title: '供收方',
     key: 'party',
-    width: 170,
+    width: 138,
     render: (_, row) => row.business.partyName,
-  },
-  {
-    title: '最终毛 / 皮 / 净重（吨）',
-    key: 'weight',
-    width: 210,
-    align: 'right',
-    render: (_, row) => <div className="tabular-nums">{row.finalGross} / {row.finalTare} / <strong>{row.finalNet}</strong>{Number(row.netAdjustment ?? 0) !== 0 && <div className="text-text-tertiary">净重调整 {netAdjustmentText(Number(row.netAdjustment))}</div>}</div>,
-  },
-  {
-    title: '状态 / 打印',
-    key: 'status',
-    width: 170,
-    render: (_, row) => <div>
-      <StatusTag tone={row.status === 'valid' ? 'success' : 'neutral'}>{row.status === 'valid' ? '有效' : '作废'}</StatusTag>
-      <div className="mt-1 text-text-tertiary">{printStatusLabels[row.printStatus ?? 'unprinted']} · 补打 {row.reprintCount ?? 0} 次</div>
-    </div>,
   },
   {
     title: '操作',
     key: 'actions',
-    width: 88,
+    width: canPreview ? 112 : 60,
     nowrap: true,
-    render: (_, row) => <a className={buttonStyles({ size: 'sm', variant: 'ghost' })} href={`/weighing/tickets/${encodeURIComponent(String(row.id))}`} target="weighbridge-management" rel="noreferrer" aria-label={`查看单据 ${row.ticketNo}`}>详情</a>,
+    render: (_, row) => <div className="flex gap-1">
+      <a className={buttonStyles({ size: 'sm', variant: 'ghost' })} href={`/weighing/tickets/${row.id}`} target="weighbridge-management" rel="noreferrer" aria-label={`查看单据 ${row.ticketNo}`}>详情</a>
+      {canPreview && <a className={buttonStyles({ size: 'sm', variant: 'ghost' })} href={`/weighing/tickets/${row.id}/preview`} target="weighbridge-management" rel="noreferrer" aria-label={`预览单据 ${row.ticketNo}`}>预览</a>}
+    </div>,
   },
 ];
 
@@ -92,6 +95,7 @@ type TicketDrawerProps = {
 export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
   const directionLabels = useTransportDirections();
   const { materials, parties } = useWeighingStore(state => state.data);
+  const canPreview = useWeighingStore(state => state.capabilities?.permissionCodes.includes('weighing:print') ?? false);
   const [filter, setFilter] = useState<WeighingFilter>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -186,13 +190,13 @@ export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
           fixedEdges
           ariaLabel="过磅单列表"
           className="ticket-drawer-table"
-          columns={ticketColumns(directionLabels)}
+          columns={ticketColumns(directionLabels, canPreview)}
           dataSource={result.records}
           loading={result.loading}
           error={result.error && <EmptyState title="过磅单加载失败" description={result.error} actionText="重试" onAction={result.refresh} />}
           rowKey="id"
-          minWidth={1176}
-          empty={<EmptyState title="暂无过磅单" description="当前筛选条件下没有符合条件的过磅单。" />}
+          minWidth={canPreview ? 951 : 899}
+          empty={<EmptyState title="暂无过磅单" />}
         />
 
         <Pagination

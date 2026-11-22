@@ -6,7 +6,6 @@ import {
   Camera,
   Check,
   ClipboardCheck,
-  FileCheck2,
   Package,
   Scale,
   Truck,
@@ -16,7 +15,6 @@ import {
 import type { CaptureSnapshot, NetAdjustmentsInput, TaskTripBasis, WeightValues } from '@/types/weighing';
 import { formatWeight, formatWeightValue, resolveNetAdjustments } from '@/lib/weighing/weights';
 import { Button } from '@/components/ui/button';
-import { StatusTag } from '@/components/common/status-tag';
 import { ConfirmDialog } from '@/components/common/confirm-dialog';
 import { HelpHint } from '@/components/common/help-hint';
 import { Dialog, DialogBody, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogOverlay, DialogTitle } from '@/components/ui/dialog';
@@ -132,7 +130,6 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <StatusTag tone="warning">人工核对</StatusTag>
           <DialogClose aria-label="关闭核对" disabled={submitting}><X className="h-4 w-4" aria-hidden /></DialogClose>
         </div>
       </DialogHeader>
@@ -140,11 +137,11 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
       <DialogBody className="weighing-review-body">
         {invalidReason && <div className="review-alert" role="alert">
           <TriangleAlert className="h-5 w-5" aria-hidden />
-          <div><strong>当前核对内容已失效</strong><p>{invalidReason} 当前显示原核对内容，不能提交；请关闭窗口后重新采集。</p></div>
+          <div><strong>当前核对内容已失效</strong><p>{invalidReason}</p></div>
         </div>}
         {!invalidReason && missing.length > 0 && <div className="review-missing" role="status">
           <TriangleAlert className="h-5 w-5" aria-hidden />
-          <div><strong>还缺{missing.join('、')}</strong><p>重量与抓拍已冻结；补齐以下资料后可直接确认，无需重新采集。</p></div>
+          <strong>还缺{missing.join('、')}</strong>
         </div>}
         {!invalidReason && missing.length > 0 && businessEditor && <section className="review-business-fill" aria-label="补齐本趟资料">{businessEditor}</section>}
 
@@ -167,18 +164,14 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
             <ReviewFact label="物料" value={value.material} />
             <ReviewFact label={value.partyLabel} value={value.party} />
           </div>
-          {value.tripBasis?.bound && <section className="review-section" aria-label="云端流转单与化验依据">
-            <div className="review-section-body">
-              <div className="review-facts">
-                <ReviewFact label="流转单" value={value.tripBasis.tripNo} />
-                <ReviewFact label="化验单" value={value.tripBasis.inspection ? `HY-${String(value.tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
-                {value.tripBasis.inspection && <>
-                  <ReviewFact label="水分" value={`${value.tripBasis.inspection.moisture}%`} />
-                  <ReviewFact label="容量" value={value.tripBasis.inspection.bulkDensity ? `${value.tripBasis.inspection.bulkDensity} g/L` : '—'} />
-                </>}
-              </div>
-              <p className="review-hint">已按流转单化验结果带入本次扣减；以下为最终扣减，请核对后再确认出单。</p>
-            </div>
+          {value.tripBasis?.bound && <section className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-control border border-border px-3 py-2 text-sm">
+            <h3 className="font-semibold">{value.tripBasis.inspection ? '首磅云端化验依据' : '首磅云端接收依据'}</h3>
+            {value.tripBasis.tripNo && <span>{value.tripBasis.tripNo}</span>}
+            {value.tripBasis.inspection ? <>
+              <span>HY-{String(value.tripBasis.inspection.id).padStart(6, '0')}</span>
+              <span>水分 {value.tripBasis.inspection.moisture}%</span>
+              {value.tripBasis.inspection.bulkDensity && <span>容重 {value.tripBasis.inspection.bulkDensity} g/L</span>}
+            </> : <span>目测接收</span>}
           </section>}
           <section className="review-section">
             <div className="review-section-body"><NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} /></div>
@@ -204,7 +197,6 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
               <Camera className="h-5 w-5" aria-hidden />
               <div><strong>缺少本次采集依据</strong><p>请返回重新采集称重与抓拍后再确认。</p></div>
             </div>}
-            {!requiresImage && value.capture && <p className="review-hint">本次未强制抓拍，允许无图确认；请对照现场车辆核对。</p>}
           </ReviewSection>
         </section>}
       </DialogBody>
@@ -212,12 +204,10 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
       <DialogFooter className="weighing-review-footer">
         <div className="review-footer-status">
           {submitting && <p role="status" className="review-footer-info">正在保存称重，请勿关闭窗口…</p>}
-          {!submitting && missing.length > 0 && <p className="review-footer-info">补齐{missing.join('、')}后可直接确认，重量与图片无需重新采集。</p>}
-          {!submitting && requiresImage && !imageReady && <p className="review-footer-info">正在加载本次抓拍图片…</p>}
-          {invalidReason && <p className="review-footer-alert">核对已失效，请返回重新采集。</p>}
-          {showFinal && adjustmentError && <p role="alert" className="review-footer-error">无法出单：{adjustmentError}</p>}
-          {submitError && <p className="review-footer-error">保存失败：{submitError}</p>}
-          {!showFinal && <div className="review-confirm-note"><FileCheck2 className="h-4 w-4" aria-hidden /><span>请确认车辆已完全上磅，现场与资料一致。</span><HelpHint label="称重确认说明" above>{second ? '下一步核对原始重量并录入净重调整；确认后才生成正式单据。' : `确认后保存首磅（${value.kind}）并建立运输任务。`}</HelpHint></div>}
+          {!submitting && !invalidReason && requiresImage && !imageReady && <p className="review-footer-info">正在加载本次抓拍图片…</p>}
+          {showFinal && (adjustmentError || fieldError) && <p role="alert" className="review-footer-error">无法出单：{adjustmentError || fieldError}</p>}
+          {submitError && <p role="alert" className="review-footer-error">保存失败：{submitError}</p>}
+          {!showFinal && <HelpHint label="称重确认说明" above>{second ? '确认车辆完全上磅，核对原始重量和扣减后出单。' : `确认车辆完全上磅后保存首磅（${value.kind}）并建立运输任务。`}</HelpHint>}
         </div>
         <div className="review-actions">
           {showFinal ? <>

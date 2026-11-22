@@ -108,7 +108,6 @@ export function TemporaryPartyDialog({ current, initialName, label, role, loadPa
           )}
         </div>
       </fieldset>
-      {!current && <p className="text-sm text-text-secondary">本次用作 <strong className="text-text-primary">{label}</strong></p>}
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">{current ? '业务身份' : '同时用于（选填）'}</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
@@ -122,16 +121,23 @@ export function TemporaryPartyDialog({ current, initialName, label, role, loadPa
       {matches.length > 0 && <section className="space-y-2 rounded-control border border-warning-border bg-warning-background p-3" aria-label="同名档案核对">
         <h3 role="status" className="text-sm font-medium">本厂已有同名{label}</h3>
         <ul className="max-h-40 space-y-2 overflow-auto">
-          {matches.map(party => <li key={party.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <div className="min-w-0">
-              <p className="break-words font-medium">{party.name}</p>
-              <p className="flex flex-wrap items-center gap-2 text-text-secondary">
-                <span className="break-all">{party.code}</span><StatusTag>{party.temporaryState ? '临时' : '正式'}</StatusTag>
-                <span>{partyNatureLabels[party.nature]}</span>
-              </p>
-            </div>
-            <Button size="sm" aria-label={`选用已有档案 ${party.code}`} onClick={() => void save(party)}>选用此档案</Button>
-          </li>)}
+          {matches.map(party => {
+            const contact = party.contacts.find(item => item.isDefault) ?? party.contacts[0];
+            const details = [party.shortName !== party.name ? party.shortName : '', party.address,
+              [contact?.name, contact?.phone || party.phone].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
+            return <li key={party.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-sm">
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-2 font-medium">
+                  <span className="break-words">{party.name}</span>
+                  <StatusTag>{party.temporaryState ? '临时' : '正式'}</StatusTag>
+                  <span className="font-normal text-text-secondary">{partyNatureLabels[party.nature]}</span>
+                </p>
+                {details && <p className="break-words text-text-secondary">{details}</p>}
+                <p className="break-all text-xs text-text-tertiary">{party.code}</p>
+              </div>
+              <Button size="sm" aria-label={`选用已有档案 ${party.code}`} onClick={() => void save(party)}>选用此档案</Button>
+            </li>;
+          })}
         </ul>
       </section>}
       {error && <p role="alert" className="text-sm text-error">{error}</p>}

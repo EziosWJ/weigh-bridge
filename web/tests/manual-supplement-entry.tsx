@@ -13,7 +13,7 @@ useWeighingStore.setState({
   ready: true,
   capabilities: {
     localSiteCode: 'site', localScaleCode: 'scale', configured: true, initialized: true, userId: 1,
-    permissionCodes: authorized ? ['weighing:read', 'weighing:manual-supplement'] : ['weighing:read', 'weighing:confirm'],
+    permissionCodes: authorized ? ['weighing:read', 'weighing:manual-supplement', 'weighing:adjust'] : ['weighing:read', 'weighing:confirm'],
     sites: [{ code: 'site', name: '示范厂区', enabled: 1, canOperate }],
     scales: [{ code: 'scale', name: '1号地磅', enabled: 1, siteCode: 'site', siteName: '示范厂区', canOperate }],
   },
