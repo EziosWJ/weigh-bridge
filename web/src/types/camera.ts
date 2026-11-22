@@ -81,6 +81,7 @@ export interface CameraList extends CaptureSettings {
 }
 
 export interface CameraTestResult {
+  cameraVersion?: number;
   success: boolean;
   code?: string;
   message?: string;

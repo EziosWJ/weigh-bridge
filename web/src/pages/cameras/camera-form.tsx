@@ -48,36 +48,43 @@ export function CameraFormDialog({ camera, open, loading, error, onCancel, onSub
     await onSubmit(input);
   }
 
-  return <FormDialog open={open} title={camera ? "编辑摄像头" : "新增摄像头"} loading={loading} submitText={camera ? "保存摄像头" : "新增摄像头"} onCancel={onCancel} onSubmit={submit}
-    description="源地址与凭据保存在 Server；保存后立即用于后续抓拍，无需 Agent 重载。历史图片保留当时名称和来源。">
+  return <FormDialog open={open} title={camera ? "编辑摄像头" : "新增摄像头"} loading={loading} submitText={camera ? "保存摄像头" : "新增摄像头"} onCancel={onCancel} onSubmit={submit}>
     <div className="space-y-4">
-      <Field label="名称" htmlFor="camera-name" required help="用于工作台预览、核对与历史图片显示，可随时修改。">
+      <Field label="名称" htmlFor="camera-name" required>
         <Input id="camera-name" value={name} maxLength={100} autoFocus onChange={event => setName(event.target.value)} placeholder="例如：西门入口" />
       </Field>
-      <Field label="完整源地址" htmlFor="camera-source" required help="包含主机、端口和流路径；不要把用户名密码写进地址。">
+      <Field label="完整源地址" htmlFor="camera-source" required hint="包含主机、端口和流路径；不要把用户名密码写进地址。">
         <Input id="camera-source" value={sourceUrl} onChange={event => setSourceUrl(event.target.value)} placeholder="rtsp://192.168.1.20:554/stream1" autoComplete="off" spellCheck={false} />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="用户名" htmlFor="camera-username" help="摄像头未启用鉴权时留空。">
+        <Field label="用户名" htmlFor="camera-username">
           <Input id="camera-username" value={username} maxLength={200} autoComplete="off" onChange={event => setUsername(event.target.value)} />
         </Field>
-        <Field label="密码" htmlFor="camera-password" help={camera?.hasPassword ? "已保存密码；留空保持原值。" : "未保存密码；留空表示无密码。"}>
+        <Field label="密码" htmlFor="camera-password" hint={camera?.hasPassword ? "已保存密码；留空保持原值。" : "未保存密码；留空表示无密码。"}>
           <Input id="camera-password" type="password" value={password} disabled={clearPassword} autoComplete="new-password" onChange={event => setPassword(event.target.value)} placeholder={camera?.hasPassword ? "留空保持原密码" : "无密码可留空"} />
         </Field>
       </div>
-      {camera?.hasPassword && <label className="flex items-center gap-2 text-sm"><Checkbox checked={clearPassword} onChange={event => { setClearPassword(event.target.checked); if (event.target.checked) setPassword(""); }} />清除已保存密码（仅明确勾选时清除）</label>}
+      {camera?.hasPassword && <label className="flex items-center gap-2 text-sm"><Checkbox checked={clearPassword} onChange={event => { setClearPassword(event.target.checked); if (event.target.checked) setPassword(""); }} />清除已保存密码</label>}
       <div className="space-y-2 rounded-control border border-border bg-neutral-background p-3">
-        <label className="flex items-start gap-2 text-sm"><Checkbox className="mt-0.5" checked={captureEnabled} onChange={event => setCaptureEnabled(event.target.checked)} /><span>用于称重抓拍<br /><span className="text-text-tertiary">未勾选的摄像头仅用于实时预览，不参与正式称重证据。</span></span></label>
-        <label className="flex items-start gap-2 text-sm"><Checkbox className="mt-0.5" checked={enabled} onChange={event => setEnabled(event.target.checked)} /><span>启用该摄像头<br /><span className="text-text-tertiary">停用后停止预览和抓拍，历史图片仍可查询。</span></span></label>
+        <label className="flex items-start gap-2 text-sm"><Checkbox className="mt-0.5" checked={captureEnabled} onChange={event => setCaptureEnabled(event.target.checked)} />用于称重抓拍</label>
+        <label className="flex items-start gap-2 text-sm"><Checkbox className="mt-0.5" checked={enabled} onChange={event => setEnabled(event.target.checked)} />启用摄像头</label>
       </div>
       {(localError || error) && <p role="alert" className="text-sm text-error">{localError || error}</p>}
     </div>
   </FormDialog>;
 }
 
-export function CameraDeleteDialog({ camera, loading, error, onCancel, onConfirm }: { camera: CameraRecord | null; loading: boolean; error: string; onCancel: () => void; onConfirm: () => void }) {
+export function CameraDeleteDialog({ camera, recognitionSource, recognitionActive, remainingCaptureCount, loading, error, onCancel, onConfirm }: { camera: CameraRecord | null; recognitionSource: boolean; recognitionActive: boolean; remainingCaptureCount: number; loading: boolean; error: string; onCancel: () => void; onConfirm: () => void }) {
   return <ConfirmDialog open={!!camera} danger title="删除摄像头" confirmText="确认删除" loading={loading} onCancel={onCancel} onConfirm={onConfirm}
-    description={camera ? <>删除“{camera.name}”后不再参与预览和抓拍；历史称重图片保留当时名称与来源。若该摄像头是识别源，识别选择会同时清除并停用识别。<br />当前配置版本：{camera.version}。{error && <span role="alert" className="mt-2 block text-error">{error}</span>}</> : ""} />;
+    description={camera ? <>
+      <span className="block break-words font-medium">{camera.name} · {camera.enabled ? camera.captureEnabled ? "称重抓拍及预览" : "仅预览" : "已停用"}{recognitionSource && " · 车牌识别源"}</span>
+      <span className="mt-2 block">{camera.enabled ? camera.captureEnabled
+        ? `删除后从预览和称重抓拍中移除。剩余 ${remainingCaptureCount} 台称重抓拍摄像头。`
+        : "删除后从视频预览中移除。"
+        : "删除后移除此摄像头配置。"}{recognitionSource && (recognitionActive ? "将清除识别源并停用车牌识别。" : "将清除已选识别源。")}</span>
+      {error && <span role="alert" className="mt-2 block text-error">{error}</span>}
+    </> : ""} />;
+
 }
 
 export function CameraErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {

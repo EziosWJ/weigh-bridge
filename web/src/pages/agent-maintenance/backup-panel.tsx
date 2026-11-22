@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { agentMaintenanceApi, type BackupRecord, type DeviceSettings, type EffectiveConfig } from '@/api/agent-maintenance';
+import { agentMaintenanceApi, type BackupRecord, type EffectiveConfig } from '@/api/agent-maintenance';
 import { ContentCard } from '@/components/common/content-card';
 import { DetailItem } from '@/components/common/detail-item';
 import { DataTable } from '@/components/common/data-table';
@@ -15,19 +15,11 @@ import { toast } from '@/components/common/toast-store';
 import { Input } from '@/components/ui/input';
 import { formatDateTime } from '@/lib/datetime';
 import { getErrorMessage } from '@/lib/api-error';
+import { fields, setting } from './settings-fields';
+import { SettingsComparison } from './settings-comparison';
+import { applyResultLabel, appliedVersion } from './apply-result';
 import type { DataTableColumn } from '@/types';
 
-const fields: { label: string; group: 'serial' | 'print'; key: string }[] = [
-  { label: '串口路径', group: 'serial', key: 'port' }, { label: '仪表波特率', group: 'serial', key: 'baud' },
-  { label: 'CUPS 打印队列', group: 'print', key: 'queue' }, { label: '单据节长（mm）', group: 'print', key: 'formLengthMm' },
-  { label: '水平偏移（mm）', group: 'print', key: 'offsetXmm' }, { label: '垂直偏移（mm）', group: 'print', key: 'offsetYmm' },
-  { label: '内容缩放（倍）', group: 'print', key: 'printScale' }, { label: '基准打印宽度（mm）', group: 'print', key: 'printWidthMm' },
-];
-function setting(settings: DeviceSettings | undefined, group: 'serial' | 'print', key: string) {
-  const values = settings?.[group] as Record<string, string | number> | undefined;
-  const value = values?.[key];
-  return value === '' || value === undefined ? '—' : String(value);
-}
 function state(value?: string) {
   return ({ running: '运行中', degraded: '降级运行', unavailable: '不可用', configured: '已配置', fault: '故障', ready: '就绪', not_configured: '未配置' } as Record<string, string>)[value ?? ''] ?? '未知';
 }
@@ -71,7 +63,7 @@ export function MaintenanceBackupPanel({ canManage, onApplied }: { canManage: bo
     finally { setBusy(false); }
   }
   async function remove(record: BackupRecord) {
-    if (!window.confirm(`删除备份“${backupName(record)}”？当前设备参数不受影响。`)) return;
+    if (!window.confirm(`删除备份“${backupName(record)}”？删除后无法再选择此备份恢复。`)) return;
     setBusy(true); setError('');
     try {
       await agentMaintenanceApi.deleteBackup(record.id); toast.success('备份已删除。');
@@ -86,27 +78,26 @@ export function MaintenanceBackupPanel({ canManage, onApplied }: { canManage: bo
       const result = await agentMaintenanceApi.restore(selected.id, effective.configVersion);
       if (result.status === 'applied') {
         setSelected(undefined); setRestoring(false);
-        toast.success({ title: '已明确发起恢复并核对设备结果', description: '未新增备份，连接地址与运行状态未被覆盖。' });
+        toast.success({ title: '配置已恢复并核实', description: appliedVersion(result), duration: 5000 });
         await onApplied();
-      } else setError(`恢复未完成（${result.status}）：${result.message || '请核对设备实际状态'}。`);
+      } else {
+        setError(`${applyResultLabel(result.status)}${result.message ? `：${result.message}` : ''}`);
+        if (result.status === 'unknown') {
+          setSelected(undefined); setRestoring(false); setLive(false);
+          return;
+        }
+      }
       await load();
     } catch (failure) {
       setError(`${getErrorMessage(failure, '恢复失败')}。结果未知时请刷新核实，不要重复恢复。`);
-      setLive(false);
+      setSelected(undefined); setRestoring(false); setLive(false);
     } finally { setBusy(false); }
   }
   const feedback = <>
     {error && <p role="alert" className="rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{error}</p>}
   </>;
-  const comparison = selected && <div className="overflow-x-auto rounded-control border border-border"><table className="w-full min-w-[300px] table-fixed text-left text-sm">
-    <caption className="sr-only">备份与当前生效参数对比</caption>
-    <thead className="bg-neutral-background text-text-secondary"><tr className="border-b border-border">{['参数', live ? '当前生效值' : '最近上报值', '备份值'].map(label => <th key={label} scope="col" className="px-space-3 py-space-2 font-medium">{label}</th>)}</tr></thead>
-    <tbody>{fields.map(field => {
-      const current = setting(effective, field.group, field.key);
-      const saved = setting(selected.settings, field.group, field.key);
-      return <tr key={field.key} className="border-b border-border last:border-b-0"><th scope="row" className="px-space-3 py-space-2 font-medium">{field.label}</th><td className="px-space-3 py-space-2 tabular-nums [overflow-wrap:anywhere]">{current}</td><td className={`px-space-3 py-space-2 tabular-nums [overflow-wrap:anywhere] ${current !== saved ? 'bg-warning-background font-medium text-warning' : ''}`}>{saved}{current !== saved && <span className="ml-space-2 text-xs">（不同）</span>}</td></tr>;
-    })}</tbody>
-  </table></div>;
+  const comparison = selected && <SettingsComparison current={effective} next={selected.settings}
+    currentLabel={live ? '当前生效值' : '最近上报值'} nextLabel="备份值" />;
   const columns: DataTableColumn<BackupRecord>[] = [
     { title: '备份名称／备注', key: 'name', render: (_, record) => <>
       <p className="truncate font-medium" title={backupName(record)}>{backupName(record)}</p>
@@ -119,32 +110,34 @@ export function MaintenanceBackupPanel({ canManage, onApplied }: { canManage: bo
     { title: '操作', key: 'actions', width: canManage ? 205 : 90, nowrap: true, render: (_, record) => <TableActions>
       <Button size="sm" disabled={busy} onClick={() => { setSelected(record); setRestoring(false); }}>查看</Button>
       {canManage && <>
-        <Button size="sm" variant="ghost" disabled={busy || !live || !effective} onClick={() => { setSelected(record); setRestoring(true); }}>恢复</Button>
+        <Button size="sm" variant="ghost" disabled={busy || !live || !effective} onClick={() => { setError(''); setSelected(record); setRestoring(true); }}>恢复</Button>
         <Button size="sm" variant="ghost" className="text-error hover:bg-error-background hover:text-error" disabled={busy} onClick={() => void remove(record)}>删除</Button>
       </>}
     </TableActions> },
   ];
   return <div className="space-y-space-4">
     {feedback}
-    <ContentCard title="当前生效配置" description={live ? '来自 Agent 当前连接的生效状态；保存应用不会自动创建备份。' : 'Agent 离线或状态未确认，仅展示最近上报信息，不能创建或恢复备份。'} extra={<Button disabled={busy || (!loaded && !loadError)} onClick={() => { setError(''); void load(); }}>刷新备份与状态</Button>}>
+    <ContentCard title={live ? '当前生效配置' : '最近上报配置'} extra={<Button disabled={busy || (!loaded && !loadError)} onClick={() => { setError(''); void load(); }}>刷新备份与状态</Button>}>
       {effective ? <>
         <div className="grid gap-space-4 sm:grid-cols-3"><DetailItem label="生效版本" value={`v${effective.configVersion}`} /><DetailItem label="最近生效时间" value={formatDateTime(effective.appliedAt)} /><DetailItem label="仪表／打印" value={live ? `${state(effective.serialState)}／${state(effective.printerState)}` : '离线／未确认'} /></div>
         <div className="mt-space-4 grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">{fields.map(field => <DetailItem key={field.key} label={field.label} value={setting(effective, field.group, field.key)} />)}</div>
       </> : <p className="text-sm text-text-secondary">尚无已核实生效参数。</p>}
       {canManage && <div className="mt-space-4 border-t border-border pt-space-4"><Button variant="primary" disabled={busy || !loaded || !live || !effective?.appliedAt} onClick={() => setCreateOpen(true)}>创建备份</Button></div>}
     </ContentCard>
-    <DataTableCard toolbar={<TableToolbar title="配置备份列表" description="手动保留仪表与打印参数；恢复不会自动新增备份。历史自动备份继续可用。" />}>
+    <DataTableCard toolbar={<TableToolbar title="配置备份列表" />}>
       <DataTable ariaLabel="设备配置备份列表" columns={columns} dataSource={records} rowKey="id" loading={!loaded && !loadError}
         error={loadError} minWidth={canManage ? 860 : 745} compact stickyHeader fixedEdges
         empty={<p className="p-space-5 text-center text-sm text-text-tertiary">{canManage ? '暂无配置备份，请在参数核实后手动创建。' : '暂无配置备份。'}</p>} />
       <Pagination page={page} pageSize={10} total={total} disabled={busy || !loaded} onPageChange={setPage} />
     </DataTableCard>
-    <FormDialog open={createOpen} title="创建设备配置备份" description="仅保存 Agent 已生效的仪表与打印参数，不包含尚未应用的表单修改。" submitText="创建备份" loading={busy} submitDisabled={!name.trim() || !live || !loaded} onCancel={() => setCreateOpen(false)} onSubmit={create}>
+    <FormDialog open={createOpen} title="创建设备配置备份" submitText="创建备份" loading={busy} submitDisabled={!name.trim() || !live || !loaded} onCancel={() => setCreateOpen(false)} onSubmit={create}>
       {error && feedback}
       <div className="space-y-space-4"><Field label="备份名称" htmlFor="backup-name"><Input id="backup-name" value={name} maxLength={100} onChange={event => setName(event.target.value)} /></Field><Field label="备份备注" htmlFor="backup-notes"><Input id="backup-notes" value={notes} maxLength={500} onChange={event => setNotes(event.target.value)} /></Field></div>
     </FormDialog>
-    {restoring ? <FormDialog open={!!selected} title="恢复设备配置备份" description={`将恢复“${selected ? backupName(selected) : ''}”，同时覆盖仪表与打印参数；不会恢复连接地址、运行状态或重放打印。`} submitText="确认恢复" loading={busy} submitDisabled={!live || !loaded} onCancel={() => setSelected(undefined)} onSubmit={restore}>
-      {error && feedback}{comparison}
+    {restoring ? <FormDialog open={!!selected} title="恢复设备配置备份" description={`将恢复“${selected ? backupName(selected) : ''}”，并重新应用仪表与打印参数。`} submitText="确认恢复" loading={busy} submitDisabled={!live || !loaded} onCancel={() => setSelected(undefined)} onSubmit={restore}>
+      {error && feedback}
+      {selected && <SettingsComparison current={effective} next={selected.settings} nextLabel="恢复后" changesOnly />}
+      <details className="mt-4"><summary className="mb-2 cursor-pointer text-sm text-primary">全部参数</summary>{comparison}</details>
     </FormDialog> : <DetailDialog open={!!selected} title="配置备份详情" description={selected ? `${backupName(selected)} · ${selected.notes || '无备注'}` : undefined} onCancel={() => setSelected(undefined)}>{comparison}</DetailDialog>}
   </div>;
 }

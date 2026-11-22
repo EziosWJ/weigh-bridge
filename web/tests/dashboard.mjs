@@ -12,7 +12,7 @@ try {
     try { if ((await fetch(`${base}/tests/dashboard.html`)).ok) break; } catch { /* Starting. */ }
     await delay(100);
   }
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
   const page = await browser.newPage({ viewport: { width: 1366, height: 1000 } });
   page.setDefaultTimeout(8000);
   const errors = [];
@@ -50,8 +50,8 @@ try {
       if (scenario === 'device-failure') return route.fulfill({ status: 503, json: { code: 503, message: '设备状态读取失败' } });
       return data({ online: scenario !== 'offline', deviceOk: true, stable: true, receivedAt: '2026-10-26T02:30:00Z', captureRequired: scenario !== 'optional' });
     }
-    if (path === '/api/system/agent-maintenance/status') return route.fulfill({ json: scenario === 'offline'
-      ? { agentProcessOnline: false, maintenanceAvailable: false, lastError: 'Agent 离线' }
+    if (path === '/api/system/agent-maintenance/status') return route.fulfill({ json: ['offline', 'maintenance-unavailable'].includes(scenario)
+      ? { agentProcessOnline: scenario === 'maintenance-unavailable', maintenanceAvailable: false, lastError: '维护命令超时' }
       : { agentProcessOnline: true, agentKnown: true, agent: '运行中', cupsKnown: true, cups: '运行中', queueKnown: true, queueState: '已启用', queue: '五联打印机', jobsKnown: false, checkedAt: '2026-10-26T02:30:00Z' } });
     if (path === '/api/weighing/cameras') return data({ cameras: scenario === 'no-cameras' ? [] : [{ id: 1, name: '磅房全景', enabled: true, captureEnabled: true, stream: { state: 'error' } }], video: { syncState: 'error', whepBaseUrl: 'http://video.local', updateTime: '2026-10-26T02:30:00Z' } });
     throw new Error('Unexpected request ' + path);
@@ -69,7 +69,9 @@ try {
   assert.equal(await page.getByText('隔日', { exact: true }).count(), 1);
   assert.equal(await page.getByRole('link', { name: '川A12345', exact: true }).getAttribute('href'), '/weighing/tasks/1');
   assert.equal(await page.getByRole('link', { name: 'WB202610260008', exact: true }).getAttribute('href'), '/weighing/tickets/8');
-  await page.getByText('1 台参与抓拍，连通性未检测').waitFor();
+  await page.getByText('16 小时 30 分钟', { exact: true }).waitFor();
+  assert.equal(await page.getByText('隔日', { exact: true }).evaluate(node => node.classList.contains('bg-neutral-background')), true);
+  await page.getByText('1 台参与抓拍', { exact: true }).waitFor();
   await page.getByText('同步失败', { exact: true }).waitFor();
   await page.getByText('作业状态待核实', { exact: true }).waitFor();
   assert.equal(await page.getByRole('link', { name: '设备维护', exact: true }).count(), 0, 'maintenance shortcut should be removed');
@@ -108,6 +110,10 @@ try {
   scenario = 'offline'; await ready();
   await page.getByText('离线或数据过期', { exact: true }).waitFor();
   await page.getByText('维护连接不可用', { exact: true }).waitFor();
+  scenario = 'maintenance-unavailable'; await ready();
+  await page.getByText('采集中', { exact: true }).waitFor();
+  await page.getByText('维护连接不可用', { exact: true }).waitFor();
+  await page.locator('.dashboard-device-item').filter({ hasText: '打印设备' }).getByText('未知', { exact: true }).waitFor();
   scenario = 'device-failure'; await ready();
   await page.getByText('设备状态读取失败', { exact: true }).waitFor();
   await page.getByText('策略未知', { exact: true }).waitFor();

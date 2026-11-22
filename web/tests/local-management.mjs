@@ -247,6 +247,7 @@ try {
   let actionPayload;
   let configRead = 0;
   let rejectApply = false;
+  let unknownApply = false;
   let backupCreates = 0;
   let backupOnline = true;
   const backups = [{ id: 11, name: '', notes: '', configVersion: 2, digest: 'sha256:v2', settings: structuredClone(currentSettings), appliedAt: '2026-10-23T10:20:30+08:00', source: 'auto', receivedAt: '2026-10-23T10:20:31+08:00' }];
@@ -255,6 +256,7 @@ try {
   let printerKnown = false;
   let diagnosticError = '暂无可读取错误';
   let diagnosticJobs = [];
+  let reportWhileMaintenanceUnavailable = false;
   let deviceOnline = true;
   let emptyAudit = false;
   let auditReads = 0;
@@ -267,9 +269,10 @@ try {
     const method = request.method();
     const data = value => route.fulfill({ json: { code: 200, message: 'ok', data: value } });
     if (path === '/api/auth/menus') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
-    if (path === '/api/weighing/capabilities') return data({ localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'agent:maintenance:manage'], sites: [], scales: [], userId: 1 });
+    if (path === '/api/weighing/capabilities') return data({ localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'weighing:read', 'agent:maintenance:manage'], sites: [], scales: [{ code: 'WB01' }], userId: 1 });
+    if (path.endsWith('/scales/WB01/device')) return data({ online: reportWhileMaintenanceUnavailable || deviceOnline, deviceOk: true, stable: true, weight: '12.345', receivedAt: new Date().toISOString() });
     if (path.endsWith('/status')) return route.fulfill({ json: ({
-      checkedAt: new Date().toISOString(), maintenance: '运行中', maintenanceAvailable: deviceOnline, agentProcessOnline: deviceOnline,
+      checkedAt: new Date().toISOString(), maintenance: '运行中', maintenanceAvailable: deviceOnline, agentProcessOnline: deviceOnline || reportWhileMaintenanceUnavailable,
       agent: agentRunning ? '运行中' : '已停止', agentKnown: true,
       cups: printerKnown ? '运行中' : '未知', cupsKnown: printerKnown, queue: 'Aisino-SK820-raw', queueState: printerKnown ? '已启用' : '未知', queueKnown: printerKnown,
       jobsKnown: !unknownJobs, jobs: diagnosticJobs, lastError: diagnosticError,
@@ -305,6 +308,7 @@ try {
     if (path.endsWith('/queues')) return route.fulfill({ json: { queues: [{ name: 'Aisino-SK820-raw', state: 'idle', isDefault: true }], at: new Date().toISOString() } });
     if (path.endsWith('/apply') && method === 'POST') {
       applyPayload = request.postDataJSON();
+      if (unknownApply) return route.fulfill({ json: { status: 'unknown', message: '设备应答超时' } });
       if (rejectApply) return route.fulfill({ json: { status: 'rejected', message: '校准参数未通过设备检查' } });
       currentSettings = applyPayload.settings;
       configVersion += 1;
@@ -312,10 +316,11 @@ try {
     }
     if (path.endsWith('/restore') && method === 'POST') {
       restorePayload = request.postDataJSON();
+      currentSettings = structuredClone(backups.find(record => record.id === restorePayload.backupId).settings);
       configVersion += 1;
       return route.fulfill({ json: { status: 'applied', configVersion, digest: `sha256:v${configVersion}`, appliedAt: new Date().toISOString() } });
     }
-    if (path.endsWith('/jobs')) return route.fulfill({ json: { jobs: [], previewToken: 'maintenance-preview', unknown: unknownJobs } });
+    if (path.endsWith('/jobs')) return route.fulfill({ json: { jobs: diagnosticJobs, previewToken: 'maintenance-preview', unknown: unknownJobs } });
     if (path.endsWith('/test-print') && method === 'POST') return route.fulfill({ json: { message: '校准样张请求已提交，请核对纸面效果。' } });
     if (path.endsWith('/action')) {
       actionPayload = request.postDataJSON();
@@ -407,12 +412,22 @@ try {
   await managed.page.getByLabel('单据节长（mm）', { exact: true }).fill('93.13');
   await managed.page.getByLabel('水平偏移（mm）', { exact: true }).fill('2');
   await managed.page.getByLabel('垂直偏移（mm）', { exact: true }).fill('1.5');
+  const openApply = () => managed.page.getByRole('button', { name: '保存并应用', exact: true }).click();
+  const applyDialog = managed.page.getByRole('dialog', { name: '核对设备参数', exact: true });
+  await openApply();
+  await applyDialog.getByRole('row', { name: /单据节长.*99.*93\.13/ }).waitFor();
+  await applyDialog.getByRole('row', { name: /串口路径.*ttyUSB0.*ttyUSB9/ }).waitFor();
+  assert.equal(await applyDialog.getByRole('row', { name: /基准打印宽度/ }).count(), 0);
+  await applyDialog.getByRole('button', { name: '取消', exact: true }).click();
+  assert.equal(applyPayload, undefined, 'cancel must not apply settings');
   rejectApply = true;
-  await managed.page.getByRole('button', { name: '保存并应用', exact: true }).click();
+  await openApply();
+  await applyDialog.getByRole('button', { name: '确认应用', exact: true }).click();
   await managed.page.getByRole('alert').filter({ hasText: '校准参数未通过设备检查' }).waitFor();
   assert.equal(await managed.page.getByLabel('单据节长（mm）', { exact: true }).inputValue(), '93.13', 'rejected apply preserves entered parameters');
   rejectApply = false;
-  await managed.page.getByRole('button', { name: '保存并应用', exact: true }).click();
+  await openApply();
+  await applyDialog.getByRole('button', { name: '确认应用', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '配置已保存并应用' }).waitFor();
   assert.deepEqual(applyPayload, {
     baseVersion: 3,
@@ -422,6 +437,21 @@ try {
     },
   }, 'one submit carries the visible serial and print settings plus the base version');
   assert.ok(configRead >= 2, 'config must be reread after applying');
+  await managed.page.getByRole('status').filter({ hasText: '生效版本 v4' }).waitFor();
+  await managed.page.getByLabel('单据节长（mm）', { exact: true }).fill('95.5');
+  unknownApply = true;
+  await openApply();
+  await applyDialog.getByRole('button', { name: '确认应用', exact: true }).click();
+  await managed.page.getByRole('alert').filter({ hasText: '应用结果未知，请刷新状态核实' }).waitFor();
+  assert.equal(await managed.page.getByRole('button', { name: '保存并应用', exact: true }).isDisabled(), true);
+  unknownApply = false;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await managed.page.getByRole('button', { name: '保存并应用', exact: true }).and(managed.page.locator('button:enabled')).waitFor();
+  assert.equal(await managed.page.getByLabel('单据节长（mm）', { exact: true }).inputValue(), '93.13', 'refresh reads the actual device settings');
+
+
+  // The historical backup differs from the current settings only in paper length.
+  backups[0].settings = { ...structuredClone(currentSettings), print: { ...currentSettings.print, formLengthMm: 99 } };
 
   // Backups are maintained only in their own tab and only created explicitly.
   await managed.page.getByRole('tab', { name: '仪表管理', exact: true }).click();
@@ -441,20 +471,24 @@ try {
   await managed.page.getByRole('tab', { name: '配置备份', exact: true }).click();
   const manualBackup = managed.page.getByRole('row').filter({ hasText: '现场校准完成' });
   await manualBackup.getByRole('button', { name: '查看', exact: true }).click();
-  await managed.page.getByRole('dialog').getByText('备份与当前生效参数对比', { exact: true }).waitFor({ state: 'attached' });
+  await managed.page.getByRole('dialog').getByText('设备参数对比', { exact: true }).waitFor({ state: 'attached' });
   await managed.page.getByRole('button', { name: '关闭详情弹窗', exact: true }).click();
   await manualBackup.getByRole('button', { name: '删除', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '备份已删除' }).waitFor();
   const historicBackup = managed.page.getByRole('row').filter({ hasText: '历史自动备份' });
   await historicBackup.getByRole('button', { name: '恢复', exact: true }).click();
-  await managed.page.getByRole('dialog').getByText('（不同）', { exact: true }).first().waitFor();
+  const restoreDialog = managed.page.getByRole('dialog', { name: '恢复设备配置备份', exact: true });
+  await restoreDialog.getByRole('row', { name: /单据节长.*93\.13.*99/ }).waitFor();
+  assert.equal(await restoreDialog.getByRole('row').count(), 2, 'show only the changed setting before restore');
+  await restoreDialog.getByText('全部参数', { exact: true }).click();
+  await restoreDialog.getByRole('row', { name: /基准打印宽度/ }).waitFor();
   await managed.page.getByRole('button', { name: '确认恢复', exact: true }).click();
-  await managed.page.getByRole('status').filter({ hasText: '已明确发起恢复' }).waitFor();
+  await managed.page.getByRole('status').filter({ hasText: '配置已恢复并核实' }).getByText('生效版本 v5', { exact: true }).waitFor();
   assert.deepEqual(restorePayload, { backupId: 11, baseVersion: 4 }, 'restore is explicit and version checked');
   assert.equal(backupCreates, 1, 'restoring does not create another backup');
   backupOnline = false;
   await managed.page.getByRole('button', { name: '刷新备份与状态', exact: true }).click();
-  await managed.page.getByText('Agent 离线或状态未确认，仅展示最近上报信息，不能创建或恢复备份。', { exact: true }).waitFor();
+  await managed.page.getByRole('heading', { name: '最近上报配置', exact: true }).waitFor();
   assert.equal(await managed.page.getByRole('button', { name: '创建备份', exact: true }).isDisabled(), true);
   assert.equal(await historicBackup.getByRole('button', { name: '恢复', exact: true }).isDisabled(), true);
   await historicBackup.getByRole('button', { name: '查看', exact: true }).click();
@@ -488,9 +522,30 @@ try {
 
 
   // Unknown print jobs require explicit confirmation and never auto-replay.
-  unknownJobs = true;
   await managed.page.getByRole('tab', { name: '运行总览', exact: true }).click();
+  reportWhileMaintenanceUnavailable = true; deviceOnline = false;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  await managed.page.getByText('维护连接不可用', { exact: true }).waitFor();
+  await managed.page.getByText('稳定', { exact: true }).waitFor();
+  assert.equal(await managed.page.getByRole('button', { name: '重载设备', exact: true }).isDisabled(), true);
+  await managed.page.getByRole('tab', { name: '仪表管理', exact: true }).click();
+  await managed.page.getByText('12.345', { exact: false }).waitFor();
+  await managed.page.getByRole('tab', { name: '运行总览', exact: true }).click();
+  deviceOnline = true;
+  await managed.page.getByRole('button', { name: '刷新状态', exact: true }).click();
+  diagnosticJobs = [{ id: 'job-42', queue: '磅房', title: 'WB042' }];
+  await managed.page.getByRole('button', { name: '停止设备', exact: true }).click();
+  const stopDialog = managed.page.getByRole('dialog', { name: '停止设备', exact: true });
+  await stopDialog.getByText('未结束打印作业 1 项', { exact: true }).waitFor();
+  await stopDialog.getByText(/job-42.*WB042/).waitFor();
+  await stopDialog.getByRole('button', { name: '取消', exact: true }).click();
+  assert.notEqual(actionPayload?.action, 'stop-agent');
+  diagnosticJobs = [];
+  unknownJobs = true;
   await managed.page.getByRole('button', { name: '重载设备', exact: true }).click();
+  const restartDialog = managed.page.getByRole('dialog', { name: '重载设备', exact: true });
+  await restartDialog.getByText('未结束打印作业数量未知', { exact: true }).waitFor();
+  await restartDialog.getByRole('button', { name: '确认重载设备', exact: true }).click();
   await managed.page.getByRole('status').filter({ hasText: '操作已执行' }).waitFor();
   assert.equal(actionPayload?.action, 'restart-agent');
   await managed.page.setViewportSize({ width: 390, height: 844 });
