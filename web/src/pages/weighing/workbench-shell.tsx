@@ -55,7 +55,7 @@ export function WorkbenchShell() {
   return <div className="weighing-workbench min-h-screen bg-background">
     <a href="#main-content" className="workbench-skip">跳转到称重操作</a>
     <header className="workbench-topbar">
-      <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name} · 人工核对确认</p></div></div>
+      <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name}</p></div></div>
       <span className="workbench-connection text-sm text-text-secondary"><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
       <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
         {canSupplement && <Button size="sm" onClick={() => setSupplementOpen(true)}>人工补单</Button>}

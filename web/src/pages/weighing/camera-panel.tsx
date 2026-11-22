@@ -1,3 +1,4 @@
+import { HelpHint } from '@/components/common/help-hint';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Camera, VideoOff, X } from 'lucide-react';
 import { PlateCloseup, PlateEvidenceInfo } from './plate-evidence';
@@ -120,12 +121,12 @@ export type CameraSize = 'standard' | 'large';
 
 function previewMessage(camera: CameraRecord, stream: CameraStream | null, error: string) {
   if (error) return `预览信息读取失败：${error}`;
-  if (!camera.enabled) return '摄像头已停用，不能预览；已保存的历史图片仍可查看。';
+  if (!camera.enabled) return '摄像头已停用';
   if (!stream) return '正在读取视频预览状态…';
   if (stream.playbackUrl) return '';
-  if (stream.state === 'error') return `视频映射同步失败${stream.lastError ? `：${stream.lastError}` : '，请在摄像头管理中重试同步。'}`;
-  if (stream.state === 'removing') return '视频映射待移除；当前不能预览。';
-  return `视频映射待同步${stream.lastError ? `：${stream.lastError}` : '，同步完成后可预览；直连抓拍不受影响。'}`;
+  if (stream.state === 'error') return `视频映射同步失败${stream.lastError ? `：${stream.lastError}` : ''}`;
+  if (stream.state === 'removing') return '视频映射待移除';
+  return `视频映射待同步${stream.lastError ? `：${stream.lastError}` : ''}`;
 }
 
 function CameraTile({ camera, active, onSelect }: { camera: CameraRecord; active: boolean; onSelect: () => void }) {
@@ -193,7 +194,6 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
     return () => clearInterval(timer);
   }, [loadCameras, validScale]);
 
-  const selected = cameras?.find(camera => camera.id === selectedId) ?? null;
 
   const chooseCamera = (id: number) => {
     setVisibleIds(current => current.includes(id) ? current : [...current.slice(0, 2), id]);
@@ -206,11 +206,11 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
   const imageCount = capture ? capture.images?.length || (capture.imageSrc ? 1 : 0) : 0;
   const failureCount = capture?.failures?.length ?? 0;
   const captureIssue = !!capture && (failureCount > 0 || !!capture.imageError || capture.imageStatus === 'capture_failed' || capture.imageStatus === 'upload_failed' || imageCount === 0);
-  const captureStatus = !capture ? '等待采集' : imageCount === 0 ? '本次无图' : captureIssue ? `已取得 ${imageCount} 张 · 抓拍不完整` : `已取得 ${imageCount}/${imageCount} 张`;
+  const captureStatus = !capture ? '等待采集' : imageCount === 0 ? '本次无图' : captureIssue ? `已取得 ${imageCount} 张 · 抓拍不完整` : `已取得 ${imageCount} 张`;
 
   return <ContentCard className="weighing-camera shadow-none" bodyClassName="p-0">
     <div className="workbench-camera-toolbar flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <h2 className="flex items-center gap-2 text-base font-semibold"><Camera className="h-4 w-4 text-text-tertiary" aria-hidden />现场画面<span className="camera-source-label">{selected?.enabled ? '实时预览' : '本次抓拍'}</span></h2>
+      <div className="flex items-center gap-2"><h2 className="flex items-center gap-2 text-base font-semibold"><Camera className="h-4 w-4 text-text-tertiary" aria-hidden />现场画面</h2>{visibleCameras.length > 0 && <span className="camera-source-label">实时预览</span>}<HelpHint label="现场画面说明">实时预览供现场核对。采集重量时单独抓拍，确认后保存当次图片。</HelpHint></div>
       <div className="camera-layout-options flex items-center gap-1" role="group" aria-label="摄像头画面大小">
         {([['standard', '标准'], ['large', '视频优先']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} className={size === value ? 'bg-neutral-background text-primary' : ''} onClick={() => onSizeChange(value)}>{label}</Button>)}
       </div>
@@ -219,9 +219,8 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
       {(cameras ?? []).filter(camera => camera.enabled).length > 3 && <label>选择摄像头 <select aria-label="选择摄像头" value={selectedId ?? ''} onChange={event => chooseCamera(Number(event.target.value))}>{(cameras ?? []).filter(camera => camera.enabled).map(camera => <option key={camera.id} value={camera.id}>{camera.name}</option>)}</select></label>}
       {cameras === null && <span role="status" className="text-xs text-text-secondary">正在读取摄像头…</span>}
       {cameras?.length === 0 && !cameraError && <span className="text-xs text-text-secondary">尚未配置摄像头</span>}
-      <span className="ml-auto text-xs text-text-secondary">{cameraError ? '预览不可用' : '实时监控 · 正式称重另行抓拍'}</span>
     </div>}
-    {cameraError && <p role="alert" className="px-4 py-2 text-sm text-warning">{cameraError}；正式采集与已保存图片不受影响。</p>}
+    {cameraError && <p role="alert" className="px-4 py-2 text-sm text-warning">{cameraError}</p>}
     {visibleCameras.length > 0 ? <div className="workbench-camera-grid" data-count={visibleCameras.length}>
       {visibleCameras.map(camera => <CameraTile key={camera.id} camera={camera} active={camera.id === mainId} onSelect={() => chooseCamera(camera.id)} />)}
     </div> : <div className="workbench-camera-feed relative"><span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>{cameraError ? '无法读取摄像头预览' : '尚无启用的摄像头'}</strong></span></div>}
@@ -231,9 +230,8 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
         {captureRequired != null && <span className={`workbench-capture-policy${captureRequired ? '' : ' is-optional'}`}>{captureRequired ? '强制抓拍' : '非强制抓拍'}</span>}
         <span role="status" className={`workbench-capture-status${capture ? captureIssue ? ' text-warning' : ' text-success' : ''}`}>{captureStatus}</span>
       </header>
-      {capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : <div className="workbench-capture-empty"><Camera className="h-5 w-5 shrink-0" aria-hidden /><p>采集重量时自动抓拍，请核对现场车牌。</p></div>}
+      {capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : null}
       {scenePlate && <div className="workbench-camera-plate"><PlateCloseup plate={scenePlate} /></div>}
-      <p className="workbench-capture-hint">{capture ? '请核对车牌与车辆上磅情况。' : captureRequired === false ? '本厂未强制抓拍，允许无图确认；实时预览仅用于监看。' : '实时预览仅用于监看；抓拍图片随确认称重保存。'}</p>
     </section>
   </ContentCard>;
 }

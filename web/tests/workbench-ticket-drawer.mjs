@@ -101,6 +101,12 @@ try {
   assert.equal(listRequest?.searchParams.get('page'), '1');
   assert.equal(listRequest?.searchParams.get('pageSize'), '10');
   assert.equal(await dialog.getByRole('link', { name: '查看单据 WB202610270001' }).getAttribute('target'), 'weighbridge-management');
+  assert.equal(await dialog.getByRole('link', { name: '预览单据 WB202610270001' }).getAttribute('href'), '/weighing/tickets/1/preview');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  for (const label of ['车牌 / 单号', '状态 / 打印', '最终净重（吨）', '操作']) {
+    const column = await dialog.getByRole('columnheader', { name: label, exact: true }).boundingBox();
+    assert.ok(column && column.x >= 0 && column.x + column.width <= 1280, `${label} 应在 1280px 首屏可见`);
+  }
   assert.equal(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), true);
 
   await dialog.getByRole('button', { name: '下一页', exact: true }).click();

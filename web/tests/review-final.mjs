@@ -22,7 +22,7 @@ try {
   const dialog = page.getByRole('dialog', { name: '核对回磅（皮重）' });
   assert.equal(await dialog.getByRole('button', { name: '重新采集重量' }).count(), 0);
   await dialog.getByRole('img', { name: '出口抓拍' }).waitFor();
-  for (const text of ['晋AB6P44', '入厂卸货', '木片', '王坚 · C-P-0001', '毛重 30 吨 · 2026-10-30 09:36:04', '预计净重（未出单）', '13007028190']) {
+  for (const text of ['晋AB6P44', '入厂卸货', '木片 · 散装', '王坚', '毛重 30 吨 · 2026-10-30 09:36:04', '预计净重（未出单）', '13007028190']) {
     assert.ok(await dialog.getByText(text, { exact: true }).isVisible(), `${text} 应保留`);
   }
   assert.equal(await dialog.getByText('物料及规格／编码', { exact: true }).count(), 0, '物料栏不再显示规格与编码');
@@ -33,7 +33,9 @@ try {
   const factBoxes = await dialog.locator('.review-facts .review-fact').evaluateAll(nodes => nodes.map(node => ({ border: getComputedStyle(node).borderTopWidth, background: getComputedStyle(node).backgroundColor })));
   assert.ok(factBoxes.every(box => parseFloat(box.border) > 0 && box.background !== 'rgba(0, 0, 0, 0)'), '业务核对各格应有独立边框与底色');
   assert.equal(await dialog.locator('.review-summary').getByText(/重量稳定|张抓拍|入厂卸货|回磅/).count(), 0);
-  assert.ok(await dialog.getByText('请确认车辆已完全上磅，现场与资料一致。', { exact: true }).isVisible());
+  await dialog.getByRole('button', { name: '称重确认说明' }).focus();
+  assert.ok(await page.getByRole('tooltip').filter({ hasText: '确认车辆完全上磅' }).isVisible());
+  await dialog.getByRole('button', { name: '关闭核对' }).focus();
   const businessHint = dialog.getByRole('button', { name: '业务核对说明' });
   await businessHint.hover();
   assert.ok(await page.getByRole('tooltip').filter({ hasText: '请与现场车辆核对' }).isVisible());
@@ -58,17 +60,19 @@ try {
   assert.equal(await dialog.locator('.review-hero').count(), 0);
   assert.equal(await dialog.getByText(/第 2 步|可扣减/).count(), 0, '步骤行与净重调整标题行应简化');
   const finalIdentity = await dialog.locator('.review-final-step .review-facts').innerText();
-  for (const text of ['当前车辆', '晋AB6P44', '入厂卸货', '物料', '木片', '供货方', '王坚 · C-P-0001']) assert.ok(finalIdentity.includes(text), `第二步应展示 ${text}`);
+  for (const text of ['当前车辆', '晋AB6P44', '入厂卸货', '物料', '木片 · 散装', '供货方', '王坚']) assert.ok(finalIdentity.includes(text), `第二步应展示 ${text}`);
   const plateSize = await dialog.locator('.review-final-step .review-facts .review-fact-value').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize));
   assert.ok(plateSize >= 28, `第二步车号应与大格子同级：${plateSize}px`);
-  assert.equal(await dialog.locator('#net-adjustment-category-0').inputValue(), 'WATER');
+  await dialog.locator('#net-adjustment-category-0').selectOption('WATER');
+  await dialog.getByText('按比例', { exact: true }).click();
   assert.equal(await dialog.getByRole('radio', { name: '按比例' }).isChecked(), true);
+  await dialog.getByRole('heading', { name: '首磅云端化验依据' }).waitFor();
   assert.match(await dialog.getByLabel('扣减合计').innerText(), /未扣减/);
   await dialog.locator('#net-adjustment-rate-0').fill('5');
   await dialog.getByText('16.473 吨', { exact: true }).waitFor();
   const addButton = dialog.getByRole('button', { name: '添加扣减项' });
   await addButton.click();
-  assert.equal(await dialog.locator('#net-adjustment-category-1').inputValue(), 'IMPURITY');
+  await dialog.locator('#net-adjustment-category-1').selectOption('IMPURITY');
   await dialog.locator('#net-adjustment-amount-1').fill('0.5');
   await dialog.getByText('15.973 吨', { exact: true }).waitFor();
   await dialog.getByRole('button', { name: '删除该项' }).nth(1).click();

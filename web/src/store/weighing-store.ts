@@ -37,7 +37,7 @@ function netAdjustmentsBody(inputs?: NetAdjustmentsInput): Record<string, unknow
   const items = (inputs ?? []).map(netAdjustmentItemBody).filter(Boolean) as Record<string, unknown>[];
   return items.length > 0 ? items : undefined;
 }
-interface PendingRequest { actorId: number; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print' }
+interface PendingRequest { actorId: number; ticketId?: string; path: string; body: Record<string, unknown>; requestId: string; taskId?: string; stage: 'first' | 'second'; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print' }
 interface UIState { draft: TaskInput; draftRequestId: string; trip?: SelectedTrip | null; pending: PendingRequest | null }
 interface Store {
   data: WeighingState; device: DeviceState | null; capabilities: WeighingCapabilities | null;
@@ -76,7 +76,7 @@ async function invalidate() {
   if (old && lease?.sessionToken) await workflowApi.post(`/samples/${old.id}/invalidate`, sessionInput());
 }
 function updateData(patch: Partial<WeighingState>) { useWeighingStore.setState(s => ({ data: { ...s.data, ...patch } })); }
-function pendingView(request: PendingRequest) { return { requestId: request.requestId, taskId: request.taskId ?? '', stage: request.stage, operation: request.operation, committed: false }; }
+function pendingView(request: PendingRequest) { return { requestId: request.requestId, ticketId: request.ticketId, taskId: request.taskId ?? '', stage: request.stage, operation: request.operation, committed: false }; }
 function restoreUI() {
   try {
     const raw = sessionStorage.getItem(uiKey());
@@ -398,14 +398,14 @@ export const useWeighingStore = create<Store>((set, get) => ({
           const requestId = createId();
           const intent = command.type === 'startPrint' ? command.intent : current.printStatus === 'failed' ? 'retry' : 'initial';
           const body = { requestId, intent, reason: command.type === 'startPrint' ? command.reason ?? '' : '' };
-          await send({ actorId, path: `/tickets/${command.ticketId}/print-attempts`, body, requestId, taskId: current.taskId, stage: 'second', operation: 'print' }); break;
+          await send({ actorId, path: `/tickets/${command.ticketId}/print-attempts`, body, requestId, ticketId: current.id, taskId: current.taskId, stage: 'second', operation: 'print' }); break;
         }
         case 'resolvePrint': {
           const current = data.tickets.find(t => t.id === command.ticketId);
           if (!current?.lastPrintAttemptId) throw new Error('没有可核实的打印尝试，请刷新单据');
           const requestId = createId();
           const body = { requestId, status: command.status ?? (command.printed ? 'printed' : 'failed'), reason: command.reason };
-          await send({ actorId, path: `/print-attempts/${current.lastPrintAttemptId}/result`, body, requestId, taskId: current.taskId, stage: 'second', operation: 'print' }); break;
+          await send({ actorId, path: `/print-attempts/${current.lastPrintAttemptId}/result`, body, requestId, ticketId: current.id, taskId: current.taskId, stage: 'second', operation: 'print' }); break;
         }
         case 'resolveSubmission': {
           if (!pendingRequest) throw new Error('没有本账号的待决请求');

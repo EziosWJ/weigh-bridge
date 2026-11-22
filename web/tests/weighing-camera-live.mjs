@@ -142,7 +142,7 @@ try {
   const captureGroup = page.getByRole('group', { name: '抓拍摄像头', exact: true });
   await page.getByRole('img', { name: '入口抓拍', exact: true }).waitFor();
   await page.getByRole('img', { name: '装车区抓拍', exact: true }).waitFor();
-  await page.getByText('已取得 2/2 张', { exact: true }).waitFor();
+  await page.getByText('已取得 2 张', { exact: true }).waitFor();
   await captureGroup.getByRole('button', { name: '放大抓拍 装车区', exact: true }).click();
   const photoDialog = page.getByRole('dialog', { name: '抓拍图片预览', exact: true });
   await photoDialog.getByRole('img', { name: '装车区抓拍大图', exact: true }).waitFor();
@@ -171,7 +171,7 @@ try {
   await page.getByText('已取得 1 张 · 抓拍不完整', { exact: true }).waitFor();
   await page.getByText('装车区：摄像头连接超时', { exact: true }).waitFor();
   await page.getByRole('button', { name: '完整抓拍', exact: true }).click();
-  await page.getByText('已取得 2/2 张', { exact: true }).waitFor();
+  await page.getByText('已取得 2 张', { exact: true }).waitFor();
 
   await page.getByRole('button', { name: '全屏查看实时画面', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '入口实时画面', exact: true });

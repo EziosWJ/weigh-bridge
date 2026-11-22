@@ -67,7 +67,7 @@ export interface DeviceImage {
 export interface DeviceState { captureRequired?: boolean; capturePolicyRevision?: string; captureBlockedReason?: string; connectionId?:string; agentId: string; scaleCode: string; weight: string; stable: boolean; deviceOk: boolean; online: boolean; revision: string; receivedAt: string; plate: { candidate: string; failed: boolean; at: string }; images: DeviceImage[] }
 export interface DeviceConfig { role: OperatorRole; weight: number; stable: boolean; timedOut: boolean; deviceError: boolean; online: boolean; evidence: boolean }
 
-export interface PendingSubmission { operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print'; taskId: string; stage: 'first' | 'second'; committed: boolean; requestId?: string; plate?: string }
+export interface PendingSubmission { ticketId?: string; operation?: 'reweigh' | 'reopen' | 'correct' | 'terminate' | 'manual-return' | 'void' | 'print'; taskId: string; stage: 'first' | 'second'; committed: boolean; requestId?: string; plate?: string }
 export interface WeighingState { resetAt?: string; trip?: SelectedTrip; draftPlateEvidence?: PlateEvidence; version: 3; categories: MaterialCategory[]; draft: TaskInput; draftRequestId: string; firstRequests: Record<string, string>; materials: Material[]; parties: Party[]; tasks: TransportTask[]; tickets: WeighingTicket[]; config: DeviceConfig; capture?: CaptureSnapshot; sampleReady: boolean; owner: 'self' | 'other' | null; pending?: PendingSubmission; history: HistoryEntry[]; sequence: number }
 export type WeighingCommand = (
  | { type: 'capture'; stage?: 'first' | 'second'; taskId?: string; plate?: string; plateEvidence?: PlateEvidence }
