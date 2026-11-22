@@ -138,6 +138,19 @@ func TestPostgresManualReturnAndTermination(t *testing.T) {
 			t.Fatalf("print marks do not disclose manual return: %+v", ticket.PrintSheet.Marks)
 		}
 
+		originals := weighingData[weighing.Page[weighing.OriginalView]](t, f.router, "GET", "/api/weighing/originals?keyword="+ticket.TicketNo, "", f.admin)
+		if len(originals.Records) != 1 {
+			t.Fatalf("manual return original list: %+v", originals)
+		}
+		original := originals.Records[0]
+		if original.FirstSource != "collected" || original.SecondSource != "manual" ||
+			!original.FirstWeighedAt.Equal(detail.Records[0].CapturedAt) ||
+			!original.SecondWeighedAt.Equal(manual.CapturedAt) || !original.SecondConfirmedAt.Equal(manual.ConfirmedAt) ||
+			original.CurrentTicketID == nil || *original.CurrentTicketID != ticket.ID ||
+			original.RelatedTicketID == nil || *original.RelatedTicketID != ticket.ID || original.RelatedTicketNo != ticket.TicketNo {
+			t.Fatalf("manual return source, times and ticket reference: %+v", original)
+		}
+
 		var payload struct {
 			Ticket struct {
 				GrossSource string `json:"grossSource"`

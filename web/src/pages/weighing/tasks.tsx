@@ -7,7 +7,8 @@ import { plateError } from '@/lib/weighing/plate';
 import { WorkbenchLink } from "@/components/common/workbench-link";
 import { WeightAdjustmentDetails } from "./deduction-fields";
 import { useDeferredValue, useEffect, useRef, useState } from "react";
-import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { HelpHint } from "@/components/common/help-hint";
 import { ContentCard } from "@/components/common/content-card";
 import { DataTable } from "@/components/common/data-table";
 import { DataTableCard } from "@/components/common/data-table-card";
@@ -27,9 +28,9 @@ import { useWeighingStore } from "@/store/weighing-store";
 import { beijingTime } from "@/lib/weighing/query";
 import { formatWeight } from "@/lib/weighing/weights";
 import type { DataTableColumn } from "@/types";
-import { emptyTaskInput, taskStatusLabels, type TaskInput, type TaskTripBasis, type TransportTask, type WeighingFilter } from "@/types/weighing";
-import { BusinessFields, DeviceBanner, HistoryList, WeighingFilters, ListDate } from "./shared";
-import { BusinessSnapshot, ManualReturnNotice, WeighRecords } from "./record-info";
+import { emptyTaskInput, activeWeighRecord, taskStatusLabels, weighingSourceLabel, type TaskInput, type TaskTripBasis, type TransportTask, type WeighingFilter } from "@/types/weighing";
+import { BusinessFields, HistoryList, WeighingFilters, ListDate } from "./shared";
+import { BusinessSnapshot, WeighRecords } from "./record-info";
 import { ManualReturnDialog, TerminateTaskDialog } from "./task-action-dialogs";
 
 const linkClass = "text-primary hover:underline";
@@ -37,6 +38,8 @@ type TaskOperation = "correct" | "reweigh";
 const operationTitles: Record<TaskOperation, string> = { correct: "业务纠错", reweigh: "单磅重称" };
 
 export function WeighingTasksPage() {
+  const navigate = useNavigate();
+  const pending = useWeighingStore(state => state.data.pending);
   const directionLabels = useTransportDirections();
   const capabilities = useWeighingStore(state => state.capabilities);
   const [params] = useSearchParams();
@@ -100,14 +103,18 @@ export function WeighingTasksPage() {
   ];
   if (params.get('task')) return <Navigate replace to={`/weighing/tasks/${encodeURIComponent(params.get('task')!)}`} />;
   return <div className="weighing-list-page">
-    <PageHeader title="待回磅任务" description="" />
-    <DeviceBanner compact /><WeighingFilters value={filter} onChange={value => { setFilter(Object.keys(value).length ? value : { status: 'second' }); setPage(1); }} />
+    <PageHeader title="待回磅任务" />
+    {pending?.taskId && <p role="status" className="mb-2 text-warning">上次提交结果待核实。<Link className={linkClass} to={`/weighing/tasks/${encodeURIComponent(pending.taskId)}`}>查看原任务</Link></p>}
+    <WeighingFilters value={filter} onChange={value => { setFilter(Object.keys(value).length ? value : { status: 'second' }); setPage(1); }} />
     <DataTableCard className="weighing-list-table"><TableToolbar className="!py-space-3" title="运输任务" description={`当前筛选 ${result.total} 条`} actions={<><Button size="sm" onClick={result.refresh}>刷新</Button>{can('export') && <Button size="sm" onClick={() => void downloadWeighingCsv('tasks', filter).then(() => toast.success("运输任务 CSV 已导出")).catch(error => toast.error({ title: "导出失败", description: error.message }))}>导出筛选明细 CSV</Button>}</>} />
       <DataTable compact stickyHeader fixedEdges ariaLabel="运输任务列表" className="weighing-list-scroll" columns={columns} dataSource={result.records} loading={result.loading} error={result.error} rowKey="id" minWidth={1364} />
       <Pagination page={page} pageSize={pageSize} total={result.total} onPageChange={setPage} onPageSizeChange={size => { setPageSize(size); setPage(1); }} />
     </DataTableCard>
     <ManualReturnDialog task={manualTask} onClose={() => setManualTask(null)} onDone={taskActionDone} />
-    <TerminateTaskDialog task={terminateTask} onClose={() => setTerminateTask(null)} onDone={taskActionDone} />
+    <TerminateTaskDialog task={terminateTask} onClose={() => setTerminateTask(null)} onDone={() => {
+      taskActionDone();
+      if (terminateTask) navigate(`/weighing/tasks/${encodeURIComponent(terminateTask.id)}`);
+    }} />
   </div>;
 }
 
@@ -176,19 +183,26 @@ export function WeighingTaskDetailPage() {
 
   const backToTasks = <Link className={buttonStyles({ size: "sm" })} to="/weighing/tasks">返回任务列表</Link>;
   if (!task) return <><PageHeader title="运输任务详情" actions={backToTasks} /><ContentCard>{error ? <p role="alert" className="text-error">任务详情加载失败。{error}</p> : <p role="status">正在加载任务详情…</p>}</ContentCard></>;
-  const tickets = data.tickets.filter((ticket) => ticket.taskId === task.id);
+  const tickets = data.tickets.filter(ticket => ticket.taskId === task.id);
+  const entryType = tickets.find(ticket => ticket.entryType === 'manual_supplement')?.entryType;
+  const first = activeWeighRecord(task.records, 'first');
+  const second = activeWeighRecord(task.records, 'second');
+  const ticketNumbers = Object.fromEntries(tickets.map(ticket => [ticket.id, ticket.ticketNo]));
   return <>
-    <PageHeader title="运输任务详情" description={task.taskNo ?? task.id} actions={<>{backToTasks}{canWeigh && (pending || ["first", "second"].includes(task.status)) && <WorkbenchLink className={buttonStyles({ variant: "primary", size: "sm" })} to={`/weighing/workbench?task=${encodeURIComponent(task.id)}`}>{pending ? "前往工作台查询提交结果" : "前往工作台办理"}</WorkbenchLink>}</>} />
-    <DeviceBanner />
+    <PageHeader title={task.taskNo ?? "运输任务详情"} actions={<>{backToTasks}{canWeigh && (pending || ["first", "second"].includes(task.status)) && <WorkbenchLink className={buttonStyles({ variant: "primary", size: "sm" })} to={`/weighing/workbench?task=${encodeURIComponent(task.id)}`}>{pending ? "前往工作台查询提交结果" : "前往工作台办理"}</WorkbenchLink>}</>} />
     <div className="space-y-space-6">
       {notice && <p role="status" className="text-success">{notice}</p>}
       <ContentCard title="任务状态" extra={<StatusTag tone={pending ? "warning" : task.status === "completed" ? "success" : "neutral"}>{pending ? "提交结果待核实" : taskStatusLabels[task.status]}</StatusTag>}>
-        {task.records.some(record => record.source === 'manual') && <div className="mb-space-4"><ManualReturnNotice records={task.records} /></div>}
         {pending && <p role="alert" className="mb-space-4 text-warning">上次提交结果尚未核实。当前保存的记录不表示已核实成功；请先到工作台查询结果，再继续办理。</p>}
-        <div className="grid gap-space-4 sm:grid-cols-3"><DetailItem label="创建时间" value={beijingTime(task.createdAt)} /><DetailItem label="首次确认时间" value={task.records.filter(record=>record.stage==='first').slice(-1)[0]?.at ? beijingTime(task.records.filter(record=>record.stage==='first').slice(-1)[0].at) : '尚未确认'} /><DetailItem label="二次确认时间" value={task.records.filter(record=>record.stage==='second').slice(-1)[0]?.at ? beijingTime(task.records.filter(record=>record.stage==='second').slice(-1)[0].at) : '尚未确认'} /></div>
+        <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailItem label="车牌" value={task.plate} />
+          <DetailItem label="称重来源" value={weighingSourceLabel(entryType, first?.source, second?.source)} />
+          <DetailItem label="首磅重量" value={first && formatWeight(first.weight)} />
+          <DetailItem label="回磅重量" value={second && formatWeight(second.weight)} />
+        </div>
         {!pending && task.status !== "completed" && task.status !== "terminated" && canOperate && <div className="mt-space-4 flex flex-wrap gap-space-2">{can("correct") && <Button size="sm" onClick={() => startOperation("correct")}>业务纠错</Button>}{can("reweigh") && task.records.length > 0 && <Button size="sm" onClick={() => startOperation("reweigh")}>重称</Button>}{task.status === "second" && can("manual-return") && <Button size="sm" onClick={() => setManualOpen(true)}>人工补录回磅</Button>}{can("terminate") && <Button size="sm" variant="danger" onClick={() => setTerminateOpen(true)}>终止任务</Button>}</div>}
       </ContentCard>
-      {tripBasis?.bound && <ContentCard title="云端流转单与化验依据" description="首磅绑定快照；回磅扣减以此为依据。">
+      {tripBasis?.bound && <ContentCard title="云端流转单与化验依据">
         <div className="grid gap-space-4 sm:grid-cols-2 xl:grid-cols-4">
           <DetailItem label="流转单" value={tripBasis.tripNo || '—'} />
           <DetailItem label="化验单" value={tripBasis.inspection ? `HY-${String(tripBasis.inspection.id).padStart(6, '0')}` : '目测接收'} />
@@ -201,12 +215,12 @@ export function WeighingTaskDetailPage() {
         </div>}
         {tripBasis.status === 'ticketed' && <p className="mt-space-4 text-sm text-warning">请云端库管确认实际卸货；确认后系统自动关联磅单，未确认前无法开证。</p>}
       </ContentCard>}
-      {!pending && can("reweigh") && task.status === 'completed' && !tickets.some(ticket => ticket.status === 'valid') && <ContentCard title="作废后的单磅重称"><p className="mb-3">只采集有问题的一磅，核对目标装载状态并沿用另一有效磅，然后在关联作废单办理重开。</p><Button onClick={() => startOperation('reweigh')}>单磅重称</Button></ContentCard>}
-      <ContentCard title="本趟业务信息" description="保留当时的资料与联系信息快照；旧记录未保存的字段显示“-”。"><BusinessSnapshot value={task} /></ContentCard>
-      <ContentCard title="原始称重记录与替代关系"><WeighRecords records={task.records} /></ContentCard>
-      <ContentCard title="关联测试单">{tickets.length ? <div className="space-y-space-2">{tickets.map((ticket) => <div key={ticket.id}><Link className={linkClass} to={`/weighing/tickets/${encodeURIComponent(ticket.id)}`}>{ticket.id}</Link><span className="ml-space-3 text-text-secondary">{ticket.status === "valid" ? "有效" : "作废"}{ticket.previousId ? ` · 更正自 ${ticket.previousId}` : ""}</span></div>)}</div> : <p className="text-text-tertiary">尚无关联测试单。</p>}</ContentCard>
-      <ContentCard title="单据调整追溯">{tickets.length ? tickets.map(ticket => <div key={ticket.id} className="mb-5 border-b border-border pb-4 last:border-0"><p className="mb-3 text-sm font-medium">{ticket.id} · {ticket.status === "valid" ? "有效" : "作废"}</p><WeightAdjustmentDetails ticket={ticket} /></div>) : <p className="text-text-tertiary">尚未出单，无已确认调整。</p>}</ContentCard>
-      <ContentCard title="操作历史"><HistoryList entries={task.history} /></ContentCard>
+      {!pending && can("reweigh") && task.status === 'completed' && !tickets.some(ticket => ticket.status === 'valid') && <ContentCard title="作废后的单磅重称" extra={<HelpHint label="单磅重称规则">采集有问题的一磅，核对装载状态并沿用另一有效磅，再从关联作废单更正重开。</HelpHint>}><Button onClick={() => startOperation('reweigh')}>单磅重称</Button></ContentCard>}
+      <ContentCard title="本趟业务信息"><BusinessSnapshot value={task} /><div className="mt-space-4"><DetailItem label="任务创建时间" value={beijingTime(task.createdAt)} /></div></ContentCard>
+      <ContentCard title="原始称重记录与替代关系"><WeighRecords records={task.records} entryType={entryType} /></ContentCard>
+      <ContentCard title="关联单据">{tickets.length ? <div className="space-y-space-2">{tickets.map((ticket) => <div key={ticket.id}><Link className={linkClass} to={`/weighing/tickets/${encodeURIComponent(ticket.id)}`}>{ticket.ticketNo ?? ticket.id}</Link><span className="ml-space-3 text-text-secondary">{ticket.status === "valid" ? "有效" : "作废"}{ticket.previousId ? ` · 更正自 ${tickets.find(item => item.id === ticket.previousId)?.ticketNo ?? ticket.previousId}` : ""}</span></div>)}</div> : <p className="text-text-tertiary">尚无关联单据</p>}</ContentCard>
+      <ContentCard title="单据调整追溯">{tickets.length ? tickets.map(ticket => <div key={ticket.id} className="mb-5 border-b border-border pb-4 last:border-0"><p className="mb-3 text-sm font-medium">{ticket.ticketNo ?? ticket.id} · {ticket.status === "valid" ? "有效" : "作废"}</p><WeightAdjustmentDetails ticket={ticket} /></div>) : <p className="text-text-tertiary">尚未出单，无已确认调整。</p>}</ContentCard>
+      <ContentCard title="操作历史"><HistoryList entries={task.history} ticketNumbers={ticketNumbers} /></ContentCard>
     </div>
     <FormDialog open={!!operation} title={operation ? operationTitles[operation] : ""} onCancel={() => setOperation(null)} onSubmit={submitOperation} submitDisabled={operation === "reweigh" && (!reweighImageReady || !checked || !sameLoad || (task.records.some(record => record.stage !== reweighStage) && !otherValid))} submitText={operation === "reweigh" ? "确认当前采集重称" : "确认保存"} trapFocus={!photoPreviewOpen} closeOnEscape={!photoPreviewOpen} closeOnOverlayClick={!photoPreviewOpen}>
       <div className="space-y-space-4">

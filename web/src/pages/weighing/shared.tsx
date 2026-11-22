@@ -234,6 +234,27 @@ export function WeighingFilters({ value, onChange, ticket = false, dateLabel, hi
   </SearchFilterBar>;
 }
 
-export function HistoryList({ entries }: { entries: HistoryEntry[] }) {
-  return <ol className="space-y-2 text-sm">{entries.map((entry, i) => <li key={i} className="border-b border-border pb-2 last:border-0"><span className="tabular-nums text-text-tertiary">{beijingTime(entry.at)}</span><span className="mx-2">{entry.actor || '历史未记录操作人'} · {entry.role ? roleLabels[entry.role] : '账号操作'} · {entry.action}</span>{entry.reason && <p className="mt-1 break-words text-text-secondary">{entry.reason}</p>}</li>)}{!entries.length && <li className="text-text-tertiary">暂无操作记录</li>}</ol>;
+const historyActionLabels: Record<string, string> = {
+  'first.confirm': '确认首磅',
+  'second.confirm': '确认回磅',
+  'task.correct': '业务纠错',
+  'task.terminate': '终止任务',
+  'task.manual-return': '人工补录回磅',
+  'task.reweigh': '单磅重称',
+  'ticket.void': '单据作废',
+  'ticket.reopen': '更正重开',
+  'ticket.manual-supplement': '人工补单',
+};
+
+export function HistoryList({ entries, ticketNumbers }: { entries: HistoryEntry[]; ticketNumbers?: Record<string, string | undefined> }) {
+  return <ol className="space-y-2 text-sm">{entries.map((entry, i) => {
+    const rejected = entry.action.endsWith('.rejected');
+    const action = rejected ? entry.action.slice(0, -'.rejected'.length) : entry.action;
+    const number = entry.ticketId ? ticketNumbers?.[entry.ticketId] : undefined;
+    return <li key={i} className="border-b border-border pb-2 last:border-0">
+      <span className="tabular-nums text-text-tertiary">{beijingTime(entry.at)}</span>
+      <span className="mx-2">{[historyActionLabels[action] ?? action, rejected && "未通过", number, entry.actor || '历史未记录操作人', entry.role && roleLabels[entry.role]].filter(Boolean).join(' · ')}</span>
+      {entry.reason && <p className="mt-1 break-words text-text-secondary">{entry.reason}</p>}
+    </li>;
+  })}{!entries.length && <li className="text-text-tertiary">暂无操作记录</li>}</ol>;
 }

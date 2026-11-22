@@ -65,8 +65,6 @@ export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) 
   const items = ticket.netAdjustmentItems;
   const grossDeduction = snapshot?.grossDeduction ?? 0;
   const tareDeduction = snapshot?.tareDeduction ?? 0;
-  const manualReturn = ticket.records.some(record => record.source === 'manual') || ticket.grossSource === 'manual' || ticket.tareSource === 'manual';
-  const adjusted = amount !== 0 || grossDeduction !== 0 || tareDeduction !== 0;
   return <div className="space-y-4">
     <div className="grid gap-3 sm:grid-cols-3">
       {original && <><DetailItem label="原始毛重" value={formatWeight(original.gross)} /><DetailItem label="原始皮重" value={formatWeight(original.tare)} /><DetailItem label="原始净重" value={formatWeight(original.net)} /></>}
@@ -95,7 +93,6 @@ export function WeightAdjustmentDetails({ ticket }: { ticket: WeighingTicket }) 
       </table>
       </div>
     </div>}
-    <DetailItem label="重量来源" value={manualReturn && !adjusted ? '含人工补录回磅（非设备采集）' : adjusted || snapshot?.source === 'manual' ? '人工调整（原始采集依据保留）' : '沿用采集依据'} />
     {snapshot ? <div className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2">
       <DetailItem label="操作人／记录身份" value={`${snapshot.actor} · ${snapshot.role ? roleLabels[snapshot.role] : '账号操作'}`} />
       <DetailItem label="操作时间" value={beijingTime(snapshot.at)} />
@@ -128,8 +125,7 @@ export function GrossTareCorrectionFields({ original, value, onChange, showError
   let error = '';
   try { final = adjustedWeights(original, value); } catch (failure) { error = failure instanceof Error ? failure.message : '请核对最终毛重和皮重'; }
   return <fieldset className="min-w-0 space-y-3">
-    <legend className="text-sm font-semibold">毛重／皮重更正（异常纠错）</legend>
-    <p className="text-xs leading-relaxed text-text-tertiary">仅在原始毛重或皮重确有错误时使用；日常净重扣减请使用下方录入。原始采集依据保留。</p>
+    <legend className="text-sm font-semibold">毛重／皮重更正 <HelpHint label="毛皮重更正规则">用于更正异常毛重或皮重，原始采集记录继续保留。水分、杂质等扣减使用净重扣减录入。</HelpHint></legend>
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="min-w-0 space-y-3 rounded-control border border-border p-3">
         <DetailItem label="原始毛重" value={<span className="font-semibold tabular-nums">{formatWeight(original.gross)}</span>} />

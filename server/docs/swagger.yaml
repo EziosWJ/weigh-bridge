@@ -1203,6 +1203,15 @@ definitions:
       message:
         type: string
     type: object
+  weighing.HTTPEnvelope-weighing_Page-weighing_OriginalView:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Page-weighing_OriginalView'
+      message:
+        type: string
+    type: object
   weighing.HTTPEnvelope-weighing_Sample:
     properties:
       code:
@@ -1353,6 +1362,85 @@ definitions:
       ticketId:
         type: integer
     type: object
+  weighing.OriginalView:
+    properties:
+      actorId:
+        type: integer
+      actorName:
+        type: string
+      business:
+        $ref: '#/definitions/weighing.BusinessInfo'
+      carrierId:
+        type: integer
+      completedAt:
+        type: string
+      createTime:
+        type: string
+      currentFirstRecordId:
+        type: integer
+      currentSecondRecordId:
+        type: integer
+      currentTicketId:
+        type: integer
+      currentTicketStatus:
+        type: string
+      direction:
+        type: string
+      entryType:
+        type: string
+      firstConfirmedAt:
+        type: string
+      firstSource:
+        type: string
+      firstWeighedAt:
+        type: string
+      firstWeight:
+        type: string
+      id:
+        type: integer
+      materialId:
+        type: integer
+      mode:
+        type: string
+      originalGross:
+        type: string
+      originalNet:
+        type: string
+      originalTare:
+        type: string
+      partyId:
+        type: integer
+      plate:
+        type: string
+      relatedTicketId:
+        type: integer
+      relatedTicketNo:
+        type: string
+      scaleCode:
+        type: string
+      secondConfirmedAt:
+        type: string
+      secondSource:
+        type: string
+      secondWeighedAt:
+        type: string
+      secondWeight:
+        type: string
+      siteCode:
+        type: string
+      status:
+        type: string
+      taskNo:
+        type: string
+      terminateReason:
+        type: string
+      terminatedAt:
+        type: string
+      updateTime:
+        type: string
+      version:
+        type: integer
+    type: object
   weighing.Overview:
     properties:
       awaitingCount:
@@ -1447,6 +1535,19 @@ definitions:
       records:
         items:
           $ref: '#/definitions/weighing.BusinessEvent'
+        type: array
+      total:
+        type: integer
+    type: object
+  weighing.Page-weighing_OriginalView:
+    properties:
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      records:
+        items:
+          $ref: '#/definitions/weighing.OriginalView'
         type: array
       total:
         type: integer
@@ -1881,6 +1982,8 @@ definitions:
         type: array
       business:
         $ref: '#/definitions/weighing.BusinessInfo'
+      entryType:
+        type: string
       finalGross:
         type: string
       finalNet:
@@ -1953,6 +2056,8 @@ definitions:
       snapshotSchemaVersion:
         type: integer
       status:
+        type: string
+      supplementReason:
         type: string
       syncProtocol:
         type: integer
@@ -4829,8 +4934,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Page-weighing_OriginalView'
       security:
       - BearerAuth: []
       summary: 每任务一行的当前原始称重组合

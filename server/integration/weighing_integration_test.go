@@ -510,6 +510,16 @@ func checkWeighingFirstConfirmation(t *testing.T, router http.Handler, token str
 	}
 	voidedAgain := weighingData[weighing.CommandResult](t, router, "POST", "/api/weighing/tickets/"+itoa(newTicket.ID)+"/void", `{"requestId":"void-new-ticket-0002","reason":"实际重称皮重"}`, token)
 	var legacyVoid, v4Void int64
+	voidOriginals := weighingData[weighing.Page[weighing.OriginalView]](t, router, "GET", "/api/weighing/originals?keyword="+newTicket.TicketNo, "", token)
+	if len(voidOriginals.Records) != 1 {
+		t.Fatalf("void original list: %+v", voidOriginals)
+	}
+	voidOriginal := voidOriginals.Records[0]
+	if voidOriginal.CurrentTicketID != nil || voidOriginal.RelatedTicketID == nil ||
+		*voidOriginal.RelatedTicketID != newTicket.ID || voidOriginal.RelatedTicketNo != newTicket.TicketNo {
+		t.Fatalf("void original ticket reference: %+v", voidOriginal)
+	}
+
 	if err := database.GORM.Table("wb_ticket_sync_change").Where("ticket_id=? AND change_type='void'", newTicket.ID).Count(&legacyVoid).Error; err != nil || legacyVoid != 1 {
 		t.Fatalf("legacy void dispatch: %d %v", legacyVoid, err)
 	}
