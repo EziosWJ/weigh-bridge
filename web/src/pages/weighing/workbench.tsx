@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { CircleCheck, ClipboardCheck, FileText, LoaderCircle, Scale, Truck, TriangleAlert, X } from 'lucide-react';
+import { CircleCheck, ClipboardCheck, FileText, Info, LoaderCircle, Scale, Truck, TriangleAlert, X } from 'lucide-react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ContentCard } from '@/components/common/content-card';
 import { SectionTabs } from '@/components/common/section-tabs';
@@ -34,6 +34,7 @@ const emptyTripBusinessFields: Partial<TaskInput> = {
 };
 const sourceCameraNames = (item: PlateCandidate) => [...new Set(item.sourceEvents.map(source => source.cameraName).filter(Boolean))].join('、');
 const clockTime = (value: string) => beijingTime(value).slice(11, 19);
+const CLOUD_TRIP_UNAVAILABLE_HINT = '云端暂时无法查询。可继续本地称重；如本趟有云端流转单，请在云端恢复后核对并关联磅单。';
 
 function tripCandidateDetails(candidate: TripCandidate) {
   return [
@@ -92,6 +93,7 @@ function WorkbenchContent() {
   const [tripResult, setTripResult] = useState<TripCandidateResult | null>(null);
   const [tripLoading, setTripLoading] = useState(false);
   const [tripSelectionError, setTripSelectionError] = useState('');
+  const [cloudTripNotice, setCloudTripNotice] = useState('');
   const [tripBasis, setTripBasis] = useState<TaskTripBasis | null>(null);
   const [tripCloudStatus, setTripCloudStatus] = useState<TaskTripCloudStatus | null>(null);
   const [tripCloudLoading, setTripCloudLoading] = useState(false);
@@ -487,6 +489,7 @@ function WorkbenchContent() {
     candidateBlocked.current = true;
     setRecognitionHint('');
     setTripSelectionError('');
+    setCloudTripNotice('');
     setLookingUp(true);
     try {
       let existing;
@@ -532,14 +535,14 @@ function WorkbenchContent() {
               setTripResult(result);
             } else {
               setTripResult(null);
-              setRecognitionHint(result.available ? '未找到可关联的云端流转单，可按无流转单办理' : (result.message || '云端流转单查询失败，可按无流转单办理'));
-              toast.warning({ title: '未找到可关联流转单', description: '请核对车牌或云端流转单状态；可按无流转单继续录入资料。' });
+              setRecognitionHint('');
+              setCloudTripNotice(result.available ? '' : CLOUD_TRIP_UNAVAILABLE_HINT);
             }
           }
-        } catch (error) {
+        } catch {
           setTripResult(null);
-          setRecognitionHint(error instanceof Error ? `${error.message}，可按无流转单办理` : '云端流转单查询失败，可按无流转单办理');
-          toast.warning({ title: '云端流转单查询失败', description: '可按无流转单继续录入资料。' });
+          setRecognitionHint('');
+          setCloudTripNotice(CLOUD_TRIP_UNAVAILABLE_HINT);
         } finally {
           setTripLoading(false);
         }
@@ -637,7 +640,7 @@ function WorkbenchContent() {
     if (next.pending) {
       toast.warning({ title: '提交结果待核实', description: '请求已发出但结果未知，请先查询原结果，避免重复称重或出单。', duration: 6000 });
     } else if (taskId) {
-      setSuccess({ taskId, stage }); setRecognition(null); setRecognitionHint('');
+      setSuccess({ taskId, stage }); setRecognition(null); setRecognitionHint(''); setCloudTripNotice('');
       setCheckingAutoPrint(stage === 'second'); setCompletionOpen(true);
       setAutoPrintTicket(''); setAutoPrintNotice('');
       if (stage === 'second') {
@@ -711,7 +714,7 @@ function WorkbenchContent() {
     if (!await run({ type: 'clearDraft' }, '结束当前车辆失败')) return;
     ++candidateEpoch.current; setCandidateCycle(value => value + 1); setCandidates([]); selectedCandidate.current = null; candidateOwner.current = 'empty';
     observedAt.current = useWeighingStore.getState().device?.plate?.at ?? '';
-    setRecognition(null); setRecognitionHint(''); setOfferManualSource(false); editing.current = false;
+    setRecognition(null); setRecognitionHint(''); setCloudTripNotice(''); setOfferManualSource(false); editing.current = false;
     setParams({}); setPlate(''); setSearchedPlate(''); setSuccess(null); setCompletionOpen(false); setAutoPrintTicket(''); setAutoPrintNotice('');
     toast.success('已结束当前车辆，可继续办理下一辆。');
   }
@@ -726,6 +729,7 @@ function WorkbenchContent() {
     setManualMatch(null); setManualMatchCount(0); setManualBlocked([]); setManualTotal(0);
     setManualActiveTask(null); setManualTaskTrip(null); setManualActiveConflict(false);
     setRecognitionHint('');
+    setCloudTripNotice('');
     if (data.firstRequests[data.draftRequestId] && !await run({ type: 'clearDraft' })) return;
     void run({ type: 'draft', patch: { plate: value, ...emptyTripBusinessFields } });
     void run({ type: 'selectTrip', trip: null });
@@ -788,6 +792,7 @@ function WorkbenchContent() {
             void run({ type: 'verifyPlate', evidence: { source: 'manual', confirmedPlate: searchedPlate, at: new Date().toISOString() } }).then(ok => { if (ok) { setOfferManualSource(false); setRecognitionHint('已改为人工录入来源，请核对现场车辆。'); } });
           }}>改为人工录入来源</Button>}
           {tripLoading && <p role="status" className="plate-recognition mt-2 text-sm text-info">正在查询云端流转单与化验依据…</p>}
+          {!taskInfo && !awaitingResult && cloudTripNotice && <p role="status" className="plate-recognition mt-2 text-sm text-text-secondary"><Info className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden />{cloudTripNotice}</p>}
           {!taskInfo && !awaitingResult && tripSelectionError && <p role="alert" className="mt-2 text-sm text-warning">{tripSelectionError}</p>}
           {!taskInfo && !awaitingResult && tripResult && (() => {
             const linkable = tripResult.candidates.filter(item => item.linkable);
