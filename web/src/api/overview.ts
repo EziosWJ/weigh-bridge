@@ -15,6 +15,7 @@ export interface BusinessOverview {
 
 export interface OverviewDevice {
   online: boolean;
+  weight?: string;
   deviceOk: boolean;
   stable: boolean;
   error?: string;

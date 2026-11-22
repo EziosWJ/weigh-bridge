@@ -18,16 +18,26 @@
   border-top: 1px solid var(--color-border);
 }
 
+@container (max-width: 639px) {
+  .dashboard-device-item:last-child:nth-child(2n + 3) {
+    grid-column: 1 / -1;
+  }
+}
+
 @container (min-width: 640px) {
   .dashboard-device-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .dashboard-device-item:nth-child(n + 2) {
+  .dashboard-device-item:not(:nth-child(4n + 1)) {
     border-left: 1px solid var(--color-border);
   }
 
-  .dashboard-device-item:nth-child(n + 3) {
+  .dashboard-device-item:nth-child(5) {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-device-item:nth-child(-n + 4) {
     border-top: 0;
   }
 }

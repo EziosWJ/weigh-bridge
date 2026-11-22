@@ -350,7 +350,7 @@ func TestNormalizeCameraInputTracksOnlyContentChanges(t *testing.T) {
 func TestTestCaptureNeverRegistersImageOrSample(t *testing.T) {
 	data := testJPEG(t)
 	store := &fakeStore{cameras: []cameraRecord{{
-		ID: 1, PublicID: "cam_a", Name: "入口", SourceURL: "rtsp://camera/1", Enabled: true, CaptureEnabled: true,
+		ID: 1, Version: 7, PublicID: "cam_a", Name: "入口", SourceURL: "rtsp://camera/1", Enabled: true, CaptureEnabled: true,
 	}}}
 	service := NewService(store, t.TempDir(), frameFunc(func(context.Context, string, string, string) (Frame, error) {
 		return Frame{Data: data, Width: 4, Height: 2, Format: "jpeg"}, nil
@@ -359,7 +359,7 @@ func TestTestCaptureNeverRegistersImageOrSample(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Success || len(result.JPEG) == 0 || result.Width != 4 || result.Height != 2 {
+	if result.CameraVersion != 7 || result.At.IsZero() || !result.Success || len(result.JPEG) == 0 || result.Width != 4 || result.Height != 2 {
 		t.Fatalf("result=%+v", result)
 	}
 	if len(store.saved) != 0 {

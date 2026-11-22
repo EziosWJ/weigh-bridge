@@ -22,7 +22,7 @@ try {
     try { if ((await fetch(`${base}/tests/camera-management.html`)).ok) break; } catch { /* Starting. */ }
     await delay(100);
   }
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}) });
   const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
   page.setDefaultTimeout(10_000);
   const errors = [];
@@ -36,6 +36,7 @@ try {
   let recognitionUrl = '';
   let video = { apiUrl: '', apiUsername: '', hasApiPassword: false, whepBaseUrl: '', version: 1, syncState: 'pending', syncError: '', syncedVersion: 0, updateTime: now() };
   let syncOK = true;
+  let previewFailure = false;
   const requests = [];
   const writes = [];
   const testCalls = [];
@@ -79,12 +80,13 @@ try {
     if (testMatch && method === 'POST') {
       const target = cameras.find(item => item.id === Number(testMatch[1]));
       testCalls.push(target?.name);
-      if (target?.name === '装车区') return data({ success: false, code: 'camera_unavailable', message: '摄像头不可用', at: now() });
-      return data({ success: true, jpeg, width: 1, height: 1, at: now() });
+      if (target?.name === '装车区') return data({ success: false, code: 'camera_unavailable', message: '摄像头不可用', cameraVersion: target.version, at: now() });
+      return data({ success: true, cameraVersion: target.version, jpeg, width: 1, height: 1, at: now() });
     }
     const previewMatch = path.match(/^\/api\/weighing\/cameras\/(\d+)\/preview$/);
     if (previewMatch && method === 'GET') {
       const target = cameras.find(item => item.id === Number(previewMatch[1]));
+      if (previewFailure) return data({ ...target.stream, state: 'error', lastError: 'MediaMTX 不可达' });
       return data(target ? target.stream : stream(Number(previewMatch[1])));
     }
     const cameraMatch = path.match(/^\/api\/weighing\/cameras\/(\d+)$/);
@@ -115,7 +117,7 @@ try {
     await page.getByRole('button', { name: '新增摄像头', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: '新增摄像头', exact: true });
     await dialog.getByLabel('名称', { exact: false }).fill(name);
-    await dialog.getByLabel('完整源地址', { exact: false }).fill(`rtsp://camera.local/${encodeURIComponent(name)}`);
+    await dialog.getByRole('textbox', { name: /^完整源地址/ }).fill(`rtsp://camera.local/${encodeURIComponent(name)}`);
     await dialog.getByLabel('用户名', { exact: true }).fill('viewer');
     await dialog.getByLabel('密码', { exact: true }).fill('secret');
     if (capture) await dialog.getByLabel(/用于称重抓拍/).check();
@@ -157,6 +159,16 @@ try {
   await previewDialog.getByText('视频映射待同步', { exact: false }).first().waitFor();
   assert.equal(testCalls.length, beforePreviewTests, '预览不得触发抓拍测试');
   await previewDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  previewFailure = true;
+  await entryRow.getByRole('button', { name: '预览', exact: true }).click();
+  await previewDialog.getByRole('alert').filter({ hasText: 'MediaMTX 不可达' }).waitFor();
+  await previewDialog.getByRole('button', { name: '测试抓拍', exact: true }).click();
+  await previewDialog.waitFor({ state: 'hidden' });
+  await testDialog.getByText('测试成功', { exact: true }).waitFor();
+  await testDialog.getByText(/配置版本 v1/).waitFor();
+  assert.equal(testCalls.length, beforePreviewTests + 1);
+  await testDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  previewFailure = false;
 
   // Editing a camera: blank password keeps the secret, explicit clear erases it.
   await entryRow.getByRole('button', { name: '编辑', exact: true }).click();
@@ -171,6 +183,8 @@ try {
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
   update = writes.filter(body => body.version && body.name === '入口').at(-1);
   assert.equal(update.passwordAction, 'clear', '清除密码必须使用显式 passwordAction=clear');
+
+  await entryRow.getByText(/v1（旧配置）/).waitFor();
 
   // Recognition source: only capture cameras are offered; clearing asks the server to clear the choice.
   const recognitionSelect = page.getByLabel('识别源摄像头', { exact: true });
@@ -192,12 +206,14 @@ try {
   assert.equal(settingsWrite.clearRecognitionCamera, true, '清空识别源必须显式清除');
 
   // Delete sends the current version and announces that a deleted recognition source is disabled.
+  await page.getByLabel('识别接口地址', { exact: true }).fill('http://recognition.local');
   await recognitionSelect.selectOption({ label: '入口' });
   await saveCaptureSettings();
   await page.getByRole('row').filter({ hasText: '入口' }).getByRole('button', { name: '更多操作', exact: true }).click();
   await page.getByRole('group', { name: '更多操作', exact: true }).getByRole('button', { name: '删除', exact: true }).click();
   const deleteDialog = page.getByRole('dialog', { name: '删除摄像头', exact: true });
-  assert.ok((await deleteDialog.innerText()).includes('当前配置版本'));
+  await deleteDialog.getByText('入口 · 称重抓拍及预览 · 车牌识别源', { exact: true }).waitFor();
+  await deleteDialog.getByText(/停用车牌识别/).waitFor();
   await deleteDialog.getByRole('button', { name: '确认删除', exact: true }).click();
   await page.getByText('识别源已停用', { exact: false }).waitFor();
   const deleteWrite = requests.filter(request => request.method === 'DELETE').at(-1);

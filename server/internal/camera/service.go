@@ -461,7 +461,7 @@ func (s *Service) Test(ctx context.Context, id int64, event audit.Event) (TestRe
 	if err != nil {
 		return TestResult{}, err
 	}
-	result := TestResult{At: time.Now().UTC()}
+	result := TestResult{CameraVersion: camera.Version}
 	if strings.TrimSpace(camera.SourceURL) == "" {
 		result.Code, result.Message = CodeNotConfigured, "摄像头未配置源地址"
 	} else {
@@ -1016,11 +1016,12 @@ func int64Pointer(value int64) *int64 { return &value }
 // TestResult carries a bounded thumbnail and the concrete diagnostic error;
 // it is not a formal image reference.
 type TestResult struct {
-	Success bool      `json:"success"`
-	Code    string    `json:"code,omitempty"`
-	Message string    `json:"message,omitempty"`
-	JPEG    []byte    `json:"jpeg,omitempty"`
-	Width   int       `json:"width,omitempty"`
-	Height  int       `json:"height,omitempty"`
-	At      time.Time `json:"at"`
+	CameraVersion int64     `json:"cameraVersion"`
+	Success       bool      `json:"success"`
+	Code          string    `json:"code,omitempty"`
+	Message       string    `json:"message,omitempty"`
+	JPEG          []byte    `json:"jpeg,omitempty"`
+	Width         int       `json:"width,omitempty"`
+	Height        int       `json:"height,omitempty"`
+	At            time.Time `json:"at"`
 }
