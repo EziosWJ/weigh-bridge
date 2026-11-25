@@ -1,5 +1,10 @@
 # 当前实现、验证与剩余工作
 
+## 2026-11-25 厂内车牌识别候选接口
+
+- `GET /api/weighing/plate-candidates?scale={code}` 开放匿名只读访问，保留本厂启用地磅校验、有效期、候选来源和增量游标。人工确认和摄像头管理继续要求业务授权。[厂内车牌识别候选读取契约](requirements/local-device-maintenance-spec.md#65-厂内车牌识别候选读取契约)
+- 后端检查和 Swagger 生成通过。隔离 PostgreSQL 验证匿名查询、游标、并发水位、异厂拒绝和人工确认鉴权，模拟摄像头上报与实时重量回归复跑通过。首轮实时重量回归曾收到一次已登录设备详情请求的 HTTP 401，复跑未复现。真实厂内系统与摄像头联调待验证。
+
 ## 2026-11-25 厂内实时重量接口
 
 - 本厂 Server 开放匿名只读的 `GET /api/weighing/scales/{code}/device`，返回最新重量和仪表状态，离线、过期或故障时重量为 `null`。工作台、概览和设备维护改用受保护的 `/device-detail`，完整响应保留原访问校验。字段与网络边界见[厂内实时重量读取契约](requirements/local-device-maintenance-spec.md#41-厂内实时重量读取契约)。

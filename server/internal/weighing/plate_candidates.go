@@ -87,6 +87,16 @@ func paginateCandidates(groups []camera.PlateCandidate, after, watermark int64, 
 	return items, cursor
 }
 
+// plateCandidates godoc
+// @Summary 厂内匿名读取车牌识别候选
+// @Description 无需令牌。返回本厂启用且绑定的摄像头近期识别候选及来源元数据。
+// @Tags 称重设备
+// @Param scale query string true "当前本厂启用的地磅编码"
+// @Param after query string false "上一次返回的 nextCursor"
+// @Success 200 {object} HTTPEnvelope[plateCandidateResponse]
+// @Header 200 {string} Cache-Control "no-store"
+// @Failure 403 {object} HTTPEnvelope[any]
+// @Router /api/weighing/plate-candidates [get]
 func (h *Handler) plateCandidates(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	status, err := h.service.LocalStatus(c)

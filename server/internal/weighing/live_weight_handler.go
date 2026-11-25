@@ -16,10 +16,6 @@ type LiveWeight struct {
 	ReceivedAt *time.Time `json:"receivedAt" extensions:"x-nullable"`
 }
 
-func RegisterPublicRoutes(router gin.IRouter, h *Handler) {
-	router.GET("/scales/:code/device", h.liveWeight)
-}
-
 // liveWeight godoc
 // @Summary 厂内匿名读取地磅实时重量
 // @Description 无需令牌。返回最新设备状态，离线、过期或仪表故障时重量为 null。

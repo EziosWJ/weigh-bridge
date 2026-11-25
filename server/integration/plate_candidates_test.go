@@ -20,11 +20,13 @@ func TestPlateCandidateAPI(t *testing.T) {
 	db := openTemporaryDatabase(t, temporary.dsn)
 	defer db.Close()
 	deps := testDependencies(t, db, t.TempDir())
+	t.Cleanup(deps.Notification.Close)
 	deps.Camera = camera.NewService(camera.NewRepository(db.GORM), t.TempDir(), nil, nil, nil)
 	router, err := app.Build(testAPIConfig(), db, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertEnvelopeCode(t, serveJSON(router, "GET", "/api/weighing/plate-candidates?scale=WB01", "", ""), 403, 403, "无权执行此操作")
 	token := loginAdmin(t, router)
 	testLocalSetup(t, db, router, token, 1)
 	status := weighingData[localsite.Status](t, router, "GET", "/api/weighing/local-status", "", token)
@@ -33,7 +35,11 @@ func TestPlateCandidateAPI(t *testing.T) {
 		Items      []camera.PlateCandidate `json:"items"`
 		NextCursor string                  `json:"nextCursor"`
 	}
-	baseline := decodeCameraData[page](t, serveJSON(router, "GET", endpoint, "", token))
+	baselineResponse := serveJSON(router, "GET", endpoint, "", "")
+	if got := baselineResponse.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control=%q", got)
+	}
+	baseline := decodeCameraData[page](t, baselineResponse)
 	if baseline.NextCursor == "" {
 		t.Fatal("missing initial cursor")
 	}
@@ -53,17 +59,18 @@ func TestPlateCandidateAPI(t *testing.T) {
 			t.Fatalf("retry status %d", got.Code)
 		}
 	}
-	page1 := decodeCameraData[page](t, serveJSON(router, "GET", endpoint+"&after="+url.QueryEscape(baseline.NextCursor), "", token))
+	page1 := decodeCameraData[page](t, serveJSON(router, "GET", endpoint+"&after="+url.QueryEscape(baseline.NextCursor), "", ""))
 	if len(page1.Items) != 1 || page1.Items[0].Plate != "晋A12345" || len(page1.Items[0].SourceEvents) != 2 {
 		t.Fatalf("unexpected candidates: %+v", page1.Items)
 	}
-	page2 := decodeCameraData[page](t, serveJSON(router, "GET", endpoint+"&after="+url.QueryEscape(page1.NextCursor), "", token))
+	page2 := decodeCameraData[page](t, serveJSON(router, "GET", endpoint+"&after="+url.QueryEscape(page1.NextCursor), "", ""))
 	if len(page2.Items) != 0 {
 		t.Fatalf("duplicate candidates: %+v", page2.Items)
 	}
-	if response := serveJSON(router, "GET", endpoint, "", ""); response.Code == 200 {
-		t.Fatal("unauthenticated candidate access")
-	}
+	assertUnauthenticated(t, serveJSON(router, "POST", "/api/weighing/plate-confirmations", "{}", ""))
+	assertUnauthenticated(t, serveJSON(router, "GET", "/api/weighing/cameras", "", ""))
+	assertEnvelopeCode(t, serveJSON(router, "GET", "/api/weighing/plate-candidates", "", ""), 403, 403, "无权执行此操作")
+	assertEnvelopeCode(t, serveJSON(router, "GET", endpoint+"&after=!", "", ""), 200, 400, "参数错误")
 	var roleID int64
 	if err := db.GORM.Table("sys_role").Select("id").Where("role_code='WEIGHING_OPERATOR' AND status=1 AND deleted=0").Scan(&roleID).Error; err != nil || roleID == 0 {
 		t.Fatal("missing operator role")
@@ -88,12 +95,10 @@ func TestPlateCandidateAPI(t *testing.T) {
 		t.Fatalf("operator cannot read candidates: %+v", allowed.Items)
 	}
 	denied := loginUser(t, router, "candidate-no-grant", "admin123")
-	if response := serveJSON(router, "GET", endpoint, "", denied); response.Code != 403 {
-		t.Fatalf("ungranted access: %d", response.Code)
+	if got := decodeCameraData[page](t, serveJSON(router, "GET", endpoint, "", denied)); len(got.Items) != 1 {
+		t.Fatalf("candidate access still requires a site grant: %+v", got.Items)
 	}
-	if response := serveJSON(router, "GET", "/api/weighing/plate-candidates?scale=OTHER", "", operator); response.Code == 200 {
-		t.Fatal("other scale accepted")
-	}
+	assertEnvelopeCode(t, serveJSON(router, "GET", "/api/weighing/plate-candidates?scale=OTHER", "", ""), 403, 403, "无权执行此操作")
 	// A transaction holding an allocated but uncommitted event must not allow
 	// a reader to advance its watermark past that event.
 	tx := db.GORM.Begin()
@@ -107,7 +112,7 @@ func TestPlateCandidateAPI(t *testing.T) {
 	}
 	result := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
-		result <- serveJSON(router, "GET", endpoint+"&after="+url.QueryEscape(page1.NextCursor), "", token)
+		result <- serveJSON(router, "GET", endpoint+"&after="+url.QueryEscape(page1.NextCursor), "", "")
 	}()
 	select {
 	case <-result:

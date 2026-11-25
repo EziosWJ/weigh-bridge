@@ -4866,6 +4866,50 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/plate-candidates": {
+            "get": {
+                "description": "无需令牌。返回本厂启用且绑定的摄像头近期识别候选及来源元数据。",
+                "tags": [
+                    "称重设备"
+                ],
+                "summary": "厂内匿名读取车牌识别候选",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "当前本厂启用的地磅编码",
+                        "name": "scale",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "上一次返回的 nextCursor",
+                        "name": "after",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_plateCandidateResponse"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store"
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-any"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/print-attempts/{id}/result": {
             "post": {
                 "security": [
@@ -6452,6 +6496,52 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "camera.CandidateEvent": {
+            "type": "object",
+            "properties": {
+                "cameraId": {
+                    "type": "integer"
+                },
+                "cameraName": {
+                    "type": "string"
+                },
+                "eventRecordId": {
+                    "type": "integer"
+                },
+                "receivedAt": {
+                    "type": "string"
+                },
+                "recognizedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "camera.PlateCandidate": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "type": "string"
+                },
+                "firstReceivedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "lastReceivedAt": {
+                    "type": "string"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "sourceEvents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/camera.CandidateEvent"
+                    }
                 }
             }
         },
@@ -8260,6 +8350,20 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-weighing_plateCandidateResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.plateCandidateResponse"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.LiveWeight": {
             "type": "object",
             "properties": {
@@ -9573,6 +9677,23 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "weight": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.plateCandidateResponse": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/camera.PlateCandidate"
+                    }
+                },
+                "nextCursor": {
+                    "type": "string"
+                },
+                "serverTime": {
                     "type": "string"
                 }
             }

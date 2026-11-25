@@ -137,6 +137,16 @@ Server 在采集期间核对连接、新鲜度和维护互斥，不能长时间�
 - 保留可选外部车牌识别接口，由 Server 调用；地址允许留空，从指定的一台抓拍摄像头复用本次图片，不额外抓拍。识别失败不阻断其他条件满足的业务，候选仍需人工核对；不新增内置引擎／厂商接入。
 - 删除识别源或取消其抓拍用途时，同时清除识别源选择并提示识别已停用；不静默改选其他摄像头，不为保持识别而额外抓图。
 
+### 6.5 厂内车牌识别候选读取契约
+
+厂内系统可匿名调用 `GET /api/weighing/plate-candidates?scale={code}`，无需登录、令牌或权限。部署时通过网络边界将访问范围限制在厂内可信网络。必填的 `scale` 使用当前本厂唯一启用的地磅编码；缺少编码、非本厂编码、地磅停用、本厂身份未初始化或摄像头模块不可用时返回 HTTP 403。
+
+响应沿用 `code`、`message`、`data` 封装，包含 `Cache-Control: no-store`。成功响应中，`data.items` 为候选数组，每项包括 `id`、`plate`、`firstReceivedAt`、`lastReceivedAt`、`expiresAt` 和 `sourceEvents`。来源事件包括 `eventRecordId`、`cameraId`、`cameraName`、`recognizedAt` 和 `receivedAt`。接口只返回候选与来源元数据，正式抓拍图及其引用继续通过原有授权接口访问。
+
+首次请求省略 `after`，返回最近最多 5 个有效候选和当前水位。增量轮询将上一响应的 `data.nextCursor` 原样作为 `after`，每次最多返回 5 项；没有新增时 `items` 为空数组。无效或超前的游标返回 HTTP 200、业务码 400。按 `data.serverTime` 与 `expiresAt` 判断有效期，有效窗口和同车合并规则见[工作台与人工确认](weighing-business-spec.md#2-工作台与人工确认)。
+
+候选供识别参考。人工确认继续通过受保护的 `POST /api/weighing/plate-confirmations` 办理，沿用登录、称重确认权限和本厂范围校验。
+
 ## 7. MediaMTX 自由部署与自动同步
 
 MediaMTX 可在任意合适的本厂可达主机部署，不强制与 Agent 或 Server 同机。系统不负责远端进程安装、启动和系统级恢复。Server 必须能访问摄像头和管理接口，浏览器必须能访问 WHEP 及相应媒体网络；互联网断开不影响可达的本厂链路。

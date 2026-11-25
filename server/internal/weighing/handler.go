@@ -21,6 +21,12 @@ type Handler struct {
 func NewHandler(s *Service, permissions *rbac.Service) *Handler {
 	return &Handler{service: s, permissions: permissions}
 }
+
+func RegisterPublicRoutes(router gin.IRouter, h *Handler) {
+	router.GET("/scales/:code/device", h.liveWeight)
+	router.GET("/plate-candidates", h.plateCandidates)
+}
+
 func RegisterRoutes(router gin.IRouter, h *Handler) {
 	router.Use(h.siteScope)
 	registerSiteRoutes(router, h)

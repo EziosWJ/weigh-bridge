@@ -26,7 +26,7 @@ func LockPlateEvents(ctx context.Context, tx *gorm.DB) error {
 	return tx.WithContext(ctx).Exec("SELECT pg_advisory_xact_lock(?)", plateEventLock).Error
 }
 
-// CandidateEvent is an already authorized, persisted recognition event.
+// CandidateEvent describes a persisted recognition event and its source.
 type CandidateEvent struct {
 	ID           int64     `json:"eventRecordId"`
 	CameraID     int64     `json:"cameraId"`
@@ -46,8 +46,7 @@ type PlateCandidate struct {
 }
 
 // CandidateWindow reads the recent events and watermark under the same lock
-// as inserts. The result is internal; callers must apply business authorization
-// and plate validation before exposing it.
+// as inserts. Callers must validate the local scale and plate before exposing it.
 func (r *Repository) CandidateWindow(ctx context.Context) ([]CandidateEvent, int64, time.Time, error) {
 	var events []CandidateEvent
 	var watermark int64
@@ -87,8 +86,8 @@ func (r *Repository) CandidateWindow(ctx context.Context) ([]CandidateEvent, int
 	return events, watermark, now, err
 }
 
-// AggregatePlateCandidates operates on server-filtered events. The caller is
-// responsible for authorization, camera binding and plate validation.
+// AggregatePlateCandidates operates on server-filtered events. The caller
+// supplies events for the local scale from enabled, bound cameras and validates plate format.
 func AggregatePlateCandidates(events []CandidateEvent, now time.Time) []PlateCandidate {
 	rows := append([]CandidateEvent(nil), events...)
 	sort.Slice(rows, func(i, j int) bool {

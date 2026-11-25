@@ -95,7 +95,8 @@ func TestCameraSimulatorPlateCandidateChain(t *testing.T) {
 	if page.Items[0].SourceEvents[0].CameraID != simulatedCamera.ID || page.Items[0].SourceEvents[1].CameraID != simulatedCamera.ID {
 		t.Fatalf("candidate source camera mismatch: %+v", page.Items[0].SourceEvents)
 	}
-	if response := serveJSON(router, "GET", endpoint, "", ""); response.Code == 200 {
-		t.Fatal("candidate endpoint exposed without login")
+	public := decodeCameraData[candidatePage](t, serveJSON(router, "GET", endpoint, "", ""))
+	if len(public.Items) != 1 || public.Items[0].Plate != retried.Plate || len(public.Items[0].SourceEvents) != 2 {
+		t.Fatalf("anonymous candidate mismatch: %+v", public.Items)
 	}
 }

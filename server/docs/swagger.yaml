@@ -131,6 +131,36 @@ definitions:
       message:
         type: string
     type: object
+  camera.CandidateEvent:
+    properties:
+      cameraId:
+        type: integer
+      cameraName:
+        type: string
+      eventRecordId:
+        type: integer
+      receivedAt:
+        type: string
+      recognizedAt:
+        type: string
+    type: object
+  camera.PlateCandidate:
+    properties:
+      expiresAt:
+        type: string
+      firstReceivedAt:
+        type: string
+      id:
+        type: integer
+      lastReceivedAt:
+        type: string
+      plate:
+        type: string
+      sourceEvents:
+        items:
+          $ref: '#/definitions/camera.CandidateEvent'
+        type: array
+    type: object
   dept.ApiEnvelope:
     properties:
       code:
@@ -1310,6 +1340,15 @@ definitions:
       message:
         type: string
     type: object
+  weighing.HTTPEnvelope-weighing_plateCandidateResponse:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.plateCandidateResponse'
+      message:
+        type: string
+    type: object
   weighing.LiveWeight:
     properties:
       deviceOk:
@@ -2184,6 +2223,17 @@ definitions:
       taskId:
         type: integer
       weight:
+        type: string
+    type: object
+  weighing.plateCandidateResponse:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/camera.PlateCandidate'
+        type: array
+      nextCursor:
+        type: string
+      serverTime:
         type: string
     type: object
 info:
@@ -5190,6 +5240,35 @@ paths:
       summary: 资料启停
       tags:
       - 称重资料
+  /api/weighing/plate-candidates:
+    get:
+      description: 无需令牌。返回本厂启用且绑定的摄像头近期识别候选及来源元数据。
+      parameters:
+      - description: 当前本厂启用的地磅编码
+        in: query
+        name: scale
+        required: true
+        type: string
+      - description: 上一次返回的 nextCursor
+        in: query
+        name: after
+        type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              description: no-store
+              type: string
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_plateCandidateResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-any'
+      summary: 厂内匿名读取车牌识别候选
+      tags:
+      - 称重设备
   /api/weighing/print-attempts/{id}/result:
     post:
       parameters:
