@@ -127,7 +127,7 @@ func shouldLogRequest(method, route string, status int, duration time.Duration, 
 	switch method {
 	case stdhttp.MethodGet:
 		switch route {
-		case "/api/weighing/scales/:code/device", "/api/weighing/plate-candidates",
+		case "/api/weighing/scales/:code/device", "/api/weighing/scales/:code/device-detail", "/api/weighing/plate-candidates",
 			"/api/weighing/cameras", "/api/weighing/cameras/:id/preview":
 			return false
 		}

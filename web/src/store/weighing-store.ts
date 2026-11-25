@@ -438,7 +438,7 @@ setInterval(() => {
  const scale = selectedScale(state.capabilities);
  if (!token || !scale || pollingDevice || !state.capabilities?.permissionCodes.includes('weighing:read')) return;
  pollingDevice = true;
- void workflowApi.get<DeviceState>(`/scales/${scale.code}/device`).then(device => {
+ void workflowApi.get<DeviceState>(`/scales/${scale.code}/device-detail`).then(device => {
   if (useAuthStore.getState().token !== token) return;
   const previous = useWeighingStore.getState().device;
   const meaningful = !previous || previous.online !== device.online || previous.revision !== device.revision || previous.capturePolicyRevision !== device.capturePolicyRevision || previous.captureRequired !== device.captureRequired || previous.captureBlockedReason !== device.captureBlockedReason;

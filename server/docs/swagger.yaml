@@ -1167,12 +1167,29 @@ definitions:
       tare:
         type: string
     type: object
+  weighing.HTTPEnvelope-any:
+    properties:
+      code:
+        type: integer
+      data: {}
+      message:
+        type: string
+    type: object
   weighing.HTTPEnvelope-weighing_CommandResult:
     properties:
       code:
         type: integer
       data:
         $ref: '#/definitions/weighing.CommandResult'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_LiveWeight:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.LiveWeight'
       message:
         type: string
     type: object
@@ -1292,6 +1309,25 @@ definitions:
         $ref: '#/definitions/weighing.TripCandidateResult'
       message:
         type: string
+    type: object
+  weighing.LiveWeight:
+    properties:
+      deviceOk:
+        type: boolean
+      online:
+        type: boolean
+      receivedAt:
+        type: string
+        x-nullable: true
+      scaleCode:
+        type: string
+      stable:
+        type: boolean
+      unit:
+        type: string
+      weight:
+        type: string
+        x-nullable: true
     type: object
   weighing.ManualReturnInput:
     properties:
@@ -5222,6 +5258,31 @@ paths:
       summary: 废弃未确认采样
       tags:
       - 称重业务
+  /api/weighing/scales/{code}/device:
+    get:
+      description: 无需令牌。返回最新设备状态，离线、过期或仪表故障时重量为 null。
+      parameters:
+      - description: 当前本厂地磅编码
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          headers:
+            Cache-Control:
+              description: no-store
+              type: string
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_LiveWeight'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-any'
+      summary: 厂内匿名读取地磅实时重量
+      tags:
+      - 称重设备
   /api/weighing/scales/{id}/session:
     get:
       parameters:

@@ -67,7 +67,7 @@ func TestPostgresOptionalCaptureBusinessLoop(t *testing.T) {
 		assertEnvelopeCode(t, serveJSON(router, "PUT", configPath, fmt.Sprintf(`{"configValue":"%t"}`, required), token), 200, 200, "success")
 	}
 	captureState := func() sysconfig.CapturePolicy {
-		return weighingData[sysconfig.CapturePolicy](t, router, "GET", "/api/weighing/scales/WB01/device", "", token)
+		return weighingData[sysconfig.CapturePolicy](t, router, "GET", "/api/weighing/scales/WB01/device-detail", "", token)
 	}
 	if !captureState().Required {
 		t.Fatal("default capture policy is optional")

@@ -17,6 +17,7 @@
 | [0014 原始与最终重量](0014-manual-weight-adjustment.md) | 单磅重称和单据版本留痕，适应现场纠错同时保留原始依据；日常毛皮重双向调整已由 0035 取代 |
 | [0035 净重调整](0035-net-weight-adjustment.md) | 日常出单只扣减净重（按吨或比例、类别留痕），毛皮重更正限于更正重开，避免改写设备原始毛皮重 |
 | [0037 待回磅状态与正式磅单分别上送](0037-pending-weighing-and-ticket-sync.md) | 厂端继续办理任务，云端根据任务状态和正式磅单到达情况显示待回磅、终止或出单待上传 |
+| [0038 匿名读取实时重量](0038-public-live-scale-weight.md) | 本厂 Server 向厂内系统公开只读重量快照，完整设备状态继续受业务授权保护 |
 | [0027 可选抓拍](0027-optional-weighing-capture.md) | 默认强制、管理员可关闭，以当时策略和缺图状态保留例外依据 |
 | [0019 单磅单 Agent](0019-one-agent-per-scale.md) | 首连接保持、明确踢出和结果核实，避免真实 Agent 与 mock 抢占 |
 | [0015 独立模拟](0015-agent-owned-simulation.md) | 独立 mock 或设备输入模拟，业务使用统一处理链路 |

@@ -4977,6 +4977,44 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/scales/{code}/device": {
+            "get": {
+                "description": "无需令牌。返回最新设备状态，离线、过期或仪表故障时重量为 null。",
+                "tags": [
+                    "称重设备"
+                ],
+                "summary": "厂内匿名读取地磅实时重量",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "当前本厂地磅编码",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_LiveWeight"
+                        },
+                        "headers": {
+                            "Cache-Control": {
+                                "type": "string",
+                                "description": "no-store"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-any"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/scales/{id}/session": {
             "get": {
                 "security": [
@@ -8000,6 +8038,18 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-any": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {},
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.HTTPEnvelope-weighing_CommandResult": {
             "type": "object",
             "properties": {
@@ -8008,6 +8058,20 @@ const docTemplate = `{
                 },
                 "data": {
                     "$ref": "#/definitions/weighing.CommandResult"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_LiveWeight": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.LiveWeight"
                 },
                 "message": {
                     "type": "string"
@@ -8193,6 +8257,34 @@ const docTemplate = `{
                 },
                 "message": {
                     "type": "string"
+                }
+            }
+        },
+        "weighing.LiveWeight": {
+            "type": "object",
+            "properties": {
+                "deviceOk": {
+                    "type": "boolean"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "receivedAt": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "scaleCode": {
+                    "type": "string"
+                },
+                "stable": {
+                    "type": "boolean"
+                },
+                "unit": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "string",
+                    "x-nullable": true
                 }
             }
         },

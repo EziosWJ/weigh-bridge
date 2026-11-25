@@ -270,7 +270,7 @@ try {
     const data = value => route.fulfill({ json: { code: 200, message: 'ok', data: value } });
     if (path === '/api/auth/menus') return route.fulfill({ json: { code: 200, message: 'ok', data: [] } });
     if (path === '/api/weighing/capabilities') return data({ localSiteCode: 'F001', localScaleCode: 'WB01', configured: true, initialized: true, maintenanceEnabled: true, permissionCodes: ['system:user', 'system:role', 'weighing:read', 'agent:maintenance:manage'], sites: [], scales: [{ code: 'WB01' }], userId: 1 });
-    if (path.endsWith('/scales/WB01/device')) return data({ online: reportWhileMaintenanceUnavailable || deviceOnline, deviceOk: true, stable: true, weight: '12.345', receivedAt: new Date().toISOString() });
+    if (path.endsWith('/scales/WB01/device-detail')) return data({ online: reportWhileMaintenanceUnavailable || deviceOnline, deviceOk: true, stable: true, weight: '12.345', receivedAt: new Date().toISOString() });
     if (path.endsWith('/status')) return route.fulfill({ json: ({
       checkedAt: new Date().toISOString(), maintenance: '运行中', maintenanceAvailable: deviceOnline, agentProcessOnline: deviceOnline || reportWhileMaintenanceUnavailable,
       agent: agentRunning ? '运行中' : '已停止', agentKnown: true,

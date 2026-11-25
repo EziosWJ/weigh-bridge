@@ -59,7 +59,7 @@ try {
   page = await admin.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  page.on('response', async response => { if(response.url().includes('/api/weighing/') && !response.url().endsWith('/device') && !response.url().includes('/agent-images/')) { const body = await response.text().catch(()=>''); workflowResponses.push({url:response.url(),status:response.status(),body:body.slice(0,1200)}); if(workflowResponses.length>20)workflowResponses.shift(); } });
+  page.on('response', async response => { if(response.url().includes('/api/weighing/') && !response.url().endsWith('/device-detail') && !response.url().includes('/agent-images/')) { const body = await response.text().catch(()=>''); workflowResponses.push({url:response.url(),status:response.status(),body:body.slice(0,1200)}); if(workflowResponses.length>20)workflowResponses.shift(); } });
   page.setDefaultTimeout(8000);
   await login(page, 'admin', 'admin-browser-password-123');
   const token = await page.evaluate(() => JSON.parse(localStorage.getItem('react-admin-auth')).token);
@@ -355,7 +355,7 @@ try {
       await page.getByRole('button', { name: `继续核对首磅（${firstKind}）`, exact: true }).click();
       firstReview = page.getByRole('dialog', { name: `核对首磅（${firstKind}）`, exact: true });
       assert.equal((await firstReview.locator('.review-weight').innerText()).replace(/\s+/g, ''), '30吨', '核对使用采集重量，不能使用实时读数');
-      await page.route('**/api/weighing/scales/WB01/device', route => route.abort(), { times: 1 });
+      await page.route('**/api/weighing/scales/WB01/device-detail', route => route.abort(), { times: 1 });
       await delay(1000);
       assert.equal(await firstReview.getByRole('button', { name: `确认首磅（${firstKind}）`, exact: true }).isEnabled(), true, '状态查询失败不清除已采集结果');
       console.log('browser: frozen capture remains confirmable after weight change, disconnect and failed polling');
@@ -679,7 +679,7 @@ try {
   assert.equal((await call(`/api/weighing/tasks?keyword=${encodeURIComponent('川A54325')}`)).total,0);
   await readerPage.getByRole('button',{name:'释放操作权',exact:true}).click();
 
-  const deviceBeforeKick=await call('/api/weighing/scales/WB01/device');
+  const deviceBeforeKick=await call('/api/weighing/scales/WB01/device-detail');
   await call('/api/weighing/scales/WB01/agent/kick','POST',{connectionId:deviceBeforeKick.connectionId});
   for(let n=0;n<100&&mock.exitCode===null;n++)await delay(100);
   assert.equal(mock.exitCode,0,`收到 kick 后真实 mock 进程应正常退出，不自动重连；exit=${mock.exitCode} output=${mock.output?.slice(-400)}`);

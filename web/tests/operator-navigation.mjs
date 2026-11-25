@@ -48,7 +48,7 @@ async function fixture(user, { authenticated = false, denied = false, failure = 
     else if (path === '/api/weighing/cameras') data = { cameras: [], configVersion: 1 };
     else if (path.endsWith('/unread-count')) data = 0;
     else if (path.endsWith('/session')) data = { scaleCode: 'WB01', holderUserId: null, expiresAt: null };
-    else if (path.endsWith('/device')) data = { online: false, stable: false, deviceOk: false, weight: '0', revision: 1 };
+    else if (path.endsWith('/device-detail')) data = { online: false, stable: false, deviceOk: false, weight: '0', revision: 1 };
     await route.fulfill({ json: { code: 200, message: 'success', data } });
   });
   const page = await context.newPage();
@@ -79,8 +79,8 @@ try {
       await page.getByRole('heading', { name: '称重工作台', exact: true }).waitFor().catch(async error => {
         throw new Error(`${error.message}\nPage errors: ${JSON.stringify(errors)}\nBody: ${await page.locator('body').innerText()}\nRequests: ${JSON.stringify(requests)}`);
       });
-      await page.waitForRequest('**/api/weighing/scales/WB01/device');
-      assert.ok(!requests.includes('/api/weighing/scales//device'), '登录后绑定实际本厂地磅');
+      await page.waitForRequest('**/api/weighing/scales/WB01/device-detail');
+      assert.ok(!requests.includes('/api/weighing/scales//device-detail'), '登录后绑定实际本厂地磅');
     } else {
       await page.getByRole('heading', { name: '系统概览', exact: true }).waitFor();
       await page.goto(`${base}/`);

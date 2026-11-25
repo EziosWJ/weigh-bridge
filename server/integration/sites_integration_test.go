@@ -37,6 +37,9 @@ func TestPostgresSiteIsolation(t *testing.T) {
 	if got := serveJSON(router, http.MethodGet, "/api/weighing/scales/FOREIGN/device", "", admin); got.Code != http.StatusNotFound {
 		t.Fatalf("foreign scale read status=%d body=%s", got.Code, got.Body.String())
 	}
+	if got := serveJSON(router, http.MethodGet, "/api/weighing/scales/FOREIGN/device-detail", "", admin); got.Code != http.StatusNotFound {
+		t.Fatalf("foreign scale detail status=%d body=%s", got.Code, got.Body.String())
+	}
 	if got := serveJSON(router, http.MethodGet, "/api/weighing/site-config/connection", "", admin); got.Code != http.StatusOK {
 		t.Fatalf("local connection export status=%d body=%s", got.Code, got.Body.String())
 	}

@@ -46,7 +46,7 @@ try {
       if (scenario === 'many') return data({ ...business(), awaitingTasks: Array.from({ length: 5 }, (_, index) => ({ ...business().awaitingTasks[0], id: index + 1 })) });
       return data(business());
     }
-    if (path === '/api/weighing/scales/WB01/device') {
+    if (path === '/api/weighing/scales/WB01/device-detail') {
       if (scenario === 'device-failure') return route.fulfill({ status: 503, json: { code: 503, message: '设备状态读取失败' } });
       return data({ online: scenario !== 'offline', deviceOk: true, stable: true, receivedAt: '2026-10-26T02:30:00Z', captureRequired: scenario !== 'optional' });
     }

@@ -122,9 +122,11 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		if devices := deps.Weighing.Agent(); devices != nil {
 			devices.Register(router)
 		}
+		weighingHandler := weighing.NewHandler(deps.Weighing, deps.RBAC)
+		weighing.RegisterPublicRoutes(router.Group("/api/weighing"), weighingHandler)
 		business := router.Group("/api/weighing")
 		business.Use(auth.BearerMiddleware(deps.Auth))
-		weighing.RegisterRoutes(business, weighing.NewHandler(deps.Weighing, deps.RBAC))
+		weighing.RegisterRoutes(business, weighingHandler)
 	}
 	if deps.Camera != nil {
 		camera.RegisterEventRoute(router, deps.Camera)
