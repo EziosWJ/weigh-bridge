@@ -34,6 +34,11 @@ func normalizePlate(v string) string {
 func hash(value any) string        { data, _ := json.Marshal(value); return hashBytes(data) }
 func hashBytes(data []byte) string { sum := sha256.Sum256(data); return hex.EncodeToString(sum[:]) }
 func actorName(tx *gorm.DB, id int64) (string, error) {
+	// Zero is the system identity used by the local serial scanner Agent. It is
+	// deliberately not a sys_user row, so it can never log in.
+	if id == 0 {
+		return "串口扫码Agent", nil
+	}
 	var row struct{ Nickname, Username string }
 	err := tx.Table("sys_user").Select("nickname,username").Where("id=? AND deleted=0", id).Take(&row).Error
 	if row.Nickname != "" {

@@ -91,6 +91,24 @@ Agent-only 只要求 Agent 主机可访问的 Server 地址，不需要业务数
 
 10. 按厂方实际人员安排，通过本厂账号管理维护操作员姓名，并按 RBAC 授予称重权限和本厂操作范围。一名已授权人员即可办理，不设全厂人员数量启用条件。
 
+## 串口扫码枪
+
+酒糟出库手机二维码可由接在部署机上的串口扫码枪直接处理，不需要打开浏览器页面、聚焦输入框或使用专用账号登录。
+
+1. Server 配置 `serial_agent.socket_path`（默认 `/tmp/weighbridge-serial-agent.sock`，生产建议 `/run/weighbridge/serial-agent.sock`）。该 socket 只允许本机访问，文件权限为 `0600`。
+2. 部署发布包中的 `weighbridge-serial-agent`，运行用户须与 Server 相同或对该 socket 目录有访问权限，并具有扫码枪串口（例如 `/dev/ttyUSB0`）的读写权限，通常加入 `dialout` 组。
+3. 启动 Agent：
+
+   ```sh
+   systemctl --user enable --now weighbridge-serial-agent.service
+   journalctl --user -u weighbridge-serial-agent.service -f
+   ```
+
+4. 在「本地管理 → 设备维护 → 扫码枪管理」配置串口设备、波特率、数据位、停止位、校验位、结束符和重试参数。保存后 Agent 在下次心跳自动重新打开串口。
+5. 「手机扫码」页面只保留最近扫码记录和任务／磅单详情，不再提供手工粘贴或扫码确认。
+
+Agent 的参数、systemd 示例和 `-stdin` 联调方式见 [串口扫码枪 Agent](../../server/cmd/serial-agent/README.md)。
+
 ## 摄像头、视频与识别
 
 摄像头列表、RTSP 源地址与凭据、抓拍用途、统一超时、识别接口和 MediaMTX 管理／WHEP 入口均在 Server 的「摄像头管理」页维护，保存后用于后续采集；不再由 Agent 配置或重载。Server 直接连接摄像头取帧并保存图片，历史图片保存当时名称、来源和摘要。Agent 离线只阻止依赖仪表的正式采集，不阻止网络摄像头维护、测试和预览。

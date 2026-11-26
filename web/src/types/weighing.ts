@@ -107,6 +107,8 @@ export const taskStatusLabels: Record<TaskStatus, string> = { first: '待首次�
 export const printStatusLabels: Record<PrintStatus, string> = { unprinted: '未发起打印', failed: '明确失败未出纸', unknown: '待核实', printed: '已打印' };
 
 export function weighingSourceLabel(entryType?: string, firstSource?: string, secondSource?: string): string | undefined {
+  if (entryType === 'mobile_scan') return '手机扫码';
+  if (entryType === 'mobile_direct') return '手机直出';
   if (entryType === 'manual_supplement' || firstSource === 'manual') return '人工补单';
   if (secondSource === 'manual') return '人工补录回磅';
   if (firstSource === 'collected' || secondSource === 'collected') return '设备称重';

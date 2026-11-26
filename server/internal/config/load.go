@@ -173,5 +173,6 @@ func defaultValues() map[string]interface{} {
 		"monitoring.source":                      "native",
 		"monitoring.socket_path":                 "/run/weighbridge/host-monitor.sock",
 		"monitoring.timeout":                     "4s",
+		"serial_agent.socket_path":               "/tmp/weighbridge-serial-agent.sock",
 	}
 }

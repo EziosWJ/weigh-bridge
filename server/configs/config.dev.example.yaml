@@ -29,3 +29,8 @@ file:
 maintenance:
   # Enable API forwarding to the Agent; device files stay on the Agent host.
   enabled: true
+
+# 串口二维码扫码枪后台 Agent 使用的本机 Unix socket。
+# Agent 不登录用户账号，仅依赖该 socket 的文件权限调用内部扫码接口。
+serial_agent:
+  socket_path: /tmp/weighbridge-serial-agent.sock

@@ -19,7 +19,13 @@ func (s *Service) TerminateTask(ctx context.Context, id int64, in TaskActionInpu
 	if !validRequestID(in.RequestID) || in.Version < 1 || !validReason(in.Reason) {
 		return CommandResult{}, ErrInvalid
 	}
-	return s.store.TerminateTask(ctx, id, in, e)
+	result, err := s.store.TerminateTask(ctx, id, in, e)
+	if err == nil {
+		if task, findErr := s.FindTask(ctx, id); findErr == nil {
+			_ = s.terminateMobileHandoff(context.WithoutCancel(ctx), task.SiteCode, task.TaskNo, in.Reason)
+		}
+	}
+	return result, err
 }
 func (s *Service) ManualReturn(ctx context.Context, id int64, in ManualReturnInput, e audit.Event) (CommandResult, error) {
 	if id < 1 || !validRequestID(in.RequestID) || in.Version < 1 || in.ReturnedAt.IsZero() || !validReason(in.Reason) {

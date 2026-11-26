@@ -21,6 +21,7 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/notification"
 	platformhttp "github.com/EziosWJ/weighbridge/server/internal/platform/http"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
+	"github.com/EziosWJ/weighbridge/server/internal/serialscanner"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/usermgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/webui"
@@ -47,6 +48,7 @@ type Dependencies struct {
 	AuditRecorder                audit.Recorder
 	Weighing                     *weighing.Service
 	Camera                       *camera.Service
+	SerialScanner                *serialscanner.Service
 }
 
 // Application is the assembled HTTP application and its process logger.
@@ -190,6 +192,9 @@ func New(cfg config.Config, readiness platformhttp.ReadinessChecker, deps Depend
 		deps.RemoteMaintenance.RegisterBusinessRoutes(system, deps.Auth, deps.RBAC, deps.AuditRecorder)
 	} else if deps.Maintenance != nil {
 		deps.Maintenance.RegisterBusinessRoutes(system, deps.Auth, deps.RBAC, deps.AuditRecorder)
+	}
+	if deps.SerialScanner != nil {
+		deps.SerialScanner.RegisterBusinessRoutes(system, deps.Auth, deps.RBAC, deps.AuditRecorder)
 	}
 
 	if deps.Notification != nil {

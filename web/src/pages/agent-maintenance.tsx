@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Activity, AlertTriangle, CheckCircle2, CircleHelp, Gauge, Play, Settings2, Printer, RefreshCw, RotateCw, Square } from 'lucide-react';
-import { agentMaintenanceApi, type CupsQueue, type DeviceSettings, type MaintenanceConfig } from '@/api/agent-maintenance';
+import { agentMaintenanceApi, type CupsQueue, type DeviceSettings, type MaintenanceConfig, type SerialScannerSnapshot } from '@/api/agent-maintenance';
 import { overviewApi, type OverviewDevice } from '@/api/overview';
 import { FormDialog } from '@/components/common/form-dialog';
 import { HelpHint } from '@/components/common/help-hint';
@@ -18,6 +18,7 @@ import { toast } from '@/components/common/toast-store';
 import { MaintenanceBackupPanel } from './agent-maintenance/backup-panel';
 import { MaintenanceConfigPanel } from './agent-maintenance/config-panel';
 import { SettingsComparison } from './agent-maintenance/settings-comparison';
+import { MaintenanceScannerPanel, type ScannerSettings } from './agent-maintenance/scanner-panel';
 import { applyResultLabel, appliedVersion } from './agent-maintenance/apply-result';
 import { formatDateTime } from '@/lib/datetime';
 import { formatWeightValue } from '@/lib/weighing/weights';
@@ -90,10 +91,26 @@ export function AgentMaintenancePage() {
   const [recordsLoaded, setRecordsLoaded] = useState(false);
   const [recordsLoading, setRecordsLoading] = useState(false);
   const [recordsError, setRecordsError] = useState('');
-  const [tab, setTab] = useState<'overview' | 'printer' | 'instrument' | 'backups' | 'records'>('overview');
+  const [scanner, setScanner] = useState<SerialScannerSnapshot | null>(null);
+  const [scannerLoading, setScannerLoading] = useState(false);
+  const [scannerBusy, setScannerBusy] = useState(false);
+  const [scannerError, setScannerError] = useState('');
+  const [tab, setTab] = useState<'overview' | 'printer' | 'instrument' | 'scanner' | 'backups' | 'records'>('overview');
   const deviceOffline = !status || status?.agentProcessOnline === false || status?.maintenanceAvailable === false;
   const canManage = maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:manage');
   const canView = canManage || (maintenanceEnabled === true && permissionCodes.includes('agent:maintenance:view'));
+
+  const loadScanner = useCallback(async () => {
+    setScannerLoading(true);
+    setScannerError('');
+    try {
+      setScanner(await agentMaintenanceApi.scanner());
+    } catch (failure) {
+      setScannerError(getErrorMessage(failure, '扫码枪状态读取失败'));
+    } finally {
+      setScannerLoading(false);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     setRefreshing(true); setError(''); setReportError('');
@@ -133,6 +150,9 @@ export function AgentMaintenancePage() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (tab === 'scanner') void loadScanner();
+  }, [tab, loadScanner]);
 
   async function runAction(action: string, confirmed?: PrintJobs) {
     setBusy(true); setError('');
@@ -156,8 +176,7 @@ export function AgentMaintenancePage() {
     } finally { if (confirmed) setActionConfirmation(undefined); setBusy(false); }
   }
 
-  async function applySettings() {
-    if (!settings || !configData || applyNeedsCheck || deviceOffline) return;
+  async function applySettings() {    if (!settings || !configData || applyNeedsCheck || deviceOffline) return;
     setBusy(true); setError('');
     try {
       const result = await agentMaintenanceApi.apply(settings, configData.effective?.configVersion ?? 0);
@@ -174,6 +193,20 @@ export function AgentMaintenancePage() {
       setApplyNeedsCheck(true);
       setError(`${getErrorMessage(failure, '配置应用失败')}。结果未知时请先读取实际状态核实，不要重复盲写。`);
     } finally { setApplyOpen(false); setBusy(false); }
+  }
+
+  async function saveScanner(settings: ScannerSettings) {
+    setScannerBusy(true);
+    setScannerError('');
+    try {
+      const next = await agentMaintenanceApi.saveScanner(settings);
+      setScanner(next);
+      toast.success({ title: '扫码枪配置已保存', description: `配置版本 v${next.config.version}，Agent 将自动重连串口。`, duration: 5000 });
+    } catch (failure) {
+      setScannerError(getErrorMessage(failure, '扫码枪配置保存失败'));
+    } finally {
+      setScannerBusy(false);
+    }
   }
 
   async function loadRecords() {
@@ -337,13 +370,14 @@ export function AgentMaintenancePage() {
     {!initialLoaded && <ContentCard><p role="status" className="text-sm text-text-secondary">正在检查 Agent 维护状态…</p></ContentCard>}
     {initialLoaded && maintenanceEnabled === false && <ContentCard title="设备维护未启用"><p>当前业务服务未启用设备维护，请联系管理员检查本机维护配置。</p></ContentCard>}
     {initialLoaded && maintenanceEnabled === true && !canView && <ContentCard title="无维护查看权限"><p>当前账号没有设备维护查看权限。请联系本厂管理员分配 agent:maintenance:view。</p></ContentCard>}
-    {((tab !== 'printer' && tab !== 'instrument') || !canManage || deviceOffline || !configData) && feedback}
+    {tab !== 'scanner' && ((tab !== 'printer' && tab !== 'instrument') || !canManage || deviceOffline || !configData) && feedback}
     {canView && <>
       <div className="flex flex-wrap items-center justify-between gap-space-2 text-body-secondary text-text-tertiary"><p>最近检查：<span className="tabular-nums">{formatDateTime(typeof status?.checkedAt === 'string' ? status.checkedAt : undefined)}</span></p><span>{canManage ? '设备维护管理' : '只读维护'}</span></div>
       <SectionTabs label="设备维护页面" value={tab} onValueChange={value => { setTab(value as typeof tab); if (value === 'records' && !recordsLoaded && !busy) void loadRecords(); }} items={[
         { value: 'overview', label: '运行总览', content: tab === 'overview' ? overview : null },
         { value: 'printer', label: '打印机管理', content: tab === 'printer' ? <div className="grid items-start gap-space-4 xl:grid-cols-2"><div className="min-w-0 space-y-space-4">{printerDiagnosis}{printerStatus}</div>{configuration}</div> : null },
         { value: 'instrument', label: '仪表管理', content: tab === 'instrument' ? <div className="grid items-start gap-space-4 xl:grid-cols-2">{instrumentStatus}{configuration}</div> : null },
+        { value: 'scanner', label: '扫码枪管理', content: tab === 'scanner' ? <MaintenanceScannerPanel snapshot={scanner} loading={scannerLoading} busy={scannerBusy} error={scannerError} canManage={canManage} onReload={loadScanner} onSave={saveScanner} /> : null },
         { value: 'backups', label: '配置备份', content: tab === 'backups' ? <MaintenanceBackupPanel canManage={canManage} onApplied={refresh} /> : null },
         { value: 'records', label: '维护记录', content: tab === 'records' ? records : null },
       ]} />

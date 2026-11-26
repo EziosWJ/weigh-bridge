@@ -315,6 +315,9 @@ func (r *Repository) ConfirmSecond(ctx context.Context, id int64, in Confirmatio
 		if err != nil {
 			return out, err
 		}
+		if in.EntryType == "mobile_scan" {
+			ticket.EntryType = in.EntryType
+		}
 		if err := tx.Create(&second).Error; err != nil {
 			return out, err
 		}

@@ -22,3 +22,8 @@ auth:
 log:
   level: info
   format: json
+
+# 串口二维码扫码枪后台 Agent 使用的本机 Unix socket。
+# 生产环境建议放在运行用户可写的目录，例如 /run/weighbridge。
+serial_agent:
+  socket_path: /run/weighbridge/serial-agent.sock

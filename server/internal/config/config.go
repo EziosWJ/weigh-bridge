@@ -34,6 +34,7 @@ type Config struct {
 	Log         LogConfig         `koanf:"log"`
 	Monitoring  MonitoringConfig  `koanf:"monitoring"`
 	Maintenance MaintenanceConfig `koanf:"maintenance"`
+	SerialAgent SerialAgentConfig `koanf:"serial_agent"`
 	Weighing    WeighingConfig    `koanf:"weighing"`
 	MasterSync  MasterSyncConfig  `koanf:"master_sync"`
 }
@@ -42,6 +43,12 @@ type Config struct {
 type MaintenanceConfig struct {
 	Enabled *bool  `koanf:"enabled"`
 	DataDir string `koanf:"data_dir"`
+}
+
+// SerialAgentConfig configures the loopback Unix socket used by the serial QR
+// scanner Agent. An empty socket path disables the internal listener.
+type SerialAgentConfig struct {
+	SocketPath string `koanf:"socket_path"`
 }
 
 // IsEnabled enables local remote maintenance by default. Device files are
@@ -156,6 +163,9 @@ func (c Config) Validate() error {
 	}
 	if c.Monitoring.Enabled && (c.Monitoring.Timeout <= 0 || c.Monitoring.Timeout > 5*time.Second) {
 		errs = append(errs, errors.New("monitoring.timeout must be greater than zero and at most 5s"))
+	}
+	if strings.TrimSpace(c.SerialAgent.SocketPath) != "" && !filepath.IsAbs(c.SerialAgent.SocketPath) {
+		errs = append(errs, errors.New("serial_agent.socket_path must be absolute"))
 	}
 
 	if !oneOf(c.Environment, EnvironmentDev, EnvironmentTest, EnvironmentProd) {

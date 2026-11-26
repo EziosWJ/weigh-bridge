@@ -12,9 +12,9 @@ const stage = join(root, '.task', name)
 await rm(stage, { recursive: true, force: true })
 await mkdir(join(stage, 'bin'), { recursive: true })
 await mkdir(join(stage, 'configs'), { recursive: true })
-const binaries = ['weighbridge-server', 'weighbridge-migrate', 'weighbridge-agent-printer', 'weighbridge-local-admin-init', 'weighbridge-agent-provision']
+const binaries = ['weighbridge-server', 'weighbridge-migrate', 'weighbridge-agent-printer', 'weighbridge-local-admin-init', 'weighbridge-agent-provision', 'weighbridge-serial-agent']
 const components = {
-  server: ['weighbridge-server', 'weighbridge-migrate', 'weighbridge-local-admin-init', 'weighbridge-agent-provision'],
+  server: ['weighbridge-server', 'weighbridge-migrate', 'weighbridge-local-admin-init', 'weighbridge-agent-provision', 'weighbridge-serial-agent'],
   agent: ['weighbridge-agent-printer', 'weighbridge-agent-provision'],
 }
 const hashes = {}

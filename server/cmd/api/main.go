@@ -32,9 +32,11 @@ import (
 	"github.com/EziosWJ/weighbridge/server/internal/notification"
 	platformdatabase "github.com/EziosWJ/weighbridge/server/internal/platform/database"
 	"github.com/EziosWJ/weighbridge/server/internal/rbac"
+	"github.com/EziosWJ/weighbridge/server/internal/serialscanner"
 	"github.com/EziosWJ/weighbridge/server/internal/sysconfig"
 	"github.com/EziosWJ/weighbridge/server/internal/usermgmt"
 	"github.com/EziosWJ/weighbridge/server/internal/weighing"
+	"github.com/gin-gonic/gin"
 )
 
 const defaultUserPassword = "admin123"
@@ -220,6 +222,20 @@ func main() {
 		}, weighService.BeginMaintenance)
 		remoteMaintenance.SetStore(maintenanceStore)
 	}
+	serialScanner := serialscanner.NewService(
+		serialscanner.NewRepository(database.GORM),
+		func(ctx context.Context, code, source, device string) (weighing.MobileHandoffResult, error) {
+			event := audit.Event{Metadata: audit.Metadata{
+				ActorID: 0, RequestID: fmt.Sprintf("serial-%d", time.Now().UnixNano()),
+				ClientIP: "unix", UserAgent: "serial-agent", RequestMethod: http.MethodPost,
+				RequestURL: "/api/internal/weighing/mobile-handoffs/scan",
+			}}
+			return weighService.ScanMobileHandoffFrom(ctx, code, source, device, event)
+		},
+		func(ctx context.Context, limit int) ([]weighing.MobileHandoff, error) {
+			return weighService.MobileHandoffs(ctx, limit)
+		},
+	)
 	application, err := app.New(*cfg, database, app.Dependencies{
 		Auth:              authService,
 		RBAC:              rbacService,
@@ -235,10 +251,28 @@ func main() {
 		AuditRecorder:     audit.NewRecorder(database.GORM),
 		Weighing:          weighService,
 		Camera:            cameraService,
+		SerialScanner:     serialScanner,
 	})
 	if err != nil {
 		slog.Error("build application", "error", err)
 		os.Exit(1)
+	}
+	var serialSocket *serialscanner.UnixServer
+	if socketPath := cfg.SerialAgent.SocketPath; socketPath != "" {
+		internalRouter := gin.New()
+		internalRouter.Use(gin.Recovery())
+		serialScanner.RegisterInternal(internalRouter)
+		serialSocket, err = serialscanner.ListenUnix(socketPath, internalRouter)
+		if err != nil {
+			slog.Error("start serial scanner socket", "path", socketPath, "error", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := serialSocket.Close(); err != nil {
+				slog.Warn("close serial scanner socket", "error", err)
+			}
+		}()
+		application.Logger.Info("serial scanner socket started", "path", socketPath)
 	}
 	monitoringContext, stopMonitoring := context.WithCancel(context.Background())
 	cameraService.Start(monitoringContext)

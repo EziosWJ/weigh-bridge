@@ -109,3 +109,55 @@ function wireItemsToView(items?: WireAdjustmentItem[]): NetAdjustmentItemView[] 
   if (!items || items.length === 0) return undefined;
   return items.map(item => ({ mode: item.mode, amount: item.amountMilli / 1000, rateBp: item.rateBp ?? undefined, category: item.category || undefined, categoryName: item.categoryName || undefined, remark: item.remark || undefined }));
 }
+
+export interface WireMobileHandoff {
+  id: number;
+  handoffId: number;
+  weighingId: number;
+  action: 'first' | 'second';
+  siteCode: string;
+  scaleCode: string;
+  plate: string;
+  mobileAccount: string;
+  source?: string;
+  device?: string;
+  status: 'claimed' | 'completed' | 'failed';
+  taskId?: number | null;
+  ticketId?: number | null;
+  result?: {
+    status?: string;
+    taskNo?: string;
+    ticketNo?: string;
+    firstWeight?: string;
+    secondWeight?: string;
+    net?: string;
+    firstAt?: string;
+    secondAt?: string;
+    captureStatus?: string;
+    message?: string;
+  } | null;
+  error: string;
+  claimedAt: string;
+  completedAt?: string | null;
+}
+
+export interface WireMobileHandoffResult {
+  handoffId: number;
+  weighingId: number;
+  action: 'first' | 'second';
+  status: string;
+  taskNo?: string;
+  ticketNo?: string;
+  firstWeight?: string;
+  secondWeight?: string;
+  net?: string;
+  firstAt?: string;
+  secondAt?: string;
+  captureStatus?: string;
+  message?: string;
+}
+
+export const mobileHandoffApi = {
+  list: () => http.get<WireMobileHandoff[]>(`${base}/mobile-handoffs`),
+  scan: (code: string) => http.post<WireMobileHandoffResult>(`${base}/mobile-handoffs/scan`, { code }),
+};

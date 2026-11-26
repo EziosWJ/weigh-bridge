@@ -147,7 +147,12 @@ func buildTicketSnapshotV5(ticket Ticket, previous *Ticket) (v5Snapshot, error) 
 	if items == nil {
 		items = []NetAdjustmentItem{}
 	}
-	base := &syncTicket{TicketNo: ticket.TicketNo, Title: ticket.TicketTitle, Plate: b.Plate, Direction: b.Direction, MaterialCode: b.MaterialCode, MaterialName: b.MaterialName, MaterialSpec: b.MaterialSpec, PartyCode: b.PartyCode, PartyName: b.PartyName, FirstConfirmedAt: ticket.Basis[0].ConfirmedAt, SecondConfirmedAt: ticket.Basis[1].ConfirmedAt, IssuedAt: ticket.IssuedAt, IssuerName: ticket.IssuerName, OriginalGross: ticket.OriginalGross.String(), OriginalTare: ticket.OriginalTare.String(), FinalGross: ticket.FinalGross.String(), FinalTare: ticket.FinalTare.String(), FinalNet: finalNet(ticket.FinalGross, ticket.FinalTare, ticket.NetAdjustment).String(), NetAdjustment: ticket.NetAdjustment.String(), GrossSource: ticket.GrossSource, TareSource: ticket.TareSource, AdjustmentRemark: ticket.AdjustmentRemark, AdjustedAt: ticket.AdjustedAt, Driver: b.Driver, DriverPhone: b.DriverPhone, ContactName: b.ContactName, ContactPhone: b.ContactPhone}
+	entryType := ticket.EntryType
+	if entryType == "manual_supplement" {
+		// Manual supplement already carries entryType in its v6 extension.
+		entryType = ""
+	}
+	base := &syncTicket{EntryType: entryType, TicketNo: ticket.TicketNo, Title: ticket.TicketTitle, Plate: b.Plate, Direction: b.Direction, MaterialCode: b.MaterialCode, MaterialName: b.MaterialName, MaterialSpec: b.MaterialSpec, PartyCode: b.PartyCode, PartyName: b.PartyName, FirstConfirmedAt: ticket.Basis[0].ConfirmedAt, SecondConfirmedAt: ticket.Basis[1].ConfirmedAt, IssuedAt: ticket.IssuedAt, IssuerName: ticket.IssuerName, OriginalGross: ticket.OriginalGross.String(), OriginalTare: ticket.OriginalTare.String(), FinalGross: ticket.FinalGross.String(), FinalTare: ticket.FinalTare.String(), FinalNet: finalNet(ticket.FinalGross, ticket.FinalTare, ticket.NetAdjustment).String(), NetAdjustment: ticket.NetAdjustment.String(), GrossSource: ticket.GrossSource, TareSource: ticket.TareSource, AdjustmentRemark: ticket.AdjustmentRemark, AdjustedAt: ticket.AdjustedAt, Driver: b.Driver, DriverPhone: b.DriverPhone, ContactName: b.ContactName, ContactPhone: b.ContactPhone}
 	if ticket.AdjustedBy != nil {
 		base.AdjustedBy = &ticket.IssuerName
 	}

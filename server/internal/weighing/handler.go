@@ -37,6 +37,7 @@ func RegisterRoutes(router gin.IRouter, h *Handler) {
 	router.GET("/capabilities", h.capabilities)
 	router.GET("/local-status", func(c *gin.Context) { v, e := h.service.LocalStatus(c); writeResult(c, v, e) })
 	registerWorkflowRoutes(router, h)
+	registerMobileHandoffRoutes(router, h)
 	registerCorrectionRoutes(router, h)
 	registerQueryRoutes(router, h)
 	for _, entry := range []struct{ path, kind string }{{"material-categories", "category"}, {"materials", "material"}, {"parties", "party"}} {

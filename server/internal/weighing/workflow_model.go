@@ -308,6 +308,7 @@ type ConfirmationInput struct {
 	RequestID      string              `json:"requestId"`
 	SampleID       int64               `json:"sampleId"`
 	Version        int64               `json:"version"`
+	EntryType      string              `json:"-"`
 	Checks         Checks              `json:"checks"`
 	NetAdjustment  *NetAdjustmentInput `json:"netAdjustment"`
 	NetAdjustments NetAdjustmentsInput `json:"netAdjustments"`

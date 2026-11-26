@@ -311,6 +311,7 @@ tasks:
       - go build -tags=embedweb -trimpath -o ../bin/weighbridge-server{{.GOEXE}} ./cmd/api
       - go build -trimpath -o ../bin/weighbridge-migrate{{.GOEXE}} ./cmd/migrate
       - go build -trimpath -o ../bin/weighbridge-host-collector{{.GOEXE}} ./cmd/host-collector
+      - go build -trimpath -o ../bin/weighbridge-serial-agent{{.GOEXE}} ./cmd/serial-agent
 
   build:check:
     summary: Build the release and verify tests and vet with embedded frontend assets
@@ -340,6 +341,7 @@ tasks:
       - go build -trimpath -o ../bin/weighbridge-agent-printer ./cmd/agent-printer
       - go build -trimpath -o ../bin/weighbridge-local-admin-init ./cmd/local-admin-init
       - go build -trimpath -o ../bin/weighbridge-agent-provision ./cmd/agent-provision
+      - go build -trimpath -o ../bin/weighbridge-serial-agent ./cmd/serial-agent
       - node ../scripts/package-local.mjs '{{.VERSION}}'
 
   local:install:smoke:

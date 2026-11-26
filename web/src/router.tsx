@@ -38,6 +38,7 @@ export const router = createBrowserRouter([
       { path: "weighing/sites", element: <Navigate to="/weighing/tasks" replace /> },
       { path: "weighing/cameras", lazy: () => import("@/pages/cameras").then(module => ({ Component: module.CamerasPage })) },
       { path: "weighing/tasks", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTasksPage })) },
+      { path: "weighing/mobile-handoffs", lazy: () => import("@/pages/weighing/mobile-handoffs").then((module) => ({ Component: module.MobileHandoffsPage })) },
       { path: "weighing/tasks/:id", lazy: () => import("@/pages/weighing/tasks").then((module) => ({ Component: module.WeighingTaskDetailPage })) },
       { path: "weighing/originals", lazy: () => import("@/pages/weighing/originals").then((module) => ({ Component: module.WeighingOriginalsPage })) },
       { path: "weighing/tickets", lazy: () => import("@/pages/weighing/tickets").then((module) => ({ Component: module.WeighingTicketsPage })) },

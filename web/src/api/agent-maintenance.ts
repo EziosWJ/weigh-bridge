@@ -65,6 +65,66 @@ export type BackupRecord = {
 };
 export type CupsQueue = { name: string; state: string; description?: string; isDefault: boolean };
 export type CupsQueuesResult = { queues: CupsQueue[]; at?: string; code?: string; error?: string };
+export type SerialScannerConfig = {
+  enabled: boolean;
+  device: string;
+  baudRate: number;
+  dataBits: number;
+  stopBits: number;
+  parity: 'none' | 'even' | 'odd';
+  delimiter: string;
+  trimPrefix: string;
+  trimSuffix: string;
+  retryCount: number;
+  retryIntervalMs: number;
+  version: number;
+  updateTime?: string;
+};
+export type SerialScannerStatus = {
+  agentId: string;
+  pid?: number;
+  connected: boolean;
+  device: string;
+  configVersion: number;
+  scans: number;
+  failures: number;
+  lastScanAt?: string;
+  lastScanResult: string;
+  lastError: string;
+  heartbeatAt?: string;
+  updateTime?: string;
+};
+export type SerialScannerRecent = {
+  id: number;
+  action: 'first' | 'second';
+  plate: string;
+  mobileAccount: string;
+  source?: string;
+  device?: string;
+  status: 'claimed' | 'completed' | 'failed';
+  taskId?: number | null;
+  ticketId?: number | null;
+  claimedAt: string;
+  completedAt?: string | null;
+  result?: {
+    status?: string;
+    taskNo?: string;
+    ticketNo?: string;
+    firstWeight?: string;
+    secondWeight?: string;
+    net?: string;
+    captureStatus?: string;
+    message?: string;
+  } | null;
+  error: string;
+};
+export type SerialScannerSnapshot = {
+  config: SerialScannerConfig;
+  status: SerialScannerStatus;
+  online: boolean;
+  serverTime: string;
+  recent: SerialScannerRecent[];
+};
 export type ApplyResult = {
   status: 'applied' | 'rejected' | 'unknown' | 'rolled_back' | 'rollback_failed';
   code?: string;
@@ -108,4 +168,7 @@ export const agentMaintenanceApi = {
   audit: (query: URLSearchParams) => request<{ records: Record<string, unknown>[]; total: number; offset: number }>(`/audit?${query}`),
   action: (body: Record<string, unknown>) => request<{ output?: string; needsDisposition?: boolean; previewToken?: string; jobs?: { id: string; queue: string; title?: string }[]; unknown?: boolean }>('/action', { method: 'POST', body: JSON.stringify(body) }),
   testPrint: () => request<{ message?: string }>('/test-print', { method: 'POST', body: '{}' }),
+  scanner: () => request<SerialScannerSnapshot>('/serial-scanner'),
+  saveScanner: (settings: Omit<SerialScannerConfig, 'version' | 'updateTime'>) =>
+    request<SerialScannerSnapshot>('/serial-scanner', { method: 'PUT', body: JSON.stringify(settings) }),
 };
