@@ -43,8 +43,16 @@ func (h *Handler) scanMobileHandoff(c *gin.Context) {
 // page. @Summary 手机扫码交接记录
 // @Tags 称重业务
 // @Security BearerAuth
+// @Param page query int false "页码"
+// @Param pageSize query int false "每页条数"
+// @Success 200 {object} HTTPEnvelope[Page[MobileHandoff]]
 // @Router /api/weighing/mobile-handoffs [get]
 func (h *Handler) mobileHandoffs(c *gin.Context) {
-	value, err := h.service.MobileHandoffs(c, 50)
+	q, err := pageQuery(c)
+	if err != nil {
+		writeResult(c, nil, err)
+		return
+	}
+	value, err := h.service.MobileHandoffs(c, q.Page, q.PageSize)
 	writeResult(c, value, err)
 }

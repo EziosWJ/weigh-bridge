@@ -136,12 +136,12 @@ func (s *Service) scanMobileHandoff(ctx context.Context, code, source, device st
 	return result.MobileHandoffResult, nil
 }
 
-func (s *Service) MobileHandoffs(ctx context.Context, limit int) ([]MobileHandoff, error) {
+func (s *Service) MobileHandoffs(ctx context.Context, page, pageSize int) (Page[MobileHandoff], error) {
 	repo, ok := s.store.(*Repository)
 	if !ok {
-		return nil, ErrForbidden
+		return Page[MobileHandoff]{}, ErrForbidden
 	}
-	return repo.MobileHandoffs(ctx, limit)
+	return repo.MobileHandoffs(ctx, page, pageSize)
 }
 
 type mobileCaptureResult struct {

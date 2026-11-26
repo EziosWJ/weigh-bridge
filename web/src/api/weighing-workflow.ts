@@ -157,7 +157,15 @@ export interface WireMobileHandoffResult {
   message?: string;
 }
 
+export interface WireMobileHandoffPage {
+  records: WireMobileHandoff[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 export const mobileHandoffApi = {
-  list: () => http.get<WireMobileHandoff[]>(`${base}/mobile-handoffs`),
+  list: (query: { page: number; pageSize: number }) =>
+    http.get<WireMobileHandoffPage>(`${base}/mobile-handoffs`, { query }),
   scan: (code: string) => http.post<WireMobileHandoffResult>(`${base}/mobile-handoffs/scan`, { code }),
 };

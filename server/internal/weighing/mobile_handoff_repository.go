@@ -36,13 +36,23 @@ func (r *Repository) SaveMobileHandoff(ctx context.Context, row *MobileHandoff) 
 	}).Error
 }
 
-func (r *Repository) MobileHandoffs(ctx context.Context, limit int) ([]MobileHandoff, error) {
-	if limit < 1 || limit > 100 {
-		limit = 50
+func (r *Repository) MobileHandoffs(ctx context.Context, page, pageSize int) (Page[MobileHandoff], error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	var total int64
+	if err := r.db.WithContext(ctx).Model(&MobileHandoff{}).Count(&total).Error; err != nil {
+		return Page[MobileHandoff]{}, err
 	}
 	rows := make([]MobileHandoff, 0)
-	err := r.db.WithContext(ctx).Order("id DESC").Limit(limit).Find(&rows).Error
-	return rows, err
+	err := r.db.WithContext(ctx).Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error
+	if err != nil {
+		return Page[MobileHandoff]{}, err
+	}
+	return Page[MobileHandoff]{Records: rows, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
 func (r *Repository) MaterialIDByCloudCode(ctx context.Context, code string) (int64, error) {
