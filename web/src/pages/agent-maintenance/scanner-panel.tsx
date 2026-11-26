@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Check, RefreshCw, ScanLine, Usb } from 'lucide-react';
 import type { SerialScannerConfig, SerialScannerSnapshot } from '@/api/agent-maintenance';
 import { Field } from '@/components/common/field';
@@ -11,12 +10,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { formatDateTime } from '@/lib/datetime';
-import { beijingTime } from '@/lib/weighing/query';
 
 export type ScannerSettings = Omit<SerialScannerConfig, 'version' | 'updateTime'>;
 
 const baudOptions = [1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200];
-const actionLabels = { first: '首磅', second: '回磅' } as const;
 
 function settingsFrom(config: SerialScannerConfig): ScannerSettings {
   return {
@@ -25,28 +22,6 @@ function settingsFrom(config: SerialScannerConfig): ScannerSettings {
     delimiter: config.delimiter, trimPrefix: config.trimPrefix, trimSuffix: config.trimSuffix,
     retryCount: config.retryCount, retryIntervalMs: config.retryIntervalMs,
   };
-}
-
-function weight(value?: string) {
-  return value ? `${value} 吨` : '—';
-}
-
-function sourceLabel(source?: string) {
-  if (source === 'serial_agent') return '串口扫码枪';
-  if (source === 'operator') return '手工扫码';
-  return source || '—';
-}
-
-function statusLabel(status: 'claimed' | 'completed' | 'failed') {
-  if (status === 'completed') return '已完成';
-  if (status === 'failed') return '失败';
-  return '处理中';
-}
-
-function statusTone(status: 'claimed' | 'completed' | 'failed') {
-  if (status === 'completed') return 'success' as const;
-  if (status === 'failed') return 'error' as const;
-  return 'warning' as const;
 }
 
 export function MaintenanceScannerPanel({ snapshot, loading, busy, error, canManage, onReload, onSave }: {
@@ -78,7 +53,6 @@ export function MaintenanceScannerPanel({ snapshot, loading, busy, error, canMan
   const status = snapshot?.status;
   const online = snapshot?.online === true;
   const connected = online && status?.connected === true;
-  const recent = snapshot?.recent ?? [];
 
   return <div className="space-y-space-4">
     {error && <p role="alert" className="rounded-control border border-error-border bg-error-background p-space-3 text-sm text-error">{error}</p>}
@@ -193,42 +167,11 @@ export function MaintenanceScannerPanel({ snapshot, loading, busy, error, canMan
       </ContentCard>
     </div>
 
-    <ContentCard title="最近扫码记录" description="串口 Agent 处理的手机首磅/回磅记录，可进入任务或磅单查看详情。">
-      {recent.length === 0 ? <p className="text-sm text-text-tertiary">暂无扫码记录。</p> : <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-border text-left text-text-tertiary">
-              <th className="px-space-2 py-space-2 font-medium">时间</th>
-              <th className="px-space-2 py-space-2 font-medium">动作</th>
-              <th className="px-space-2 py-space-2 font-medium">车牌</th>
-              <th className="px-space-2 py-space-2 font-medium">来源</th>
-              <th className="px-space-2 py-space-2 font-medium">状态</th>
-              <th className="px-space-2 py-space-2 font-medium">任务 / 磅单</th>
-              <th className="px-space-2 py-space-2 font-medium">首磅 / 回磅 / 净重</th>
-              <th className="px-space-2 py-space-2 font-medium">抓拍</th>
-            </tr>
-          </thead>
-          <tbody>
-            {recent.map(item => <tr key={item.id} className="border-b border-border/60 align-top">
-              <td className="px-space-2 py-space-3 whitespace-nowrap">{beijingTime(item.completedAt || item.claimedAt)}</td>
-              <td className="px-space-2 py-space-3">{actionLabels[item.action] || item.action}</td>
-              <td className="px-space-2 py-space-3 font-medium">{item.plate}</td>
-              <td className="px-space-2 py-space-3">{sourceLabel(item.source)}</td>
-              <td className="px-space-2 py-space-3"><StatusTag tone={statusTone(item.status)}>{statusLabel(item.status)}</StatusTag></td>
-              <td className="px-space-2 py-space-3">{item.ticketId ? <Link className="text-primary hover:underline" to={`/weighing/tickets/${item.ticketId}`}>{item.result?.ticketNo || '查看磅单'}</Link> : item.taskId ? <Link className="text-primary hover:underline" to={`/weighing/tasks/${item.taskId}`}>{item.result?.taskNo || '查看任务'}</Link> : item.result?.ticketNo || item.result?.taskNo || item.error || '—'}</td>
-              <td className="px-space-2 py-space-3 whitespace-nowrap">{weight(item.result?.firstWeight)} / {weight(item.result?.secondWeight)} / {weight(item.result?.net)}</td>
-              <td className="px-space-2 py-space-3">{item.result?.captureStatus || '—'}</td>
-            </tr>)}
-          </tbody>
-        </table>
-      </div>}
-    </ContentCard>
-
     <div className="flex items-center gap-space-2 text-body-secondary text-text-tertiary">
       <ScanLine className="h-4 w-4" aria-hidden />
       <span>Agent 只读取扫码枪串口；手机二维码内容不会写入日志全文。</span>
       <Usb className="ml-space-2 h-4 w-4" aria-hidden />
-      <span>串口参数变更后无需重启 API 服务。</span>
+      <span>串口参数变更后无需重启 API 服务。扫码明细请在「手机扫码」页查看。</span>
     </div>
   </div>;
 }

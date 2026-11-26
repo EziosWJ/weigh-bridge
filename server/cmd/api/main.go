@@ -232,9 +232,6 @@ func main() {
 			}}
 			return weighService.ScanMobileHandoffFrom(ctx, code, source, device, event)
 		},
-		func(ctx context.Context, limit int) ([]weighing.MobileHandoff, error) {
-			return weighService.MobileHandoffs(ctx, limit)
-		},
 	)
 	application, err := app.New(*cfg, database, app.Dependencies{
 		Auth:              authService,

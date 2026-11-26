@@ -94,36 +94,11 @@ export type SerialScannerStatus = {
   heartbeatAt?: string;
   updateTime?: string;
 };
-export type SerialScannerRecent = {
-  id: number;
-  action: 'first' | 'second';
-  plate: string;
-  mobileAccount: string;
-  source?: string;
-  device?: string;
-  status: 'claimed' | 'completed' | 'failed';
-  taskId?: number | null;
-  ticketId?: number | null;
-  claimedAt: string;
-  completedAt?: string | null;
-  result?: {
-    status?: string;
-    taskNo?: string;
-    ticketNo?: string;
-    firstWeight?: string;
-    secondWeight?: string;
-    net?: string;
-    captureStatus?: string;
-    message?: string;
-  } | null;
-  error: string;
-};
 export type SerialScannerSnapshot = {
   config: SerialScannerConfig;
   status: SerialScannerStatus;
   online: boolean;
   serverTime: string;
-  recent: SerialScannerRecent[];
 };
 export type ApplyResult = {
   status: 'applied' | 'rejected' | 'unknown' | 'rolled_back' | 'rollback_failed';

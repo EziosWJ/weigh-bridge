@@ -18,18 +18,14 @@ const (
 // weighing workflow. The handler supplies a system audit identity.
 type ScanFunc func(ctx context.Context, code, source, device string) (weighing.MobileHandoffResult, error)
 
-// RecentLister returns recent factory mobile handoff rows for the page.
-type RecentLister func(ctx context.Context, limit int) ([]weighing.MobileHandoff, error)
-
 type Service struct {
-	repo   *Repository
-	scan   ScanFunc
-	recent RecentLister
-	now    func() time.Time
+	repo *Repository
+	scan ScanFunc
+	now  func() time.Time
 }
 
-func NewService(repo *Repository, scan ScanFunc, recent RecentLister) *Service {
-	return &Service{repo: repo, scan: scan, recent: recent, now: func() time.Time { return time.Now().UTC() }}
+func NewService(repo *Repository, scan ScanFunc) *Service {
+	return &Service{repo: repo, scan: scan, now: func() time.Time { return time.Now().UTC() }}
 }
 
 func (s *Service) Config(ctx context.Context) (Config, error) { return s.repo.Config(ctx) }
@@ -67,13 +63,8 @@ func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	now := s.now()
-	snapshot := Snapshot{Config: cfg, Status: status, ServerTime: now, Recent: []weighing.MobileHandoff{}}
+	snapshot := Snapshot{Config: cfg, Status: status, ServerTime: now}
 	snapshot.Online = status.HeartbeatAt != nil && now.Sub(*status.HeartbeatAt) <= OnlineWindow
-	if s.recent != nil {
-		if rows, recentErr := s.recent(ctx, 20); recentErr == nil {
-			snapshot.Recent = rows
-		}
-	}
 	return snapshot, nil
 }
 

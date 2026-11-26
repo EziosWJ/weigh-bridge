@@ -5,8 +5,6 @@ package serialscanner
 
 import (
 	"time"
-
-	"github.com/EziosWJ/weighbridge/server/internal/weighing"
 )
 
 // Config is the singleton serial scanner configuration. Delimiter and the
@@ -91,9 +89,8 @@ type HeartbeatResult struct {
 
 // Snapshot is returned to the maintenance page.
 type Snapshot struct {
-	Config     Config                   `json:"config"`
-	Status     Status                   `json:"status"`
-	Online     bool                     `json:"online"`
-	ServerTime time.Time                `json:"serverTime"`
-	Recent     []weighing.MobileHandoff `json:"recent"`
+	Config     Config    `json:"config"`
+	Status     Status    `json:"status"`
+	Online     bool      `json:"online"`
+	ServerTime time.Time `json:"serverTime"`
 }
