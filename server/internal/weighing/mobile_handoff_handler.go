@@ -45,6 +45,12 @@ func (h *Handler) scanMobileHandoff(c *gin.Context) {
 // @Security BearerAuth
 // @Param page query int false "页码"
 // @Param pageSize query int false "每页条数"
+// @Param keyword query string false "车牌 / 手机账号 / 任务号 / 磅单号"
+// @Param action query string false "动作：first/second"
+// @Param status query string false "状态：claimed/completed/failed"
+// @Param source query string false "来源：serial_agent/operator"
+// @Param from query string false "开始日期（北京时间，YYYY-MM-DD）"
+// @Param to query string false "结束日期（北京时间，YYYY-MM-DD）"
 // @Success 200 {object} HTTPEnvelope[Page[MobileHandoff]]
 // @Router /api/weighing/mobile-handoffs [get]
 func (h *Handler) mobileHandoffs(c *gin.Context) {
@@ -53,6 +59,18 @@ func (h *Handler) mobileHandoffs(c *gin.Context) {
 		writeResult(c, nil, err)
 		return
 	}
-	value, err := h.service.MobileHandoffs(c, q.Page, q.PageSize)
+	if q.Action != "" && q.Action != "first" && q.Action != "second" {
+		writeResult(c, nil, ErrInvalid)
+		return
+	}
+	if q.Status != "" && q.Status != MobileHandoffClaimed && q.Status != MobileHandoffCompleted && q.Status != MobileHandoffFailed {
+		writeResult(c, nil, ErrInvalid)
+		return
+	}
+	if q.Source != "" && q.Source != "serial_agent" && q.Source != "operator" {
+		writeResult(c, nil, ErrInvalid)
+		return
+	}
+	value, err := h.service.MobileHandoffs(c, q)
 	writeResult(c, value, err)
 }

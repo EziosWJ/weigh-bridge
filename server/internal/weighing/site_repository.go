@@ -112,7 +112,7 @@ func (r *Repository) ResourceSite(ctx context.Context, kind string, id int64) (s
 }
 func (r *Repository) RecordAgentKick(ctx context.Context, e audit.Event) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		name, err := actorName(tx, e.Metadata.ActorID)
+		name, err := actorDisplayName(tx, e)
 		if err != nil {
 			return err
 		}

@@ -3,6 +3,7 @@ package weighing
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -36,23 +37,61 @@ func (r *Repository) SaveMobileHandoff(ctx context.Context, row *MobileHandoff) 
 	}).Error
 }
 
-func (r *Repository) MobileHandoffs(ctx context.Context, page, pageSize int) (Page[MobileHandoff], error) {
+func (r *Repository) MobileHandoffs(ctx context.Context, q PageQuery) (Page[MobileHandoff], error) {
+	page, pageSize := q.Page, q.PageSize
 	if page < 1 {
 		page = 1
 	}
 	if pageSize < 1 || pageSize > 100 {
 		pageSize = 20
 	}
-	var total int64
-	if err := r.db.WithContext(ctx).Model(&MobileHandoff{}).Count(&total).Error; err != nil {
-		return Page[MobileHandoff]{}, err
+	query := r.db.WithContext(ctx).Model(&MobileHandoff{})
+	if keyword := strings.TrimSpace(q.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		query = query.Where(
+			"(plate ILIKE ? OR mobile_account ILIKE ? OR result->>'taskNo' ILIKE ? OR result->>'ticketNo' ILIKE ?)",
+			like, like, like, like,
+		)
 	}
-	rows := make([]MobileHandoff, 0)
-	err := r.db.WithContext(ctx).Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error
+	if q.Action != "" {
+		query = query.Where("action = ?", q.Action)
+	}
+	if q.Status != "" {
+		query = query.Where("status = ?", q.Status)
+	}
+	if q.Source != "" {
+		query = query.Where("source = ?", q.Source)
+	}
+	query, err := withDates(query, q, "COALESCE(completed_at, claimed_at)")
 	if err != nil {
 		return Page[MobileHandoff]{}, err
 	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return Page[MobileHandoff]{}, err
+	}
+	rows := make([]MobileHandoff, 0)
+	if err := query.Order("id DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
+		return Page[MobileHandoff]{}, err
+	}
 	return Page[MobileHandoff]{Records: rows, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+func (r *Repository) MobileAccountForTask(ctx context.Context, taskID int64) (string, error) {
+	return r.mobileAccountFor(ctx, "task_id", taskID)
+}
+
+func (r *Repository) MobileAccountForTicket(ctx context.Context, ticketID int64) (string, error) {
+	return r.mobileAccountFor(ctx, "ticket_id", ticketID)
+}
+
+func (r *Repository) mobileAccountFor(ctx context.Context, column string, id int64) (string, error) {
+	var account string
+	err := r.db.WithContext(ctx).Table("wb_mobile_handoff").
+		Select("mobile_account").
+		Where(column+" = ? AND mobile_account <> ''", id).
+		Order("id DESC").Limit(1).Scan(&account).Error
+	return account, err
 }
 
 func (r *Repository) MaterialIDByCloudCode(ctx context.Context, code string) (int64, error) {

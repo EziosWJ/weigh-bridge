@@ -4,7 +4,11 @@ package audit
 import "context"
 
 type Metadata struct {
-	ActorID                                                   int64
+	ActorID int64
+	// ActorName is an optional business-facing display name. It lets a system
+	// actor (for example the serial QR scanner) attribute a business record to
+	// the mobile account that actually initiated it without creating a login.
+	ActorName                                                 string
 	RequestID, ClientIP, UserAgent, RequestMethod, RequestURL string
 }
 type Event struct {

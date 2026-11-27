@@ -46,6 +46,15 @@ func actorName(tx *gorm.DB, id int64) (string, error) {
 	}
 	return row.Username, err
 }
+
+// actorDisplayName lets a system-originated business command carry the mobile
+// account that initiated it. Factory users keep the existing account lookup.
+func actorDisplayName(tx *gorm.DB, e audit.Event) (string, error) {
+	if name := strings.TrimSpace(e.Metadata.ActorName); name != "" {
+		return name, nil
+	}
+	return actorName(tx, e.Metadata.ActorID)
+}
 func ptr(v int64) *int64 { return &v }
 func (r *Repository) Session(ctx context.Context, scaleCode string) (ScaleSession, error) {
 	var v ScaleSession
@@ -110,7 +119,7 @@ func (r *Repository) ChangeSession(ctx context.Context, scaleCode string, action
 		}
 		before := current
 		now := time.Now().UTC()
-		name, err := actorName(tx, e.Metadata.ActorID)
+		name, err := actorDisplayName(tx, e)
 		if err != nil {
 			return err
 		}
@@ -540,7 +549,7 @@ func (r *Repository) command(ctx context.Context, key, action string, payload an
 			result, businessErr = replayOperation(op, requestHash)
 			return nil
 		}
-		name, err := actorName(tx, e.Metadata.ActorID)
+		name, err := actorDisplayName(tx, e)
 		if err != nil {
 			return err
 		}
@@ -736,7 +745,33 @@ func (r *Repository) FindTask(ctx context.Context, id int64) (TaskDetail, error)
 		if err := tx.Where("task_id=?", id).Order("id").Find(&detail.Records).Error; err != nil {
 			return err
 		}
-		return tx.Where("task_id=?", id).Order("id").Find(&detail.Events).Error
+		if err := tx.Where("task_id=?", id).Order("id").Find(&detail.Events).Error; err != nil {
+			return err
+		}
+		// Mobile-QR tasks are still caused by the system scanner identity. Show
+		// the cloud mobile account instead of the internal Agent name.
+		var account string
+		if err := tx.Table("wb_mobile_handoff").Select("mobile_account").
+			Where("task_id=? AND mobile_account<>''", id).
+			Order("id DESC").Limit(1).Scan(&account).Error; err != nil {
+			return err
+		}
+		if account = strings.TrimSpace(account); account != "" {
+			if detail.Task.ActorID == 0 {
+				detail.Task.ActorName = account
+			}
+			for i := range detail.Records {
+				if detail.Records[i].ActorID == 0 {
+					detail.Records[i].ActorName = account
+				}
+			}
+			for i := range detail.Events {
+				if detail.Events[i].ActorID == 0 {
+					detail.Events[i].ActorName = account
+				}
+			}
+		}
+		return nil
 	}, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
 	return detail, err
 }

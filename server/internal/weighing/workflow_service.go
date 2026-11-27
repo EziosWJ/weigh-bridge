@@ -262,7 +262,32 @@ func (s *Service) ConfirmSecond(ctx context.Context, id int64, in ConfirmationIn
 	return s.store.ConfirmSecond(ctx, id, in, e)
 }
 func (s *Service) FindTicket(ctx context.Context, id int64) (TicketView, error) {
-	return s.store.FindTicket(ctx, id)
+	view, err := s.store.FindTicket(ctx, id)
+	if err != nil {
+		return view, err
+	}
+	repo, ok := s.store.(*Repository)
+	if !ok {
+		return view, nil
+	}
+	account, err := repo.MobileAccountForTicket(ctx, id)
+	if err != nil {
+		return view, err
+	}
+	if account = strings.TrimSpace(account); account != "" && view.IssuedBy == 0 {
+		// The stored ticket keeps the system scanner attribution for audit and
+		// sync digests; display and print use the mobile account that caused it.
+		view.IssuerName = account
+		for i := range view.Basis {
+			if view.Basis[i].ActorID == 0 {
+				view.Basis[i].ActorName = account
+			}
+		}
+		if view.PrintSheet != nil {
+			view.PrintSheet = compactPrintSheet(view, view.PrintSheet.Title)
+		}
+	}
+	return view, nil
 }
 func (s *Service) Tasks(ctx context.Context, q PageQuery) (Page[Task], error) {
 	return s.store.Tasks(ctx, q)

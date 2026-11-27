@@ -1223,6 +1223,15 @@ definitions:
       message:
         type: string
     type: object
+  weighing.HTTPEnvelope-weighing_MobileHandoffResult:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.MobileHandoffResult'
+      message:
+        type: string
+    type: object
   weighing.HTTPEnvelope-weighing_Operation:
     properties:
       code:
@@ -1247,6 +1256,15 @@ definitions:
         type: integer
       data:
         $ref: '#/definitions/weighing.Page-weighing_BusinessEvent'
+      message:
+        type: string
+    type: object
+  weighing.HTTPEnvelope-weighing_Page-weighing_MobileHandoff:
+    properties:
+      code:
+        type: integer
+      data:
+        $ref: '#/definitions/weighing.Page-weighing_MobileHandoff'
       message:
         type: string
     type: object
@@ -1386,6 +1404,85 @@ definitions:
       version:
         type: integer
       weight:
+        type: string
+    type: object
+  weighing.MobileHandoff:
+    properties:
+      action:
+        type: string
+      claimedAt:
+        type: string
+      completedAt:
+        type: string
+      createdAt:
+        type: string
+      device:
+        type: string
+      error:
+        type: string
+      firstRecordId:
+        type: integer
+      handoffId:
+        type: integer
+      id:
+        type: integer
+      mobileAccount:
+        type: string
+      plate:
+        type: string
+      result:
+        type: object
+      scaleCode:
+        type: string
+      secondRecordId:
+        type: integer
+      siteCode:
+        type: string
+      source:
+        type: string
+      status:
+        type: string
+      taskId:
+        type: integer
+      ticketId:
+        type: integer
+      updatedAt:
+        type: string
+      weighingId:
+        type: integer
+    type: object
+  weighing.MobileHandoffResult:
+    properties:
+      action:
+        type: string
+      captureStatus:
+        type: string
+      firstAt:
+        type: string
+      firstWeight:
+        type: string
+      handoffId:
+        type: integer
+      message:
+        type: string
+      net:
+        type: string
+      secondAt:
+        type: string
+      secondWeight:
+        type: string
+      status:
+        type: string
+      taskNo:
+        type: string
+      ticketNo:
+        type: string
+      weighingId:
+        type: integer
+    type: object
+  weighing.MobileHandoffScanInput:
+    properties:
+      code:
         type: string
     type: object
   weighing.NetAdjustmentInput:
@@ -1610,6 +1707,19 @@ definitions:
       records:
         items:
           $ref: '#/definitions/weighing.BusinessEvent'
+        type: array
+      total:
+        type: integer
+    type: object
+  weighing.Page-weighing_MobileHandoff:
+    properties:
+      page:
+        type: integer
+      pageSize:
+        type: integer
+      records:
+        items:
+          $ref: '#/definitions/weighing.MobileHandoff'
         type: array
       total:
         type: integer
@@ -4959,6 +5069,69 @@ paths:
       summary: 资料启停
       tags:
       - 称重资料
+  /api/weighing/mobile-handoffs:
+    get:
+      parameters:
+      - description: 页码
+        in: query
+        name: page
+        type: integer
+      - description: 每页条数
+        in: query
+        name: pageSize
+        type: integer
+      - description: 车牌 / 手机账号 / 任务号 / 磅单号
+        in: query
+        name: keyword
+        type: string
+      - description: 动作：first/second
+        in: query
+        name: action
+        type: string
+      - description: 状态：claimed/completed/failed
+        in: query
+        name: status
+        type: string
+      - description: 来源：serial_agent/operator
+        in: query
+        name: source
+        type: string
+      - description: 开始日期（北京时间，YYYY-MM-DD）
+        in: query
+        name: from
+        type: string
+      - description: 结束日期（北京时间，YYYY-MM-DD）
+        in: query
+        name: to
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_Page-weighing_MobileHandoff'
+      security:
+      - BearerAuth: []
+      tags:
+      - 称重业务
+  /api/weighing/mobile-handoffs/scan:
+    post:
+      parameters:
+      - description: 二维码内容
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/weighing.MobileHandoffScanInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/weighing.HTTPEnvelope-weighing_MobileHandoffResult'
+      security:
+      - BearerAuth: []
+      summary: 手机酒糟二维码扫码首磅/回磅
+      tags:
+      - 称重业务
   /api/weighing/operations/{requestId}:
     get:
       parameters:

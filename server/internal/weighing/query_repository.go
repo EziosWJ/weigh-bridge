@@ -224,7 +224,7 @@ func (r *Repository) Summary(ctx context.Context, kind string, q PageQuery) (Sum
 }
 func (r *Repository) RecordExport(ctx context.Context, kind string, q PageQuery, count int64, e audit.Event) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		name, err := actorName(tx, e.Metadata.ActorID)
+		name, err := actorDisplayName(tx, e)
 		if err != nil {
 			return err
 		}

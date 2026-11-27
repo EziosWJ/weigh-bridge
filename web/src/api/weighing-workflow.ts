@@ -164,8 +164,19 @@ export interface WireMobileHandoffPage {
   pageSize: number;
 }
 
+export type MobileHandoffQuery = {
+  page: number;
+  pageSize: number;
+  keyword?: string;
+  action?: string;
+  status?: string;
+  source?: string;
+  from?: string;
+  to?: string;
+};
+
 export const mobileHandoffApi = {
-  list: (query: { page: number; pageSize: number }) =>
+  list: (query: MobileHandoffQuery) =>
     http.get<WireMobileHandoffPage>(`${base}/mobile-handoffs`, { query }),
   scan: (code: string) => http.post<WireMobileHandoffResult>(`${base}/mobile-handoffs/scan`, { code }),
 };

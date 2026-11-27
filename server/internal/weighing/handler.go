@@ -129,6 +129,8 @@ func pageQuery(c *gin.Context) (PageQuery, error) {
 	}
 	q.Direction = c.Query("direction")
 	q.Status = c.Query("status")
+	q.Action = c.Query("action")
+	q.Source = c.Query("source")
 	q.From = c.Query("from")
 	q.To = c.Query("to")
 	if q.Direction != "" && q.Direction != "inbound" && q.Direction != "outbound" {

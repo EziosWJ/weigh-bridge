@@ -54,6 +54,9 @@ func (s *Service) scanMobileHandoff(ctx context.Context, code, source, device st
 	if claim.SiteCode != local.SiteCode || claim.ScaleCode != local.ScaleCode {
 		return MobileHandoffResult{}, RejectionError("二维码不属于当前厂区或地磅")
 	}
+	// The factory task/ticket is still created by the system scanner identity,
+	// but operators should see the mobile account that initiated the weighing.
+	e.Metadata.ActorName = mobileActorName(claim.MobileAccount)
 	row, err := repo.MobileHandoff(ctx, claim.HandoffID, claim.Action)
 	if err != nil {
 		return MobileHandoffResult{}, err
@@ -136,12 +139,12 @@ func (s *Service) scanMobileHandoff(ctx context.Context, code, source, device st
 	return result.MobileHandoffResult, nil
 }
 
-func (s *Service) MobileHandoffs(ctx context.Context, page, pageSize int) (Page[MobileHandoff], error) {
+func (s *Service) MobileHandoffs(ctx context.Context, q PageQuery) (Page[MobileHandoff], error) {
 	repo, ok := s.store.(*Repository)
 	if !ok {
 		return Page[MobileHandoff]{}, ErrForbidden
 	}
-	return repo.MobileHandoffs(ctx, page, pageSize)
+	return repo.MobileHandoffs(ctx, q)
 }
 
 type mobileCaptureResult struct {
@@ -390,6 +393,13 @@ func (s *Service) replayMobileResult(ctx context.Context, token, siteCode, scale
 
 func failedMobileResult(claim mobileClaimResponse, message string) MobileHandoffResult {
 	return MobileHandoffResult{HandoffID: claim.HandoffID, WeighingID: claim.WeighingID, Action: claim.Action, Status: "failed", Message: message}
+}
+
+func mobileActorName(account string) string {
+	if name := strings.TrimSpace(account); name != "" {
+		return name
+	}
+	return "手机扫码"
 }
 
 func decodeMobileResult(raw JSON) MobileHandoffResult {

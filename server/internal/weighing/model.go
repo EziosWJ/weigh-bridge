@@ -97,6 +97,7 @@ type Page[T any] struct {
 }
 type PageQuery struct {
 	Direction, Status, From, To string
+	Action, Source              string
 	MaterialID, PartyID         *int64
 	Page, PageSize              int
 	Keyword, Role, Nature       string

@@ -10,7 +10,7 @@ import (
 )
 
 func masterEvent(ctx context.Context, tx *gorm.DB, e audit.Event, before, after any) error {
-	name, err := actorName(tx, e.Metadata.ActorID)
+	name, err := actorDisplayName(tx, e)
 	if err != nil {
 		return err
 	}

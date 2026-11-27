@@ -4411,6 +4411,108 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/weighing/mobile-handoffs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "页码",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "每页条数",
+                        "name": "pageSize",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "车牌 / 手机账号 / 任务号 / 磅单号",
+                        "name": "keyword",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "动作：first/second",
+                        "name": "action",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "状态：claimed/completed/failed",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "来源：serial_agent/operator",
+                        "name": "source",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "开始日期（北京时间，YYYY-MM-DD）",
+                        "name": "from",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "结束日期（北京时间，YYYY-MM-DD）",
+                        "name": "to",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_Page-weighing_MobileHandoff"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/weighing/mobile-handoffs/scan": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "称重业务"
+                ],
+                "summary": "手机酒糟二维码扫码首磅/回磅",
+                "parameters": [
+                    {
+                        "description": "二维码内容",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/weighing.MobileHandoffScanInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/weighing.HTTPEnvelope-weighing_MobileHandoffResult"
+                        }
+                    }
+                }
+            }
+        },
         "/api/weighing/operations/{requestId}": {
             "get": {
                 "security": [
@@ -8168,6 +8270,20 @@ const docTemplate = `{
                 }
             }
         },
+        "weighing.HTTPEnvelope-weighing_MobileHandoffResult": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.MobileHandoffResult"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
         "weighing.HTTPEnvelope-weighing_Operation": {
             "type": "object",
             "properties": {
@@ -8204,6 +8320,20 @@ const docTemplate = `{
                 },
                 "data": {
                     "$ref": "#/definitions/weighing.Page-weighing_BusinessEvent"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.HTTPEnvelope-weighing_Page-weighing_MobileHandoff": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "data": {
+                    "$ref": "#/definitions/weighing.Page-weighing_MobileHandoff"
                 },
                 "message": {
                     "type": "string"
@@ -8415,6 +8545,126 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "weight": {
+                    "type": "string"
+                }
+            }
+        },
+        "weighing.MobileHandoff": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "claimedAt": {
+                    "type": "string"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "device": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "firstRecordId": {
+                    "type": "integer"
+                },
+                "handoffId": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "mobileAccount": {
+                    "type": "string"
+                },
+                "plate": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "object"
+                },
+                "scaleCode": {
+                    "type": "string"
+                },
+                "secondRecordId": {
+                    "type": "integer"
+                },
+                "siteCode": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskId": {
+                    "type": "integer"
+                },
+                "ticketId": {
+                    "type": "integer"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "weighingId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.MobileHandoffResult": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "captureStatus": {
+                    "type": "string"
+                },
+                "firstAt": {
+                    "type": "string"
+                },
+                "firstWeight": {
+                    "type": "string"
+                },
+                "handoffId": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "net": {
+                    "type": "string"
+                },
+                "secondAt": {
+                    "type": "string"
+                },
+                "secondWeight": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "taskNo": {
+                    "type": "string"
+                },
+                "ticketNo": {
+                    "type": "string"
+                },
+                "weighingId": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.MobileHandoffScanInput": {
+            "type": "object",
+            "properties": {
+                "code": {
                     "type": "string"
                 }
             }
@@ -8755,6 +9005,26 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/weighing.BusinessEvent"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "weighing.Page-weighing_MobileHandoff": {
+            "type": "object",
+            "properties": {
+                "page": {
+                    "type": "integer"
+                },
+                "pageSize": {
+                    "type": "integer"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/weighing.MobileHandoff"
                     }
                 },
                 "total": {
