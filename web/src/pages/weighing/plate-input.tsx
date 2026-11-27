@@ -19,7 +19,7 @@ export function PlateInput({ value, onChange, id, inputRef, validationError, dis
   const errorId = error ? `${controlId}-hint` : undefined;
   return <div className="plate-control" onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false); }} onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); setOpen(false); document.getElementById(`${controlId}-province`)?.focus(); } }}>
     <div className="plate-entry">
-      <Button id={`${controlId}-province`} aria-invalid={provinceInvalid} aria-describedby={provinceInvalid ? errorId : undefined} aria-label="选择车牌省份" aria-expanded={open} aria-controls={`${controlId}-provinces`} disabled={disabled} onClick={() => setOpen(!open)}>{province || '省份'}</Button>
+      <Button id={`${controlId}-province`} data-has-province={province ? 'true' : 'false'} aria-invalid={provinceInvalid} aria-describedby={provinceInvalid ? errorId : undefined} aria-label="选择车牌省份" aria-expanded={open} aria-controls={`${controlId}-provinces`} disabled={disabled} onClick={() => setOpen(!open)}>{province || '省份'}</Button>
       <div className="plate-number-wrap"><input ref={inputRef} id={controlId} aria-label="车牌号码" className={`plate-number${clearable ? ' is-clearable' : ''}`} autoComplete="off" spellCheck={false} value={tail} maxLength={PLATE_MAX_LENGTH} disabled={disabled} placeholder="请输入车牌号码" aria-invalid={!!error && !provinceInvalid} aria-describedby={provinceInvalid ? undefined : errorId} onBlur={() => setTouched(true)} onChange={event => {
         onChange(limitPlate(event.target.value, province));
       }} onPaste={event => {

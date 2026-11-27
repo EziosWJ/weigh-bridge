@@ -59,7 +59,7 @@ export function BusinessDirectionControl({ value, update, lockDirection = false,
     <legend className="block text-sm font-medium">运输方向<span className="ml-1 text-error">*</span></legend>
     <div className="workbench-direction-options">
       {(['inbound', 'outbound'] as const).map(direction => <label key={direction} className={`workbench-direction-option${value.direction === direction ? ' is-selected' : ''}`}>
-        <input type="radio" name={directionGroup} value={direction} checked={value.direction === direction} disabled={lockDirection} onChange={() => update({ direction, partyId: '', contactName: '', contactPhone: '' })} />
+        <input className="shrink-0 accent-primary" type="radio" name={directionGroup} value={direction} checked={value.direction === direction} disabled={lockDirection} onChange={() => update({ direction, partyId: '', contactName: '', contactPhone: '' })} />
         <span>{directionLabels[direction]}</span>
       </label>)}
     </div>

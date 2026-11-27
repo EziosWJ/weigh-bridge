@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus } from 'lucide-react';
+import './workbench.css';
 import { DetailItem } from '@/components/common/detail-item';
 import { HelpHint } from '@/components/common/help-hint';
 import { Button } from '@/components/ui/button';
@@ -146,11 +147,12 @@ const adjustmentRow = (category = ''): NetAdjustmentInput => ({
   mode: 'amount', amount: 0, rateBp: 0, category, remark: '',
 });
 
-export function NetAdjustmentFields({ basis, value, onChange, showError = true, onValidationChange }: {
+export function NetAdjustmentFields({ basis, value, onChange, showError = true, showWeightSummary = true, onValidationChange }: {
   basis: WeightValues;
   value: NetAdjustmentsInput;
   onChange: (value: NetAdjustmentsInput) => void;
   showError?: boolean;
+  showWeightSummary?: boolean;
   onValidationChange?: (error: string) => void;
 }) {
   const { options: categoryOptions } = useDictOptions(DICT_CODES.WEIGHING_DEDUCTION_CATEGORY, {
@@ -186,21 +188,21 @@ export function NetAdjustmentFields({ basis, value, onChange, showError = true, 
     setRemoved(null);
     setRevision(current => current + 1);
   };
-  return <fieldset className="min-w-0 space-y-3">
-    <legend className="text-sm font-semibold">核对重量并录入扣减 <HelpHint label="净重调整规则">空值或零不扣减。各比例项均以调整前净重为基数，各自四舍五入到 0.001 吨后相加。调整后净重须大于零；比例折算不足 0.001 吨时请改按吨录入。</HelpHint></legend>
-    <div className="grid gap-3 sm:grid-cols-3">
-      <DetailItem label="原始毛重" value={<strong className="text-xl tabular-nums">{formatWeight(basis.gross)}</strong>} />
-      <DetailItem label="原始皮重" value={<strong className="text-xl tabular-nums">{formatWeight(basis.tare)}</strong>} />
-      <DetailItem label="调整前净重" value={<strong className="text-xl tabular-nums">{formatWeight(basis.net)}</strong>} />
-    </div>
-    <div className="space-y-3">
+  return <fieldset className="net-adjustment">
+    <legend className="workbench-dialog-section-title">核对重量并录入扣减 <HelpHint label="净重调整规则">空值或零不扣减。各比例项均以调整前净重为基数，各自四舍五入到 0.001 吨后相加。调整后净重须大于零；比例折算不足 0.001 吨时请改按吨录入。</HelpHint></legend>
+    {showWeightSummary && <dl className="net-adjustment-basis">
+      <div><dt>原始毛重</dt><dd>{formatWeight(basis.gross)}</dd></div>
+      <div><dt>原始皮重</dt><dd>{formatWeight(basis.tare)}</dd></div>
+      <div><dt>调整前净重</dt><dd>{formatWeight(basis.net)}</dd></div>
+    </dl>}
+    <div>
       {rows.map((row, index) => {
         let itemAmount: number | undefined;
         let itemError = '';
         try { itemAmount = resolveNetAdjustment(basis, row).amount; } catch (failure) { itemError = failure instanceof Error ? failure.message : '请核对扣减'; }
         const unavailable = row.category && !categoryOptions.some(option => option.value === row.category);
         if (unavailable && (row.mode === 'percent' ? row.rateBp : row.amount) !== 0) itemError = '扣减原因已停用，请重新选择';
-        return <div key={`${index}-${revision}`} className="grid min-w-0 gap-3 rounded-control border border-border p-3 sm:grid-cols-2 lg:grid-cols-4">
+        return <div key={`${index}-${revision}`} className="net-adjustment-row">
           <div className="space-y-1.5">
             <label htmlFor={`net-adjustment-category-${index}`} className="block text-form-label font-medium text-text-primary">第 {index + 1} 项扣减原因</label>
             <Select id={`net-adjustment-category-${index}`} value={row.category} onChange={event => setRow(index, { ...row, category: event.target.value, remark: '' })}>
@@ -211,23 +213,27 @@ export function NetAdjustmentFields({ basis, value, onChange, showError = true, 
           </div>
           <div className="space-y-1.5">
             <span className="block text-form-label font-medium text-text-primary">录入方式</span>
-            <div role="radiogroup" aria-label={`第 ${index + 1} 项录入方式`} className="flex h-control-md gap-2">
+            <div role="radiogroup" aria-label={`第 ${index + 1} 项录入方式`} className="net-adjustment-modes">
               {([['amount', '按吨'], ['percent', '按比例']] as const).map(([mode, label]) => <label key={mode} className="flex-1 cursor-pointer">
                 <input className="peer sr-only" type="radio" name={`net-adjustment-mode-${index}`} value={mode} checked={row.mode === mode} onChange={() => setMode(index, mode)} />
-                <span className="flex h-full items-center justify-center rounded-control border border-border bg-surface px-3 text-sm text-text-primary peer-checked:border-primary peer-checked:bg-info-background peer-checked:text-info peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-primary">{label}</span>
+                <span className="flex h-full items-center justify-center border border-border bg-surface px-1.5 text-sm text-text-primary peer-checked:border-primary peer-checked:bg-info-background peer-checked:text-info peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-primary">{label}</span>
               </label>)}
             </div>
           </div>
           {row.mode === 'amount' ? <DecimalField key={`amount-${index}`} id={`net-adjustment-amount-${index}`} label="扣减重量（吨）" value={row.amount} step="0.001" min="0" onChange={amount => setRow(index, { ...row, amount })} /> : <DecimalField key={`percent-${index}`} id={`net-adjustment-rate-${index}`} label="扣减比例（%）" value={row.rateBp / 100} step="0.01" min="0" onChange={rate => setRow(index, { ...row, rateBp: Math.round(rate * 100 * 1e8) / 1e8 })} hint="最多两位小数；按调整前净重计算，四舍五入到 0.001 吨" />}
-          <div className="flex items-end justify-between gap-2"><span className="text-sm text-text-secondary tabular-nums">{itemError ? <span role="alert" className="text-error">{itemError}</span> : itemAmount ? <>{row.mode === 'percent' && `${formatWeight(basis.net)} × ${formatRate(row.rateBp)} = `}扣减 <strong className="text-text-primary">{formatWeight(itemAmount)}</strong></> : '不扣减'}</span><Button size="sm" variant="secondary" onClick={() => removeRow(index)}>删除该项</Button></div>
-          {row.category === 'OTHER' && <div className="space-y-1.5 sm:col-span-2 lg:col-span-4"><label htmlFor={`net-adjustment-remark-${index}`} className="block text-form-label font-medium text-text-primary">补充说明（选填）</label><Input id={`net-adjustment-remark-${index}`} placeholder="请输入其他扣减原因" value={row.remark ?? ''} onChange={event => setRow(index, { ...row, remark: event.target.value })} /></div>}
+          <div className="net-adjustment-conversion">
+            <span className="net-adjustment-label">折算量</span>
+            <p>{itemError ? <span role="alert" className="text-error">{itemError}</span> : itemAmount ? <>{row.mode === 'percent' && `${formatWeight(basis.net)} × ${formatRate(row.rateBp)} = `}扣减 <strong>{formatWeight(itemAmount)}</strong></> : '不扣减'}</p>
+          </div>
+          <Button size="md" variant="secondary" className="net-adjustment-remove" onClick={() => removeRow(index)}>删除该项</Button>
+          {row.category === 'OTHER' && <div className="net-adjustment-remark space-y-1.5"><label htmlFor={`net-adjustment-remark-${index}`} className="block text-form-label font-medium text-text-primary">补充说明（选填）</label><Input id={`net-adjustment-remark-${index}`} placeholder="请输入其他扣减原因" value={row.remark ?? ''} onChange={event => setRow(index, { ...row, remark: event.target.value })} /></div>}
         </div>;
       })}
-      <div className="flex items-center gap-3"><Button type="button" size="md" variant="secondary" onClick={addRow}><Plus className="h-4 w-4" aria-hidden />添加扣减项</Button>{removed && <Button type="button" size="md" variant="secondary" onClick={undo}>撤销删除</Button>}</div>
+      <div className="flex flex-wrap items-center gap-2 pt-2"><Button type="button" size="md" variant="secondary" onClick={addRow}><Plus className="h-4 w-4" aria-hidden />添加扣减项</Button>{removed && <Button type="button" size="md" variant="secondary" onClick={undo}>撤销删除</Button>}</div>
     </div>
-    <div className="rounded-control border border-border border-l-[3px] border-l-primary bg-neutral-background p-3" aria-label="扣减合计">
-      {resolved ? <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums"><span>调整前净重 <strong>{formatWeight(basis.net)}</strong></span><span aria-hidden>−</span><span>扣减合计 <strong>{formatWeight(amount)}</strong></span><span aria-hidden>=</span><span>出单净重 <strong className="text-3xl text-primary">{formatWeight(Math.round((basis.net - amount) * 1000) / 1000)}</strong></span>{amount === 0 && <span className="text-sm text-text-secondary">未扣减</span>}</div> : <span className="text-text-tertiary">请核对扣减项后计算出单净重</span>}
-    </div>
+    {showWeightSummary && <div className="net-adjustment-total" aria-label="扣减合计">
+      {resolved ? <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 tabular-nums"><span>调整前净重 <strong>{formatWeight(basis.net)}</strong></span><span aria-hidden>−</span><span>扣减合计 <strong>{formatWeight(amount)}</strong></span><span aria-hidden>=</span><span>出单净重 <strong className="net-adjustment-final-weight">{formatWeight(Math.round((basis.net - amount) * 1000) / 1000)}</strong></span>{amount === 0 && <span className="text-sm text-text-secondary">未扣减</span>}</div> : <span className="text-text-tertiary">请核对扣减项后计算出单净重</span>}
+    </div>}
     {showError && error && <p role="alert" className="text-sm text-error">{error}</p>}
   </fieldset>;
 }

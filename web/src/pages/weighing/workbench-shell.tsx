@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { FileText, Maximize, Minimize, Monitor } from 'lucide-react';
+import { FilePlus2, FileText, Maximize, Minimize, Monitor, Scale } from 'lucide-react';
 import { Outlet, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { buttonStyles } from '@/components/ui/button-styles';
 import { Dialog, DialogOverlay, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogBody, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/common/toast-store';
@@ -52,17 +53,24 @@ export function WorkbenchShell() {
   if(!routeScale)return <WorkbenchEntry />;
   if(ready&&(!scale?.canOperate||!capabilities?.permissionCodes.some(code => code === 'weighing:confirm' || code === 'weighing:manual-supplement')))return <div className="p-6" role="alert">无本厂地磅称重操作权限。<a href="/weighing/tasks" className="text-primary underline">返回后台查询</a></div>;
   if(!ready)return <p role="status" className="p-6">正在核对本厂操作权限…</p>;
-  return <div className="weighing-workbench min-h-screen bg-background">
+  return <div className="weighing-workbench min-h-screen">
     <a href="#main-content" className="workbench-skip">跳转到称重操作</a>
     <header className="workbench-topbar">
-      <div className="workbench-brand"><img className="workbench-brand-mark" src="/weighbridge/brand/scale-mark.svg" alt="" /><div><h1 className="text-xl font-semibold">称重工作台</h1><p className="text-xs text-text-secondary">{scale?.siteName} · {scale?.name}</p></div></div>
-      <span className="workbench-connection text-sm text-text-secondary"><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'} · {user?.nickname || user?.username} · {roleLabels[config.role]}</span>
-      <nav aria-label="工作台操作" className="ml-auto flex flex-wrap items-center gap-3 text-sm">
-        {canSupplement && <Button size="sm" onClick={() => setSupplementOpen(true)}>人工补单</Button>}
+      <div className="workbench-brand">
+        <span className="workbench-brand-mark"><Scale size={18} aria-hidden /></span>
+        <h1>称重工作台</h1>
+        <p title={`${scale?.siteName} · ${scale?.name}`}>{scale?.siteName} · {scale?.name}</p>
+      </div>
+      <div className="workbench-connection">
+        <span className={`workbench-agent ${config.online ? 'is-online' : 'is-offline'}`}><span className={`connection-dot ${config.online ? 'is-online' : ''}`} aria-hidden />{config.online ? 'Agent 在线' : 'Agent 离线'}</span>
+        <span className="workbench-account" title={`${user?.nickname || user?.username || ''} · ${roleLabels[config.role]}`}>{user?.nickname || user?.username} · {roleLabels[config.role]}</span>
+      </div>
+      <nav aria-label="工作台操作">
+        {canSupplement && <Button size="sm" variant="secondary" onClick={() => setSupplementOpen(true)}><FilePlus2 className="h-4 w-4" aria-hidden />人工补单</Button>}
+        {canReadTickets && <Button size="sm" variant="secondary" className="workbench-management-link" aria-haspopup="dialog" aria-expanded={ticketsOpen} title="打开过磅单列表" onClick={() => setTicketsOpen(true)}><FileText className="h-4 w-4" aria-hidden />过磅单</Button>}
+        <a className={buttonStyles({ size: 'sm', variant: 'secondary', className: 'workbench-management-link' })} href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>
         {owner === 'other' && capabilities?.permissionCodes.includes('weighing:takeover') && <Button size="sm" className="workbench-takeover-button" onClick={() => setTakeoverOpen(true)}>接管操作权</Button>}
-        {canReadTickets && <button type="button" className="workbench-management-link" aria-haspopup="dialog" aria-expanded={ticketsOpen} title="打开过磅单列表" onClick={() => setTicketsOpen(true)}><FileText className="h-4 w-4" aria-hidden />过磅单</button>}
-        <a className="workbench-management-link" href="/weighing/tasks" target="weighbridge-management"><Monitor className="h-4 w-4" aria-hidden />后台查询</a>
-        {owner === 'self' && <Button size="sm" disabled={!!pending || releasing} aria-busy={releasing} title={pending ? '提交流程处理中，暂不能释放操作权' : undefined} onClick={() => {
+        {owner === 'self' && <Button size="sm" variant="ghost" disabled={!!pending || releasing} aria-busy={releasing} title={pending ? '提交流程处理中，暂不能释放操作权' : undefined} onClick={() => {
           if (pending || releasing) return;
           setReleasing(true);
           void releaseOperation()
@@ -70,13 +78,13 @@ export function WorkbenchShell() {
             .catch(e => toast.error({ title: '释放操作权失败', description: e instanceof Error ? e.message : '请稍后重试' }))
             .finally(() => setReleasing(false));
         }}>{releasing ? '正在释放…' : '释放操作权'}</Button>}
-        <Button size="sm" onClick={async () => {
+        <Button size="sm" variant="ghost" onClick={async () => {
           try { if (document.fullscreenElement) await document.exitFullscreen(); else await document.documentElement.requestFullscreen(); }
           catch { toast.error('浏览器未允许全屏，请使用浏览器全屏功能或重试。'); }
         }}>{fullscreen ? <Minimize className="h-4 w-4" aria-hidden /> : <Maximize className="h-4 w-4" aria-hidden />}{fullscreen ? '退出全屏' : '全屏'}</Button>
       </nav>
     </header>
-    <main id="main-content" className="workbench-content p-4"><Outlet key={resetAt || 'initial'} /></main>
+    <main id="main-content" className="workbench-content"><Outlet key={resetAt || 'initial'} /></main>
     <Dialog open={takeoverOpen} onOpenChange={open => { if (!busy) { setTakeoverOpen(open); if (!open) setTakeoverReason(''); } }} trapFocus restoreFocus lockScroll closeOnEscape={!busy} closeOnOverlayClick={!busy}>
       <DialogOverlay />
       <DialogContent className="workbench-modal max-w-[480px]">

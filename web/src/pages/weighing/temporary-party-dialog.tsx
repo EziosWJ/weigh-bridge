@@ -86,7 +86,7 @@ export function TemporaryPartyDialog({ current, initialName, label, role, loadPa
   }
 
   return <FormDialog open title={current ? `更正临时${label}` : `登记临时${label}`} description={current?.code}
-    contentClassName="workbench-modal workbench-temporary-party-dialog max-w-[500px]" loading={saving} loadingText="正在处理…"
+    contentClassName="workbench-modal workbench-form-labels max-w-[500px]" loading={saving} loadingText="正在处理…"
     submitText={current ? '保存更正' : matches.length ? '仍然登记并选用' : '保存并选用'}
     submitDisabled={!name.trim() || !nature || roles.length === 0} onSubmit={() => save()} onCancel={onCancel}>
     <fieldset disabled={saving} className="space-y-3">
@@ -98,18 +98,18 @@ export function TemporaryPartyDialog({ current, initialName, label, role, loadPa
         }} />
       </Field>
       <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">主体性质<span className="ml-1 text-error">*</span></legend>
+        <legend className="workbench-dialog-section-title">主体性质<span className="ml-1 text-error">*</span></legend>
         <div className="grid grid-cols-2 gap-2">
           {(Object.keys(partyNatureLabels) as PartyNature[]).map(kind =>
             <label key={kind} className={`workbench-party-nature${nature === kind ? ' is-selected' : ''}`}>
-              <input type="radio" name={`${id}-nature`} value={kind} required checked={nature === kind} onChange={() => setNature(kind)} />
+              <input type="radio" className="accent-primary" name={`${id}-nature`} value={kind} required checked={nature === kind} onChange={() => setNature(kind)} />
               {partyNatureLabels[kind]}
             </label>
           )}
         </div>
       </fieldset>
       <fieldset className="space-y-2">
-        <legend className="text-sm font-medium">{current ? '业务身份' : '同时用于（选填）'}</legend>
+        <legend className="workbench-dialog-section-title">{current ? '业务身份' : '同时用于（选填）'}</legend>
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
           {editableRoles.map(kind => <label key={kind} className="inline-flex min-h-8 items-center gap-2">
             <input type="checkbox" checked={roles.includes(kind)} onChange={event => setRoles(previous =>
@@ -119,21 +119,21 @@ export function TemporaryPartyDialog({ current, initialName, label, role, loadPa
         </div>
       </fieldset>
       {matches.length > 0 && <section className="space-y-2 rounded-control border border-warning-border bg-warning-background p-3" aria-label="同名档案核对">
-        <h3 role="status" className="text-sm font-medium">本厂已有同名{label}</h3>
-        <ul className="max-h-40 space-y-2 overflow-auto">
+        <h3 role="status" className="workbench-dialog-section-title">本厂已有同名{label}</h3>
+        <ul className="max-h-40 divide-y divide-warning-border overflow-auto">
           {matches.map(party => {
             const contact = party.contacts.find(item => item.isDefault) ?? party.contacts[0];
             const details = [party.shortName !== party.name ? party.shortName : '', party.address,
               [contact?.name, contact?.phone || party.phone].filter(Boolean).join(' ')].filter(Boolean).join(' · ');
-            return <li key={party.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 text-sm">
+            return <li key={party.id} className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 py-2 text-sm">
               <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-2 font-medium">
+                <p className="flex flex-wrap items-center gap-2 text-[15px] font-semibold leading-[22px]">
                   <span className="break-words">{party.name}</span>
                   <StatusTag>{party.temporaryState ? '临时' : '正式'}</StatusTag>
                   <span className="font-normal text-text-secondary">{partyNatureLabels[party.nature]}</span>
                 </p>
                 {details && <p className="break-words text-text-secondary">{details}</p>}
-                <p className="break-all text-xs text-text-tertiary">{party.code}</p>
+                <p className="break-all text-[13px] leading-[18px] text-text-tertiary">{party.code}</p>
               </div>
               <Button size="sm" aria-label={`选用已有档案 ${party.code}`} onClick={() => void save(party)}>选用此档案</Button>
             </li>;

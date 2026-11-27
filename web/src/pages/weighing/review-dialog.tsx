@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Camera,
   Check,
-  ClipboardCheck,
   Package,
   Scale,
   Truck,
@@ -46,10 +45,8 @@ export function ReviewFact({ label, value, wide = false, emphasis = false }: {
 }) {
   const empty = value === undefined || value === null || value === '';
   return <div className={cn('review-fact', wide && 'review-fact--wide', emphasis && 'review-fact--emphasis')}>
-    <div className="min-w-0">
-      <p className="review-fact-label">{label}</p>
-      <p className="review-fact-value">{empty ? '—' : value}</p>
-    </div>
+    <dt className="review-fact-label">{label}</dt>
+    <dd className="review-fact-value">{empty ? '—' : value}</dd>
   </div>;
 }
 
@@ -64,7 +61,7 @@ function ReviewSection({ icon, title, extra, children }: {
       <div className="review-section-title"><span aria-hidden>{icon}</span><h3>{title}</h3></div>
       {extra}
     </header>
-    <div className="review-section-body">{children}</div>
+    {children}
   </section>;
 }
 
@@ -117,21 +114,13 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
   };
   return <><Dialog open onOpenChange={open => { if (!open && !submitting) requestExit('cancel'); }} trapFocus={!previewOpen && !pendingExit} closeOnEscape={!previewOpen && !submitting && !pendingExit} restoreFocus lockScroll closeOnOverlayClick={false}>
     <DialogOverlay className="workbench-modal-overlay" />
-    <DialogContent className="weighing-review workbench-modal flex max-h-[calc(100dvh-32px)] max-w-[1180px] flex-col">
+    <DialogContent className="weighing-review workbench-modal flex max-h-[calc(100dvh-32px)] max-w-[960px] flex-col">
       <DialogHeader className="weighing-review-header">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="review-header-icon" aria-hidden><ClipboardCheck className="h-5 w-5" /></span>
-          <div className="min-w-0">
-            <DialogTitle className="sr-only">核对{title}</DialogTitle>
-            <div className="review-eyebrow">
-              <span className="review-eyebrow-title">{second ? '回磅核对' : '首磅核对'} · {value.kind}</span>
-              {invalidReason && <span className="review-eyebrow-status is-invalid">核对已失效</span>}
-            </div>
-          </div>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <DialogTitle>核对{title}</DialogTitle>
+          {invalidReason && <span className="review-invalid-status">核对已失效</span>}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <DialogClose aria-label="关闭核对" disabled={submitting}><X className="h-4 w-4" aria-hidden /></DialogClose>
-        </div>
+        <DialogClose aria-label="关闭核对" disabled={submitting}><X className="h-4 w-4" aria-hidden /></DialogClose>
       </DialogHeader>
 
       <DialogBody className="weighing-review-body">
@@ -139,12 +128,6 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
           <TriangleAlert className="h-5 w-5" aria-hidden />
           <div><strong>当前核对内容已失效</strong><p>{invalidReason}</p></div>
         </div>}
-        {!invalidReason && missing.length > 0 && <div className="review-missing" role="status">
-          <TriangleAlert className="h-5 w-5" aria-hidden />
-          <strong>还缺{missing.join('、')}</strong>
-        </div>}
-        {!invalidReason && missing.length > 0 && businessEditor && <section className="review-business-fill" aria-label="补齐本趟资料">{businessEditor}</section>}
-
         {!showFinal && <section className="review-summary" aria-label="本次称重摘要">
           <div className="review-hero review-hero--vehicle">
             <p className="review-hero-label"><Truck className="h-4 w-4" aria-hidden />当前车辆</p>
@@ -156,15 +139,21 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
           </div>
         </section>}
 
+        {!invalidReason && missing.length > 0 && <div className="review-missing" role="status">
+          <TriangleAlert className="h-5 w-5" aria-hidden />
+          <strong>还缺{missing.join('、')}</strong>
+        </div>}
+        {!invalidReason && missing.length > 0 && businessEditor && <section className="review-business-fill" aria-label="补齐本趟资料">{businessEditor}</section>}
+
         {showFinal ? <section className="review-final-step" aria-label="净重调整">
           <h3 ref={finalHeading} tabIndex={-1} className="sr-only">最终重量确认</h3>
-          <div className="review-facts" aria-label="本趟运输核对">
-            <ReviewFact label="当前车辆" value={value.plate || '待核对'} />
-            <ReviewFact label="运输方向" value={value.direction} />
-            <ReviewFact label="物料" value={value.material} />
-            <ReviewFact label={value.partyLabel} value={value.party} />
+          <div className="review-final-context" aria-label="本趟运输核对">
+            <span><span className="review-fact-label">当前车辆</span> <strong className="review-context-plate">{value.plate || '待核对'}</strong></span>
+            <span><span className="sr-only">运输方向</span>{value.direction}</span>
+            <span><span className="review-fact-label">物料</span> {value.material}</span>
+            <span><span className="review-fact-label">{value.partyLabel}</span> {value.party}</span>
           </div>
-          {value.tripBasis?.bound && <section className="flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-control border border-border px-3 py-2 text-sm">
+          {value.tripBasis?.bound && <section className="review-trip-basis">
             <h3 className="font-semibold">{value.tripBasis.inspection ? '首磅云端化验依据' : '首磅云端接收依据'}</h3>
             {value.tripBasis.tripNo && <span>{value.tripBasis.tripNo}</span>}
             {value.tripBasis.inspection ? <>
@@ -173,19 +162,17 @@ export function WeighingReviewDialog({ value, title, missing = [], businessEdito
               {value.tripBasis.inspection.bulkDensity && <span>容重 {value.tripBasis.inspection.bulkDensity} g/L</span>}
             </> : <span>目测接收</span>}
           </section>}
-          <section className="review-section">
-            <div className="review-section-body"><NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} /></div>
-          </section>
+          <NetAdjustmentFields basis={value.original!} value={netAdjustments} onChange={setNetAdjustments} showError={false} onValidationChange={setFieldError} />
         </section> : <section className="review-main" aria-label="本趟运输核对依据">
           <ReviewSection icon={<Package className="h-4 w-4" aria-hidden />} title="业务核对" extra={<HelpHint label="业务核对说明" align="right">请与现场车辆核对。</HelpHint>}>
-            <div className="review-facts">
+            <dl className="review-facts">
               <ReviewFact label="运输方向" value={value.direction} />
               <ReviewFact label="物料" value={value.material} />
               <ReviewFact label={value.partyLabel} value={value.party} />
               {value.firstWeight && <ReviewFact label="首次称重依据" value={value.firstWeight} emphasis />}
               {value.expected && <ReviewFact label="预计净重（未出单）" value={formatWeight(value.expected.net)} emphasis />}
               {value.supplementary.map((item, index) => <ReviewFact key={`${item.label}-${index}`} label={item.label} value={item.value} wide={item.label === '备注'} />)}
-            </div>
+            </dl>
           </ReviewSection>
 
           <ReviewSection

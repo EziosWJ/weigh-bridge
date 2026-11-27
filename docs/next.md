@@ -1,5 +1,25 @@
 # 当前实现、验证与剩余工作
 
+## 2026-11-27 工作台柔和浅灰一体配色调和（方案 1）
+
+- 为消除顶栏、监控占位与深色仪表同纯白卡片之间的强黑白反差，工作台配色收敛为柔和 4 层浅灰阶：雾灰画布（`#E8EEF5`）、柔白微阴影卡片（`#FCFDFE`，边框 `#D6E0EB`）、52px 柔和浅灰白顶栏（`#F7F9FC` 配白底描边按钮与浅绿／浅琥珀 Agent 胶囊）。
+- 保留双层嵌入式工业仪表盒结构并提亮为浅金属银灰渐变外框（`#E2E9F2 → #D5DFEB`）与内凹浅雾蓝 LCD 读数屏（`#ECF1F7 → #F5F8FC`），有效读数整数采用深墨蓝（`#0F2942`），小数与单位按状态呈深翠绿（`#0F766E`）／深海蓝（`#0369A1`）／沉稳琥珀（`#B45309`）／深红（`#B91C1C`）。
+- 左侧监控区外框改为浅钢灰（`#D5DFEB`），断线／连接中／未配置占位改用柔和冷雾灰（`#E5ECF4`）与浅色磨砂角标；实时视频播放态保持中性深石板灰（`#1E293B`）与深色磨砂角标。
+- 同步更新 `web/design-system/pages/weighing.md` 与 `docs/requirements/workbench-ui-redesign-spec.md`。验证：`npm run lint`、`npm run build` 及全量工作台 Playwright 回归通过（均基于模拟接口与视频源，真实设备与现场观感待现场验收）。
+
+## 2026-11-27 工作台待回磅队列 24 小时有效期与摄像头识别高亮置顶
+
+- 工作台空闲态「场内待回磅车辆」快捷队列改为拉取足够大分页（`pageSize=100`），并按 24 小时窗口过滤合并后的远端与本地待回磅任务（允许 ±5 分钟轻微时钟偏差，定时与拉取/推送时按当前时间刷新评估）；超过 24 小时的过期单子不展示在工作台快捷队列且不计入右上角数量徽标（仅工作台快捷过滤，不删除后端任务，也不影响后台「待回磅任务」查询及手工录入车牌定位），标题旁标注「24小时内」，24 小时内无有效任务时仍展示 3 步作业指引卡。
+- 合并当前有效的摄像头推送候选（`GET /api/weighing/plate-candidates`）与 Agent 设备识别兜底车牌，在 24 小时内待回磅队列中自动匹配并高亮命中单子（`.is-recognized`、`data-recognized="true"`、左侧强调边条与「相机已识别」徽标），命中单子置顶优先展示（按最近识别时间倒序，未命中按首磅时间倒序；默认展示前 5 条，命中超 5 条时确保全部可见）。点击待回磅列表项时同步保留同车牌摄像头识别来源与提示并聚焦车牌输入框，不绕过人工点击「确认车辆」。
+- 验证：`web/` 下 `npm run lint`、`npm run build`、`npm run test:weighing`（32/32）、`node tests/plate-candidates.mjs`（新增 24 小时过滤、全过期指引卡、识别高亮置顶、点击保留识别来源且不自动提交断言）、`npm run test:weighing:agent-capture`、`npm run test:review-final`、`npm run test:weighing:camera-live`、`npm run test:weighing:camera-multiview`、`npm run test:weighing:lookup`、`npm run test:weighing:ticket-drawer`、`npm run test:manual-supplement` 全部通过。均为浏览器模拟接口回归，未做真实摄像头与现场验收。
+
+## 2026-11-27 称重工作台浅色工业风与弹窗排版重构
+
+- #15～#19 已落实，并按方案 B（现代浅色桌面客户端）+ 方案 A（精工嵌入式双层工业仪表盒）完成视觉精修。顶栏采用深海蓝（`#1E293B`）配圆角秤图标、半透明状态胶囊与描边操作按钮；画布采用冷白（`#F1F5F9`）配 12px 圆角微阴影白卡。左侧多路画面收进深炭灰一体画框，断线／未配置占位改用深石板灰（`#1E2633`）与磨砂暗色悬浮胶囊，消除黑白割裂；右侧顶部固定双层嵌入式工业仪表盒（渐变深炭灰外框 + 内凹 LED 屏 + 整数纯白／小数翠绿双色读数），中部采用蓝牌省份徽章一体车牌条并在未定位空闲态展示「场内待回磅车辆」快速点选队列或 3 步作业流程指引卡以消除大白洞，底部固定 44px 主操作栏。集中核对、运输资料、称重完成、人工补单、过磅单抽屉同步统一圆角与投影层次。[重设计规格](requirements/workbench-ui-redesign-spec.md) · [工单计划](requirements/workbench-ui-redesign-tickets.md)
+- 前端 `npm run lint`、`npm run build` 和核心称重 `npm run test:weighing` 通过。Playwright 回归通过 `npm run test:net-adjustment`、`npm run test:review-final`、`npm run test:weighing:agent-capture`、`npm run test:weighing:camera-live`、`npm run test:weighing:camera-multiview`、`npm run test:weighing:lookup`、`npm run test:weighing:ticket-drawer`、`npm run test:manual-supplement`、`node tests/plate-candidates.mjs`。
+- 使用 Playwright MCP 在 1920×1080、1366×768、1280×720、1024×768、390×844 检查主工作台、两步集中核对、抓拍预览、运输资料、首磅完成、人工补单、过磅单抽屉和临时主体登记。页面与弹窗无横向溢出，窄屏正文和抽屉表格按需滚动，关键操作可达。
+- 浏览器回归使用模拟接口与视频源。未执行真实厂内实车称重、真实仪表、真实 RTSP／MediaMTX、真实云端和实物纸票打印验收。
+
 ## 2026-11-25 厂内车牌识别候选接口
 
 - `GET /api/weighing/plate-candidates?scale={code}` 开放匿名只读访问，保留本厂启用地磅校验、有效期、候选来源和增量游标。人工确认和摄像头管理继续要求业务授权。[厂内车牌识别候选读取契约](requirements/local-device-maintenance-spec.md#65-厂内车牌识别候选读取契约)

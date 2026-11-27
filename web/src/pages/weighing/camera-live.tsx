@@ -58,7 +58,7 @@ export function CameraLive({ url, title, message: configuredMessage }: { url: st
     <div ref={frameRef} className={`workbench-camera-feed camera-live-feed relative${mode !== 'normal' ? ' is-expanded' : ''}${mode === 'window' ? ' is-window-expanded' : ''}`} role={mode !== 'normal' ? 'dialog' : undefined} aria-modal={mode !== 'normal' ? true : undefined} aria-label={mode !== 'normal' ? `${title}实时画面` : undefined} data-camera-state={url ? status : 'unconfigured'}>
       <video ref={videoRef} autoPlay muted playsInline aria-label={`${title}实时视频`} className={live ? '' : 'invisible'} />
       <span role="status" className="camera-live-status"><span className={`connection-dot ${live ? 'is-online' : ''}`} />{message} · {title}</span>
-      {!live && <div className="camera-placeholder camera-live-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>{message}</strong><span>实时预览不代替本次称重抓拍。</span>{url && status !== 'unsupported' && <Button variant="secondary" size="sm" onClick={reconnect}>重新连接</Button>}</div>}
+      {!live && <div className="camera-placeholder camera-live-placeholder"><VideoOff className="h-8 w-8" aria-hidden /><strong>{message}</strong><span>实时预览不代替本次称重抓拍。</span>{url && status !== 'unsupported' && <Button variant="secondary" size="sm" onClick={reconnect}>重新连接</Button>}</div>}
       {mode === 'normal' ? <Button className="camera-live-enlarge" size="sm" variant="ghost" aria-label="全屏查看实时画面" disabled={!live} onClick={() => void enlarge()}><Maximize2 className="h-4 w-4" aria-hidden />全屏</Button> : <Button className="camera-live-exit" size="sm" variant="secondary" aria-label="退出实时画面全屏" onClick={() => void close()}><Minimize2 className="h-4 w-4" aria-hidden />退出全屏</Button>}
     </div>
   </>;

@@ -31,7 +31,11 @@ try {
         const after = url.searchParams.get('after');
         return ok({ items: after ? events.filter(e => e.id > Number(after)) : [], nextCursor: String(events.length), serverTime: new Date().toISOString() });
       }
-      if (url.pathname.endsWith('/tasks/active')) { lookupCount++; return ok(null); }
+      if (url.pathname.endsWith('/tasks/active')) {
+        if (url.searchParams.has('scale')) lookupCount++;
+        return ok(null);
+      }
+      if (url.pathname.endsWith('/trip-candidates')) return ok({ enabled: false, available: true, candidates: [] });
       if (url.pathname.includes('/session/')) return ok({ scaleCode: 'WB01', holderUserId: 1, clientId: 'test', generation: 1, sessionToken: 'test-token', expiresAt: new Date(Date.now() + 60_000).toISOString() });
       if (url.pathname.endsWith('/plate-confirmations')) { confirmed = route.request().postDataJSON(); return ok({ confirmationId: 77 }); }
       if (url.pathname.endsWith('/samples')) {
@@ -55,9 +59,13 @@ try {
     events = [...events, item(3, '晋A99999', '相机三')];
     await page.getByRole('button', { name: /晋A99999/ }).waitFor({ timeout: 6000 });
     assert.equal(await input.inputValue(), 'A12346', '人工输入不能被覆盖');
-    assert.equal(lookupCount, 0);
-    await page.getByRole('button', { name: '确认车辆' }).click();
-    await page.getByText('暂无历史任务，请选择物料和供收方。').waitFor();
+    assert.equal(lookupCount, 0, '预查不能代替确认车辆');
+    assert.equal(confirmed, undefined);
+    const confirmVehicle = page.getByRole('button', { name: '确认车辆' });
+    assert.match(await confirmVehicle.getAttribute('class'), /\bbg-primary-hover\b/);
+    await confirmVehicle.click();
+    await page.getByRole('tab', { name: '基本信息' }).waitFor();
+    assert.match(await confirmVehicle.getAttribute('class'), /\bbg-surface\b/);
     const inbound = page.getByRole('radio', { name: '入厂卸货（收粮）' });
     const outbound = page.getByRole('radio', { name: '出厂装货（拉酒糟）' });
     assert.equal(await inbound.isChecked(), true);
@@ -216,7 +224,7 @@ try {
   await savedDraft.getByRole('button', { name: /晋A11111/ }).waitFor();
   assert.equal(await savedDraft.getByLabel('车牌号码').inputValue(), '', '已有业务草稿不得自动套入候选');
   await savedDraft.close();
-  for (const [width, allowedShift] of [[1920, 40], [1366, 80]]) {
+  for (const width of [1920, 1366]) {
     const compact = await newPage({ viewport: { width, height: 768 } });
     compact.setDefaultTimeout(7000);
     let compactEvents = [];
@@ -232,7 +240,8 @@ try {
     });
     await compact.goto(`${base}/tests/plate-candidates.html?scale=WB01`);
     await delay(500);
-    const phaseTop = await compact.locator('.weighing-scale').evaluate(node => node.getBoundingClientRect().top);
+    const instrument = compact.locator('.weighing-scale');
+    const instrumentTop = await instrument.evaluate(node => node.getBoundingClientRect().top);
     const sameMoment = new Date();
     const candidate = (id, plate, cameras) => ({ id, plate, firstReceivedAt: sameMoment.toISOString(), lastReceivedAt: sameMoment.toISOString(), expiresAt: new Date(sameMoment.getTime() + 60_000).toISOString(), sourceEvents: cameras.map((name, index) => ({ eventRecordId: id + index, cameraId: index + 1, cameraName: name, receivedAt: sameMoment.toISOString(), recognizedAt: sameMoment.toISOString() })) });
     compactEvents = [candidate(1, '晋AB6P44', ['抓拍01', '抓拍01', '抓拍01'])];
@@ -241,14 +250,133 @@ try {
     assert.equal((await chip.innerText()).match(/抓拍01/g).length, 1, '同一相机只显示一次');
     assert.equal(await compact.locator('form .plate-candidates').count(), 1, '候选紧跟车牌输入');
     const chipTop = await chip.evaluate(node => node.getBoundingClientRect().top);
-    assert.ok(chipTop < phaseTop, '候选不能排到阶段状态之后');
-    const shiftedTop = await compact.locator('.weighing-scale').evaluate(node => node.getBoundingClientRect().top);
-    assert.ok(shiftedTop - phaseTop <= allowedShift, `候选把下方内容推移过多：${shiftedTop - phaseTop}`);
+    assert.ok(chipTop >= await instrument.evaluate(node => node.getBoundingClientRect().bottom), '候选位于仪表下方');
+    assert.equal(await instrument.evaluate(node => node.getBoundingClientRect().top), instrumentTop, '候选出现时仪表位置保持不变');
     compactEvents = [...compactEvents, candidate(10, '晋AB6P44', ['抓拍01'])];
     await delay(2500);
     assert.equal(await compact.getByRole('button', { name: /晋AB6P44/ }).count(), 1, '同一车牌重复批次只保留一项');
     assert.equal((await compact.getByRole('button', { name: /晋AB6P44/ }).innerText()).match(/抓拍01/g).length, 1, '合并后相机仍只显示一次');
     await compact.close();
   }
-  console.log('车牌候选工作台：双尺寸预填、冲突、人工输入、采样保护、下一辆水位、焦点和重连通过。');
+  {
+    const waiting = await newPage({ viewport: { width: 1366, height: 768 } });
+    waiting.setDefaultTimeout(7000);
+    const errors = [];
+    waiting.on('pageerror', error => errors.push(error.message));
+    const now = Date.now();
+    const hoursAgo = h => new Date(now - h * 60 * 60 * 1000).toISOString();
+    const makeTask = (id, plate, materialName, weight, at) => ({
+      id,
+      siteCode: 'F001',
+      scaleCode: 'WB01',
+      taskNo: `WB-20261127-${String(id).padStart(4, '0')}`,
+      version: 1,
+      status: 'awaiting_second',
+      firstWeight: String(weight),
+      createTime: at,
+      business: { direction: 'inbound', plate, materialId: 1, materialCode: 'M01', materialName, partyId: 1, partyCode: 'P01', partyName: '测试供货方', carrierId: null },
+      records: [{ id: id * 10, taskId: id, stage: 'first', kind: 'gross', weight: String(weight), capturedAt: at, confirmedAt: at, actorName: '操作员', replacesRecordId: null, retainedRecordId: null, reason: '', evidence: { source: 'server', images: [], captureRequired: false, imageStatus: 'disabled', at, weight: String(weight), plate }, plateEvidence: { source: 'manual', confirmedPlate: plate, at } }],
+    });
+    const remoteTasks = [
+      makeTask(11, '晋A10001', '高粱', 28.5, hoursAgo(1)),
+      makeTask(12, '晋A10002', '小麦', 26.2, hoursAgo(2)),
+      makeTask(13, '晋A10003', '豌豆', 24.8, hoursAgo(3)),
+      makeTask(14, '晋A10004', '大麦', 22.1, hoursAgo(4)),
+      makeTask(15, '晋A10005', '稻壳', 19.6, hoursAgo(5)),
+      makeTask(16, '晋A66666', '高粱（晚到回磅）', 31.4, hoursAgo(20)),
+      makeTask(17, '晋A90001', '已过期任务', 25.0, hoursAgo(25)),
+      makeTask(18, '晋A90002', '无时间任务', 20.0, ''),
+    ];
+    let waitingEvents = [];
+    let tasksPageSize = null;
+    let lookupCount = 0;
+    let confirmed;
+    await waiting.route('**/api/weighing/**', async route => {
+      const url = new URL(route.request().url());
+      const ok = data => route.fulfill({ json: { code: 200, data } });
+      if (url.pathname.endsWith('/tasks') && url.searchParams.get('status') === 'awaiting_second') {
+        tasksPageSize = url.searchParams.get('pageSize');
+        return ok({ records: remoteTasks, total: remoteTasks.length });
+      }
+      if (url.pathname.endsWith('/plate-candidates')) {
+        const after = url.searchParams.get('after');
+        return ok({ items: after ? waitingEvents.filter(e => e.id > Number(after)) : [], nextCursor: String(waitingEvents.length), serverTime: new Date().toISOString() });
+      }
+      if (url.pathname.endsWith('/tasks/active')) {
+        if (url.searchParams.has('scale')) lookupCount++;
+        return ok(url.searchParams.get('plate') === '晋A66666' ? remoteTasks[5] : null);
+      }
+      if (url.pathname.endsWith('/trip-candidates')) return ok({ enabled: false, available: true, candidates: [] });
+      if (url.pathname.includes('/trip-basis')) return ok({ bound: false });
+      if (url.pathname.includes('/trip-cloud-status')) return ok({ bound: false, available: true, unloaded: false });
+      if (url.pathname.includes('/session/')) return ok({ scaleCode: 'WB01', holderUserId: 1, clientId: 'test', generation: 1, sessionToken: 'test-token', expiresAt: new Date(Date.now() + 60_000).toISOString() });
+      if (url.pathname.endsWith('/plate-confirmations')) { confirmed = route.request().postDataJSON(); return ok({ confirmationId: 88 }); }
+      if (url.pathname.endsWith('/cameras')) return ok({ cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { whepBaseUrl: '', syncState: 'pending' } });
+      return ok({ records: [], total: 0 });
+    });
+    await waiting.goto(`${base}/tests/plate-candidates.html?scale=WB01`);
+    const queue = waiting.locator('.workbench-waiting-queue');
+    await queue.waitFor();
+    assert.equal(tasksPageSize, '100', '工作台待回磅列表应拉取足够大的一页');
+    assert.equal(await queue.locator('.workbench-waiting-window').innerText(), '24小时内');
+    assert.equal(await queue.locator('.workbench-waiting-count').innerText(), '6 辆', '超过 24 小时及非法时间的待回磅任务不计入总数');
+    assert.equal(await queue.getByText('晋A90001').count(), 0, '超过 24 小时的待回磅任务不展示');
+    assert.equal(await queue.getByText('晋A90002').count(), 0, '无合法时间的待回磅任务不展示');
+    assert.equal(await queue.locator('.workbench-waiting-item').count(), 5, '无命中时最多展示前 5 条');
+    assert.equal(await queue.locator('.workbench-waiting-item[data-recognized="true"]').count(), 0);
+    assert.equal(await queue.getByText('晋A66666').count(), 0, '未识别前第 6 条暂不在前 5 条内');
+    await waiting.getByLabel('车牌号码').fill('A00001');
+    const recognizedAt = new Date().toISOString();
+    waitingEvents = [{ id: 101, plate: '晋A66666', firstReceivedAt: recognizedAt, lastReceivedAt: recognizedAt, expiresAt: new Date(Date.now() + 60_000).toISOString(), sourceEvents: [{ eventRecordId: 101, cameraId: 1, cameraName: '入口相机', receivedAt: recognizedAt, recognizedAt }] }];
+    const highlighted = queue.locator('.workbench-waiting-item.is-recognized[data-recognized="true"]');
+    await highlighted.waitFor({ timeout: 6000 });
+    assert.equal(await highlighted.count(), 1);
+    const firstRow = queue.locator('.workbench-waiting-item').first();
+    assert.equal(await firstRow.getAttribute('data-recognized'), 'true', '相机识别命中的待回磅单子必须置顶到第一位');
+    assert.match(await firstRow.innerText(), /晋A66666/);
+    assert.match(await firstRow.innerText(), /相机已识别/);
+    await firstRow.click();
+    assert.equal(await waiting.getByLabel('车牌号码').inputValue(), 'A66666', '点击高亮待回磅行应填入对应车牌');
+    assert.equal(await waiting.evaluate(() => document.activeElement?.id), 'workbench-plate', '点击待回磅行后应聚焦车牌输入框');
+    assert.equal(lookupCount, 0, '点击高亮待回磅行不得绕过人工确认车辆');
+    assert.equal(confirmed, undefined, '点击高亮待回磅行不得自动提交确认');
+    await waiting.getByRole('button', { name: '确认车辆' }).click();
+    await waiting.getByText('首次称重依据').waitFor();
+    assert.equal(lookupCount, 1);
+    assert.equal(confirmed.confirmedPlate, '晋A66666');
+    assert.equal(confirmed.evidence.source, 'server', '点击高亮待回磅行后应保留摄像头识别来源');
+    assert.equal(confirmed.evidence.candidate, '晋A66666');
+    assert.equal(confirmed.evidence.corrected, false);
+    assert.deepEqual(confirmed.evidence.sourceEventRecordIds, [101]);
+    assert.deepEqual(errors, []);
+    await waiting.close();
+  }
+  {
+    const allExpired = await newPage({ viewport: { width: 1366, height: 768 } });
+    allExpired.setDefaultTimeout(7000);
+    const expiredAt = new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString();
+    await allExpired.route('**/api/weighing/**', async route => {
+      const url = new URL(route.request().url());
+      const ok = data => route.fulfill({ json: { code: 200, data } });
+      if (url.pathname.endsWith('/tasks') && url.searchParams.get('status') === 'awaiting_second') {
+        return ok({
+          records: [{
+            id: 99, siteCode: 'F001', scaleCode: 'WB01', taskNo: 'WB-OLD-0099', version: 1, status: 'awaiting_second', firstWeight: '20', createTime: expiredAt,
+            business: { direction: 'inbound', plate: '晋A99900', materialId: 1, materialCode: 'M01', materialName: '旧单', partyId: 1, partyCode: 'P01', partyName: '测试', carrierId: null },
+            records: [],
+          }],
+          total: 1,
+        });
+      }
+      if (url.pathname.endsWith('/plate-candidates')) return ok({ items: [], nextCursor: '0', serverTime: new Date().toISOString() });
+      if (url.pathname.endsWith('/cameras')) return ok({ cameras: [], configVersion: 1, captureTimeoutMs: 6000, video: { whepBaseUrl: '', syncState: 'pending' } });
+      return ok({ records: [], total: 0 });
+    });
+    await allExpired.goto(`${base}/tests/plate-candidates.html?scale=WB01`);
+    await delay(500);
+    assert.equal(await allExpired.locator('.workbench-waiting-queue').count(), 0, '24小时内无有效待回磅单子时不展示队列');
+    assert.equal(await allExpired.locator('.workbench-idle-guide').count(), 1, '24小时内为 0 辆时展示 3 步作业指引卡');
+    await allExpired.close();
+  }
+  console.log('车牌候选工作台：双尺寸预填、冲突、人工输入、采样保护、下一辆水位、焦点、重连及待回磅24小时高亮置顶通过。');
 } finally { clearTimeout(deadline); await browser?.close(); vite.kill('SIGTERM'); }

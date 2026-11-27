@@ -13,6 +13,7 @@ import { isApiError } from '@/lib/api-error';
 import { plateError, provinces } from '@/lib/weighing/plate';
 import { useWeighingStore } from '@/store/weighing-store';
 import { formatWeight, resolveNetAdjustments, weightInMilliTonnes } from '@/lib/weighing/weights';
+import { beijingTime } from '@/lib/weighing/query';
 import { emptyTaskInput, supplementReasonLabels, type NetAdjustmentsInput, type TaskInput } from '@/types/weighing';
 import { BusinessDirectionControl, BusinessRequiredFields } from './shared';
 import { NetAdjustmentFields } from './deduction-fields';
@@ -122,36 +123,46 @@ export function ManualSupplementDialog({ open, onClose, userId, allowAdjust }: {
     } catch (failure) { setError(failure instanceof Error ? failure.message : '查询失败'); }
     finally { setBusy(false); }
   }
-  if (result) return <DetailDialog open={open} title="人工补单已出单" contentClassName="workbench-modal max-w-[520px]" trapFocus onCancel={onClose}>
-    <div className="space-y-3">
-      {ticketId && <Link target="weighbridge-management" className="break-all font-semibold text-primary underline" to={`/weighing/tickets/${ticketId}`}>{ticket?.ticketNo || '查看单据'}</Link>}
-      {ticket && <><p>最终净重 <strong>{formatWeight(ticket.net)}</strong></p><TicketPrintActions ticketId={ticket.id} /></>}
-      {ticketError && <div className="space-y-2"><p role="alert" className="text-sm text-error">{ticketError}</p>{ticketId && <Button onClick={() => void readTicket(ticketId)}>重新查询单据</Button>}</div>}
+  if (result) return <DetailDialog open={open} title="人工补单已出单" contentClassName="workbench-modal workbench-completion-dialog max-w-[520px]" trapFocus onCancel={onClose}>
+    <div className="workbench-completion-summary">
+      <div><p className="review-fact-label">车牌</p><p className="workbench-completion-plate">{ticket?.plate || business.plate || '—'}</p></div>
+      <div><p className="review-fact-label">最终净重</p><p className="workbench-completion-weight">{ticket ? formatWeight(ticket.net) : '—'}</p></div>
     </div>
+    <dl className="workbench-completion-details">
+      {ticketId && <div><dt>单据号</dt><dd><Link target="weighbridge-management" className="text-primary hover:underline" to={`/weighing/tickets/${ticketId}`}>{ticket?.ticketNo || '查看单据'}</Link></dd></div>}
+      {ticket && <div><dt>出单时间</dt><dd>{beijingTime(ticket.issuedAt)}</dd></div>}
+    </dl>
+    {ticket && <div className="workbench-completion-print"><TicketPrintActions ticketId={ticket.id} /></div>}
+    {ticketError && <div className="mt-3 space-y-2"><p role="alert" className="text-sm text-error">{ticketError}</p>{ticketId && <Button onClick={() => void readTicket(ticketId)}>重新查询单据</Button>}</div>}
   </DetailDialog>;
 
-  return <FormDialog open={open} title="人工补单" contentClassName="workbench-modal" onCancel={onClose} onSubmit={submit}
+  return <FormDialog open={open} title="人工补单" contentClassName="workbench-modal manual-supplement-dialog workbench-form-labels max-w-[700px]" onCancel={onClose} onSubmit={submit}
     submitText="确认出单" submitDisabled={busy || !!pending} loading={busy}>
     <div className="space-y-4">
       {pending && <div className="space-y-2 rounded-control border border-warning p-3"><p>上次提交结果待核实，请先查询原请求。</p><div className="flex flex-wrap gap-2"><Button onClick={() => void check()} disabled={busy}>查询原请求</Button><Button onClick={() => void send(pending)} disabled={busy || !checked}>重试原请求</Button></div></div>}
       <fieldset disabled={busy || !!pending} className="space-y-4">
-        <div className="flex items-center gap-1"><h3 className="text-sm font-semibold">运输资料</h3><HelpHint label="人工补单适用规则">两次称重均已完成且系统没有称重记录时，核对现场记录后补单。</HelpHint></div>
-        <BusinessDirectionControl value={business} update={update} showHelp={false} />
-        <BusinessRequiredFields value={business} update={update} compact hidePlate={false} plateValidation={plateValidation} />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label={`首磅${inbound ? '毛重' : '皮重'}（吨）`} htmlFor="manual-first-weight" required><Input id="manual-first-weight" type="number" min="0.001" step="0.001" value={first} onChange={e => { setFirst(e.target.value); setWeightError(''); }} /></Field>
-          <Field label={`回磅${inbound ? '皮重' : '毛重'}（吨）`} htmlFor="manual-second-weight" required><Input id="manual-second-weight" type="number" min="0.001" step="0.001" value={second} onChange={e => { setSecond(e.target.value); setWeightError(''); }} /></Field>
-        </div>
-        {weightError && <p role="alert" className="text-sm text-error">{weightError}</p>}
-        {basis && allowAdjust && <details><summary className="cursor-pointer text-sm font-medium">有扣减时填写</summary><div className="mt-2"><NetAdjustmentFields basis={basis} value={adjustments} onChange={setAdjustments} onValidationChange={setAdjustmentError} /></div></details>}
-        <Field label="补单原因" htmlFor="manual-supplement-reason" required><Select id="manual-supplement-reason" value={reason} onChange={e => setReason(e.target.value)}><option value="">请选择</option>{Object.entries(supplementReasonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></Field>
-        <section className="space-y-3 rounded-control border border-border p-3" aria-label="出单核对">
-          <div className="grid gap-3 sm:grid-cols-2">
+        <section className="space-y-2">
+          <div className="flex items-center gap-1"><h3 className="workbench-dialog-section-title">运输资料</h3><HelpHint label="人工补单适用规则">两次称重均已完成且系统没有称重记录时，核对现场记录后补单。</HelpHint></div>
+          <div className="manual-supplement-grid">
+            <BusinessDirectionControl value={business} update={update} showHelp={false} />
+            <BusinessRequiredFields value={business} update={update} compact hidePlate={false} plateValidation={plateValidation} />
+          </div>
+        </section>
+        <section className="space-y-3 border-t border-border pt-3" aria-label="出单核对">
+          <h3 className="workbench-dialog-section-title">重量与时间</h3>
+          <div className="manual-supplement-grid">
+            <Field label={`首磅${inbound ? '毛重' : '皮重'}（吨）`} htmlFor="manual-first-weight" required><Input id="manual-first-weight" type="number" min="0.001" step="0.001" value={first} onChange={e => { setFirst(e.target.value); setWeightError(''); }} /></Field>
             <Field label="首磅实际时间（北京时间）" htmlFor="manual-first-at" required><Input id="manual-first-at" type="datetime-local" value={firstAt} onChange={e => { setFirstAt(e.target.value); setTimeError(''); }} /></Field>
+            <Field label={`回磅${inbound ? '皮重' : '毛重'}（吨）`} htmlFor="manual-second-weight" required><Input id="manual-second-weight" type="number" min="0.001" step="0.001" value={second} onChange={e => { setSecond(e.target.value); setWeightError(''); }} /></Field>
             <Field label="回磅实际时间（北京时间）" htmlFor="manual-second-at" required><Input id="manual-second-at" type="datetime-local" value={secondAt} onChange={e => { setSecondAt(e.target.value); setTimeError(''); }} /></Field>
           </div>
+          {weightError && <p role="alert" className="text-sm text-error">{weightError}</p>}
           {timeError && <p role="alert" className="text-sm text-error">{timeError}</p>}
-          <p className="text-sm">出单净重 <strong className="ml-2 text-xl tabular-nums">{finalNet === undefined ? '—' : formatWeight(finalNet)}</strong></p>
+          <div className="space-y-3 border-t border-border pt-3">
+            {basis && allowAdjust && <details><summary className="workbench-dialog-section-title cursor-pointer">有扣减时填写</summary><div className="mt-2"><NetAdjustmentFields basis={basis} value={adjustments} onChange={setAdjustments} onValidationChange={setAdjustmentError} showWeightSummary={false} /></div></details>}
+            <Field label="补单原因" htmlFor="manual-supplement-reason" required><Select id="manual-supplement-reason" value={reason} onChange={e => setReason(e.target.value)}><option value="">请选择</option>{Object.entries(supplementReasonLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></Field>
+            <p className="manual-supplement-total"><span className="review-fact-label">出单净重</span><strong>{finalNet === undefined ? '—' : formatWeight(finalNet)}</strong></p>
+          </div>
         </section>
       </fieldset>
       {error && <p role="alert" className="text-sm text-error">{error}</p>}

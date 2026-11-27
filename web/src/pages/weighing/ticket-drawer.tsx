@@ -124,7 +124,7 @@ export function TicketDrawer({ siteName, onClose }: TicketDrawerProps) {
     <DialogOverlay />
     <DialogContent className="ticket-drawer">
       <DialogHeader className="ticket-drawer-header">
-        <DialogTitle className="flex items-center gap-2 text-lg"><FileText className="h-4 w-4" aria-hidden />过磅单列表</DialogTitle>
+        <DialogTitle className="flex items-center gap-2"><FileText className="h-4 w-4" aria-hidden />过磅单列表</DialogTitle>
         <DialogClose aria-label="关闭过磅单列表"><X className="h-4 w-4" aria-hidden /></DialogClose>
       </DialogHeader>
 

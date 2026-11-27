@@ -208,11 +208,11 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
   const captureIssue = !!capture && (failureCount > 0 || !!capture.imageError || capture.imageStatus === 'capture_failed' || capture.imageStatus === 'upload_failed' || imageCount === 0);
   const captureStatus = !capture ? '等待采集' : imageCount === 0 ? '本次无图' : captureIssue ? `已取得 ${imageCount} 张 · 抓拍不完整` : `已取得 ${imageCount} 张`;
 
-  return <ContentCard className="weighing-camera shadow-none" bodyClassName="p-0">
-    <div className="workbench-camera-toolbar flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-      <div className="flex items-center gap-2"><h2 className="flex items-center gap-2 text-base font-semibold"><Camera className="h-4 w-4 text-text-tertiary" aria-hidden />现场画面</h2>{visibleCameras.length > 0 && <span className="camera-source-label">实时预览</span>}<HelpHint label="现场画面说明">实时预览供现场核对。采集重量时单独抓拍，确认后保存当次图片。</HelpHint></div>
-      <div className="camera-layout-options flex items-center gap-1" role="group" aria-label="摄像头画面大小">
-        {([['standard', '标准'], ['large', '视频优先']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} className={size === value ? 'bg-neutral-background text-primary' : ''} onClick={() => onSizeChange(value)}>{label}</Button>)}
+  return <ContentCard className="weighing-camera" bodyClassName="p-0">
+    <div className="workbench-camera-toolbar flex flex-wrap items-center justify-between gap-2 px-3.5 py-1.5">
+      <div className="flex items-center gap-2"><h2 className="flex items-center gap-2 text-[15px] font-semibold text-text-primary"><Camera className="h-4 w-4 text-primary" aria-hidden />现场画面</h2>{visibleCameras.length > 0 && <span className="camera-source-label">实时预览</span>}<HelpHint label="现场画面说明">实时预览供现场核对。采集重量时单独抓拍，确认后保存当次图片。</HelpHint></div>
+      <div className="camera-layout-options flex items-center" role="group" aria-label="摄像头画面大小">
+        {([['standard', '标准'], ['large', '视频优先']] as const).map(([value, label]) => <Button key={value} size="sm" variant="ghost" aria-pressed={size === value} onClick={() => onSizeChange(value)}>{label}</Button>)}
       </div>
     </div>
     {(cameras === null || cameras.length === 0 || cameras.filter(camera => camera.enabled).length > 3) && <div className="workbench-camera-views" role="group" aria-label="摄像头">
@@ -221,17 +221,20 @@ export function DeviceCameraPanel({ scaleCode, scenePlate, capture, saved = fals
       {cameras?.length === 0 && !cameraError && <span className="text-xs text-text-secondary">尚未配置摄像头</span>}
     </div>}
     {cameraError && <p role="alert" className="px-4 py-2 text-sm text-warning">{cameraError}</p>}
-    {visibleCameras.length > 0 ? <div className="workbench-camera-grid" data-count={visibleCameras.length}>
-      {visibleCameras.map(camera => <CameraTile key={camera.id} camera={camera} active={camera.id === mainId} onSelect={() => chooseCamera(camera.id)} />)}
-    </div> : <div className="workbench-camera-feed relative"><span className="camera-placeholder"><VideoOff className="h-12 w-12" aria-hidden /><strong>{cameraError ? '无法读取摄像头预览' : '尚无启用的摄像头'}</strong></span></div>}
-    <section className="workbench-camera-evidence" aria-label={saved ? '已保存抓拍' : '本次抓拍'}>
+    <div className="workbench-camera-stage">
+      {visibleCameras.length > 0 ? <div className="workbench-camera-grid" data-count={visibleCameras.length}>
+        {visibleCameras.map(camera => <CameraTile key={camera.id} camera={camera} active={camera.id === mainId} onSelect={() => chooseCamera(camera.id)} />)}
+      </div> : <div className="workbench-camera-feed relative"><span className="camera-placeholder"><VideoOff className="h-8 w-8" aria-hidden /><strong>{cameraError ? '无法读取摄像头预览' : '尚无启用的摄像头'}</strong></span></div>}
+    </div>
+    <section className={`workbench-camera-evidence${capture ? '' : ' is-waiting'}`} aria-label={saved ? '已保存抓拍' : '本次抓拍'}>
       <header className="workbench-capture-heading">
         <h3>{saved ? '已保存抓拍' : '本次抓拍'}</h3>
         {captureRequired != null && <span className={`workbench-capture-policy${captureRequired ? '' : ' is-optional'}`}>{captureRequired ? '强制抓拍' : '非强制抓拍'}</span>}
+        {!capture && scenePlate && <div className="workbench-camera-plate"><PlateCloseup plate={scenePlate} /></div>}
         <span role="status" className={`workbench-capture-status${capture ? captureIssue ? ' text-warning' : ' text-success' : ''}`}>{captureStatus}</span>
       </header>
       {capture ? <CapturePhoto key={capture.id} capture={capture} compact /> : null}
-      {scenePlate && <div className="workbench-camera-plate"><PlateCloseup plate={scenePlate} /></div>}
+      {capture && scenePlate && <div className="workbench-camera-plate"><PlateCloseup plate={scenePlate} /></div>}
     </section>
   </ContentCard>;
 }

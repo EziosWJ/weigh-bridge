@@ -122,8 +122,12 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.camera-live-feed[data-camera-state="live"]').length === 3);
   assert.equal(await page.evaluate(() => window.mediaSessions.size), 3);
   const main = await page.locator('.workbench-camera-tile.is-main').boundingBox();
-  const small = await page.locator('.workbench-camera-tile:not(.is-main)').first().boundingBox();
-  assert.ok(main.width > small.width && main.height > small.height && main.y > small.y, '两幅小画面位于主画面上方');
+  const smallTiles = await page.locator('.workbench-camera-tile:not(.is-main)').all();
+  assert.equal(smallTiles.length, 2);
+  for (const tile of smallTiles) {
+    const small = await tile.boundingBox();
+    assert.ok(main.width > small.width && main.height > small.height && main.y < small.y, '两幅小画面位于主画面下方');
+  }
   const before = posts;
   await page.getByRole('button', { name: '放大 出口' }).click();
   assert.equal(await page.locator('.workbench-camera-tile.is-main video').getAttribute('aria-label'), '出口实时视频');

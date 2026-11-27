@@ -27,11 +27,15 @@ try {
   }
   assert.equal(await dialog.getByText('物料及规格／编码', { exact: true }).count(), 0, '物料栏不再显示规格与编码');
   assert.ok(await dialog.getByText('物料', { exact: true }).isVisible());
-  const factFontSizes = await dialog.locator('.review-facts .review-fact-value').evaluateAll(nodes => nodes.map(node => parseFloat(getComputedStyle(node).fontSize)));
-  assert.ok(factFontSizes.length >= 4, '业务核对应展示全部核对项');
-  assert.ok(factFontSizes.every(size => size >= 22), `业务核对各项应与车辆重量同量级放大：${factFontSizes.join('/')}`);
-  const factBoxes = await dialog.locator('.review-facts .review-fact').evaluateAll(nodes => nodes.map(node => ({ border: getComputedStyle(node).borderTopWidth, background: getComputedStyle(node).backgroundColor })));
-  assert.ok(factBoxes.every(box => parseFloat(box.border) > 0 && box.background !== 'rgba(0, 0, 0, 0)'), '业务核对各格应有独立边框与底色');
+  const facts = await dialog.locator('.review-facts .review-fact-value').evaluateAll(nodes => nodes.map(node => {
+    const style = getComputedStyle(node);
+    return { size: parseFloat(style.fontSize), lineHeight: parseFloat(style.lineHeight), weight: Number(style.fontWeight) };
+  }));
+  assert.ok(facts.length >= 4, '业务核对应展示全部核对项');
+  assert.ok(facts.every(({ size, lineHeight, weight }) => size >= 14 && size <= 16 && lineHeight >= size * 1.4 && weight === 600), '业务核对值应采用紧凑字号及舒适行高');
+  const summaryPlate = await dialog.locator('.review-plate').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  const summaryWeight = await dialog.locator('.review-weight').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  assert.ok(summaryPlate >= 20 && summaryWeight >= 26, '首屏应突出当前车牌和采集重量');
   assert.equal(await dialog.locator('.review-summary').getByText(/重量稳定|张抓拍|入厂卸货|回磅/).count(), 0);
   await dialog.getByRole('button', { name: '称重确认说明' }).focus();
   assert.ok(await page.getByRole('tooltip').filter({ hasText: '确认车辆完全上磅' }).isVisible());
@@ -40,29 +44,33 @@ try {
   await businessHint.hover();
   assert.ok(await page.getByRole('tooltip').filter({ hasText: '请与现场车辆核对' }).isVisible());
   await page.mouse.move(0, 0);
-  const firstPhoto = await dialog.getByRole('button', { name: '放大抓拍 入口' }).boundingBox();
+  const photos = await dialog.getByRole('group', { name: '本次抓拍图片' }).getByRole('img').all();
+  assert.ok(photos.length > 0);
   const firstFooter = await dialog.locator('.weighing-review-footer').boundingBox();
+  for (const photo of photos) {
+    const box = await photo.boundingBox();
+    assert.ok(box && box.height >= 140 && box.height <= 160 && box.y >= 0 && box.y + box.height <= firstFooter.y,
+      '1366×768 首屏应在固定底栏上方完整显示所有抓拍图片');
+  }
   await page.screenshot({ path: '/tmp/weighbridge-review-first.png' });
-  assert.ok(firstPhoto.y + firstPhoto.height <= firstFooter.y, '桌面首屏应完整显示抓拍图片');
   await dialog.getByRole('button', { name: '放大抓拍 入口' }).click();
   await page.getByRole('dialog', { name: '抓拍图片预览' }).waitFor();
   await page.keyboard.press('Escape');
   await page.getByRole('dialog', { name: '抓拍图片预览' }).waitFor({ state: 'hidden' });
   for (const width of [1024, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 768 });
-    assert.equal(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth), true, `${width}px 核对窗口不应横向溢出`);
+    assert.equal(await dialog.evaluate(node => [node, node.querySelector('.weighing-review-body')].every(area => area.scrollWidth <= area.clientWidth)), true, `${width}px 核对窗口不应横向溢出`);
     const next = await dialog.getByRole('button', { name: '下一步：核对最终重量' }).boundingBox();
     assert.ok(next.y >= 0 && next.y + next.height <= (width === 390 ? 844 : 768), `${width}px 下一步按钮应在视口内`);
   }
   await page.setViewportSize({ width: 1366, height: 768 });
   await dialog.getByRole('button', { name: '下一步：核对最终重量' }).click();
-  assert.equal(await dialog.locator('.review-compact-summary').count(), 0, '回磅第二步不再单独占一行车号');
   assert.equal(await dialog.locator('.review-hero').count(), 0);
   assert.equal(await dialog.getByText(/第 2 步|可扣减/).count(), 0, '步骤行与净重调整标题行应简化');
-  const finalIdentity = await dialog.locator('.review-final-step .review-facts').innerText();
+  const finalIdentity = await dialog.locator('.review-final-context').innerText();
   for (const text of ['当前车辆', '晋AB6P44', '入厂卸货', '物料', '木片 · 散装', '供货方', '王坚']) assert.ok(finalIdentity.includes(text), `第二步应展示 ${text}`);
-  const plateSize = await dialog.locator('.review-final-step .review-facts .review-fact-value').first().evaluate(node => parseFloat(getComputedStyle(node).fontSize));
-  assert.ok(plateSize >= 28, `第二步车号应与大格子同级：${plateSize}px`);
+  const plateSize = await dialog.locator('.review-context-plate').evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  assert.ok(plateSize >= 20, `第二步上下文应突出车牌：${plateSize}px`);
   await dialog.locator('#net-adjustment-category-0').selectOption('WATER');
   await dialog.getByText('按比例', { exact: true }).click();
   assert.equal(await dialog.getByRole('radio', { name: '按比例' }).isChecked(), true);
@@ -94,14 +102,21 @@ try {
   assert.ok(await closeConfirm.isVisible());
   await closeConfirm.getByRole('button', { name: '返回修改' }).click();
   assert.equal(await dialog.locator('#net-adjustment-rate-0').inputValue(), '5');
-  await page.setViewportSize({ width: 1920, height: 1080 });
-  const result = await dialog.getByText('15.973 吨', { exact: true }).boundingBox();
-  const footer = await dialog.locator('.weighing-review-footer').boundingBox();
-  assert.ok(result.y + result.height <= footer.y, '1920×1080 下结果应显示在固定底栏上方');
+  const finalWeight = dialog.getByText('15.973 吨', { exact: true });
+  const finalSize = await finalWeight.evaluate(node => parseFloat(getComputedStyle(node).fontSize));
+  assert.ok(finalSize >= 26, '应突出最终出单净重');
+  for (const viewport of [{ width: 1366, height: 768 }, { width: 1920, height: 1080 }]) {
+    await page.setViewportSize(viewport);
+    const result = await finalWeight.boundingBox();
+    const footer = await dialog.locator('.weighing-review-footer').boundingBox();
+    const body = await dialog.locator('.weighing-review-body').boundingBox();
+    assert.ok(result && result.y >= body.y && result.y + result.height <= footer.y,
+      `${viewport.width}×${viewport.height} 首屏应在固定底栏上方显示最终出单净重`);
+  }
   await page.screenshot({ path: '/tmp/weighbridge-review-final.png' });
   for (const width of [1366, 1024, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 768 });
-    assert.equal(await dialog.evaluate(node => node.scrollWidth <= node.clientWidth), true, `${width}px 弹窗不应横向溢出`);
+    assert.equal(await dialog.evaluate(node => [node, node.querySelector('.weighing-review-body')].every(area => area.scrollWidth <= area.clientWidth)), true, `${width}px 弹窗不应横向溢出`);
     assert.equal(await dialog.getByRole('button', { name: '确认回磅并出单' }).isEnabled(), true);
     const button = await dialog.getByRole('button', { name: '确认回磅并出单' }).boundingBox();
     assert.ok(button.y >= 0 && button.y + button.height <= (width === 390 ? 844 : 768), `${width}px 确认按钮应在视口内`);
