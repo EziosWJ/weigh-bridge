@@ -16,7 +16,7 @@ const (
 
 // ScanFunc processes one validated mobile QR through the normal factory
 // weighing workflow. The handler supplies a system audit identity.
-type ScanFunc func(ctx context.Context, code, source, device string) (weighing.MobileHandoffResult, error)
+type ScanFunc func(ctx context.Context, code, source, device string) (any, error)
 
 type Service struct {
 	repo *Repository
@@ -68,9 +68,9 @@ func (s *Service) Snapshot(ctx context.Context) (Snapshot, error) {
 	return snapshot, nil
 }
 
-func (s *Service) Scan(ctx context.Context, code, source, device string) (weighing.MobileHandoffResult, error) {
+func (s *Service) Scan(ctx context.Context, code, source, device string) (any, error) {
 	if s.scan == nil {
-		return weighing.MobileHandoffResult{}, weighing.ErrForbidden
+		return nil, weighing.ErrForbidden
 	}
 	if source == "" {
 		source = SourceSerialAgent

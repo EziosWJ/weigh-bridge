@@ -447,3 +447,19 @@ func (r *Repository) Tickets(ctx context.Context, q PageQuery) (Page[TicketView]
 	}
 	return result, err
 }
+
+func (r *Repository) FindTicketByNo(ctx context.Context, ticketNo string) (*Ticket, error) {
+	ticketNo = strings.TrimSpace(ticketNo)
+	if ticketNo == "" {
+		return nil, ErrInvalid
+	}
+	var row Ticket
+	result := r.db.WithContext(ctx).Where("ticket_no=?", ticketNo).Limit(1).Find(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, ErrNotFound
+	}
+	return &row, nil
+}

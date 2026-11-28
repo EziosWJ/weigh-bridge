@@ -3,15 +3,40 @@ import { workflowApi } from '@/api/weighing-workflow';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/common/field';
 import { Input } from '@/components/ui/input';
+import { beijingTime } from '@/lib/weighing/query';
 import { useWeighingStore } from '@/store/weighing-store';
 import { printStatusLabels } from '@/types/weighing';
 
-type Attempt = { id: number; status: string };
+type Attempt = {
+  id: number;
+  attemptNo: number;
+  intent: string;
+  status: string;
+  source: string;
+  actorName: string;
+  reason: string;
+  scanVerified: boolean;
+  initiatedAt: string;
+  resolutionSource: string;
+  closeReason: string;
+};
 
 async function latestAttempt(ticketId: string) {
   const attempts = await workflowApi.get<Attempt[]>(`/tickets/${ticketId}/print-attempts`);
   const current = useWeighingStore.getState().data.tickets.find(item => item.id === ticketId);
   return attempts.find(attempt => String(attempt.id) === current?.lastPrintAttemptId);
+}
+
+/** 厂端操作员可据此识别手机端发起人、补打原因和扫码校验结果。 */
+function AttemptOrigin({ attempt }: { attempt: Attempt }) {
+  const source = attempt.source === 'mobile' ? '手机端' : '厂端';
+  const intent = attempt.intent === 'reprint' ? '补打' : '正常打印';
+  const actor = attempt.actorName ? ` · ${attempt.source === 'mobile' ? '司机' : '操作员'} ${attempt.actorName}` : '';
+  const scanned = attempt.scanVerified ? ' · 已扫码' : '';
+  const reason = attempt.reason ? ` · 原因：${attempt.reason}` : '';
+  return <p className="text-sm text-text-secondary">
+    {source}{intent}{scanned}{actor}{reason} · {beijingTime(attempt.initiatedAt)}
+  </p>;
 }
 
 /** 状态查询只读，补打由操作员单独发起。 */
@@ -34,6 +59,7 @@ function TicketPrintControls({ ticketId, autoPrint }: { ticketId: string; autoPr
   const [submittedAttempt, setSubmittedAttempt] = useState<string>();
   const [checkedAttempt, setCheckedAttempt] = useState<string>();
   const [verified, setVerified] = useState(false);
+  const [lastAttempt, setLastAttempt] = useState<Attempt>();
   const pending = !!data.pending;
   const printPending = data.pending?.operation === 'print' && data.pending.taskId === ticket?.taskId &&
     (!data.pending.ticketId || data.pending.ticketId === ticketId);
@@ -42,6 +68,15 @@ function TicketPrintControls({ ticketId, autoPrint }: { ticketId: string; autoPr
   const submitted = unknown && !!attemptId && submittedAttempt === attemptId;
   const paperCheckReady = unknown && !!attemptId && checkedAttempt === attemptId;
   const canOperate = canPrint && ticket?.status === 'valid';
+
+  useEffect(() => {
+    if (!ticketId || !attemptId) { setLastAttempt(undefined); return; }
+    let active = true;
+    workflowApi.get<Attempt[]>(`/tickets/${ticketId}/print-attempts`)
+      .then(attempts => { if (active) setLastAttempt(attempts.find(item => String(item.id) === attemptId)); })
+      .catch(() => { if (active) setLastAttempt(undefined); });
+    return () => { active = false; };
+  }, [ticketId, attemptId, ticket?.printStatus]);
 
   useEffect(() => {
     if (!canOperate || !unknown || open || pending || printing) return;
@@ -128,6 +163,7 @@ function TicketPrintControls({ ticketId, autoPrint }: { ticketId: string; autoPr
         }}>{label}</Button>}
       <span role="status" className="text-sm text-text-secondary">{printing ? '正在提交打印任务' : checking ? '正在查询打印结果' : status}{ticket.reprintCount > 0 && ` · 补打 ${ticket.reprintCount} 次`}</span>
     </div>
+    {lastAttempt && <AttemptOrigin attempt={lastAttempt} />}
     {open && canOperate && <div id={panelId} className="space-y-2 rounded-control border border-border p-3">
       {!!paperCheckReady && <p className="text-sm text-warning">请核对现场纸票与单号。补打可能重复出纸。</p>}
       {paperCheckReady && canOfferReprint && <label className="flex items-center gap-2 text-sm">

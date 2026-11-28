@@ -19,6 +19,7 @@ type Service struct {
 	maintenanceEnabled     bool
 	printMu                sync.Mutex
 	masterSyncMu           sync.Mutex
+	mobilePrintMu          sync.Mutex
 	ticketSyncMu           sync.Mutex
 	taskSyncMu             sync.Mutex
 	temporaryPartySyncMu   sync.Mutex

@@ -17,18 +17,42 @@ type PrintAttempt struct {
 	ResolutionSource string     `json:"resolutionSource"`
 	ClosedAt         *time.Time `json:"closedAt"`
 	CloseReason      string     `json:"closeReason"`
+	Source           string     `json:"source"`
+	ActorName        string     `json:"actorName"`
+	ScanVerified     bool       `json:"scanVerified"`
+	ScanTokenHash    string     `json:"-"`
+	CloudRequestID   string     `json:"cloudRequestId,omitempty"`
 }
 
 func (PrintAttempt) TableName() string { return "wb_print_attempt" }
 
 type PrintInput struct {
-	RequestID    string `json:"requestId"`
-	Intent       string `json:"intent"`
-	Reason       string `json:"reason"`
-	AllowReprint bool   `json:"-"`
+	RequestID      string `json:"requestId"`
+	Intent         string `json:"intent"`
+	Reason         string `json:"reason"`
+	AllowReprint   bool   `json:"-"`
+	Source         string `json:"-"`
+	ActorName      string `json:"-"`
+	ScanVerified   bool   `json:"-"`
+	ScanTokenHash  string `json:"-"`
+	CloudRequestID string `json:"-"`
 }
 type PrintResultInput struct {
-	RequestID string `json:"requestId"`
-	Status    string `json:"status"`
-	Reason    string `json:"reason"`
+	RequestID        string `json:"requestId"`
+	Status           string `json:"status"`
+	Reason           string `json:"reason"`
+	ResolutionSource string `json:"-"`
+	ActorName        string `json:"-"`
 }
+
+// PrintSyncOutbox is a per-attempt dirty marker. Any create/result/resolve
+// reopens it so the factory eventually pushes the latest state to the cloud.
+type PrintSyncOutbox struct {
+	AttemptID int64 `gorm:"primaryKey"`
+	SyncedAt  *time.Time
+	Attempts  int
+	LastError string
+	UpdatedAt time.Time
+}
+
+func (PrintSyncOutbox) TableName() string { return "wb_print_sync_outbox" }

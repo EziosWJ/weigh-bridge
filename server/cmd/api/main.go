@@ -224,13 +224,13 @@ func main() {
 	}
 	serialScanner := serialscanner.NewService(
 		serialscanner.NewRepository(database.GORM),
-		func(ctx context.Context, code, source, device string) (weighing.MobileHandoffResult, error) {
+		func(ctx context.Context, code, source, device string) (any, error) {
 			event := audit.Event{Metadata: audit.Metadata{
 				ActorID: 0, RequestID: fmt.Sprintf("serial-%d", time.Now().UnixNano()),
 				ClientIP: "unix", UserAgent: "serial-agent", RequestMethod: http.MethodPost,
 				RequestURL: "/api/internal/weighing/mobile-handoffs/scan",
 			}}
-			return weighService.ScanMobileHandoffFrom(ctx, code, source, device, event)
+			return weighService.ScanMobileCode(ctx, code, source, device, event)
 		},
 	)
 	application, err := app.New(*cfg, database, app.Dependencies{
@@ -276,6 +276,18 @@ func main() {
 	if cfg.MasterSync.Enabled {
 		go weighService.RunTemporaryPartySyncWorker(monitoringContext)
 		go weighService.RunTaskSyncWorker(monitoringContext)
+		go func() {
+			ticker := time.NewTicker(3 * time.Second)
+			defer ticker.Stop()
+			for {
+				weighService.RunMobilePrintCommands(monitoringContext)
+				select {
+				case <-monitoringContext.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
 		go func() {
 			ticker := time.NewTicker(10 * time.Second)
 			defer ticker.Stop()
